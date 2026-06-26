@@ -1,0 +1,43 @@
+{
+  "name": "pi-usage-status",
+  "version": "0.1.0",
+  "description": "Codex-style /usage status for pi: local token tracking + provider mirror",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "usage",
+    "tokens",
+    "cost",
+    "codex"
+  ],
+  "author": "MooCoding",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ManotLuijiu/pi-usage-status.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ManotLuijiu/pi-usage-status/issues"
+  },
+  "homepage": "https://github.com/ManotLuijiu/pi-usage-status#readme",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}
