@@ -1,0 +1,5 @@
+node_modules/
+*.log
+.DS_Store
+# Local SQLite state (created at runtime in ~/.pi/usage-status/)
+# This file lives outside the repo; nothing to ignore here.
