@@ -1,11 +1,25 @@
 {
-  "name": "pi-usage-status",
-  "version": "0.1.0",
+  "name": "pi-harness-runtime",
+  "version": "0.2.0",
   "description": "Codex-style /usage status for pi: local token tracking + provider mirror",
   "type": "module",
   "scripts": {
     "test": "node --test test/"
   },
+  "files": [
+    "index.ts",
+    "tracker.ts",
+    "mirror.ts",
+    "windows.ts",
+    "renderer.ts",
+    "sync-form.ts",
+    "cli.ts",
+    "skills",
+    "package.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "keywords": [
     "pi-package",
     "pi",
@@ -20,12 +34,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ManotLuijiu/pi-usage-status.git"
+    "url": "git+https://github.com/ManotLuijiu/pi-harness-runtime.git"
   },
   "bugs": {
-    "url": "https://github.com/ManotLuijiu/pi-usage-status/issues"
+    "url": "https://github.com/ManotLuijiu/pi-harness-runtime/issues"
   },
-  "homepage": "https://github.com/ManotLuijiu/pi-usage-status#readme",
+  "homepage": "https://github.com/ManotLuijiu/pi-harness-runtime#readme",
   "pi": {
     "extensions": [
       "./index.ts"

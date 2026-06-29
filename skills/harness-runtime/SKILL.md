@@ -1,15 +1,16 @@
 ---
-name: usage-status
+name: harness-runtime
 description: Show Codex-style /usage status for pi — local token tracking + manual provider mirror. Use when the user asks about token usage, API quota, 5h limit, weekly limit, or wants to know how much they've spent.
 ---
 
-# pi-usage-status
+# pi-harness-runtime
 
 Codex-style `/usage` slash command for pi coding agent.
 
 ## When to use
 
 User says:
+
 - "show me my usage"
 - "how much have I used?"
 - "what's my 5h limit?"
