@@ -5,11 +5,15 @@ name: Release
 # Pattern adapted from frappe/.github/workflows/create-release.yml
 # (uses secrets for auth to bypass 2FA).
 #
-# Required GitHub secret:
-#   NPM_TOKEN — Granular Access Token from
-#     https://www.npmjs.com/settings/manotluijiu/tokens
-#     - Packages & scopes: "pi-harness-runtime", "Read and write"
-#     - ✅ Bypass 2FA
+# Required GitHub secrets:
+#   NPM_TOKEN      — Granular Access Token from
+#                    https://www.npmjs.com/settings/manotluijiu/tokens
+#                    - Packages & scopes: "pi-harness-runtime", "Read and write"
+#                    - ✅ Bypass 2FA
+#   RELEASE_TOKEN  — GitHub Fine-Grained PAT (or Classic PAT) with `repo` scope
+#                    Used by `gh release create` to attribute the release to
+#                    your user instead of github-actions[bot]. Recommended.
+#                    Create at: https://github.com/settings/tokens?type=beta
 #
 # Trigger a release:
 #   git tag v0.3.0
@@ -77,7 +81,7 @@ jobs:
     steps:
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
