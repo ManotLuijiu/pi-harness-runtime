@@ -31,12 +31,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "24"
 
-      - name: Install dependencies
-        run: npm install
-
+      # Note: no `npm install` step — this project has no runtime
+      # dependencies, only `peerDependencies` declarations. Tests run
+      # via `node --test` which uses Node's built-in test runner.
       - name: Run tests
         run: npm test
 
