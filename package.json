@@ -4,7 +4,7 @@
   "description": "Codex-style /usage status for pi: local token tracking + provider mirror",
   "type": "module",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "files": [
     "index.ts",

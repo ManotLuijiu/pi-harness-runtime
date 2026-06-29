@@ -1,19 +1,15 @@
-name: Auto-merge develop → main
+name: Auto Merge Develop Into Main
 
-# Triggers:
-#   1. push to develop       → run tests, then auto-merge develop into main
-#   2. workflow_dispatch     → manually trigger from the Actions tab
+# Pattern adapted from thai_business_suite/.github/workflows/auto-merge.yml
 #
-# Behavior:
-#   - If `main` does not exist on the remote yet, it is created from `develop`
-#   - Otherwise, `develop` is merged into `main` with a no-ff merge commit
-#   - The merge commit on `main` is tagged `v<package.json version>`
-#   - Tests must pass for the merge to happen
+# On every push to develop:
+#   1. Run `npm test` (only safety gate before npm publish)
+#   2. If tests pass, merge develop → main via a no-ff merge
 
 on:
   push:
-    branches: [develop]
-  workflow_dispatch:
+    branches:
+      - develop
 
 permissions:
   contents: write
@@ -33,56 +29,30 @@ jobs:
         with:
           node-version: "24"
 
-      # Note: no `npm install` step — this project has no runtime
-      # dependencies, only `peerDependencies` declarations. Tests run
-      # via `node --test` which uses Node's built-in test runner.
+      # Note: no `npm install` — this package has zero runtime
+      # dependencies (only `peerDependencies` declarations).
       - name: Run tests
         run: npm test
 
-  auto-merge:
+  merge-to-main:
     name: Merge develop → main
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (full history)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: develop
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure git
+      - name: Configure Git
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
 
-      - name: Merge develop into main
+      - name: Merge develop → main
         run: |
-          set -euo pipefail
-
-          if git ls-remote --heads origin main | grep -q main; then
-            echo "✅ main exists on remote — performing no-ff merge"
-            git fetch origin main
-            git checkout main
-            git merge origin/develop --no-ff \
-              -m "chore(auto-merge): develop → main (${GITHUB_SHA})"
-          else
-            echo "🆕 main does NOT exist on remote — creating from develop"
-            git checkout -B main origin/develop
-          fi
-
-          VERSION="$(node -p "require('./package.json').version")"
-          echo "📌 Tagging main HEAD as v${VERSION}"
-          git tag "v${VERSION}"
-
-          git push origin main --follow-tags
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "### Auto-merge develop → main" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Develop SHA: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Result: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          git fetch origin
+          git checkout main
+          git merge origin/develop --no-edit
+          git push origin main
