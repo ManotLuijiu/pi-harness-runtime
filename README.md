@@ -1,12 +1,12 @@
-# Pi Usage Status
+# Pi Harness Runtime
 
 **Codex-style `/usage` status for pi coding agent: local token tracking + manual provider mirror.**
 
-[![npm version](https://img.shields.io/npm/v/pi-usage-status?style=for-the-badge)](https://www.npmjs.com/package/pi-usage-status)
+[![npm version](https://img.shields.io/npm/v/pi-harness-runtime?style=for-the-badge)](https://www.npmjs.com/package/pi-harness-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|20|Linux-blue?style=for-the-badge)]()
 
-## Why Pi Usage Status
+## Why Pi Harness Runtime
 
 **3-Source Honest Tracking** — Codex-style `/status` for pi: local-tracked tokens + manually-mirrored provider quota + derived projections. No fake precision, no scraping, no password storage.
 
@@ -19,14 +19,14 @@
 ## Install
 
 ```bash
-pi install npm:pi-usage-status
+pi install npm:pi-harness-runtime
 ```
 
 Or install locally for development:
 
 ```bash
-git clone https://github.com/ManotLuijiu/pi-usage-status.git
-ln -s pi-usage-status ~/.pi/agent/extensions/pi-usage-status
+git clone https://github.com/ManotLuijiu/pi-harness-runtime.git
+ln -s pi-harness-runtime ~/.pi/agent/extensions/pi-harness-runtime
 pi reload
 ```
 
@@ -152,6 +152,7 @@ Most AI providers (MiniMax, Anthropic, OpenAI) don't expose rate limit headers p
 | **HTML scraping** (assumes cookies work) | Once cookies extracted, parsing is easy | Breaks if page redesigns |
 
 We chose the manual approach because:
+
 1. MiniMax's UI shows reset times like "Resets in 4 hr 56 min" — manual entry is genuinely 5 seconds
 2. Cookie extraction has ongoing maintenance burden
 3. Password storage is a security anti-pattern
@@ -170,7 +171,7 @@ If you find yourself needing to sync more than 3x/day, we may add browser cookie
 ## Architecture
 
 ```
-pi-usage-status/
+pi-harness-runtime/
 ├── index.ts              # entry — exports default (pi: ExtensionAPI)
 ├── tracker.ts            # UsageTracker — JSONL writer/reader
 ├── mirror.ts             # MirrorStore — JSON read/write + freshness check
@@ -179,7 +180,7 @@ pi-usage-status/
 ├── sync-form.ts          # /usage sync form handling
 ├── cli.ts                # shared pure helpers (paths, formatting, IO)
 ├── skills/
-│   └── usage-status/
+│   └── harness-runtime/
 │       └── SKILL.md      # bundled skill (auto-loaded)
 ├── test/                 # node --test
 │   ├── cli.test.mjs

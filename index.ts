@@ -1,5 +1,5 @@
 /**
- * pi-usage-status — Codex-style /usage status for pi.
+ * pi-harness-runtime — Codex-style /usage status for pi.
  *
  * Slash commands:
  *   /usage         — show full status (model, local tracking, provider mirror)
@@ -14,14 +14,17 @@
  * No build step — Bun runs this .ts file directly.
  */
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import { buildMirrorRecord, parseSyncValues } from "./sync-form.ts";
 
-const PROVIDER_DEFAULT = "minimax";      // can be changed via /usage sync form
+const PROVIDER_DEFAULT = "minimax"; // can be changed via /usage sync form
 
 export default function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
@@ -71,11 +74,14 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── /usage sync — open form ─────────────────────────────────────────
 	pi.registerCommand("usage-sync", {
-		description: "Sync provider quota: /usage sync [provider] [h5%,h,h,m,wk%,d,h]",
+		description:
+			"Sync provider quota: /usage sync [provider] [h5%,h,h,m,wk%,d,h]",
 		getArgumentCompletions: (prefix: string) => {
 			const opts = ["minimax", "anthropic", "openai", "openrouter"];
 			const filtered = opts.filter((o) => o.startsWith(prefix));
-			return filtered.length > 0 ? filtered.map((o) => ({ value: o, label: o })) : null;
+			return filtered.length > 0
+				? filtered.map((o) => ({ value: o, label: o }))
+				: null;
 		},
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const parts = (args || "").trim().split(/\s+/).filter(Boolean);
@@ -149,7 +155,10 @@ export default function (pi: ExtensionAPI) {
 				// Simpler: import getMirrorPath and unlink
 				const { getMirrorPath } = await import("./cli.ts");
 				unlinkSync(getMirrorPath());
-				ctx.ui.notify("Mirror cleared. Run /usage sync to set a new one.", "info");
+				ctx.ui.notify(
+					"Mirror cleared. Run /usage sync to set a new one.",
+					"info",
+				);
 			} catch (e) {
 				ctx.ui.notify(`Failed to clear mirror: ${e}`, "error");
 			}
@@ -190,7 +199,7 @@ async function refreshFooterStatus(
 		summary += ` · week: ${left}% left`;
 	}
 
-	ctx.ui.setStatus("usage-status", summary);
+	ctx.ui.setStatus("harness-runtime", summary);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -261,15 +270,17 @@ async function openSyncForm(
 	mirrorStore.write(record);
 	ctx.ui.notify(
 		`Mirror synced for ${provider}.\n` +
-		`  5h: ${validationResult.h5_used_pct}% used, resets in ${validationResult.h5_resets_h}h ${validationResult.h5_resets_m}m\n` +
-		`  weekly: ${validationResult.weekly_used_pct}% used, resets in ${validationResult.weekly_resets_d}d ${validationResult.weekly_resets_h}h\n\n` +
-		`Run /usage to see the full status.`,
+			`  5h: ${validationResult.h5_used_pct}% used, resets in ${validationResult.h5_resets_h}h ${validationResult.h5_resets_m}m\n` +
+			`  weekly: ${validationResult.weekly_used_pct}% used, resets in ${validationResult.weekly_resets_d}d ${validationResult.weekly_resets_h}h\n\n` +
+			`Run /usage to see the full status.`,
 		"info",
 	);
 }
 
 /** Parse "6,4,8,73,2,13" → [6,4,8,73,2,13], or null if invalid. */
-function parseInlineArgs(s: string): [number, number, number, number, number, number] | null {
+function parseInlineArgs(
+	s: string,
+): [number, number, number, number, number, number] | null {
 	const trimmed = s.trim();
 	if (!trimmed) return null;
 	const parts = trimmed.split(/[,\s]+/).filter(Boolean);

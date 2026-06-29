@@ -1,0 +1,89 @@
+name: Auto-merge develop → main
+
+# Triggers:
+#   1. push to develop       → run tests, then auto-merge develop into main
+#   2. workflow_dispatch     → manually trigger from the Actions tab
+#
+# Behavior:
+#   - If `main` does not exist on the remote yet, it is created from `develop`
+#   - Otherwise, `develop` is merged into `main` with a no-ff merge commit
+#   - The merge commit on `main` is tagged `v<package.json version>`
+#   - Tests must pass for the merge to happen
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test (npm test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+  auto-merge:
+    name: Merge develop → main
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge develop into main
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --heads origin main | grep -q main; then
+            echo "✅ main exists on remote — performing no-ff merge"
+            git fetch origin main
+            git checkout main
+            git merge origin/develop --no-ff \
+              -m "chore(auto-merge): develop → main (${GITHUB_SHA})"
+          else
+            echo "🆕 main does NOT exist on remote — creating from develop"
+            git checkout -B main origin/develop
+          fi
+
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "📌 Tagging main HEAD as v${VERSION}"
+          git tag "v${VERSION}"
+
+          git push origin main --follow-tags
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Auto-merge develop → main" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Develop SHA: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Result: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
