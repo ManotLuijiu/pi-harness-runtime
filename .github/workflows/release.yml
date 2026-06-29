@@ -10,10 +10,19 @@ name: Release
 #                    https://www.npmjs.com/settings/manotluijiu/tokens
 #                    - Packages & scopes: "pi-harness-runtime", "Read and write"
 #                    - ✅ Bypass 2FA
+#                    Used as `NODE_AUTH_TOKEN` in the publish step (read by
+#                    actions/setup-node when registry-url is set).
 #   RELEASE_TOKEN  — GitHub Fine-Grained PAT (or Classic PAT) with `repo` scope
 #                    Used by `gh release create` to attribute the release to
 #                    your user instead of github-actions[bot]. Recommended.
 #                    Create at: https://github.com/settings/tokens?type=beta
+#                    Falls back to auto secrets.GITHUB_TOKEN if unset.
+#
+# LOCAL PUBLISH NOTE:
+#   `npm publish` locally does NOT read NPM_TOKEN from env (it reads
+#   ~/.npmrc first). Use `NPM_CONFIG_USERCONFIG=/tmp/npmrc` with a
+#   .npmrc containing `//registry.npmjs.org/:_authToken=$NPM_TOKEN`,
+#   or write a project .npmrc (gitignored). See .env.example for details.
 #
 # Trigger a release:
 #   git tag v0.3.0
