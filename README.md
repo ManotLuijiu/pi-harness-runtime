@@ -26,11 +26,11 @@ Or install locally for development:
 
 ```bash
 git clone https://github.com/ManotLuijiu/pi-usage-status.git
-ln -s pi-usage-status ~/.pi/agent/npm/node_modules/pi-usage-status
+ln -s pi-usage-status ~/.pi/agent/extensions/pi-usage-status
 pi reload
 ```
 
-**Important**: Symlink the **directory** into `node_modules/`, not a single file into `extensions/`. Pi loads multi-file extensions from `node_modules/` so relative imports like `./tracker.ts` resolve correctly.
+**Important**: Symlink the **directory** into `~/.pi/agent/extensions/`. Pi's loader scans that directory and reads `package.json`'s `pi.extensions` field for multi-file extensions. Don't symlink a single file (relative imports break) or symlink into `node_modules/` (pi doesn't auto-scan there).
 
 No API keys required. No build step (Bun runs `.ts` directly).
 

@@ -71,15 +71,23 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── /usage sync — open form ─────────────────────────────────────────
 	pi.registerCommand("usage-sync", {
-		description: "Sync provider-side quota from console.minimax.io",
+		description: "Sync provider quota: /usage sync [provider] [h5%,h,h,m,wk%,d,h]",
 		getArgumentCompletions: (prefix: string) => {
 			const opts = ["minimax", "anthropic", "openai", "openrouter"];
 			const filtered = opts.filter((o) => o.startsWith(prefix));
 			return filtered.length > 0 ? filtered.map((o) => ({ value: o, label: o })) : null;
 		},
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
-			const provider = args.trim() || PROVIDER_DEFAULT;
-			await openSyncForm(ctx, mirrorStore, provider);
+			const parts = (args || "").trim().split(/\s+/).filter(Boolean);
+			let provider = PROVIDER_DEFAULT;
+			let inlineValues = "";
+			if (parts.length > 0 && !/^\d/.test(parts[0])) {
+				provider = parts[0];
+				inlineValues = parts.slice(1).join(" ");
+			} else if (parts.length > 0) {
+				inlineValues = parts.join(" ");
+			}
+			await openSyncForm(ctx, mirrorStore, provider, inlineValues);
 		},
 	});
 
@@ -187,47 +195,86 @@ async function refreshFooterStatus(
 
 // ──────────────────────────────────────────────────────────────────────
 // Helper: open sync form using ctx.ui
+//
+// Usage:
+//   /usage sync                          → prompts for values
+//   /usage sync minimax                  → prompts for values
+//   /usage sync minimax 6,4,8,73,2,13    → no prompts, uses inline values
+//
+// Inline format: h5_pct, h5_h, h5_m, weekly_pct, weekly_d, weekly_h
 // ──────────────────────────────────────────────────────────────────────
 async function openSyncForm(
 	ctx: ExtensionCommandContext,
 	mirrorStore: MirrorStore,
 	provider: string,
+	args: string,
 ) {
-	// For the sync form, we use ctx.ui.input() with 6 separate prompts.
-	// This is more portable than ctx.ui.custom() which has a complex API.
-	const result: { [k: string]: string } = {};
+	let parsed = parseInlineArgs(args);
 
-	const prompts: Array<{ key: string; prompt: string; defaultVal: string }> = [
-		{ key: "h5_used_pct", prompt: `5h used % (0-100) for ${provider}:`, defaultVal: "0" },
-		{ key: "h5_resets_h", prompt: "5h resets in (hours):", defaultVal: "5" },
-		{ key: "h5_resets_m", prompt: "5h resets in (minutes, 0-59):", defaultVal: "0" },
-		{ key: "weekly_used_pct", prompt: "Weekly used % (0-100):", defaultVal: "0" },
-		{ key: "weekly_resets_d", prompt: "Weekly resets in (days, 0-7):", defaultVal: "7" },
-		{ key: "weekly_resets_h", prompt: "Weekly resets in (hours, 0-23):", defaultVal: "0" },
-	];
-
-	for (const p of prompts) {
-		const v = await ctx.ui.input(p.prompt, p.defaultVal);
-		if (v === undefined || v === null) {
+	if (!parsed) {
+		// Single prompt with comma-separated values
+		const placeholder = "e.g. 6,4,8,73,2,13 (h5%, h5h, h5m, wk%, wkd, wkh)";
+		const answer = await ctx.ui.input(
+			`Sync ${provider} usage — paste as: h5%, h5 reset h, h5 reset m, weekly%, weekly reset d, weekly reset h`,
+			placeholder,
+		);
+		if (!answer) {
 			ctx.ui.notify("Sync cancelled", "info");
 			return;
 		}
-		result[p.key] = String(v);
+		parsed = parseInlineArgs(answer);
+		if (!parsed) {
+			ctx.ui.notify(
+				`Invalid format. Expected 6 comma-separated numbers.\nGot: "${answer}"`,
+				"error",
+			);
+			return;
+		}
 	}
 
-	const parsed = parseSyncValues(result);
-	if (!parsed) {
-		ctx.ui.notify("Invalid input — out of range values. Sync cancelled.", "error");
+	const values = {
+		h5_used_pct: parsed[0],
+		h5_resets_h: parsed[1],
+		h5_resets_m: parsed[2],
+		weekly_used_pct: parsed[3],
+		weekly_resets_d: parsed[4],
+		weekly_resets_h: parsed[5],
+	};
+
+	const validationResult = parseSyncValues({
+		h5_used_pct: String(values.h5_used_pct),
+		h5_resets_h: String(values.h5_resets_h),
+		h5_resets_m: String(values.h5_resets_m),
+		weekly_used_pct: String(values.weekly_used_pct),
+		weekly_resets_d: String(values.weekly_resets_d),
+		weekly_resets_h: String(values.weekly_resets_h),
+	});
+	if (!validationResult) {
+		ctx.ui.notify(
+			`Out of range. h5/wk must be 0-100, h/d/m must fit their bounds.`,
+			"error",
+		);
 		return;
 	}
 
-	const record = buildMirrorRecord(parsed, provider, Date.now());
+	const record = buildMirrorRecord(validationResult, provider, Date.now());
 	mirrorStore.write(record);
 	ctx.ui.notify(
 		`Mirror synced for ${provider}.\n` +
-		`  5h: ${parsed.h5_used_pct}% used, resets in ${parsed.h5_resets_h}h ${parsed.h5_resets_m}m\n` +
-		`  weekly: ${parsed.weekly_used_pct}% used, resets in ${parsed.weekly_resets_d}d ${parsed.weekly_resets_h}h\n\n` +
+		`  5h: ${validationResult.h5_used_pct}% used, resets in ${validationResult.h5_resets_h}h ${validationResult.h5_resets_m}m\n` +
+		`  weekly: ${validationResult.weekly_used_pct}% used, resets in ${validationResult.weekly_resets_d}d ${validationResult.weekly_resets_h}h\n\n` +
 		`Run /usage to see the full status.`,
 		"info",
 	);
+}
+
+/** Parse "6,4,8,73,2,13" → [6,4,8,73,2,13], or null if invalid. */
+function parseInlineArgs(s: string): [number, number, number, number, number, number] | null {
+	const trimmed = s.trim();
+	if (!trimmed) return null;
+	const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+	if (parts.length !== 6) return null;
+	const nums = parts.map((p) => Number(p));
+	if (nums.some((n) => !Number.isFinite(n))) return null;
+	return nums as [number, number, number, number, number, number];
 }
