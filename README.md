@@ -4,9 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
-> ⚠️ **⚠️ Beta Notice — Not Production Ready ⚠️**
+> ⚠️ **Beta Notice — Not Production Ready ⚠️**
 > This project is in active development. Core features work but E2E testing is not yet implemented.
-> **148+ downloads** and counting — we appreciate the interest! Help us test by filing issues.
 
 **Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
 
