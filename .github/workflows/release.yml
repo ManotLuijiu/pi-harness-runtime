@@ -104,3 +104,31 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes
+
+  merge-pr:
+    name: Auto-merge PR develop → main
+    needs: github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge PR if exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Find the PR from develop → main
+          pr_json=$(gh pr list --base main --head develop --json number,title,state --jq '.[0]' 2>/dev/null)
+          if [ -n "$pr_json" ] && [ "$pr_json" != "null" ]; then
+            pr_num=$(echo "$pr_json" | jq -r '.number')
+            pr_state=$(echo "$pr_json" | jq -r '.state')
+            echo "Found PR #$pr_num (state: $pr_state)"
+            if [ "$pr_state" = "OPEN" ]; then
+              gh pr merge "$pr_num" --squash --delete-branch --auto
+              echo "✅ Merged PR #$pr_num into main"
+            else
+              echo "PR #$pr_num is not open, skipping merge"
+            fi
+          else
+            echo "No PR found from develop → main, skipping"
+          fi
