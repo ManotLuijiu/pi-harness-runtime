@@ -45,6 +45,30 @@ Human Requirement
 | `/harness resume` | Resume a paused job |
 | `/harness cancel` | Cancel the current job |
 
+### Authentication Commands
+
+| Command | Description |
+|---------|-------------|
+| `/harness auth minimax` | Authenticate with MiniMax (opens browser) |
+| `/harness auth check` | Check MiniMax auth status |
+| `/harness auth scrape` | Scrape MiniMax usage (silent, uses saved profile) |
+
+**First-time setup:**
+
+```bash
+harness-auth auth
+# → Opens Chrome browser, login once, profile auto-saves
+# Or: bun packages/auth/src/run-minimax-auth.ts auth
+```
+
+**Subsequent usage:**
+
+```bash
+harness-auth scrape
+# → Silent scraping with saved profile
+# Or: bun packages/auth/src/run-minimax-auth.ts scrape
+```
+
 ## Job State Machine
 
 ```
