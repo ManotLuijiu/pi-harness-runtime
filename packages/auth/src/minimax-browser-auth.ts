@@ -96,7 +96,6 @@ export async function authenticateWithPersistentBrowser(
 	config: MinimaxBrowserAuthConfig = {},
 ): Promise<MinimaxAuthStatus> {
 	const profileDir = config.profilePath ?? getProfileDir();
-	const statusPath = config.statusPath ?? getStatusPath();
 	const targetUrl =
 		config.targetUrl ?? "https://platform.minimax.io/console/usage";
 
@@ -148,32 +147,54 @@ export async function authenticateWithPersistentBrowser(
 		console.log(`   Current URL: ${initialUrl}`);
 		console.log("");
 
-		// If redirected to login, wait for user to log in
+		// If redirected to login, wait for user to log in via MiniMax
 		if (initialUrl.includes("login") || initialUrl.includes("unified-login")) {
 			console.log(
 				"🔓 Login required - please log in to MiniMax in the browser window",
 			);
 			console.log("   (Profile will auto-save when you navigate)");
 			console.log("");
-			console.log("⏳ Waiting for you to log in and navigate to usage page...");
-			console.log("   Press Enter when done, or wait 60 seconds...");
+			console.log("⏳ Waiting for login to complete (poll URL every 2s)...");
+			console.log("   Close browser or press Ctrl+C to cancel");
 			console.log("");
 
-			// Wait for user input or timeout
-			await Promise.race([
-				new Promise<void>((resolve) => {
-					process.stdin.once("data", () => {
-						console.log("✅ Resuming...");
-						resolve();
-					});
-				}),
-				new Promise<void>((resolve) =>
-					setTimeout(() => {
-						console.log("⏰ Timeout - checking current state...");
-						resolve();
-					}, 60000),
-				),
-			]);
+			// Poll URL until it changes to usage page (or timeout)
+			const startTime = Date.now();
+			const timeout = 300000; // 5 minutes
+			let loginComplete = false;
+
+			while (!loginComplete && Date.now() - startTime < timeout) {
+				await page.waitForTimeout(2000); // Check every 2 seconds
+				const currentUrl = page.url();
+
+				// Check if URL changed away from login
+				if (
+					!currentUrl.includes("login") &&
+					!currentUrl.includes("unified-login")
+				) {
+					loginComplete = true;
+					console.log("✅ Login detected!");
+					console.log(`   New URL: ${currentUrl}`);
+				}
+
+				// Check if browser was closed
+				if (context.pages().length === 0) {
+					console.log("Browser closed by user.");
+					return {
+						provider: "minimax" as const,
+						authenticated: false,
+						checked_at: new Date().toISOString(),
+						page_url: "",
+						detected_text_sample: null,
+						profile_path: profileDir,
+						error_message: "Browser closed by user",
+					};
+				}
+			}
+
+			if (!loginComplete) {
+				console.log("⏰ 5 min timeout reached");
+			}
 		}
 
 		// Extract usage data
@@ -252,7 +273,6 @@ export async function scrapeWithExistingProfile(
 	config: MinimaxBrowserAuthConfig = {},
 ): Promise<MinimaxAuthStatus> {
 	const profileDir = config.profilePath ?? getProfileDir();
-	const statusPath = config.statusPath ?? getStatusPath();
 	const targetUrl =
 		config.targetUrl ?? "https://platform.minimax.io/console/usage";
 
