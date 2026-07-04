@@ -1,19 +1,26 @@
 /**
  * minimax-browser-auth.ts
  *
- * MiniMax browser authentication using persistent Playwright profile.
+ * MiniMax browser authentication using a real Chrome profile.
  *
  * SECURITY RULES:
  * - Human owns authentication. Agent never receives credentials.
  * - No username, password, raw cookies, or session tokens stored.
- * - Playwright persistent profile saves browser session automatically.
+ * - Real Chrome owns the login flow; Playwright only monitors via CDP.
  * - Profile is stored at ~/.pi-harness-runtime/browser-profiles/minimax/
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-import { chromium, type BrowserContext } from "playwright";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import * as net from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
+import {
+	chromium,
+	type Browser,
+	type BrowserContext,
+	type Page,
+} from "playwright";
 
 export interface MinimaxAuthStatus {
 	provider: "minimax";
@@ -29,6 +36,8 @@ export interface MinimaxBrowserAuthConfig {
 	profilePath?: string;
 	statusPath?: string;
 	targetUrl?: string;
+	chromeExecutablePath?: string;
+	cdpPort?: number;
 }
 
 const DEFAULT_USAGE_KEYWORDS = [
@@ -88,6 +97,230 @@ export function detectUsagePage(bodyText: string): {
 	return { detected, sample };
 }
 
+const DEFAULT_AUTH_TIMEOUT_MS = 300000;
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasProfileData(profileDir: string): boolean {
+	if (!fs.existsSync(profileDir)) {
+		return false;
+	}
+
+	const markers = [
+		path.join(profileDir, "Local State"),
+		path.join(profileDir, "First Run"),
+		path.join(profileDir, "Default", "Preferences"),
+		path.join(profileDir, "Default", "Cookies"),
+		path.join(profileDir, "Default", "History"),
+	];
+
+	if (markers.some((marker) => fs.existsSync(marker))) {
+		return true;
+	}
+
+	try {
+		return fs.readdirSync(profileDir).length > 0;
+	} catch {
+		return false;
+	}
+}
+
+function getChromeExecutablePath(
+	config: MinimaxBrowserAuthConfig = {},
+): string {
+	const configuredPath =
+		config.chromeExecutablePath ??
+		process.env.PI_HARNESS_CHROME_PATH ??
+		process.env.GOOGLE_CHROME_BIN ??
+		process.env.CHROME_PATH;
+
+	const candidates = configuredPath ? [configuredPath] : [];
+
+	switch (process.platform) {
+		case "darwin":
+			candidates.push(
+				"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+				"/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+			);
+			break;
+		case "win32":
+			candidates.push(
+				"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+				"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+				path.join(
+					process.env.LOCALAPPDATA ?? "",
+					"Google",
+					"Chrome",
+					"Application",
+					"chrome.exe",
+				),
+			);
+			break;
+		default:
+			candidates.push(
+				"/usr/bin/google-chrome",
+				"/usr/bin/google-chrome-stable",
+				"/snap/bin/google-chrome",
+			);
+	}
+
+	for (const candidate of candidates) {
+		if (candidate && fs.existsSync(candidate)) {
+			return candidate;
+		}
+	}
+
+	throw new Error(
+		"Google Chrome executable not found. Install Google Chrome or set PI_HARNESS_CHROME_PATH.",
+	);
+}
+
+function getChromeArgs(): string[] {
+	const args = ["--no-first-run", "--no-default-browser-check"];
+
+	if (process.platform === "linux") {
+		args.push("--password-store=basic");
+	}
+
+	return args;
+}
+
+async function getFreePort(preferredPort?: number): Promise<number> {
+	if (preferredPort) {
+		return preferredPort;
+	}
+
+	return new Promise((resolve, reject) => {
+		const server = net.createServer();
+		server.unref();
+		server.on("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			if (!address || typeof address === "string") {
+				server.close();
+				reject(new Error("Could not allocate a Chrome debugging port"));
+				return;
+			}
+
+			const { port } = address;
+			server.close((closeError) => {
+				if (closeError) {
+					reject(closeError);
+					return;
+				}
+				resolve(port);
+			});
+		});
+	});
+}
+
+async function connectToChromeOverCdp(
+	port: number,
+	timeoutMs = 15000,
+): Promise<Browser> {
+	const endpoint = `http://127.0.0.1:${port}`;
+	const deadline = Date.now() + timeoutMs;
+	let lastError: unknown;
+
+	while (Date.now() < deadline) {
+		try {
+			return await chromium.connectOverCDP(endpoint);
+		} catch (error) {
+			lastError = error;
+			await delay(500);
+		}
+	}
+
+	throw new Error(
+		`Could not connect to Chrome DevTools at ${endpoint}: ${String(lastError)}`,
+	);
+}
+
+function getCurrentPage(context: BrowserContext): Page | null {
+	const pages = context.pages().filter((page) => !page.isClosed());
+	return pages.length > 0 ? pages[pages.length - 1] : null;
+}
+
+async function waitForPage(
+	context: BrowserContext,
+	timeoutMs = 15000,
+): Promise<Page> {
+	const deadline = Date.now() + timeoutMs;
+
+	while (Date.now() < deadline) {
+		const page = getCurrentPage(context);
+		if (page) {
+			return page;
+		}
+		await delay(250);
+	}
+
+	throw new Error("Chrome launched but no page became available");
+}
+
+async function closeBrowserResources(
+	browser: Browser | null,
+	chromeProcess: ChildProcess | null,
+): Promise<void> {
+	if (browser) {
+		await browser.close().catch(() => {});
+	}
+
+	if (
+		chromeProcess &&
+		chromeProcess.exitCode === null &&
+		!chromeProcess.killed
+	) {
+		chromeProcess.kill("SIGTERM");
+	}
+}
+
+async function launchChromeForAuthentication(
+	profileDir: string,
+	targetUrl: string,
+	config: MinimaxBrowserAuthConfig,
+): Promise<{
+	browser: Browser;
+	context: BrowserContext;
+	chromeProcess: ChildProcess;
+	chromePath: string;
+	cdpPort: number;
+}> {
+	const chromePath = getChromeExecutablePath(config);
+	const cdpPort = await getFreePort(config.cdpPort);
+	const chromeArgs = [
+		`--remote-debugging-port=${cdpPort}`,
+		`--user-data-dir=${profileDir}`,
+		"--new-window",
+		...getChromeArgs(),
+		targetUrl,
+	];
+
+	// nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
+	const chromeProcess = spawn(chromePath, chromeArgs, {
+		stdio: "ignore",
+	});
+
+	const browser = await connectToChromeOverCdp(cdpPort);
+	const context = browser.contexts()[0];
+	if (!context) {
+		await closeBrowserResources(browser, chromeProcess);
+		throw new Error(
+			"Connected to Chrome, but no browser context was available",
+		);
+	}
+
+	return {
+		browser,
+		context,
+		chromeProcess,
+		chromePath,
+		cdpPort,
+	};
+}
+
 /**
  * Launch persistent browser - profile is saved automatically
  * Reusing the profile means user stays logged in
@@ -111,115 +344,140 @@ export async function authenticateWithPersistentBrowser(
 	console.log(`Profile directory: ${profileDir}`);
 	console.log("");
 
+	let browser: Browser | null = null;
 	let context: BrowserContext | null = null;
+	let chromeProcess: ChildProcess | null = null;
 
 	try {
-		// Check if profile exists (user already logged in)
-		const isFirstRun = !fs.existsSync(path.join(profileDir, "SingletonLock"));
+		const isFirstRun = !hasProfileData(profileDir);
 
-		// Launch persistent context - profile auto-saves!
-		console.log("🚀 Launching persistent browser...");
+		console.log("🚀 Launching real Google Chrome...");
 		if (isFirstRun) {
-			console.log("   First run - creating new profile");
+			console.log("   First run - creating new Chrome profile");
 		} else {
-			console.log("   Reusing existing profile (you stay logged in)");
+			console.log("   Reusing existing Chrome profile");
 		}
+
+		const launched = await launchChromeForAuthentication(
+			profileDir,
+			targetUrl,
+			config,
+		);
+		browser = launched.browser;
+		context = launched.context;
+		chromeProcess = launched.chromeProcess;
+
+		console.log(`   Chrome: ${launched.chromePath}`);
+		console.log(`   DevTools port: ${launched.cdpPort}`);
 		console.log("");
+		console.log("🖥️  Waiting for MiniMax / Google login flow...");
 
-		context = await chromium.launchPersistentContext(profileDir, {
-			headless: false,
-			chromiumSandbox: false,
-			args: ["--no-first-run", "--no-default-browser-check"],
-			viewport: { width: 1280, height: 800 },
-		});
+		let page = await waitForPage(context, 15000);
+		await page
+			.waitForLoadState("domcontentloaded", { timeout: 15000 })
+			.catch(() => {});
 
-		const page = context.pages()[0] ?? (await context.newPage());
+		let loginComplete = false;
+		let lastLoggedUrl = "";
+		let loginHintShown = false;
+		const startTime = Date.now();
 
-		// Navigate to MiniMax
-		console.log("🖥️  Navigating to MiniMax...");
-		await page.goto(targetUrl, {
-			waitUntil: "domcontentloaded",
-			timeout: 15000,
-		});
-		await page.waitForTimeout(2000);
+		while (Date.now() - startTime < DEFAULT_AUTH_TIMEOUT_MS) {
+			page = getCurrentPage(context) ?? page;
 
-		const initialUrl = page.url();
-		console.log(`   Current URL: ${initialUrl}`);
-		console.log("");
+			if (!page || page.isClosed()) {
+				console.log("Browser closed by user.");
+				const status: MinimaxAuthStatus = {
+					provider: "minimax",
+					authenticated: false,
+					checked_at: new Date().toISOString(),
+					page_url: "",
+					detected_text_sample: null,
+					profile_path: profileDir,
+					error_message: "Browser closed by user",
+				};
+				saveAuthStatus(status, config);
+				return status;
+			}
 
-		// If redirected to login, wait for user to log in via MiniMax
-		if (initialUrl.includes("login") || initialUrl.includes("unified-login")) {
-			console.log(
-				"🔓 Login required - please log in to MiniMax in the browser window",
+			const currentUrl = page.url();
+			if (currentUrl && currentUrl !== lastLoggedUrl) {
+				console.log(`   🔗 URL: ${currentUrl}`);
+				lastLoggedUrl = currentUrl;
+			}
+
+			const isGoogleLogin = currentUrl.includes("accounts.google.com");
+			const isMiniMaxLogin =
+				currentUrl.includes("unified-login") || currentUrl.includes("login");
+
+			if ((isGoogleLogin || isMiniMaxLogin) && !loginHintShown) {
+				console.log("");
+				console.log("🔓 Sign in in the Chrome window that just opened");
+				console.log("   This uses real Chrome so Google login is allowed");
+				console.log("   Close browser or press Ctrl+C to cancel");
+				console.log("");
+				loginHintShown = true;
+			}
+
+			const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
+			const { detected } = detectUsagePage(bodyText);
+			const onUsageRoute = currentUrl.includes(
+				"platform.minimax.io/console/usage",
 			);
-			console.log("   (Profile will auto-save when you navigate)");
-			console.log("");
-			console.log("⏳ Waiting for login to complete (poll URL every 2s)...");
-			console.log("   Close browser or press Ctrl+C to cancel");
-			console.log("");
 
-			// Poll URL and content until usage page detected (or timeout)
-			const startTime = Date.now();
-			const timeout = 300000; // 5 minutes
-			let loginComplete = false;
-			let lastLoggedUrl = "";
-
-			while (!loginComplete && Date.now() - startTime < timeout) {
-				await page.waitForTimeout(2000); // Check every 2 seconds
-				const currentUrl = page.url();
-
-				// Log URL changes for debugging
-				if (currentUrl !== lastLoggedUrl) {
-					console.log(`   🔗 URL changed: ${currentUrl.substring(0, 80)}...`);
-					lastLoggedUrl = currentUrl;
-				}
-
-				// Check if URL changed away from login
-				const isLoginPage = currentUrl.includes("login") ||
-					currentUrl.includes("unified-login");
-
-				if (!isLoginPage) {
-					// Also check page content for usage indicators
-					const bodyText = (await page.textContent("body")) ?? "";
-					const { detected } = detectUsagePage(bodyText);
-
-					if (detected || !isLoginPage) {
-						loginComplete = true;
-						console.log("✅ Login/usage page detected!");
-						console.log(`   URL: ${currentUrl}`);
-					}
-				}
-
-				// Check if browser was closed
-				if (context.pages().length === 0) {
-					console.log("Browser closed by user.");
-					return {
-						provider: "minimax" as const,
-						authenticated: false,
-						checked_at: new Date().toISOString(),
-						page_url: "",
-						detected_text_sample: null,
-						profile_path: profileDir,
-						error_message: "Browser closed by user",
-					};
-				}
+			if (detected || onUsageRoute) {
+				loginComplete = true;
+				break;
 			}
 
-			if (!loginComplete) {
-				console.log("⏰ 5 min timeout reached");
-			}
+			await delay(1500);
 		}
 
-		// Extract usage data from current page
+		if (!loginComplete) {
+			const finalPage = getCurrentPage(context);
+			const finalUrl = finalPage?.url() ?? "";
+			console.log("⏰ Login was not completed within 5 minutes");
+
+			const status: MinimaxAuthStatus = {
+				provider: "minimax",
+				authenticated: false,
+				checked_at: new Date().toISOString(),
+				page_url: finalUrl,
+				detected_text_sample: null,
+				profile_path: profileDir,
+				error_message: "Login not completed",
+			};
+
+			saveAuthStatus(status, config);
+			await closeBrowserResources(browser, chromeProcess);
+			browser = null;
+			chromeProcess = null;
+			return status;
+		}
+
 		console.log("");
 		console.log("📊 Extracting usage data...");
 
-		// Wait for page to fully load (no need to goto again - we're already there)
-		await page.waitForLoadState("networkidle", { timeout: 30000 });
-		await page.waitForTimeout(3000); // Extra wait for JS to render
+		page = getCurrentPage(context) ?? page;
+		if (!page || page.isClosed()) {
+			throw new Error("Chrome window closed before usage data could be read");
+		}
+
+		if (!page.url().includes("platform.minimax.io/console/usage")) {
+			console.log("↪️  Opening MiniMax usage page after login...");
+			await page.goto(targetUrl, {
+				waitUntil: "domcontentloaded",
+				timeout: 30000,
+			});
+		}
+
+		await page
+			.waitForLoadState("networkidle", { timeout: 30000 })
+			.catch(() => {});
+		await page.waitForTimeout(3000);
 
 		const url = page.url();
-		const bodyText = (await page.textContent("body")) ?? "";
+		const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
 		const { detected, sample } = detectUsagePage(bodyText);
 
 		console.log("");
@@ -229,8 +487,6 @@ export async function authenticateWithPersistentBrowser(
 			console.log(`   Sample: ${sample.substring(0, 100)}...`);
 		}
 		console.log("");
-
-		// Profile is auto-saved by Playwright - no manual save needed
 		console.log("💾 Profile auto-saved to:");
 		console.log(`   ${profileDir}`);
 		console.log("");
@@ -252,18 +508,16 @@ export async function authenticateWithPersistentBrowser(
 			console.log("⚠️  Could not verify usage page. Try again after login.");
 		}
 
-		// Close browser
-		await context.close();
-		context = null;
+		await closeBrowserResources(browser, chromeProcess);
+		browser = null;
+		chromeProcess = null;
 
 		return status;
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.error(`❌ Error: ${errorMessage}`);
 
-		if (context) {
-			await context.close().catch(() => {});
-		}
+		await closeBrowserResources(browser, chromeProcess);
 
 		const status: MinimaxAuthStatus = {
 			provider: "minimax",
@@ -298,7 +552,7 @@ export async function scrapeWithExistingProfile(
 	console.log("");
 
 	// Check if profile exists
-	const profileExists = fs.existsSync(path.join(profileDir, "SingletonLock"));
+	const profileExists = hasProfileData(profileDir);
 	if (!profileExists) {
 		console.log("⚠️  No profile found. Run auth first:");
 		console.log("   bun packages/auth/src/run-minimax-auth.ts auth");
@@ -321,9 +575,10 @@ export async function scrapeWithExistingProfile(
 		console.log("   (Silent/headless mode for scraping)");
 
 		context = await chromium.launchPersistentContext(profileDir, {
+			executablePath: getChromeExecutablePath(config),
 			headless: true, // Silent mode for scraping
 			chromiumSandbox: false,
-			args: ["--no-first-run", "--no-default-browser-check"],
+			args: getChromeArgs(),
 			viewport: { width: 1280, height: 800 },
 		});
 
@@ -441,7 +696,7 @@ export async function checkAuthStatus(
 		}
 	}
 
-	const profileExists = fs.existsSync(path.join(profileDir, "SingletonLock"));
+	const profileExists = hasProfileData(profileDir);
 	if (profileExists) {
 		console.log("");
 		console.log("✅ Profile exists - run 'scrape' to check usage");
