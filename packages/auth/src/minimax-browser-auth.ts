@@ -158,23 +158,36 @@ export async function authenticateWithPersistentBrowser(
 			console.log("   Close browser or press Ctrl+C to cancel");
 			console.log("");
 
-			// Poll URL until it changes to usage page (or timeout)
+			// Poll URL and content until usage page detected (or timeout)
 			const startTime = Date.now();
 			const timeout = 300000; // 5 minutes
 			let loginComplete = false;
+			let lastLoggedUrl = "";
 
 			while (!loginComplete && Date.now() - startTime < timeout) {
 				await page.waitForTimeout(2000); // Check every 2 seconds
 				const currentUrl = page.url();
 
+				// Log URL changes for debugging
+				if (currentUrl !== lastLoggedUrl) {
+					console.log(`   🔗 URL changed: ${currentUrl.substring(0, 80)}...`);
+					lastLoggedUrl = currentUrl;
+				}
+
 				// Check if URL changed away from login
-				if (
-					!currentUrl.includes("login") &&
-					!currentUrl.includes("unified-login")
-				) {
-					loginComplete = true;
-					console.log("✅ Login detected!");
-					console.log(`   New URL: ${currentUrl}`);
+				const isLoginPage = currentUrl.includes("login") ||
+					currentUrl.includes("unified-login");
+
+				if (!isLoginPage) {
+					// Also check page content for usage indicators
+					const bodyText = (await page.textContent("body")) ?? "";
+					const { detected } = detectUsagePage(bodyText);
+
+					if (detected || !isLoginPage) {
+						loginComplete = true;
+						console.log("✅ Login/usage page detected!");
+						console.log(`   URL: ${currentUrl}`);
+					}
 				}
 
 				// Check if browser was closed
@@ -195,15 +208,15 @@ export async function authenticateWithPersistentBrowser(
 			if (!loginComplete) {
 				console.log("⏰ 5 min timeout reached");
 			}
-			}
+		}
 
-			// Extract usage data from current page
-			console.log("");
-			console.log("📊 Extracting usage data...");
+		// Extract usage data from current page
+		console.log("");
+		console.log("📊 Extracting usage data...");
 
-			// Wait for page to fully load (no need to goto again - we're already there)
-			await page.waitForLoadState("networkidle", { timeout: 30000 });
-			await page.waitForTimeout(3000); // Extra wait for JS to render
+		// Wait for page to fully load (no need to goto again - we're already there)
+		await page.waitForLoadState("networkidle", { timeout: 30000 });
+		await page.waitForTimeout(3000); // Extra wait for JS to render
 
 		const url = page.url();
 		const bodyText = (await page.textContent("body")) ?? "";
