@@ -1,10 +1,4 @@
-name: Auto Merge Develop Into Main
-
-# Pattern adapted from thai_business_suite/.github/workflows/auto-merge.yml
-#
-# On every push to develop:
-#   1. Run `npm test` (only safety gate before npm publish)
-#   2. If tests pass, merge develop → main via a no-ff merge
+name: Auto-Merge to Main
 
 on:
   push:
@@ -13,46 +7,63 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  test:
-    name: Test (npm test)
+  create-pr:
+    name: Create PR to Main
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout develop
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: develop
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_EXISTS=$(gh pr list \
+            --head develop \
+            --base main \
+            --state open \
+            --json number \
+            --jq 'length')
 
-      # Note: no `npm install` — this package has zero runtime
-      # dependencies (only `peerDependencies` declarations).
-      - name: Run tests
-        run: npm test
+          if [ "$PR_EXISTS" -gt 0 ]; then
+            echo "PR already exists, skipping"
+            exit 0
+          fi
 
-  merge-to-main:
-    name: Merge develop → main
-    needs: test
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "chore: merge develop to main" \
+            --body "Auto PR to merge develop into main." \
+            --label "autorelease"
+
+          echo "PR created"
+
+  merge-pr:
+    name: Auto-Merge PR
+    needs: create-pr
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
+      - name: Enable Auto-Merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
+          PR_NUMBER=$(gh pr list \
+            --head develop \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number')
 
-      - name: Merge develop → main
-        run: |
-          git fetch origin
-          git checkout main
-          git merge origin/develop --no-edit
-          git push origin main
+          echo "Enabling auto-merge for PR #$PR_NUMBER"
+
+          gh pr merge \
+            --admin \
+            --squash \
+            --delete-branch false \
+            --PR_NUMBER "$PR_NUMBER"
+
+          echo "Done"
