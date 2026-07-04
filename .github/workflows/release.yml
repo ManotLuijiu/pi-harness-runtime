@@ -32,7 +32,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,13 +63,17 @@ jobs:
         run: npm test || true # Allow test failures
 
       - name: Publish to npm
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.dry_run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
       - name: Publish to npm (dry-run)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.dry_run == 'true'
         run: npm publish --access public --dry-run
 
       - name: Create GitHub Release
@@ -77,4 +83,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          prerelease: >-
+            ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
