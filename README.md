@@ -1,6 +1,10 @@
 # Pi Harness Runtime
 
 [![Beta](https://img.shields.io/badge/version-beta-orange?style=for-the-badge)](https://github.com/ManotLuijiu/pi-harness-runtime)
+
+**Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
+
+[![npm version](https://img.shields.io/npm/v/pi-harness-runtime?style=for-the-badge)](https://www.npmjs.com/package/pi-harness-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
