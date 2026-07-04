@@ -6,7 +6,6 @@
 
 > ⚠️ **Beta Notice — Not Production Ready ⚠️**
 > This project is in active development. Core features work but E2E testing is not yet implemented.
-> **148+ downloads** and counting — we appreciate the interest! Help us test by filing issues.
 
 **Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
 
