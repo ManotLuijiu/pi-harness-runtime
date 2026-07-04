@@ -1,0 +1,10 @@
+{
+  "next_agent": "minimax",
+  "next_task_id": "task_002",
+  "reason": "planner task completed; implementation task is ready",
+  "input_files": [
+    "harness/blackboard/reports/task_001_plan.md",
+    "harness/blackboard/context/current_state.md"
+  ],
+  "expected_output": "harness/blackboard/reports/task_002_implementation.md"
+}

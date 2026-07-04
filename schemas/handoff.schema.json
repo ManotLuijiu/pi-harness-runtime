@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentHandoff",
+  "type": "object",
+  "required": [
+    "handoff_id",
+    "from_agent",
+    "to_agent",
+    "task_id",
+    "status",
+    "input_files",
+    "expected_output"
+  ],
+  "properties": {
+    "handoff_id": {
+      "type": "string"
+    },
+    "from_agent": {
+      "type": "string"
+    },
+    "to_agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "ready",
+        "accepted",
+        "running",
+        "completed",
+        "failed",
+        "blocked",
+        "cancelled"
+      ]
+    },
+    "input_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_output": {
+      "type": "string"
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

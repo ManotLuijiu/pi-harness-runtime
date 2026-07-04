@@ -1,95 +1,209 @@
----
-name: harness-runtime
-description: Show Codex-style /usage status for pi — local token tracking + manual provider mirror. Use when the user asks about token usage, API quota, 5h limit, weekly limit, or wants to know how much they've spent.
----
+# Harness Runtime — pi Extension
 
-# pi-harness-runtime
+**Status:** v0.2.0 | **RFCs:** 18 defined | **Implementation:** Phase 1-6
 
-Codex-style `/usage` slash command for pi coding agent.
+## Overview
 
-## When to use
+pi-harness-runtime is a local-first, provider-agnostic AI coding harness runtime for pi.dev. It coordinates multiple AI models to complete software engineering tasks with minimal human intervention.
 
-User says:
+## Core Architecture
 
-- "show me my usage"
-- "how much have I used?"
-- "what's my 5h limit?"
-- "weekly quota?"
-- "/usage"
-- "/usage sync"
-- "how many tokens today?"
+```
+Human Requirement
+  → /harness start <requirement>
+      → Master Planner (creates task graph)
+      → Loop Runtime (executes tasks)
+          → Provider Router (selects best model)
+          → BlackBoard (coordination)
+          → Checkpoint Manager (resumability)
+          → Quota Manager (avoid exhaustion)
+          → Scheduler (pause/resume)
+          → Repair Engine (auto-fix failures)
+      → /harness status (report)
+```
 
-## Quick reference
+## Commands
+
+### Usage Commands
+
+| Command | Description |
+|---------|-------------|
+| `/usage` | Show full status (local tracking + provider mirror) |
+| `/usage sync` | Sync provider quota from console.minimax.io |
+| `/usage today` | Today's usage + 5h window |
+| `/usage week` | This week's usage + lifetime |
+| `/usage reset` | Clear provider mirror |
+
+### Harness Commands
+
+| Command | Description |
+|---------|-------------|
+| `/harness start <requirement>` | Start a new harness job |
+| `/harness status` | Show current job status |
+| `/harness tasks` | List all tasks |
+| `/harness pause` | Pause the current job |
+| `/harness resume` | Resume a paused job |
+| `/harness cancel` | Cancel the current job |
+
+## Job State Machine
+
+```
+created → planning → queued → running → testing → reviewing
+    ↓        ↓         ↓        ↓         ↓
+cancelled  blocked   waiting_human  repairing  ready_for_client
+                                        ↓            ↓
+                                  paused_quota    archived
+```
+
+### State Transitions
+
+| From | Valid Transitions |
+|------|-----------------|
+| created | planning |
+| planning | queued, cancelled |
+| queued | running, cancelled, waiting_human |
+| running | testing, reviewing, repairing, paused_quota, blocked, waiting_human, cancelled |
+| testing | reviewing, running, repairing, paused_quota, waiting_human, cancelled |
+| reviewing | repairing, running, ready_for_client, paused_quota, waiting_human, cancelled |
+| repairing | running, testing, reviewing, paused_quota, waiting_human, cancelled |
+| paused_quota | running, waiting_human, cancelled |
+
+## Task Graph
+
+Tasks are organized as a DAG (Directed Acyclic Graph):
+
+- Tasks with dependencies are marked `pending` until all dependencies are `done`
+- Tasks without dependencies start as `ready`
+- Only `ready` tasks are picked for execution
+
+## Key Components
+
+### JobStateMachine (`harness/job-state-machine.ts`)
+
+- Manages job lifecycle states
+- Emits events on every transition
+- Auto-checkpoints to disk
+
+### TaskGraphManager (`harness/task-graph.ts`)
+
+- DAG-based task representation
+- Tracks task status and dependencies
+- Computes topological execution order
+
+### MasterPlanner (`harness/master-planner.ts`)
+
+- Converts requirements to task graphs
+- Heuristic planner (no LLM needed)
+- LLM-based planner (with provider config)
+
+### RepairEngine (`harness/repair-engine.ts`)
+
+- Converts failures to repair tasks
+- Retry policy with exponential backoff
+- Auto-escalation after max retries
+
+### SharedBlackboard (`harness/blackboard.ts`)
+
+- File-based agent coordination
+- Next-action queue
+- Agent registry and locks
+
+### LoopRuntime (`harness/loop-runtime.ts`)
+
+- Core execution loop
+- Picks ready tasks, executes, tests, reviews
+- Handles failures and quota exhaustion
+
+### ContextWindowManager (`harness/context-window-manager.ts`)
+
+- Tracks context usage per provider
+- Warning at 80%, critical at 95%
+- Truncation strategy
+
+### AgentHandoffProtocol (`harness/agent-handoff.ts`)
+
+- Clean agent transitions
+- Context transfer
+- Handoff validation
+
+### E2ETestEngine (`harness/e2e/test-engine.ts`)
+
+- Scenario-based E2E testing
+- Screenshot/video on failure
+- Playwright runner integration
+
+### ProjectDetector (`harness/project-detector/detector.ts`)
+
+- Auto-detect: Frappe, Next.js, React, Django, Laravel
+- Seed strategy recommendation
+- E2E strategy recommendation
+
+## Providers
+
+### Provider Adapter (`packages/providers/adapters.ts`)
+
+- MiniMax, OpenAI adapters
+- Unified error parsing
+- Quota signal extraction
+
+### Quota Manager (`packages/quota-manager/quota-manager.ts`)
+
+- Collects signals from API, Playwright, local estimates
+- Tracks 5h, daily, weekly, monthly windows
+- Selects best available provider
+
+### Worktree Manager (`packages/worktree/worktree.ts`)
+
+- Git worktree per task
+- Isolated workspaces
+- Diff tracking
+
+## Usage Example
+
+```typescript
+// Start a new job
+/harness start Build a REST API with authentication
+
+// Monitor progress
+/harness status
+/harness tasks
+
+// Pause when quota is low
+/harness pause
+
+// Resume when quota resets
+/harness resume
+
+// Cancel if needed
+/harness cancel
+```
+
+## Data Directory
+
+All harness data is stored in `~/.pi/harness/`:
+
+```
+~/.pi/harness/
+  jobs/
+    <job-id>/
+      checkpoint.json
+      events.jsonl
+      task-graph.json
+      blackboard/
+      repair-tasks.jsonl
+      handoffs/
+```
+
+## Testing
+
+Run tests with:
 
 ```bash
-/usage         # full status (model, local tracking, provider mirror)
-/usage sync    # open form to mirror provider-side quota
-/usage today   # focused: this 5h + today (UTC)
-/usage week    # focused: this week + lifetime
-/usage reset   # clear provider mirror
+pi-harness-runtime@latest
 ```
 
-## Data sources (3-source model)
+## Related Skills
 
-1. **Local tracked** — every assistant message is logged to `~/.pi/usage-status/usage.jsonl`
-   - Auto-tracked via `message_end` event
-   - Contains: timestamp, model, input/output/cache tokens, cost
-   - Real-time, exact, but only counts THIS pi session
-
-2. **Provider mirror** — manually entered from `https://platform.minimax.io/console/usage`
-   - Stored at `~/.pi/usage-status/mirror.json`
-   - Synced via `/usage sync` form
-   - Ground truth for TOTAL quota (across all clients)
-
-3. **Derived** — burn rate, reset times, divergence
-   - Local reset time = oldest request in window + window duration
-   - Burn rate = mirror weekly % / elapsed days
-   - Divergence warning if local tracking differs from mirror by >5%
-
-## Files written
-
-- `~/.pi/usage-status/usage.jsonl` — append-only usage log
-- `~/.pi/usage-status/mirror.json` — manual provider mirror
-
-Override location with `PI_USAGE_DIR` env var.
-
-## Sample output
-
-```
-Codex-style usage status for pi
-────────────────────────────────────────────────────────────────
- Model:        minimax/MiniMax-M3
- Directory:    ~/frappe-bench/apps/thai_business_suite
-
- ① LOCAL TRACKED (ground truth — we count this)
-    This session:   $0.17 · 142k tokens · 17 requests
-    This 5h:        384k tokens · 23 requests · $0.04
-    This week:      1.2M tokens · 67 requests · $0.13
-    Lifetime:       4592 requests · $81.61
-
- ② PROVIDER MIRROR (you enter from console.minimax.io)
-    Last sync:      2 min ago [fresh]
-    Provider:       minimax
-    5h limit:       [████████░░░░░░░░░░░░] 18% left (resets in 4h 54m)
-    Weekly limit:   [████████████████░░░░] 81% left (resets in 2d 13h)
-
- ③ LOCAL RESET TIMES (derived from your data)
-    Local 5h reset:    in 3h 12m (oldest request falls out of window)
-    Local week reset:  in 5d 7h (oldest request falls out of window)
-    Local-vs-mirror:  -12.4% ⚠️  divergence > 5%
-    Burn rate:        11.4% / day → 100% in 2.5 d
-────────────────────────────────────────────────────────────────
-```
-
-## Safety properties
-
-- **No auto-tracking of other clients** — local data is just this pi session
-- **No scraping** — provider mirror is manual (5-second task)
-- **No fabrication** — divergence warning if local and mirror disagree by >5%
-- **Idempotent** — running `/usage` repeatedly has no side effects
-- **Privacy-respecting** — all data stays on local disk
-
-## Related
-
-- `context-mode` provides overall session cost via `ctx_stats`
-- pi's built-in footer shows model + git branch
+- `form-state-persistence-fix` — Step data persistence patterns
+- `frappe-gl-preview` — GL entry preview pattern
+- `frappe-workflow` — Workflow debugging patterns

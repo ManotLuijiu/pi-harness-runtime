@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Codex-style /usage status for pi: local token tracking + provider mirror",
   "type": "module",
   "scripts": {
@@ -19,6 +19,8 @@
     "renderer.ts",
     "sync-form.ts",
     "cli.ts",
+    "harness",
+    "packages",
     "skills",
     "package.json",
     "README.md",
@@ -60,6 +62,7 @@
     "typebox": "*"
   },
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "standard-version": "^9.5.0"
   }
 }
