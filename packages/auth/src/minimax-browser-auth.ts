@@ -195,14 +195,15 @@ export async function authenticateWithPersistentBrowser(
 			if (!loginComplete) {
 				console.log("⏰ 5 min timeout reached");
 			}
-		}
+			}
 
-		// Extract usage data
-		console.log("");
-		console.log("📊 Extracting usage data...");
+			// Extract usage data from current page
+			console.log("");
+			console.log("📊 Extracting usage data...");
 
-		await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 30000 });
-		await page.waitForTimeout(2000);
+			// Wait for page to fully load (no need to goto again - we're already there)
+			await page.waitForLoadState("networkidle", { timeout: 30000 });
+			await page.waitForTimeout(3000); // Extra wait for JS to render
 
 		const url = page.url();
 		const bodyText = (await page.textContent("body")) ?? "";
