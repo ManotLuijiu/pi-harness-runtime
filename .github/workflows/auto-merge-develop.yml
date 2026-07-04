@@ -1,10 +1,8 @@
-name: Auto Merge Develop Into Main
+name: Auto-Merge to Main
 
-# Pattern adapted from thai_business_suite/.github/workflows/auto-merge.yml
-#
-# On every push to develop:
-#   1. Run `npm test` (only safety gate before npm publish)
-#   2. If tests pass, merge develop → main via a no-ff merge
+# Automatically creates a PR from develop → main when develop is pushed.
+# Merges automatically if CI passes.
+# The release workflow then triggers on tag push to main.
 
 on:
   push:
@@ -13,46 +11,52 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  test:
-    name: Test (npm test)
+  create-pr:
+    name: Create PR to Main
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout develop
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: develop
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      # Note: no `npm install` — this package has zero runtime
-      # dependencies (only `peerDependencies` declarations).
-      - name: Run tests
-        run: npm test
-
-  merge-to-main:
-    name: Merge develop → main
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
+          PR_EXISTS=$(gh pr list \
+            --head develop \
+            --base main \
+            --state open \
+            --json number \
+            --jq 'length')
 
-      - name: Merge develop → main
+          if [ "$PR_EXISTS" -gt 0 ]; then
+            echo "PR already exists"
+          else
+            gh pr create \
+              --base main \
+              --head develop \
+              --title "chore: merge develop to main" \
+              --body "Auto-generated PR to merge develop into main.
+
+This PR is created automatically by the CI pipeline.
+Merge this PR to trigger the release workflow."
+          fi
+
+      - name: Auto-merge PR
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch origin
-          git checkout main
-          git merge origin/develop --no-edit
-          git push origin main
+          PR_NUMBER=$(gh pr list \
+            --head develop \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr merge "$PR_NUMBER" --squash --delete-branch
+          fi
