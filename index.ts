@@ -19,16 +19,60 @@ import type {
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { UsageTracker } from "./tracker.ts";
-import { MirrorStore, type MirrorRecord } from "./mirror.ts";
+import { MirrorStore } from "./mirror.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import { buildMirrorRecord, parseSyncValues } from "./sync-form.ts";
+import {
+	JobStateMachine,
+	type CheckpointManager,
+} from "./harness/job-state-machine.ts";
+import { TaskGraphManager } from "./harness/task-graph.ts";
+import { MasterPlanner } from "./harness/master-planner.ts";
+import { RepairEngine } from "./harness/repair-engine.ts";
+import {
+	type SharedBlackboard,
+	createBlackboard,
+} from "./harness/blackboard.ts";
+import { homedir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 const PROVIDER_DEFAULT = "minimax"; // can be changed via /usage sync form
+
+// ─── Harness Runtime State ────────────────────────────────────────────
+const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
+
+interface HarnessSession {
+	jobId: string;
+	machine: JobStateMachine;
+	graph: TaskGraphManager;
+	blackboard: SharedBlackboard;
+	repairEngine: RepairEngine;
+	createdAt: string;
+}
+
+let currentSession: HarnessSession | null = null;
+
+function ensureHarnessDir() {
+	if (!existsSync(HARNESS_ROOT_DIR)) {
+		mkdirSync(HARNESS_ROOT_DIR, { recursive: true });
+	}
+}
+
+async function getCheckpointManager(): Promise<CheckpointManager> {
+	const { JsonCheckpointManager } = await import(
+		"./packages/checkpoint/src/checkpoint-manager.ts"
+	);
+	return new JsonCheckpointManager(
+		HARNESS_ROOT_DIR,
+	) as unknown as CheckpointManager;
+}
 
 export default function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
+	ensureHarnessDir();
 
 	// ─── Auto-track every assistant message ──────────────────────────────
 	pi.on("message_end", async (event, ctx) => {
@@ -165,6 +209,255 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ─── /harness start — Start a new harness job ──────────────────────
+	pi.registerCommand("harness-start", {
+		description: "Start a new harness job: /harness start <requirement>",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			if (!args.trim()) {
+				ctx.ui.notify("Usage: /harness start <requirement>", "error");
+				return;
+			}
+
+			const jobId = `job-${Date.now()}`;
+			const requirement = args.trim();
+
+			ctx.ui.notify(`Starting harness job ${jobId}...`, "info");
+
+			try {
+				const cm = await getCheckpointManager();
+				const machine = new JobStateMachine({ checkpointManager: cm });
+				const result = await machine.createJob(jobId, requirement);
+
+				if (!result.success) {
+					ctx.ui.notify(`Failed to create job: ${result.error}`, "error");
+					return;
+				}
+
+				// Create task graph using heuristic planner
+				const planner = new MasterPlanner();
+				const planResult = await planner.createPlan(
+					requirement,
+					jobId,
+					HARNESS_ROOT_DIR,
+				);
+
+				if (!planResult.success) {
+					ctx.ui.notify(`Failed to create plan: ${planResult.error}`, "error");
+					return;
+				}
+
+				// Create blackboard
+				const blackboard = createBlackboard(
+					jobId,
+					HARNESS_ROOT_DIR,
+					planResult.graph!,
+				);
+
+				// Create repair engine
+				const repairEngine = new RepairEngine(HARNESS_ROOT_DIR);
+
+				// Store session
+				currentSession = {
+					jobId,
+					machine,
+					graph: new TaskGraphManager({ jobId }),
+					blackboard,
+					repairEngine,
+					createdAt: new Date().toISOString(),
+				};
+
+				const taskCount = planResult.graph?.nodes
+					? Object.keys(planResult.graph.nodes).length
+					: 0;
+				ctx.ui.notify(
+					`Job ${jobId} created with ${taskCount} tasks.\n` +
+						`Requirement: ${requirement}\n\n` +
+						`Run /harness status to see tasks, or /harness tasks to list them.`,
+					"info",
+				);
+			} catch (e) {
+				ctx.ui.notify(`Error starting harness: ${e}`, "error");
+			}
+		},
+	});
+
+	// ─── /harness status — Show harness job status ─────────────────────
+	pi.registerCommand("harness-status", {
+		description: "Show current harness job status",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			if (!currentSession) {
+				ctx.ui.notify(
+					"No active harness job. Run /harness start <requirement> to begin.",
+					"info",
+				);
+				return;
+			}
+
+			const summary = currentSession.machine.getStatusSummary();
+			if (!summary) {
+				ctx.ui.notify("Failed to get job status.", "error");
+				return;
+			}
+
+			const progress = currentSession.graph.getProgressSummary();
+			const lines = [
+				`Harness Job Status`,
+				`${"─".repeat(40)}`,
+				`Job ID:     ${currentSession.jobId}`,
+				`Status:     ${summary.status}`,
+				`Terminal:   ${summary.isTerminal ? "Yes" : "No"}`,
+				`Can Resume: ${summary.canResume ? "Yes" : "No"}`,
+				`${"─".repeat(40)}`,
+				`Tasks:      ${progress.done}/${progress.total} done, ${progress.running} running, ${progress.failed} failed`,
+				`Created:    ${currentSession.createdAt}`,
+				`${"─".repeat(40)}`,
+				`Run /harness tasks for task list`,
+			];
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	// ─── /harness tasks — List all tasks ───────────────────────────────
+	pi.registerCommand("harness-tasks", {
+		description: "List all tasks in the current harness job",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			if (!currentSession) {
+				ctx.ui.notify(
+					"No active harness job. Run /harness start <requirement> to begin.",
+					"info",
+				);
+				return;
+			}
+
+			const tasks = currentSession.graph.getAllTasks();
+			if (tasks.length === 0) {
+				ctx.ui.notify(
+					"No tasks found. The job may not have been planned yet.",
+					"info",
+				);
+				return;
+			}
+
+			const lines = [
+				`Tasks for Job ${currentSession.jobId}`,
+				`${"─".repeat(50)}`,
+			];
+
+			for (const task of tasks) {
+				const status = task.status.padEnd(10);
+				const retry = task.retryCount ? ` (${task.retryCount} retries)` : "";
+				lines.push(`[${task.id}] ${status} ${task.title}${retry}`);
+				if (task.dependencies.length > 0) {
+					lines.push(`  deps: ${task.dependencies.join(", ")}`);
+				}
+			}
+
+			lines.push(`${"─".repeat(50)}`);
+			const ready = currentSession.graph.getReadyTasks();
+			lines.push(`${ready.length} tasks ready to execute.`);
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	// ─── /harness pause — Pause the harness job ───────────────────────
+	pi.registerCommand("harness-pause", {
+		description: "Pause the current harness job",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			if (!currentSession) {
+				ctx.ui.notify("No active harness job to pause.", "info");
+				return;
+			}
+
+			const checkpoint = currentSession.machine.getCheckpoint();
+			if (!checkpoint) {
+				ctx.ui.notify("Failed to get checkpoint.", "error");
+				return;
+			}
+
+			const result = await currentSession.machine.transition("paused_quota");
+			if (!result.success) {
+				ctx.ui.notify(`Failed to pause: ${result.error}`, "error");
+				return;
+			}
+
+			ctx.ui.notify(
+				`Job ${currentSession.jobId} paused.\n` +
+					`Current status: paused_quota\n` +
+					`Run /harness resume to continue.`,
+				"info",
+			);
+		},
+	});
+
+	// ─── /harness resume — Resume the harness job ───────────────────────
+	pi.registerCommand("harness-resume", {
+		description: "Resume a paused harness job",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			if (!currentSession) {
+				ctx.ui.notify("No active harness job to resume.", "info");
+				return;
+			}
+
+			const checkpoint = currentSession.machine.getCheckpoint();
+			if (!checkpoint || checkpoint.status !== "paused_quota") {
+				ctx.ui.notify(
+					"Job is not paused. Run /harness start to begin a new job.",
+					"info",
+				);
+				return;
+			}
+
+			const result = await currentSession.machine.transition("running");
+			if (!result.success) {
+				ctx.ui.notify(`Failed to resume: ${result.error}`, "error");
+				return;
+			}
+
+			ctx.ui.notify(
+				`Job ${currentSession.jobId} resumed.\n` +
+					`Current status: running\n` +
+					`Run /harness status to monitor progress.`,
+				"info",
+			);
+		},
+	});
+
+	// ─── /harness cancel — Cancel the harness job ──────────────────────
+	pi.registerCommand("harness-cancel", {
+		description: "Cancel the current harness job",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			if (!currentSession) {
+				ctx.ui.notify("No active harness job to cancel.", "info");
+				return;
+			}
+
+			const ok = await ctx.ui.confirm(
+				`Cancel job ${currentSession.jobId}?`,
+				"This will mark the job as cancelled. Task state is preserved but work stops.",
+			);
+
+			if (!ok) {
+				ctx.ui.notify("Cancelled", "info");
+				return;
+			}
+
+			const result = await currentSession.machine.transition("cancelled");
+			if (!result.success) {
+				ctx.ui.notify(`Failed to cancel: ${result.error}`, "error");
+				return;
+			}
+
+			const sessionJobId = currentSession.jobId;
+			currentSession = null;
+
+			ctx.ui.notify(
+				`Job ${sessionJobId} cancelled.\n` +
+					`Run /harness start to begin a new job.`,
+				"info",
+			);
+		},
+	});
+
 	// ─── Footer status (persistent badge) ────────────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
 		await refreshFooterStatus(ctx, mirrorStore, tracker);
@@ -185,7 +478,6 @@ async function refreshFooterStatus(
 ) {
 	const local = aggregateWindows(tracker.all());
 	const mirror = mirrorStore.read();
-	const now = Date.now();
 
 	const todayStr = `${(local.today.tokens / 1000).toFixed(1)}k tok · $${local.today.cost.toFixed(3)}`;
 	let summary = `today: ${todayStr}`;

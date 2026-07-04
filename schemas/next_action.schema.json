@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NextAction",
+  "type": "object",
+  "required": [
+    "next_agent",
+    "next_task_id",
+    "reason",
+    "input_files",
+    "expected_output"
+  ],
+  "properties": {
+    "next_agent": {
+      "type": "string"
+    },
+    "next_task_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "input_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_output": {
+      "type": "string"
+    }
+  }
+}
