@@ -2,11 +2,11 @@
 /**
  * run-minimax-auth.ts
  *
- * CLI to authenticate with MiniMax using Playwright browser.
+ * CLI to authenticate with MiniMax using Playwright browser with curator mode.
  *
  * Usage:
- *   bun packages/auth/src/run-minimax-auth.ts        # Authenticate
- *   bun packages/auth/src/run-minimax-auth.ts check # Check status
+ *   bun packages/auth/src/run-minimax-auth.ts        # Authenticate (curator mode)
+ *   bun packages/auth/src/run-minimax-auth.ts check   # Check status
  *
  * Security:
  *   - Human logs in manually in the browser
@@ -15,7 +15,7 @@
  */
 
 import {
-	authenticateWithBrowser,
+	authenticateWithCurator,
 	checkAuthStatus,
 	getProfileDir,
 	getStatusPath,
@@ -32,7 +32,6 @@ async function main() {
 	console.log("");
 
 	if (command === "check") {
-		// Check current authentication status
 		console.log("Command: check");
 		console.log("");
 		const status = await checkAuthStatus();
@@ -46,23 +45,24 @@ async function main() {
 	}
 
 	if (command === "auth" || command === "login") {
-		// Start authentication flow
-		console.log("Command: auth");
+		console.log("Command: auth (curator mode)");
 		console.log("");
-		console.log("This will open a browser window.");
-		console.log("Please log in to MiniMax manually.");
+		console.log("This will:");
+		console.log("1. Launch a Chrome browser with debugging port");
+		console.log("2. Start a local HTTP server");
+		console.log("3. Give you a URL to open in your browser");
+		console.log("4. Let you log in to MiniMax");
 		console.log("");
 		console.log("Directory:", getRuntimeDir());
 		console.log("");
 
-		const status = await authenticateWithBrowser();
+		const status = await authenticateWithCurator();
 		console.log("");
 		console.log("Result:");
 		console.log(JSON.stringify(status, null, 2));
 		return;
 	}
 
-	// Help
 	console.log("Usage:");
 	console.log("  bun packages/auth/src/run-minimax-auth.ts        # Authenticate");
 	console.log("  bun packages/auth/src/run-minimax-auth.ts auth  # Same as above");
