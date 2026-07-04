@@ -1,33 +1,10 @@
 {
   "name": "pi-harness-runtime",
-  "version": "0.4.0",
+  "version": "0.3.2-beta.2",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
-  "workspaces": [
-    "packages/provider-adapter-sdk",
-    "packages/checkpoint",
-    "packages/session",
-    "packages/observability",
-    "packages/code-review",
-    "packages/code-generation",
-    "packages/framework-detector",
-    "packages/test-data-generator",
-    "packages/framework-plugin-sdk"
-  ],
   "scripts": {
-    "test": "bun test",
-    "test:packages": "bun test packages/*/test/*.test.ts",
-    "build": "bun run build:all",
-    "build:all": "bun run build:provider-adapter-sdk && bun run build:checkpoint && bun run build:session && bun run build:observability && bun run build:code-review && bun run build:code-generation && bun run build:framework-detector && bun run build:test-data-generator && bun run build:framework-plugin-sdk",
-    "build:provider-adapter-sdk": "cd packages/provider-adapter-sdk && bun run build",
-    "build:checkpoint": "cd packages/checkpoint && bun run build",
-    "build:session": "cd packages/session && bun run build",
-    "build:observability": "cd packages/observability && bun run build",
-    "build:code-review": "cd packages/code-review && bun run build",
-    "build:code-generation": "cd packages/code-generation && bun run build",
-    "build:framework-detector": "cd packages/framework-detector && bun run build",
-    "build:test-data-generator": "cd packages/test-data-generator && bun run build",
-    "build:framework-plugin-sdk": "cd packages/framework-plugin-sdk && bun run build",
+    "test": "node --test",
     "release": "standard-version",
     "release:patch": "standard-version --release-as patch",
     "release:minor": "standard-version --release-as minor",
@@ -92,13 +69,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "@types/ws": "^8.18.1",
     "playwright": "^1.61.1",
-    "standard-version": "^9.5.0",
-    "typescript": "^5.3.0"
+    "standard-version": "^9.5.0"
   },
   "dependencies": {
-    "deepagents": "^1.10.5",
     "pi-harness-runtime": "^0.3.2-beta.1"
   }
 }
