@@ -71,5 +71,8 @@
     "@types/node": "^20.14.0",
     "playwright": "^1.61.1",
     "standard-version": "^9.5.0"
+  },
+  "dependencies": {
+    "pi-harness-runtime": "^0.3.2-beta.1"
   }
 }

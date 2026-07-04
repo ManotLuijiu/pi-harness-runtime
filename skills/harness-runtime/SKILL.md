@@ -1,6 +1,10 @@
+---
+description: Local-first, provider-agnostic AI coding harness runtime for pi.dev with quota management and multi-model coordination
+---
+
 # Harness Runtime — pi Extension
 
-**Status:** v0.2.0 | **RFCs:** 18 defined | **Implementation:** Phase 1-6
+**Status:** v0.3.0 | **RFCs:** 18 defined | **Implementation:** Phase 1-6
 
 ## Overview
 
