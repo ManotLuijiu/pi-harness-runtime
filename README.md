@@ -1,7 +1,6 @@
 # Pi Harness Runtime
 
 [![Beta](https://img.shields.io/badge/version-beta-orange?style=for-the-badge)](https://github.com/ManotLuijiu/pi-harness-runtime)
-[![npm downloads](https://img.shields.io/npm/dm/pi-harness-runtime?style=for-the-badge)](https://www.npmjs.com/package/pi-harness-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
