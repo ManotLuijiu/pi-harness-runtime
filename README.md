@@ -1,20 +1,23 @@
 # Pi Harness Runtime
 
 [![Beta](https://img.shields.io/badge/version-beta-orange?style=for-the-badge)](https://github.com/ManotLuijiu/pi-harness-runtime)
-
-**Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
-
-[![npm version](https://img.shields.io/npm/v/pi-harness-runtime?style=for-the-badge)](https://www.npmjs.com/package/pi-harness-runtime)
+[![npm downloads](https://img.shields.io/npm/dm/pi-harness-runtime?style=for-the-badge)](https://www.npmjs.com/package/pi-harness-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
+> ⚠️ **⚠️ Beta Notice — Not Production Ready ⚠️**
+> This project is in active development. Core features work but E2E testing is not yet implemented.
+> **148+ downloads** and counting — we appreciate the interest! Help us test by filing issues.
+
+**Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
+
 ## Two Flavors
 
-### 1. `/usage` — Token Tracking (v0.1+)
+### 1. `/usage` — Token Tracking (stable ✅)
 
 Codex-style usage tracking with local tokens + provider mirror.
 
-### 2. `/harness` — Autonomous Coding Loop (v0.3+)
+### 2. `/harness` — Autonomous Coding Loop (beta 🔨)
 
 Give the runtime a requirement. It keeps working, survives interruption, and returns with code ready for review.
 
@@ -39,7 +42,7 @@ Requires Pi v0.37.3+.
 ## Harness Commands
 
 ```bash
-/harness start <requirement>   # Start a new harness job
+/harness start <requirement>   # Start a new harness job (beta)
 /harness status               # Show current job status
 /harness tasks                # List all tasks
 /harness pause                # Pause when quota low
@@ -86,12 +89,12 @@ pi-harness-runtime/
 │   ├── task-graph.ts           # DAG-based task management
 │   ├── master-planner.ts       # Requirement → task graph
 │   ├── loop-runtime.ts         # Core execution loop
-│   ├── repair-engine.ts       # Auto-fix failures
+│   ├── repair-engine.ts        # Auto-fix failures
 │   ├── blackboard.ts           # Agent coordination
 │   ├── context-window-manager.ts # Context tracking
 │   ├── agent-handoff.ts        # Clean agent transitions
 │   ├── e2e/
-│   │   ├── test-engine.ts     # E2E test runner
+│   │   ├── test-engine.ts     # E2E test runner (coming soon)
 │   │   └── playwright-runner.ts # Browser automation
 │   └── project-detector/
 │       └── detector.ts         # Auto-detect project type
@@ -121,7 +124,7 @@ cancelled  blocked   waiting_human  repairing  ready_for_client
 - **Provider-agnostic**: MiniMax, OpenAI, Claude adapters
 - **Task DAG**: Dependencies tracked, topological execution
 - **Auto-repair**: Failure classification + retry with exponential backoff
-- **E2E testing**: Scenario-based Playwright integration
+- **E2E testing**: Scenario-based Playwright integration (coming soon)
 - **Project detection**: Auto-detects Frappe, Next.js, React, Django, Laravel
 
 ## Data Directory
@@ -156,6 +159,17 @@ All data stored locally in `~/.pi/`:
 ```bash
 bun test   # 131+ tests passing
 ```
+
+## Roadmap
+
+- [x] Core harness infrastructure (job state machine, task graph)
+- [x] Master planner
+- [x] Repair engine
+- [x] Shared blackboard
+- [ ] E2E test engine integration
+- [ ] MiniMax Web automatic quota detection
+- [ ] Claude adapter
+- [ ] Production stress testing
 
 ## License
 
