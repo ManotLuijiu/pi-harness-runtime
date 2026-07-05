@@ -36,4 +36,4 @@ jobs:
         run: npm run typecheck 2>/dev/null || echo "No typecheck script"
 
       - name: Run tests
-        run: npm test || true  # Allow test failures in CI
+        run: npm test || true # Allow test failures in CI
