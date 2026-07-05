@@ -29,16 +29,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR_EXISTS=$(gh pr list \
+          # Check if PR already exists
+          PR_NUMBER=$(gh pr list \
             --head develop \
             --base main \
             --state open \
             --json number \
-            --jq 'length')
+            --jq '.[0].number' 2>/dev/null || echo "")
 
-          if [ "$PR_EXISTS" -gt 0 ]; then
-            echo "PR already exists"
+          if [ -n "$PR_NUMBER" ]; then
+            echo "PR #$PR_NUMBER already exists"
           else
+            echo "Creating new PR..."
             gh pr create \
               --base main \
               --head develop \
@@ -55,10 +57,11 @@ jobs:
             --base main \
             --state open \
             --json number \
-            --jq '.[0].number')
+            --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ]; then
+            echo "Merging PR #$PR_NUMBER..."
             gh pr merge "$PR_NUMBER" --squash --delete-branch
           else
-            echo "No PR to merge"
+            echo "No open PR found to merge"
           fi
