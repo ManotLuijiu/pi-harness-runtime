@@ -1,5 +1,20 @@
 name: Release
 
+# Publishes pi-harness-runtime to npm on git tag push (e.g. v0.2.0).
+#
+# Also triggers on push to main branch (after auto-merge from develop).
+#
+# Pattern adapted from frappe/.github/workflows/create-release.yml
+# (uses secrets for auth to bypass 2FA).
+#
+# Required GitHub secrets:
+#   NPM_TOKEN      — Granular Access Token from
+#                    https://www.npmjs.com/settings/manotluijiu/tokens
+#                    - Packages & scopes: "pi-harness-runtime", "Read and write"
+#                    - ✅ Bypass 2FA
+#                    Used as `NODE_AUTH_TOKEN` for npm publish.
+#   RELEASE_TOKEN  — GitHub PAT with repo scope for changelog generation.
+
 on:
   push:
     tags:
@@ -9,14 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Dry run
+        description: Dry run (no publish)
         required: false
-        default: false
-        type: boolean
-
-permissions:
-  contents: write
-  checks: write
+        default: "false"
 
 jobs:
   release:
@@ -41,20 +51,14 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Extract version
-        id: version
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
       - name: Publish to npm
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != true
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
       - name: Publish to npm (dry-run)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == true
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
         run: npm publish --access public --dry-run
 
       - name: Create GitHub Release
@@ -64,4 +68,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'beta') }}
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
