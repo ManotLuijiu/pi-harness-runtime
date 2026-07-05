@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContinuePolicy",
+  "type": "object",
+  "required": [
+    "max_continue_attempts",
+    "continuation_backoff_ms",
+    "require_expected_output_validation"
+  ],
+  "properties": {
+    "max_continue_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "continuation_backoff_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "require_expected_output_validation": {
+      "type": "boolean"
+    }
+  }
+}
