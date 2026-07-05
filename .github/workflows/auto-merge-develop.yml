@@ -1,67 +1,49 @@
 name: Auto-Merge to Main
 
+# When CI completes on develop, merge develop → main.
+# Uses workflow_run (not polling) to avoid race conditions.
+
 on:
-  push:
-    branches:
-      - develop
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [develop]
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  create-pr:
-    name: Create PR to Main
+  merge-to-main:
+    if: >
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_branch == 'develop'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Validate trigger
+        run: |
+          SHA=${{ github.event.workflow_run.head_sha }}
+          STATUS=${{ github.event.workflow_run.conclusion }}
+          BRANCH=${{ github.event.workflow_run.head_branch }}
+          echo "CI for $SHA completed with: $STATUS"
+          echo "Branch: $BRANCH"
+
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure git
+      - name: Configure Git
         run: |
-          git config --local user.email \
-            "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
 
-      - name: Create PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Check if PR already exists
-          PR_NUMBER=$(gh pr list \
-            --head develop \
-            --base main \
-            --state open \
-            --json number \
-            --jq '.[0].number' 2>/dev/null || echo "")
+      - name: Fetch develop
+        run: git fetch origin develop
 
-          if [ -n "$PR_NUMBER" ]; then
-            echo "PR #$PR_NUMBER already exists"
-          else
-            echo "Creating new PR..."
-            gh pr create \
-              --base main \
-              --head develop \
-              --title "chore: merge develop to main" \
-              --body "Auto-generated PR to merge develop into main"
-          fi
+      - name: Merge develop → main
+        run: git merge origin/develop --no-edit
 
-      - name: Auto-merge PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER=$(gh pr list \
-            --head develop \
-            --base main \
-            --state open \
-            --json number \
-            --jq '.[0].number' 2>/dev/null || echo "")
-
-          if [ -n "$PR_NUMBER" ]; then
-            echo "Merging PR #$PR_NUMBER..."
-            gh pr merge "$PR_NUMBER" --squash --delete-branch
-          else
-            echo "No open PR found to merge"
-          fi
+      - name: Push main
+        run: git push origin main
