@@ -1,9 +1,5 @@
 name: Auto-Merge to Main
 
-# Automatically creates a PR from develop → main when develop is pushed.
-# Merges automatically if CI passes.
-# The release workflow then triggers on tag push to main.
-
 on:
   push:
     branches:
@@ -20,6 +16,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config --local user.email \
+            "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
 
       - name: Create PR
         env:
@@ -39,14 +43,10 @@ jobs:
               --base main \
               --head develop \
               --title "chore: merge develop to main" \
-              --body "Auto-generated PR to merge develop into main.
-
-This PR is created automatically by the CI pipeline.
-Merge this PR to trigger the release workflow."
+              --body "Auto-generated PR to merge develop into main"
           fi
 
       - name: Auto-merge PR
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -59,4 +59,6 @@ Merge this PR to trigger the release workflow."
 
           if [ -n "$PR_NUMBER" ]; then
             gh pr merge "$PR_NUMBER" --squash --delete-branch
+          else
+            echo "No PR to merge"
           fi
