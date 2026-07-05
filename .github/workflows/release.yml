@@ -51,6 +51,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Bump version
+        run: npm run release:dry-run || true
+
       - name: Run tests
         run: npm test || true  # Allow test failures
 
