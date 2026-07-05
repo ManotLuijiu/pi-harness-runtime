@@ -15,7 +15,7 @@ import type {
 	ProviderCapability,
 	ProviderRequest,
 	ProviderResponse,
-} from "../../packages/types/src/runtime-types.ts";
+} from "../../packages/types/src/runtime-types.js";
 
 export interface AdapterConfig {
 	provider: ProviderConfig;
@@ -213,6 +213,86 @@ export class OpenAIAdapter extends BaseProviderAdapter {
 }
 
 /**
+ * Claude adapter — Anthropic's Claude models
+ */
+export class ClaudeAdapter extends BaseProviderAdapter {
+	readonly id = "anthropic";
+	readonly name = "Anthropic Claude";
+
+	async invoke(request: ProviderRequest): Promise<AdapterResult> {
+		// In practice, this would call the Claude API via Anthropic SDK
+		// For now, return a mock response
+		return {
+			response: {
+				content: "Mock response",
+				usage: { input: 100, output: 200, cost: 0.003 },
+				model: request.model,
+				finishReason: "stop",
+			},
+			retryable: false,
+		};
+	}
+
+	parseError(error: unknown): {
+		quotaExceeded: boolean;
+		rateLimited: boolean;
+		timeout: boolean;
+		serverError: boolean;
+		clientError: boolean;
+		quotaSignal?: QuotaSignal;
+	} {
+		const e = error as Record<string, unknown>;
+		const msg = String(e.message ?? e.error ?? "").toLowerCase();
+		const type = String(e.type ?? "");
+		const errorCode = String(e.code ?? "");
+
+		// Anthropic-specific error handling
+		const isRateLimited =
+			type.includes("rate_limit_error") ||
+			msg.includes("rate limit") ||
+			errorCode.includes("429");
+
+		const isOverloaded =
+			type.includes("overloaded_error") || msg.includes("overloaded");
+
+		return {
+			quotaExceeded:
+				type.includes("quota_error") ||
+				type.includes("insufficient_quota") ||
+				msg.includes("quota exceeded"),
+			rateLimited: isRateLimited || isOverloaded,
+			timeout: type.includes("timeout") || msg.includes("timeout"),
+			serverError: type.includes("api_error") || isOverloaded,
+			clientError:
+				type.includes("invalid_request_error") ||
+				type.includes("authentication_error") ||
+				type.includes("permission_error"),
+			quotaSignal: type.includes("quota_error")
+				? { exhausted: true, resetsAt: undefined }
+				: undefined,
+		};
+	}
+
+	getDefaultModel(): string {
+		return "anthropic/claude-3-5-sonnet-20240620";
+	}
+
+	getMaxTokens(model?: string): number {
+		const limits: Record<string, number> = {
+			"anthropic/claude-3-5-sonnet-20240620": 200000,
+			"anthropic/claude-3-5-haiku-20240620": 200000,
+			"anthropic/claude-3-opus-20240229": 200000,
+			"anthropic/claude-3-sonnet-20240229": 200000,
+			"anthropic/claude-3-haiku-20240307": 200000,
+			"anthropic/claude-2.1": 200000,
+			"anthropic/claude-2": 100000,
+			"anthropic/claude-instant": 100000,
+		};
+		return limits[model ?? this.getDefaultModel()] ?? 200000;
+	}
+}
+
+/**
  * Adapter registry
  */
 export class AdapterRegistry {
@@ -252,6 +332,27 @@ export class AdapterRegistry {
 				name: "OpenAI",
 				models: ["openai/gpt-4o", "openai/gpt-4-turbo"],
 				capabilities: ["code", "review", "plan", "test", "refactor"],
+				rateLimits: {},
+			}),
+		);
+
+		registry.register(
+			new ClaudeAdapter({
+				id: "anthropic",
+				name: "Anthropic Claude",
+				models: [
+					"anthropic/claude-3-5-sonnet-20240620",
+					"anthropic/claude-3-5-haiku-20240620",
+					"anthropic/claude-3-opus-20240229",
+				],
+				capabilities: [
+					"code",
+					"review",
+					"plan",
+					"test",
+					"refactor",
+					"analysis",
+				],
 				rateLimits: {},
 			}),
 		);
