@@ -58,7 +58,7 @@ jobs:
           npm run release:minor || true
 
       - name: Run tests
-        run: npm test || true  # Allow test failures
+        run: npm test || true # Allow test failures
 
       - name: Publish to npm
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
