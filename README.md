@@ -178,3 +178,23 @@ MIT © 2026 MooCoding
 - [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) — Underlying pi agent
 - [context-mode](https://github.com/MiniMax-AI/context-mode) — Context window tracking
 - [pi-web-access](https://github.com/nicobailon/pi-web-access) — Web search for pi
+
+Day 6 adds runtime recovery and remote-observability architecture.
+
+## RFCs
+
+- RFC-0019 Auto Compact and Continue
+- RFC-0020 Output Token Limit Handler
+- RFC-0021 Partial Response Recovery
+- RFC-0022 Notification Center
+- RFC-0023 Local Browser Agent
+
+## Why this matters
+
+These RFCs address real runtime failures:
+
+- MiniMax auto-compacts but does not automatically resume.
+- A model may stop because max output token limit is reached.
+- Partial responses must be preserved and continued.
+- The human needs mobile/tablet notifications.
+- Headless servers cannot open interactive login windows for MiniMax usage console.

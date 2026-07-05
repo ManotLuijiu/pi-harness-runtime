@@ -212,7 +212,9 @@ export type ProviderCapability =
 	| "plan"
 	| "test"
 	| "e2e"
-	| "refactor";
+	| "refactor"
+	| "analysis"
+	| "debug";
 
 export interface RateLimitConfig {
 	requestsPerMinute?: number;

@@ -1,0 +1,8 @@
+{
+  "event_type": "QuotaPaused",
+  "job_id": "job_print_designer_001",
+  "task_id": "task_004",
+  "severity": "warning",
+  "message": "MiniMax quota exhausted. Resume scheduled at 20:30 Asia/Bangkok.",
+  "next_action": "Runtime will resume automatically after reset."
+}
