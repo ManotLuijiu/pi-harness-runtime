@@ -52,7 +52,9 @@ jobs:
         run: npm ci
 
       - name: Bump version
-        run: npm run release:dry-run || true
+        run: |
+          npm run release:minor || true
+          git push --follow-tags
 
       - name: Run tests
         run: npm test || true  # Allow test failures
