@@ -1,0 +1,3 @@
+- Read RFC
+- Implement
+- Test

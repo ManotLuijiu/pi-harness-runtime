@@ -180,7 +180,12 @@ export interface QuotaSignal {
 	remainingPct: number;
 	resetsAt?: string;
 	exhausted: boolean;
-	source: "api_response" | "provider_status" | "playwright" | "local_estimate";
+	source:
+		| "api_response"
+		| "provider_status"
+		| "playwright"
+		| "local_estimate"
+		| "tui_message";
 	capturedAt: string;
 	retryAfterMs?: number;
 }

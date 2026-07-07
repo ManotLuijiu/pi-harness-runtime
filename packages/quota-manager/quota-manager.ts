@@ -8,11 +8,16 @@
 import type {
 	QuotaSignal,
 	QuotaState,
-} from "../../packages/types/src/runtime-types.ts";
+} from "../../packages/types/src/runtime-types.js";
 
 export interface QuotaSignalInput {
 	provider: string;
-	source: "api_response" | "provider_status" | "playwright" | "local_estimate";
+	source:
+		| "api_response"
+		| "provider_status"
+		| "playwright"
+		| "local_estimate"
+		| "tui_message";
 	windowType: "5h" | "daily" | "weekly" | "monthly";
 	usedPct?: number;
 	exhausted?: boolean;
@@ -70,10 +75,12 @@ export class QuotaManager {
 		let latest: QuotaSignal | null = null;
 		let latestTs = 0;
 
-		for (const [k, sigs] of this.signals.entries()) {
+		for (const entry of Array.from(this.signals.entries())) {
+			const [k, sigs] = entry;
 			if (k.startsWith(`${provider}:`)) {
 				const mostRecent = sigs.sort(
-					(a, b) => Date.parse(b.capturedAt) - Date.parse(a.capturedAt),
+					(a: QuotaSignal, b: QuotaSignal) =>
+						Date.parse(b.capturedAt) - Date.parse(a.capturedAt),
 				)[0];
 				if (mostRecent) {
 					const ts = Date.parse(mostRecent.capturedAt);
@@ -130,7 +137,8 @@ export class QuotaManager {
 		const result: QuotaSignal[] = [];
 		const cutoff = Date.now() - this.staleThresholdMs;
 
-		for (const [key, sigs] of this.signals.entries()) {
+		for (const entry of Array.from(this.signals.entries())) {
+			const [key, sigs] = entry;
 			if (key.startsWith(`${provider}:`)) {
 				for (const signal of sigs) {
 					if (Date.parse(signal.capturedAt) >= cutoff) {
@@ -194,8 +202,11 @@ export class QuotaManager {
 	clearStale(): void {
 		const cutoff = Date.now() - this.staleThresholdMs;
 
-		for (const [key, sigs] of this.signals.entries()) {
-			const fresh = sigs.filter((s) => Date.parse(s.capturedAt) >= cutoff);
+		for (const entry of Array.from(this.signals.entries())) {
+			const [key, sigs] = entry;
+			const fresh = sigs.filter(
+				(s: QuotaSignal) => Date.parse(s.capturedAt) >= cutoff,
+			);
 			if (fresh.length === 0) {
 				this.signals.delete(key);
 			} else {
