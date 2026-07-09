@@ -16,7 +16,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "echo \"Tests not configured\" && exit 0"
+    "test": "bun test",
+    "test:watch": "bun test --watch"
   },
   "keywords": [
     "pi",

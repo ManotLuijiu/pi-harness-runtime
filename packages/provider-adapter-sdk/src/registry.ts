@@ -5,10 +5,6 @@
  */
 
 import { EventEmitter } from "node:events";
-import type {
-	ProviderCapability,
-	ProviderRequest,
-} from "../../types/src/runtime-types.js";
 import { SDK_VERSION } from "./types.js";
 import type {
 	AdapterInfo,
@@ -19,6 +15,9 @@ import type {
 	CompatibilityResult,
 	ErrorAnalysis,
 	HealthCheckResult,
+	ProviderCapability,
+	ProviderMessage,
+	ProviderRequest,
 } from "./types.js";
 import type { BuiltAdapter } from "./builder.js";
 import {
@@ -77,17 +76,60 @@ export class AdapterRegistry extends EventEmitter {
 	 * Register an adapter
 	 */
 	async register(
-		adapter: BuiltAdapter,
+		adapter:
+			| BuiltAdapter
+			| {
+					name: string;
+					provider?: string;
+					complete: (
+						prompt: string,
+						options?: Record<string, unknown>,
+					) => Promise<{ content: string }>;
+			  },
 		lifecycle?: AdapterLifecycle,
 	): Promise<AdapterInfo> {
-		const { id } = adapter;
+		const id = "id" in adapter ? adapter.id : adapter.name;
 
 		if (this.adapters.has(id)) {
 			throw new AdapterAlreadyRegisteredError(id);
 		}
 
+		// Wrap plain adapters into BuiltAdapter-compatible object
+		let wrappedAdapter: BuiltAdapter;
+		if ("invoke" in adapter) {
+			wrappedAdapter = adapter as BuiltAdapter;
+		} else {
+			// Wrap simple adapter
+			const simpleAdapter = adapter as {
+				name: string;
+				provider?: string;
+				complete: Function;
+			};
+			wrappedAdapter = {
+				id,
+				name: simpleAdapter.name,
+				provider: simpleAdapter.provider,
+				invoke: async (request: ProviderRequest) => {
+					const prompt = request.messages
+						.filter((m: ProviderMessage) => m.role === "user")
+						.map((m: ProviderMessage) => m.content)
+						.join("\n");
+					return simpleAdapter.complete(prompt);
+				},
+				parseError: () => ({
+					quotaExceeded: false,
+					rateLimited: false,
+					timeout: false,
+					serverError: false,
+					clientError: false,
+				}),
+				getCapabilities: () => [],
+				getModels: () => [],
+			} as unknown as BuiltAdapter;
+		}
+
 		// Check compatibility
-		const compatibility = this.checkCompatibility(adapter);
+		const compatibility = this.checkCompatibility(wrappedAdapter);
 		if (!compatibility.compatible) {
 			throw new CompatibilityError(id, compatibility.issues, SDK_VERSION);
 		}
@@ -104,12 +146,12 @@ export class AdapterRegistry extends EventEmitter {
 		// Create version info
 		const version: AdapterVersion = {
 			sdk: SDK_VERSION,
-			capabilities: adapter.getCapabilities(),
+			capabilities: wrappedAdapter.getCapabilities(),
 		};
 
 		// Create registry entry
 		const entry: RegistryEntry = {
-			adapter,
+			adapter: wrappedAdapter,
 			lifecycle,
 			state: "ready",
 			version,
@@ -162,6 +204,27 @@ export class AdapterRegistry extends EventEmitter {
 	 */
 	getAdapter(id: string): BuiltAdapter | undefined {
 		return this.adapters.get(id)?.adapter;
+	}
+
+	/**
+	 * Get adapter by ID (alias)
+	 */
+	get(id: string): BuiltAdapter | undefined {
+		return this.getAdapter(id);
+	}
+
+	/**
+	 * Check if adapter exists
+	 */
+	has(id: string): boolean {
+		return this.adapters.has(id);
+	}
+
+	/**
+	 * List all adapters (alias)
+	 */
+	listAll(): AdapterInfo[] {
+		return this.listAdapters();
 	}
 
 	/**
@@ -409,4 +472,15 @@ export class AdapterRegistry extends EventEmitter {
 			byCapability,
 		};
 	}
+}
+
+// ─── Factory Function ──────────────────────────────────────────────────────
+
+/**
+ * Create a new adapter registry
+ */
+export function createAdapterRegistry(
+	config?: RegistryConfig,
+): AdapterRegistry {
+	return new AdapterRegistry(config);
 }

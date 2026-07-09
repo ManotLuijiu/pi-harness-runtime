@@ -4,12 +4,6 @@
  * Core types for building provider adapters.
  */
 
-import type {
-	ProviderCapability,
-	ProviderRequest,
-	ProviderResponse,
-} from "../../types/src/runtime-types.js";
-
 // ─── SDK Version ────────────────────────────────────────────────────────────
 
 /**
@@ -17,7 +11,58 @@ import type {
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Rate Limit Config (from @pi/types) ────────────────────────────────────
+// ─── Provider Types (from @pi/types) ────────────────────────────────────────
+
+/**
+ * Provider capability
+ */
+export type ProviderCapability =
+	| "code"
+	| "review"
+	| "plan"
+	| "test"
+	| "e2e"
+	| "refactor"
+	| "analysis"
+	| "debug";
+
+/**
+ * Provider request
+ */
+export interface ProviderRequest {
+	model: string;
+	messages: ProviderMessage[];
+	temperature?: number;
+	maxTokens?: number;
+	stop?: string[];
+}
+
+/**
+ * Provider message
+ */
+export interface ProviderMessage {
+	role: "system" | "user" | "assistant";
+	content: string;
+}
+
+/**
+ * Provider response
+ */
+export interface ProviderResponse {
+	content: string;
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		cost?: number;
+	};
+	model?: string;
+	finishReason?: "stop" | "length" | "content_filter" | "error";
+	error?: string;
+}
+
+// ─── Rate Limit Config ──────────────────────────────────────────────────────
 
 /**
  * Rate limit configuration for providers
@@ -217,10 +262,32 @@ export interface RegistryEvents {
 	onHealthCheckFailed: (adapterId: string, result: HealthCheckResult) => void;
 }
 
-// ─── Re-export from @pi/types ────────────────────────────────────────────────
+// ─── Provider Adapter Types ────────────────────────────────────────────────
 
-export type {
-	ProviderCapability,
-	ProviderRequest,
-	ProviderResponse,
-} from "../../types/src/runtime-types.js";
+/**
+ * Provider adapter interface
+ */
+export interface ProviderAdapter {
+	name: string;
+	provider?: string;
+	config?: Record<string, unknown>;
+	complete: (
+		prompt: string,
+		options?: Record<string, unknown>,
+	) => Promise<ProviderResponse>;
+	streaming?: (
+		prompt: string,
+		options?: Record<string, unknown>,
+	) => AsyncGenerator<StreamEvent>;
+	embed?: (input: string) => Promise<number[]>;
+	metadata?: Record<string, unknown>;
+}
+
+/**
+ * Stream event from streaming response
+ */
+export interface StreamEvent {
+	type: "content" | "done" | "error";
+	content?: string;
+	error?: string;
+}

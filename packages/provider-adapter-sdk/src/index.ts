@@ -6,17 +6,26 @@
 
 // ─── Builder ────────────────────────────────────────────────────────────────
 
-export { AdapterBuilder, BuiltAdapter } from "./builder.js";
+export {
+	AdapterBuilder,
+	BuiltAdapter,
+	createProviderBuilder,
+} from "./builder.js";
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 
-export { AdapterRegistry, type RegistryConfig } from "./registry.js";
+export {
+	AdapterRegistry,
+	createAdapterRegistry,
+	type RegistryConfig,
+} from "./registry.js";
 
 // ─── Tester ─────────────────────────────────────────────────────────────────
 
 export {
 	AdapterTester,
 	assertTestResults,
+	createAdapterTester,
 } from "./tester.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
