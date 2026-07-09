@@ -4,11 +4,11 @@
  * Testing utilities for provider adapters.
  */
 
-import type { ProviderRequest } from "../../types/src/runtime-types.js";
 import type {
 	AdapterResult,
 	HealthCheckResult,
 	MockResponse,
+	ProviderRequest,
 	TestConfig,
 	TestReport,
 	TestResult,
@@ -468,4 +468,16 @@ export function assertTestResults(report: TestReport): void {
 			`Test failed:\n${messages.join("\n")}`,
 		);
 	}
+}
+
+// ─── Factory Function ──────────────────────────────────────────────────────
+
+/**
+ * Create a new adapter tester
+ */
+export function createAdapterTester(
+	adapter: import("./builder.js").BuiltAdapter,
+	config?: TestConfig,
+): AdapterTester {
+	return new AdapterTester(adapter, config);
 }

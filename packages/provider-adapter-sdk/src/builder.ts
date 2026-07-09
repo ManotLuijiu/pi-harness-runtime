@@ -5,11 +5,6 @@
  */
 
 import type {
-	ProviderCapability,
-	ProviderRequest,
-	ProviderResponse,
-} from "../../types/src/runtime-types.js";
-import type {
 	AdapterResult,
 	AdapterBuilderConfig,
 	ErrorAnalysis,
@@ -18,6 +13,9 @@ import type {
 	ErrorParserFunction,
 	HealthCheckFunction,
 	RateLimitConfig,
+	ProviderCapability,
+	ProviderRequest,
+	ProviderResponse,
 } from "./types.js";
 import { BuilderValidationError } from "./errors.js";
 
@@ -180,6 +178,32 @@ export class AdapterBuilder {
 			throw new BuilderValidationError("Invoke must be a function", "invoke");
 		}
 		this._invokeFn = fn;
+		return this;
+	}
+
+	/**
+	 * Set the complete function (alias for invoke)
+	 */
+	complete(
+		fn: (
+			prompt: string,
+			options?: Record<string, unknown>,
+		) => Promise<ProviderResponse>,
+	): AdapterBuilder {
+		if (typeof fn !== "function") {
+			throw new BuilderValidationError(
+				"Complete must be a function",
+				"complete",
+			);
+		}
+		// Convert the prompt-based function to ProviderRequest-based invoke
+		this._invokeFn = async (request: ProviderRequest) => {
+			const prompt = request.messages
+				.filter((m) => m.role === "user")
+				.map((m) => m.content)
+				.join("\n");
+			return fn(prompt, { model: request.model });
+		};
 		return this;
 	}
 
@@ -406,4 +430,13 @@ export class BuiltAdapter {
 			maxTokens: this._maxTokens,
 		};
 	}
+}
+
+// ─── Factory Function ──────────────────────────────────────────────────────
+
+/**
+ * Create a new provider builder
+ */
+export function createProviderBuilder(name: string): AdapterBuilder {
+	return new AdapterBuilder(name);
 }
