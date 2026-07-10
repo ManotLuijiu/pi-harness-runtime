@@ -4,14 +4,20 @@
  * Persist and recover incomplete agent outputs.
  * Never loses partial response text.
  *
+ * Integration with CompactOrchestrator:
+ * - Saves partial artifacts during compact
+ * - Loads partial artifacts on retry
+ * - Merges partials for context injection
+ *
  * Artifact Layout:
  *   harness/partial/
- *     task_004/
- *       partial_001.md
- *       partial_002.md
- *       merged.md
- *       recovery_status.json
- *       files.json
+ *     job_xxx/
+ *       task_004/
+ *         partial_001.md
+ *         partial_002.md
+ *         merged.md
+ *         recovery_status.json
+ *         files.json
  */
 
 import {
@@ -24,6 +30,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { continuePromptGenerator } from "./continue-prompt.js";
 
 export interface PartialResponse {
 	id: string;
@@ -63,6 +70,8 @@ export class PartialRecovery {
 		this.loadExistingPartials();
 	}
 
+	// ─── Public API ───────────────────────────────────────────────────────────
+
 	/**
 	 * Save a partial response
 	 */
@@ -93,6 +102,21 @@ export class PartialRecovery {
 		this.updateStatus("continuing");
 
 		return partial;
+	}
+
+	/**
+	 * Save partial from compact result
+	 */
+	saveFromCompact(summary: string, remainingWork: string[]): void {
+		const content = [
+			"## Compaction Summary",
+			summary,
+			"",
+			"## Remaining Work",
+			...remainingWork.map((w) => `- ${w}`),
+		].join("\n");
+
+		this.savePartial(content, "compaction", { type: "compact_summary" });
 	}
 
 	/**
@@ -146,6 +170,27 @@ export class PartialRecovery {
 		writeFileSync(mergedPath, merged, "utf-8");
 
 		return merged;
+	}
+
+	/**
+	 * Generate continue prompt from partials
+	 */
+	generateContinuePrompt(): string {
+		if (this.partials.length === 0) {
+			return "continue";
+		}
+
+		const merged = this.merge({ method: "markdown_sections" });
+		const recentWork = this.extractRecentWork(merged);
+
+		return continuePromptGenerator.generate({
+			taskId: this.taskId,
+			requirement: "Continue from partial work",
+			whatWasCompleted: this.extractCompletedWork(merged),
+			whatNeedsToBeDone: recentWork,
+			partialFiles: this.extractFileReferences(merged),
+			decisions: this.extractDecisions(merged),
+		});
 	}
 
 	/**
@@ -404,4 +449,83 @@ export class PartialRecovery {
 
 		return unique.join("\n");
 	}
+
+	private extractRecentWork(merged: string): string[] {
+		const work: string[] = [];
+
+		// Look for bullet points and remaining work
+		const lines = merged.split("\n");
+		for (const line of lines) {
+			if (line.match(/^[-*]\s/) && !line.includes("[completed]")) {
+				work.push(line.replace(/^[-*]\s/, "").trim());
+			}
+		}
+
+		return work.slice(0, 10);
+	}
+
+	private extractCompletedWork(merged: string): string[] {
+		const completed: string[] = [];
+
+		const lines = merged.split("\n");
+		for (const line of lines) {
+			if (line.match(/^[-*]\s/) && line.includes("[completed]")) {
+				completed.push(
+					line
+						.replace(/^[-*]\s/, "")
+						.replace("[completed]", "")
+						.trim(),
+				);
+			}
+		}
+
+		return completed.slice(0, 10);
+	}
+
+	private extractFileReferences(merged: string): string[] {
+		const files: string[] = [];
+
+		// Look for file paths
+		const patterns = [
+			/[A-Za-z]:\\[\w\\]+(?:\.\w+)?/g, // Windows
+			/\/[\w./-]+(?:\.\w+)?/g, // Unix
+		];
+
+		for (const pattern of patterns) {
+			for (const match of merged.matchAll(pattern)) {
+				if (match[0] && !files.includes(match[0])) {
+					files.push(match[0]);
+				}
+			}
+		}
+
+		return files.slice(0, 20);
+	}
+
+	private extractDecisions(merged: string): string[] {
+		const decisions: string[] = [];
+
+		// Look for decision markers
+		const lines = merged.split("\n");
+		for (const line of lines) {
+			if (line.match(/(?:decision|decided|chose|using):/i)) {
+				decisions.push(line.replace(/^[-*]\s*/, "").trim());
+			}
+		}
+
+		return decisions.slice(0, 5);
+	}
+}
+
+// ─── Factory ────────────────────────────────────────────────────────────────
+
+/**
+ * Create a PartialRecovery manager for a task
+ */
+export function createPartialRecovery(
+	jobId: string,
+	taskId: string,
+	rootDir?: string,
+): PartialRecovery {
+	return new PartialRecovery(jobId, taskId, rootDir);
 }

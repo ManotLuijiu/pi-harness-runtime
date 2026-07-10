@@ -4,6 +4,11 @@
  * Automatically resume work after model/session compaction without requiring
  * human intervention. Keeps the human out of the message-bus role.
  *
+ * This module integrates with:
+ * - `continue-prompt.ts` for prompt generation
+ * - `context-compact-orchestrator.ts` for compact decisions
+ * - `partial-recovery.ts` for artifact persistence
+ *
  * Artifact Layout:
  *   harness/context/
  *     compaction_events.jsonl
@@ -20,6 +25,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import {
+	continuePromptGenerator,
+	type ContinueContext,
+} from "./continue-prompt.js";
 
 export interface CompactionEvent {
 	timestamp: string;
@@ -37,15 +46,7 @@ export interface CompactionConfig {
 	rootDir?: string;
 	maxContinueAttempts?: number;
 	continuationBackoffMs?: number;
-}
-
-export interface ContinuePrompt {
-	taskId: string;
-	originalRequirement: string;
-	whatWasCompleted: string;
-	whatNeedsToBeDone: string;
-	partialFiles: string[];
-	nextSteps: string;
+	requirement?: string;
 }
 
 const COMPACTION_PATTERNS = [
@@ -55,6 +56,7 @@ const COMPACTION_PATTERNS = [
 	/error.*output.*token.*limit/i,
 	/context.*truncated/i,
 	/session.*compact/i,
+	/\[Earlier conversation summarized\]/i,
 ];
 
 const CONTINUE_MARKERS = [
@@ -63,13 +65,14 @@ const CONTINUE_MARKERS = [
 	/type.*continue/i,
 	/\[continue\]/i,
 	/waiting for your response/i,
+	/do not repeat work already completed/i,
 ];
 
 export class AutoCompactEngine {
 	private readonly rootDir: string;
 	private readonly jobId: string;
+	private readonly requirement: string;
 	private readonly maxAttempts: number;
-	private readonly backoffMs: number;
 	private continueAttempts = 0;
 
 	constructor(config: CompactionConfig) {
@@ -77,8 +80,8 @@ export class AutoCompactEngine {
 			config.rootDir ??
 			join(homedir(), ".pi", "harness", config.jobId, "context");
 		this.jobId = config.jobId;
+		this.requirement = config.requirement ?? "";
 		this.maxAttempts = config.maxContinueAttempts ?? 5;
-		this.backoffMs = config.continuationBackoffMs ?? 1000;
 	}
 
 	/**
@@ -99,7 +102,6 @@ export class AutoCompactEngine {
 	 * Parse compaction details from output
 	 */
 	parseCompactionEvent(output: string, taskId: string): CompactionEvent | null {
-		const lines = output.split("\n");
 		let compactedFromTokens = 0;
 		let reason = "unknown";
 		let errorMessage: string | undefined;
@@ -119,6 +121,8 @@ export class AutoCompactEngine {
 			reason = "context_truncated";
 		} else if (/session.*compact/i.test(output)) {
 			reason = "session_compact";
+		} else if (/\[Earlier conversation summarized\]/i.test(output)) {
+			reason = "context_compact";
 		}
 
 		// Extract error message
@@ -155,27 +159,49 @@ export class AutoCompactEngine {
 	}
 
 	/**
-	 * Generate continue prompt
+	 * Generate continue prompt using ContinuePromptGenerator
 	 */
 	generateContinuePrompt(
 		taskId: string,
-		completedWork: string,
-		remainingWork: string,
-	): ContinuePrompt {
-		const prompt: ContinuePrompt = {
+		completedWork: string[],
+		remainingWork: string[],
+	): string {
+		const context: ContinueContext = {
 			taskId,
-			originalRequirement: this.getRequirement(),
+			requirement: this.requirement || "Continue from previous session",
 			whatWasCompleted: completedWork,
 			whatNeedsToBeDone: remainingWork,
 			partialFiles: this.findPartialFiles(),
-			nextSteps: remainingWork,
+			decisions: [],
 		};
 
+		const prompt = continuePromptGenerator.generate(context);
+
+		// Also save to file for persistence
 		const promptPath = join(this.rootDir, "continue_prompt.md");
-		const promptContent = this.formatContinuePrompt(prompt);
-		writeFileSync(promptPath, promptContent, "utf-8");
+		writeFileSync(promptPath, prompt, "utf-8");
 
 		return prompt;
+	}
+
+	/**
+	 * Generate minimal continue prompt
+	 */
+	generateMinimalContinuePrompt(
+		summary: string,
+		recentContent: string,
+	): string {
+		return [
+			"Continue from where you left off.",
+			"",
+			"## Summary",
+			summary,
+			"",
+			"## Recent Context",
+			recentContent.substring(0, 2000),
+			"",
+			"**Do not repeat work already completed.** Focus on completing the remaining work.",
+		].join("\n");
 	}
 
 	/**
@@ -210,6 +236,24 @@ export class AutoCompactEngine {
 			return `continue\n\n${prompt}`;
 		}
 		return "continue";
+	}
+
+	/**
+	 * Load continue prompt from file
+	 */
+	loadContinuePrompt(): string | null {
+		const promptPath = join(this.rootDir, "continue_prompt.md");
+		if (existsSync(promptPath)) {
+			return readFileSync(promptPath, "utf-8");
+		}
+		return null;
+	}
+
+	/**
+	 * Check if there's a pending continue prompt
+	 */
+	hasContinuePrompt(): boolean {
+		return existsSync(join(this.rootDir, "continue_prompt.md"));
 	}
 
 	// ─── Private Methods ────────────────────────────────────────────────
@@ -247,67 +291,6 @@ Runtime will automatically continue this task.
 
 Continue attempts: ${this.continueAttempts}/${this.maxAttempts}
 `;
-	}
-
-	private formatContinuePrompt(prompt: ContinuePrompt): string {
-		const lines = [
-			"# Continue Previous Task",
-			"",
-			"## Task Context",
-			"",
-			"**Requirement:** " + prompt.originalRequirement,
-			"",
-			"## What Was Completed",
-			"",
-			prompt.whatWasCompleted ||
-				"Work was in progress when session was compacted.",
-			"",
-		];
-
-		if (prompt.partialFiles.length > 0) {
-			lines.push("## Partial Files Created");
-			lines.push("");
-			for (const file of prompt.partialFiles) {
-				lines.push(`- ${file}`);
-			}
-			lines.push("");
-		}
-
-		lines.push("## What Needs To Be Done");
-		lines.push("");
-		lines.push(
-			prompt.whatNeedsToBeDone || "Continue the task from where it left off.",
-		);
-		lines.push("");
-		lines.push("## Instructions");
-		lines.push("");
-		lines.push("1. Review any partial files created");
-		lines.push("2. Continue from where the previous session ended");
-		lines.push("3. Complete the remaining work");
-		lines.push("4. Ensure all tests pass");
-		lines.push("");
-		lines.push("**Do not repeat work that was already completed.**");
-
-		return lines.join("\n");
-	}
-
-	private getRequirement(): string {
-		const checkpointPath = join(
-			homedir(),
-			".pi",
-			"harness",
-			this.jobId,
-			"checkpoint.json",
-		);
-		if (existsSync(checkpointPath)) {
-			try {
-				const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf-8"));
-				return checkpoint.requirement ?? "Unknown requirement";
-			} catch {
-				return "Unknown requirement";
-			}
-		}
-		return "Unknown requirement";
 	}
 
 	private findPartialFiles(): string[] {
