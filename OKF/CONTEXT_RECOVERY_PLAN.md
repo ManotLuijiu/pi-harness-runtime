@@ -13,14 +13,16 @@ When the context window fills up during agent execution:
 
 | Aspect | Reference | pi-harness-runtime |
 |---|---|---|
-| Token estimation pre-check | `compact.ts` → `willExceedLimit()` | `context-window-manager.ts` (exists, not wired) |
-| Microcompact | Strips tool results, keeps summaries | `auto-compact.ts` → `generateMicroCompact()` (exists, not called) |
-| Full compact | `compactConversation()` + `generateContinuePrompt()` | `auto-compact.ts` → `generateContinuePrompt()` (exists, not called) |
-| Post-compact invoke | `invokeWithCompact()` retries automatically | No retry loop — returns to caller |
-| Continuation state | `compact.ts` saves `post_compact_messages` + `continue_prompt` | `partial-recovery.ts` (exists, not wired) |
-| Resume trigger | `main.ts` checks `isPostCompaction()` on next tick | No `markPostCompaction()` equivalent |
+| Token estimation pre-check | `compact.ts` → `willExceedLimit()` | ✅ `context-window-manager.ts` (wired in orchestrator) |
+| Microcompact | Strips tool results, keeps summaries | ✅ `microcompactToolResults()` in context-window-manager |
+| Full compact | `compactConversation()` + `generateContinuePrompt()` | ✅ `CompactOrchestrator.runFullCompact()` |
+| Post-compact invoke | `invokeWithCompact()` retries automatically | ✅ `CompactOrchestrator.invokeWithCompact()` with auto-retry |
+| Continuation state | `compact.ts` saves `post_compact_messages` + `continue_prompt` | ✅ `partial-recovery.ts` (wired in loop-runtime) |
+| Resume trigger | `main.ts` checks `isPostCompaction()` on next tick | ✅ `hasContinuePrompt()` in AutoCompactEngine |
+| Circuit breaker | 3 consecutive failures | ✅ `MAX_CONSECUTIVE_COMPACT_FAILURES = 3` |
+| Forked summarization | Separate process for summarization | ✅ `ForkedSummarizer` class |
 
-**Key gap**: pi-harness-runtime has all the building blocks but no orchestration layer that wires them together into an auto-resume loop.
+**Status**: All gaps have been addressed. pi-harness-runtime now has the same auto-resume capability as the reference implementation.
 
 ---
 

@@ -30,11 +30,12 @@ Requires Pi v0.37.3+.
 ## Usage Commands
 
 ```bash
-/usage           # show full status (local tracking + provider mirror)
-/usage sync      # mirror provider quota from console.minimax.io
-/usage today     # today's usage + 5h window
-/usage week      # this week's usage + lifetime totals
-/usage reset     # clear provider mirror
+/usage              # show full status (local tracking + provider mirror)
+/usage refresh     # force refresh quota from MiniMax console
+/usage sync        # manual sync (fallback if auto-fetch fails)
+/usage today       # today's usage + 5h window
+/usage week        # this week's usage + lifetime totals
+/usage reset       # clear provider mirror
 ```
 
 ## Harness Commands
@@ -158,14 +159,37 @@ All data stored locally in `~/.pi/`:
 bun test   # 131+ tests passing
 ```
 
+## Automatic Quota Fetching
+
+Quota data is automatically fetched from MiniMax console every 5 minutes:
+
+1. **Setup cookies** (one-time):
+
+   ```bash
+   # Install EditThisCookie Chrome extension
+   # Go to platform.minimax.io
+   # Export cookies → Netscape format
+   # Save to ~/.config/minimax-cookies.txt
+   ```
+
+2. **Environment** (optional):
+
+   ```bash
+   export QUOTA_COOKIE_FILE=~/.config/minimax-cookies.txt
+   ```
+
+3. **Done!** Quota auto-refreshes every 5 minutes
+
+Manual sync (`/usage sync`) is still available as fallback.
+
 ## Roadmap
 
 - [x] Core harness infrastructure (job state machine, task graph)
 - [x] Master planner
 - [x] Repair engine
 - [x] Shared blackboard
+- [x] MiniMax Web automatic quota detection
 - [ ] E2E test engine integration
-- [ ] MiniMax Web automatic quota detection
 - [ ] Claude adapter
 - [ ] Production stress testing
 

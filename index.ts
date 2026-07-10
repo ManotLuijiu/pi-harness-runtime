@@ -19,7 +19,8 @@ import type {
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { UsageTracker } from "./tracker.ts";
-import { MirrorStore } from "./mirror.ts";
+import { MirrorStore, type MirrorRecord } from "./mirror.ts";
+import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import { buildMirrorRecord, parseSyncValues } from "./sync-form.ts";
@@ -27,7 +28,7 @@ import {
 	JobStateMachine,
 	type CheckpointManager,
 } from "./harness/job-state-machine.ts";
-import { TaskGraphManager } from "./harness/task-graph.ts";
+import { TaskGraphManager } from "./harness/task-graph.js";
 import { MasterPlanner } from "./harness/master-planner.ts";
 import { RepairEngine } from "./harness/repair-engine.ts";
 import {
@@ -98,6 +99,44 @@ export default function (pi: ExtensionAPI) {
 		});
 	});
 
+	// ─── Auto-fetch quota on startup ─────────────────────────────────
+	let _quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
+	const QUOTA_REFRESH_MS = 5 * 60 * 1000; // 5 min
+
+	async function autoFetchQuota(): Promise<void> {
+		const scraper = new MiniMaxQuotaScraper({
+			cookieFile: process.env.QUOTA_COOKIE_FILE,
+		});
+
+		try {
+			const data = await scraper.scrape();
+			// Convert scraped data to MirrorRecord format
+			const record: MirrorRecord = {
+				synced_at: data.scrapedAt,
+				provider: "minimax",
+				h5_used_pct: data.h5UsedPct,
+				weekly_used_pct: data.weeklyUsedPct,
+			};
+			mirrorStore.write(record);
+			console.log(
+				"[pi-harness] Quota auto-fetched:",
+				data.h5UsedPct + "%, weekly: " + data.weeklyUsedPct + "%",
+			);
+		} catch (error) {
+			// Silent fail - manual sync still available
+			console.log(
+				"[pi-harness] Quota auto-fetch skipped:",
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+	}
+
+	// Try to auto-fetch on startup (if cookies available)
+	autoFetchQuota();
+
+	// Periodic refresh
+	_quotaRefreshTimer = setInterval(autoFetchQuota, QUOTA_REFRESH_MS);
+
 	// ─── /usage — show full status ───────────────────────────────────────
 	pi.registerCommand("usage", {
 		description: "Show Codex-style usage status (local + provider mirror)",
@@ -113,6 +152,19 @@ export default function (pi: ExtensionAPI) {
 				nowMs: Date.now(),
 			});
 			ctx.ui.notify(output, "info");
+		},
+	});
+
+	// ─── /usage refresh — force auto-fetch ────────────────────────────
+	pi.registerCommand("usage-refresh", {
+		description: "Force refresh quota from provider console",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			ctx.ui.notify("Fetching quota from MiniMax console...", "info");
+			await autoFetchQuota();
+			ctx.ui.notify(
+				"Quota refreshed. Run /usage to see updated status.",
+				"info",
+			);
 		},
 	});
 
