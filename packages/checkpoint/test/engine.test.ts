@@ -2,9 +2,9 @@
  * Checkpoint Engine - Tests
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { createCheckpointEngine, SDK_VERSION } from "../src/index.js";
-import type { RuntimeState, CheckpointMetadata } from "../src/types.js";
+import type { RuntimeState } from "../src/types.js";
 
 describe("CheckpointEngine", () => {
 	describe("SDK_VERSION", () => {
@@ -142,7 +142,7 @@ describe("CheckpointEngine", () => {
 			expect(["full", "incremental"]).toContain(metadata.type);
 		});
 
-		after(async () => {
+		afterAll(async () => {
 			await engine.deleteAll("incremental-test");
 		});
 	});
@@ -156,6 +156,9 @@ describe("CheckpointEngine", () => {
 		});
 
 		beforeEach(async () => {
+			// Clear any stale checkpoints from previous runs so version starts at 1
+			await engine.deleteAll("recovery-test");
+
 			const state: RuntimeState = {
 				version: 1,
 				jobId: "recovery-test",
@@ -220,7 +223,7 @@ describe("CheckpointEngine", () => {
 			expect(result.remainingCount).toBe(2);
 		});
 
-		after(async () => {
+		afterAll(async () => {
 			await engine.deleteAll("prune-test");
 		});
 	});

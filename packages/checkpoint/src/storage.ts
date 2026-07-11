@@ -280,11 +280,16 @@ export class StorageManager {
 		jobId: string,
 		version: number,
 	): Promise<FullCheckpoint | IncrementalCheckpoint | null> {
-		// Try full checkpoint first
+		// Try full checkpoint first (only if it's actually a full checkpoint)
 		const fullPath = this.checkpointPath(jobId, version);
 		try {
 			const content = await readFile(fullPath, "utf-8");
 			const file = JSON.parse(content) as CheckpointFile;
+
+			if (file.type !== "full") {
+				// Not a full checkpoint at this path — fall through to incremental
+				throw new Error("Not a full checkpoint");
+			}
 
 			let data = file.data;
 			if (file.metadata.compressed) {
@@ -299,21 +304,13 @@ export class StorageManager {
 
 			const state = JSON.parse(data);
 
-			if (file.type === "full") {
-				return {
-					jobId,
-					version,
-					state,
-					metadata: file.metadata,
-				} as FullCheckpoint;
-			} else {
-				return {
-					jobId,
-					version,
-					delta: state as StateDelta,
-					metadata: file.metadata,
-				} as IncrementalCheckpoint;
-			}
+			return {
+				jobId,
+				version,
+				type: "full" as const,
+				state,
+				metadata: file.metadata,
+			} as FullCheckpoint;
 		} catch (fullError) {
 			// Try incremental checkpoint
 			const incPath = this.incrementalPath(jobId, version);
@@ -338,6 +335,7 @@ export class StorageManager {
 				return {
 					jobId,
 					version,
+					type: "incremental" as const,
 					delta,
 					metadata: file.metadata,
 				} as IncrementalCheckpoint;
