@@ -5,10 +5,10 @@
  */
 
 import type {
+	RegistryEntry,
+	RegistryQuery,
 	Template,
 	TemplateSet,
-	RegistryQuery,
-	RegistryEntry,
 } from "../types.js";
 
 // ─── Template Registry ────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export class TemplateRegistry {
 		// Filter by tags
 		if (query.tags && query.tags.length > 0) {
 			results = results.filter((t) =>
-				t.tags?.some((tag) => query.tags!.includes(tag)),
+				t.tags?.some((tag) => query.tags?.includes(tag)),
 			);
 		}
 

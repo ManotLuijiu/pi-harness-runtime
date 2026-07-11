@@ -49,6 +49,8 @@ export interface MinimaxBrowserAuthConfig {
 	authTimeoutMs?: number;
 	headless?: boolean;
 	cdpPort?: number;
+	/** Suppress console output for background/runtime-driven scrapes. */
+	quiet?: boolean;
 	/** Override live session detection — used by tests to bypass real daemon. */
 	forceNoLiveSession?: boolean;
 }
@@ -639,6 +641,13 @@ export function extractUsageLines(bodyText: string): string[] {
 export async function scrapeViaLiveBrowserSession(
 	config: MinimaxBrowserAuthConfig = {},
 ): Promise<MinimaxAuthStatus> {
+	const quiet = config.quiet === true;
+	const log = (...args: unknown[]) => {
+		if (!quiet) console.log(...args);
+	};
+	const errorLog = (...args: unknown[]) => {
+		if (!quiet) console.error(...args);
+	};
 	const liveSession = loadLiveBrowserSession();
 	if (!liveSession) {
 		return {
@@ -656,8 +665,8 @@ export async function scrapeViaLiveBrowserSession(
 	const targetUrl = "https://platform.minimax.io/console/usage";
 	const port = liveSession.debugging_port;
 
-	console.log("Attaching to live Chrome session (port " + port + ")...");
-	console.log("Profile: " + profileDir);
+	log("Attaching to live Chrome session (port " + port + ")...");
+	log("Profile: " + profileDir);
 
 	// Resolve playwright from the project root so Node can find it in the temp script.
 	// Walk up from this file's location to find the project root (has node_modules).
@@ -695,7 +704,7 @@ export async function scrapeViaLiveBrowserSession(
 			"', { waitUntil: 'domcontentloaded', timeout: 30000 });",
 		"  await page.waitForTimeout(3000);",
 		"  const url = page.url();",
-		"  const bodyText = await page.textContent('body').catch(() => '');",
+		"  const bodyText = await page.locator('body').innerText({ timeout: 10000 }).catch(() => '');",
 		"  const result = JSON.stringify({ url, bodyText });",
 		"  console.log('RESULT:' + result);",
 		"  await browser.close();",
@@ -731,11 +740,11 @@ export async function scrapeViaLiveBrowserSession(
 		const { detected, sample } = detectUsagePage(bodyText);
 		const usage_lines = extractUsageLines(bodyText);
 
-		console.log("URL: " + url);
-		console.log("Detected usage page: " + detected);
+		log("URL: " + url);
+		log("Detected usage page: " + detected);
 		if (usage_lines.length > 0) {
-			console.log("Usage lines (" + usage_lines.length + "):");
-			usage_lines.slice(0, 20).forEach((l) => console.log("  " + l));
+			log("Usage lines (" + usage_lines.length + "):");
+			usage_lines.slice(0, 20).forEach((l) => log("  " + l));
 		}
 
 		const status: MinimaxAuthStatus = {
@@ -756,7 +765,7 @@ export async function scrapeViaLiveBrowserSession(
 			/* ignore */
 		}
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		console.error("Attach failed: " + errorMessage);
+		errorLog("Attach failed: " + errorMessage);
 		return {
 			provider: "minimax",
 			authenticated: false,
@@ -823,7 +832,7 @@ export async function startPersistentBrowserDaemon(
  * Stop the persistent browser daemon.
  */
 export async function stopPersistentBrowserDaemon(
-	config: MinimaxBrowserAuthConfig = {},
+	_config: MinimaxBrowserAuthConfig = {},
 ): Promise<boolean> {
 	const liveSession = loadLiveBrowserSession(getLiveSessionPath());
 	if (!liveSession) return false;
@@ -891,28 +900,36 @@ export async function scrapeWithExistingProfile(
 		config.targetUrl ?? "https://platform.minimax.io/console/usage";
 	ensureDirs(config);
 
-	console.log("=".repeat(60));
-	console.log("📊 MiniMax Usage Scraper");
-	console.log("=".repeat(60));
-	console.log("");
+	const quiet = config.quiet === true;
+	const log = (...args: unknown[]) => {
+		if (!quiet) console.log(...args);
+	};
+	const errorLog = (...args: unknown[]) => {
+		if (!quiet) console.error(...args);
+	};
+
+	log("=".repeat(60));
+	log("📊 MiniMax Usage Scraper");
+	log("=".repeat(60));
+	log("");
 
 	// 1. Try live session first (skip if forced off for testing)
 	const liveSession = config.forceNoLiveSession
 		? null
 		: loadLiveBrowserSession();
 	if (liveSession) {
-		console.log("Live browser session found (PID " + liveSession.pid + ")");
-		console.log("Trying live attach...");
+		log("Live browser session found (PID " + liveSession.pid + ")");
+		log("Trying live attach...");
 		const result = await scrapeViaLiveBrowserSession(config);
 		if (result.authenticated || result.usage_lines) {
-			console.log("✅ Live session scrape successful!");
+			log("✅ Live session scrape successful!");
 			return result;
 		}
 		// Live session exists but attach failed — do NOT fall back to headless
 		// because that would try to lock the same profile (already locked by the daemon)
-		console.log("⚠️  Live session exists but attach failed.");
-		console.log("   Make sure your Chrome window is still open.");
-		console.log(
+		log("⚠️  Live session exists but attach failed.");
+		log("   Make sure your Chrome window is still open.");
+		log(
 			"   To stop and restart: bun packages/auth/src/run-minimax-auth.ts stop",
 		);
 		return {
@@ -932,8 +949,8 @@ export async function scrapeWithExistingProfile(
 	// 2. Fall back to headless Playwright with existing profile
 	const profileExists = hasProfileData(profileDir);
 	if (!profileExists) {
-		console.log("⚠️  No profile found. Run auth first:");
-		console.log("   bun packages/auth/src/run-minimax-auth.ts auth");
+		log("⚠️  No profile found. Run auth first:");
+		log("   bun packages/auth/src/run-minimax-auth.ts auth");
 		return {
 			provider: "minimax",
 			authenticated: false,
@@ -945,7 +962,7 @@ export async function scrapeWithExistingProfile(
 		};
 	}
 
-	console.log("Launching headless browser with saved profile...");
+	log("Launching headless browser with saved profile...");
 
 	let context: BrowserContext | null = null;
 	try {
@@ -958,7 +975,7 @@ export async function scrapeWithExistingProfile(
 		});
 
 		const page = context.pages()[0] ?? (await context.newPage());
-		console.log("Navigating to " + targetUrl + "...");
+		log("Navigating to " + targetUrl + "...");
 		await page.goto(targetUrl, {
 			waitUntil: "domcontentloaded",
 			timeout: 30000,
@@ -966,7 +983,10 @@ export async function scrapeWithExistingProfile(
 		await page.waitForTimeout(3000);
 
 		const url = page.url();
-		const bodyText = (await page.textContent("body")) ?? "";
+		const bodyText = await page
+			.locator("body")
+			.innerText({ timeout: 10000 })
+			.catch(() => "");
 		const { detected, sample } = detectUsagePage(bodyText);
 		const usage_lines = extractUsageLines(bodyText);
 
@@ -980,18 +1000,18 @@ export async function scrapeWithExistingProfile(
 		let error_message: string | undefined;
 
 		if (redirectedToLogin && wasPreviouslyAuthenticated) {
-			console.log(
+			log(
 				"⚠️  Redirected to login but previously authenticated. Profile may have expired.",
 			);
 			authenticated = false;
 			error_message = "Session expired - redirected to login";
 		}
 
-		console.log("URL: " + url);
-		console.log("Detected usage page: " + detected);
+		log("URL: " + url);
+		log("Detected usage page: " + detected);
 		if (usage_lines.length > 0) {
-			console.log("Usage lines (" + usage_lines.length + "):");
-			usage_lines.slice(0, 20).forEach((l) => console.log("  " + l));
+			log("Usage lines (" + usage_lines.length + "):");
+			usage_lines.slice(0, 20).forEach((l) => log("  " + l));
 		}
 
 		const status: MinimaxAuthStatus = {
@@ -1011,7 +1031,7 @@ export async function scrapeWithExistingProfile(
 		return status;
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		console.error("❌ Error: " + errorMessage);
+		errorLog("❌ Error: " + errorMessage);
 		if (context) await context.close().catch(() => {});
 		const status: MinimaxAuthStatus = {
 			provider: "minimax",

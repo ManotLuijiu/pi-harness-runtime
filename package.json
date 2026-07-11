@@ -23,7 +23,6 @@
     "mirror.ts",
     "windows.ts",
     "renderer.ts",
-    "sync-form.ts",
     "cli.ts",
     "harness",
     "packages",
@@ -72,6 +71,9 @@
     "playwright": "^1.61.1",
     "standard-version": "^9.5.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "dependencies": {
     "pi-harness-runtime": "^0.3.2-beta.1"
   }

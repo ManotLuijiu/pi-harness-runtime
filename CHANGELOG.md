@@ -4,7 +4,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ## [0.4.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.3.1...v0.4.0) (2026-07-05)
 
-
 ### Features
 
 * **auth:** Add curator-mode MiniMax browser authentication ([4914517](https://github.com/ManotLuijiu/pi-harness-runtime/commit/49145171d0205e78454472f5f4e540ff7c70a711))
@@ -12,7 +11,6 @@ All notable changes to this project will be documented in this file. See [standa
 * **auth:** Add persistent browser profile auth for MiniMax ([f725d2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f725d2b89aa61d6e1cd5de0458b4d2c80efb6e7a))
 * Fixed Chrome ([98becb8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/98becb8bed6b94612db648d4bdd58f8a45d23040))
 * implement RFC-0019 through RFC-0022 ([4468dcb](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4468dcb1cfcb320f8eeab50c8ef590de74de979a))
-
 
 ### Bug Fixes
 
@@ -25,31 +23,30 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Changed
 
-- **Project rename**: `pi-usage-status` → `pi-harness-runtime`
-  - npm package name: `pi-usage-status` → `pi-harness-runtime`
-  - Repository: `ManotLuijiu/pi-usage-status` → `ManotLuijiu/pi-harness-runtime`
-  - Bundled skill: `usage-status` → `harness-runtime` (file path `skills/usage-status/` → `skills/harness-runtime/`)
-  - Status bar key: `usage-status` → `harness-runtime`
-  - **Data directory unchanged**: still `~/.pi/usage-status/` (preserves existing user data)
-  - **Env var unchanged**: still `PI_USAGE_DIR` (preserves existing user configs)
-  - **Extension symlink unchanged**: still `~/.pi/agent/extensions/pi-usage-status` (repointed to renamed project directory)
-  - Added `"files"` whitelist to `package.json` — publish only the 7 runtime `.ts` files, `skills/`, `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE` (excludes `test/`, `ADR/`, `docs/`, `examples/`, `packages/`, `PRD/`, `RFC/`)
+* **Project rename**: `pi-usage-status` → `pi-harness-runtime`
+  * npm package name: `pi-usage-status` → `pi-harness-runtime`
+  * Repository: `ManotLuijiu/pi-usage-status` → `ManotLuijiu/pi-harness-runtime`
+  * Bundled skill: `usage-status` → `harness-runtime` (file path `skills/usage-status/` → `skills/harness-runtime/`)
+  * Status bar key: `usage-status` → `harness-runtime`
+  * **Data directory unchanged**: still `~/.pi/usage-status/` (preserves existing user data)
+  * **Env var unchanged**: still `PI_USAGE_DIR` (preserves existing user configs)
+  * **Extension symlink unchanged**: still `~/.pi/agent/extensions/pi-usage-status` (repointed to renamed project directory)
+  * Added `"files"` whitelist to `package.json` — publish only the 7 runtime `.ts` files, `skills/`, `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE` (excludes `test/`, `ADR/`, `docs/`, `examples/`, `packages/`, `PRD/`, `RFC/`)
 
 ## [0.1.0] - 2026-06-26
 
 ### Added
 
-- Initial release
-- `/usage` slash command — show Codex-style usage status (model, directory, local tracking, provider mirror)
-- `/usage sync` slash command — open form to manually mirror provider-side quota from console.minimax.io
-- `/usage today` / `/usage week` / `/usage reset` focused views
-- Local SQLite tracking of every assistant message (input/output tokens + cost)
-- Manual provider-mirror JSON at `~/.pi/usage-status/mirror.json` (synced_at, 5h_used_pct, 5h_resets_at, weekly_used_pct, weekly_resets_at)
-- Rolling 5h window aggregation (auto-computed from local data)
-- Rolling weekly window aggregation
-- Reset-time computation (`oldest_request_in_window + window_duration`)
-- Progress bar renderer matching Codex's `[████████░░░░░░░░░░░░]` style
-- Local-vs-mirror divergence detection (warns if local tracking diverges from manual mirror by >5%)
-- Burn-rate projection ("Weekly burn rate: 11.4% / day")
-- Bundled skill `usage-status` (loaded automatically)
-- MIT license
+* Initial release
+* `/usage` slash command — show Codex-style usage status (model, directory, local tracking, provider mirror)
+* `/usage today` / `/usage week` / `/usage reset` focused views
+* Local SQLite tracking of every assistant message (input/output tokens + cost)
+* Provider-mirror JSON at `~/.pi/usage-status/mirror.json` (synced_at, 5h_used_pct, 5h_resets_at, weekly_used_pct, weekly_resets_at)
+* Rolling 5h window aggregation (auto-computed from local data)
+* Rolling weekly window aggregation
+* Reset-time computation (`oldest_request_in_window + window_duration`)
+* Progress bar renderer matching Codex's `[████████░░░░░░░░░░░░]` style
+* Local-vs-mirror divergence detection (warns if local tracking diverges from provider mirror by >5%)
+* Burn-rate projection ("Weekly burn rate: 11.4% / day")
+* Bundled skill `usage-status` (loaded automatically)
+* MIT license

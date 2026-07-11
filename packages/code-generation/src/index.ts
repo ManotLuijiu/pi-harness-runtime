@@ -7,6 +7,8 @@
 
 // ─── Generator ──────────────────────────────────────────────────────────
 
+export { createFaker } from "./faker.js";
+
 export {
 	CodeGenerator,
 	createCodeGenerator,
@@ -46,6 +48,8 @@ export {
 	type RegistryEntry,
 	type RegistryQuery,
 	type GeneratorConfig,
+	type SchemaDefinition,
+	type SchemaField,
 	type VariableResolver,
 	type OutputFormat,
 	type OutputConfig,

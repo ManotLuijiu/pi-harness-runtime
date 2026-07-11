@@ -27,7 +27,6 @@ pi-harness-runtime/
 ├── mirror.ts                   # Provider mirror store
 ├── renderer.ts                 # Status rendering
 ├── tracker.ts                  # Usage tracking
-├── sync-form.ts                # Manual sync form
 ├── windows.ts                  # Windows aggregation
 ├── harness/                    # Core harness modules
 │   ├── agent-handoff.ts       # Agent handoff protocol

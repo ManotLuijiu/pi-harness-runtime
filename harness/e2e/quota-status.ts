@@ -6,7 +6,6 @@
  */
 
 import {
-	MiniMaxQuotaScraper,
 	MiniMaxQuotaManager,
 	type MiniMaxQuotaData,
 } from "./minimax-quota-scraper.js";
@@ -47,11 +46,7 @@ export function formatQuotaStatus(data: MiniMaxQuotaData): QuotaStatus {
 	const weeklyLeft = Math.max(0, 100 - data.weeklyUsedPct);
 
 	const short = `5h: ${h5Left.toFixed(0)}% left`;
-	const extendedParts = [short];
-
-	if (data.weeklyUsedPct > 0) {
-		extendedParts.push(`week: ${weeklyLeft.toFixed(0)}% left`);
-	}
+	const extendedParts = [short, `week: ${weeklyLeft.toFixed(0)}% left`];
 
 	return {
 		short,

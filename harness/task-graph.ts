@@ -36,6 +36,17 @@ export interface TaskGraphManager {
 	/** Get all pending tasks */
 	getPendingTasks(): RuntimeTask[];
 
+	/** Get all tasks */
+	getAllTasks(): RuntimeTask[];
+
+	/** Get current progress summary */
+	getProgressSummary(): {
+		total: number;
+		done: number;
+		running: number;
+		failed: number;
+	};
+
 	/** Get compact priority: tasks to keep in context vs prune */
 	getCompactPriority(): {
 		keep: string[];
@@ -98,6 +109,20 @@ export function createTaskGraphManager(): TaskGraphManager {
 			return [...nodes.values()]
 				.filter((n) => n.status === "pending")
 				.map((n) => n.task);
+		},
+
+		getAllTasks() {
+			return [...nodes.values()].map((n) => n.task);
+		},
+
+		getProgressSummary() {
+			const allNodes = [...nodes.values()];
+			return {
+				total: allNodes.length,
+				done: allNodes.filter((n) => n.status === "done").length,
+				running: allNodes.filter((n) => n.status === "running").length,
+				failed: allNodes.filter((n) => n.status === "blocked").length,
+			};
 		},
 
 		getCompactPriority() {

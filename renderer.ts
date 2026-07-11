@@ -9,9 +9,18 @@
  * node --test and works in `ctx.ui.notify()`.
  */
 
-import { formatDuration, formatRelative, formatTokens, formatUsd } from "./cli.ts";
+import {
+	formatDuration,
+	formatRelative,
+	formatTokens,
+	formatUsd,
+} from "./cli.ts";
 import type { AggregatedWindows } from "./windows.ts";
-import { FIVE_HOURS_MS, SEVEN_DAYS_MS, computeLocalResetTime } from "./windows.ts";
+import {
+	FIVE_HOURS_MS,
+	SEVEN_DAYS_MS,
+	computeLocalResetTime,
+} from "./windows.ts";
 import type { MirrorRecord } from "./mirror.ts";
 import type { MirrorStore } from "./mirror.ts";
 
@@ -24,14 +33,17 @@ export interface RenderInput {
 	cwd: string;
 	local: AggregatedWindows;
 	mirror: MirrorRecord | null;
-	mirrorStore: MirrorStore;        // for freshness check
+	mirrorStore: MirrorStore; // for freshness check
 	nowMs: number;
 	// Optional: local usage limit configuration (for "X% of limit used")
 	localFiveHLimitTokens?: number;
 	localWeeklyLimitTokens?: number;
 }
 
-export function renderProgressBar(pct: number, width: number = BAR_WIDTH): string {
+export function renderProgressBar(
+	pct: number,
+	width: number = BAR_WIDTH,
+): string {
 	const clamped = Math.max(0, Math.min(100, pct));
 	const filledCount = Math.round((clamped / 100) * width);
 	const emptyCount = width - filledCount;
@@ -75,9 +87,18 @@ export function renderStatus(input: RenderInput): string {
 	// ─── Provider mirror ─────────────────────────────────────────────────
 	if (input.mirror) {
 		const fresh = input.mirrorStore.freshness(input.mirror, input.nowMs);
-		const freshnessLabel = fresh === "fresh" ? "fresh" : fresh === "stale" ? "stale" : fresh === "expired" ? "EXPIRED" : "missing";
-		lines.push(` ② PROVIDER MIRROR (you enter from console.minimax.io)`);
-		lines.push(`    Last sync:      ${formatRelative(input.mirror.synced_at, input.nowMs)} [${freshnessLabel}]`);
+		const freshnessLabel =
+			fresh === "fresh"
+				? "fresh"
+				: fresh === "stale"
+					? "stale"
+					: fresh === "expired"
+						? "EXPIRED"
+						: "missing";
+		lines.push(` ② PROVIDER MIRROR (auto-fetched from MiniMax console)`);
+		lines.push(
+			`    Last sync:      ${formatRelative(input.mirror.synced_at, input.nowMs)} [${freshnessLabel}]`,
+		);
 		lines.push(`    Provider:       ${input.mirror.provider ?? "unknown"}`);
 
 		// 5h line
@@ -90,32 +111,39 @@ export function renderStatus(input: RenderInput): string {
 				`    5h limit:       ${renderProgressBar(pct)} ${renderLeftLabel(pct)} (resets in ${resetStr})`,
 			);
 		} else {
-			lines.push(`    5h limit:       (not yet synced — run /usage sync)`);
+			lines.push(`    5h limit:       (waiting for next auto refresh)`);
 		}
 
 		// Weekly line
 		if (input.mirror.weekly_used_pct !== undefined) {
 			const pct = input.mirror.weekly_used_pct;
 			const resetStr = input.mirror.weekly_resets_at
-				? formatDuration(Date.parse(input.mirror.weekly_resets_at) - input.nowMs)
+				? formatDuration(
+						Date.parse(input.mirror.weekly_resets_at) - input.nowMs,
+					)
 				: "unknown";
 			lines.push(
 				`    Weekly limit:   ${renderProgressBar(pct)} ${renderLeftLabel(pct)} (resets in ${resetStr})`,
 			);
 		} else {
-			lines.push(`    Weekly limit:   (not yet synced — run /usage sync)`);
+			lines.push(`    Weekly limit:   (waiting for next auto refresh)`);
 		}
 		lines.push("");
 	} else {
 		lines.push(` ② PROVIDER MIRROR`);
-		lines.push(`    Not synced yet. Run /usage sync to mirror from console.minimax.io.`);
+		lines.push(
+			`    Not synced yet. Auto refresh will populate data from MiniMax console.`,
+		);
 		lines.push("");
 	}
 
 	// ─── Local reset times (derived) ────────────────────────────────────
 	lines.push(" ③ LOCAL RESET TIMES (derived from your data)");
 	const local5hReset = computeLocalResetTime(input.local.five_h, FIVE_HOURS_MS);
-	const localWeekReset = computeLocalResetTime(input.local.weekly, SEVEN_DAYS_MS);
+	const localWeekReset = computeLocalResetTime(
+		input.local.weekly,
+		SEVEN_DAYS_MS,
+	);
 	if (local5hReset) {
 		const remaining = local5hReset - input.nowMs;
 		lines.push(
@@ -139,13 +167,17 @@ export function renderStatus(input: RenderInput): string {
 			? (input.local.five_h.tokens / input.localFiveHLimitTokens) * 100
 			: 0;
 		const delta = localPct - input.mirror.h5_used_pct;
-		const deltaStr = delta >= 0 ? `+${delta.toFixed(1)}%` : `${delta.toFixed(1)}%`;
+		const deltaStr =
+			delta >= 0 ? `+${delta.toFixed(1)}%` : `${delta.toFixed(1)}%`;
 		const warning = Math.abs(delta) > 5 ? " ⚠️  divergence > 5%" : "";
 		lines.push(`    Local-vs-mirror:  ${deltaStr}${warning}`);
 	}
 
 	// ─── Burn rate ──────────────────────────────────────────────────────
-	if (input.mirror?.weekly_used_pct !== undefined && input.mirror.weekly_resets_at) {
+	if (
+		input.mirror?.weekly_used_pct !== undefined &&
+		input.mirror.weekly_resets_at
+	) {
 		const resetMs = Date.parse(input.mirror.weekly_resets_at);
 		const elapsedMs = input.nowMs - resetMs;
 		const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
@@ -153,7 +185,8 @@ export function renderStatus(input: RenderInput): string {
 			const pctPerDay = input.mirror.weekly_used_pct / elapsedDays;
 			const remaining = 100 - input.mirror.weekly_used_pct;
 			const daysLeft = pctPerDay > 0 ? remaining / pctPerDay : Infinity;
-			const daysLeftStr = daysLeft === Infinity ? "∞" : `${daysLeft.toFixed(1)} d`;
+			const daysLeftStr =
+				daysLeft === Infinity ? "∞" : `${daysLeft.toFixed(1)} d`;
 			lines.push(
 				`    Burn rate:        ${pctPerDay.toFixed(1)}% / day → 100% in ${daysLeftStr}`,
 			);
@@ -161,10 +194,12 @@ export function renderStatus(input: RenderInput): string {
 	}
 
 	lines.push(divider);
-	lines.push(` Data dir:    ${process.env.PI_USAGE_DIR ?? "~/.pi/usage-status"}`);
+	lines.push(
+		` Data dir:    ${process.env.PI_USAGE_DIR ?? "~/.pi/usage-status"}`,
+	);
 	lines.push(` Local time:  ${new Date(input.nowMs).toISOString()}`);
 	lines.push("");
-	lines.push(" Run `/usage sync` to update the provider mirror.");
+	lines.push(" Run `/usage refresh` to fetch the latest provider mirror now.");
 
 	return lines.join("\n");
 }
