@@ -1,0 +1,25 @@
+{
+  "name": "@pi-harness/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for pi-harness-runtime packages",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "keywords": [
+    "pi",
+    "harness",
+    "runtime",
+    "types"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

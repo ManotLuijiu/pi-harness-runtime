@@ -1,38 +1,28 @@
 /**
- * MirrorStore — manual sync of provider-side quota from console.
+ * MirrorStore — cached provider quota snapshot.
  *
- * User periodically glances at https://platform.minimax.io/console/usage
- * and runs `/usage sync` to enter:
- *   - 5h used %
- *   - 5h resets in (h, m)
- *   - weekly used %
- *   - weekly resets in (d, h)
+ * Auto refresh fetches MiniMax quota data from the web console and writes it to
+ * ~/.pi/usage-status/mirror.json so footer status and `/usage` can render the
+ * latest provider-side 5h/weekly usage.
  *
- * This is the "ground truth" since most providers (MiniMax, Anthropic, OpenAI)
- * don't expose rate limit headers publicly. Local tracking counts OUR usage
- * only; the mirror counts TOTAL quota usage across all clients.
- *
- * File: ~/.pi/usage-status/mirror.json
+ * Local tracking counts OUR usage only; the mirror counts TOTAL quota usage
+ * across all clients visible in the provider console.
  */
 
-import {
-	getMirrorPath,
-	readJson,
-	writeJson,
-} from "./cli.ts";
+import { getMirrorPath, readJson, writeJson } from "./cli.ts";
 
 export interface MirrorRecord {
-	synced_at: string;           // ISO 8601 UTC
-	provider: string;            // e.g. "minimax"
-	model?: string;              // optional, e.g. "minimax/MiniMax-M3"
-	h5_used_pct?: number;        // 0-100
-	h5_resets_at?: string;       // ISO 8601 UTC — provider-reported
-	weekly_used_pct?: number;    // 0-100
-	weekly_resets_at?: string;   // ISO 8601 UTC — provider-reported
+	synced_at: string; // ISO 8601 UTC
+	provider: string; // e.g. "minimax"
+	model?: string; // optional, e.g. "minimax/MiniMax-M3"
+	h5_used_pct?: number; // 0-100
+	h5_resets_at?: string; // ISO 8601 UTC — provider-reported
+	weekly_used_pct?: number; // 0-100
+	weekly_resets_at?: string; // ISO 8601 UTC — provider-reported
 }
 
-const STALE_WARN_MS = 30 * 60 * 1000;   // 30 min → orange
-const STALE_ERROR_MS = 2 * 60 * 60 * 1000;  // 2 h   → red
+const STALE_WARN_MS = 30 * 60 * 1000; // 30 min → orange
+const STALE_ERROR_MS = 2 * 60 * 60 * 1000; // 2 h   → red
 
 export class MirrorStore {
 	private path: string;
@@ -54,7 +44,10 @@ export class MirrorStore {
 	}
 
 	/** Returns "fresh" | "stale" | "expired" based on age. */
-	freshness(record: MirrorRecord | null, nowMs: number): "fresh" | "stale" | "expired" | "missing" {
+	freshness(
+		record: MirrorRecord | null,
+		nowMs: number,
+	): "fresh" | "stale" | "expired" | "missing" {
 		if (!record || !record.synced_at) return "missing";
 		const syncedMs = Date.parse(record.synced_at);
 		if (isNaN(syncedMs)) return "missing";

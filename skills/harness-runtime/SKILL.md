@@ -33,7 +33,7 @@ Human Requirement
 | Command | Description |
 |---------|-------------|
 | `/usage` | Show full status (local tracking + provider mirror) |
-| `/usage sync` | Sync provider quota from console.minimax.io |
+| `/usage refresh` | Force refresh quota from MiniMax console |
 | `/usage today` | Today's usage + 5h window |
 | `/usage week` | This week's usage + lifetime |
 | `/usage reset` | Clear provider mirror |

@@ -5,12 +5,15 @@
  */
 
 import { createHash } from "node:crypto";
+import { EjsRenderer } from "./templates/ejs-renderer.js";
+import { TemplateRegistry } from "./templates/registry.js";
 import type {
 	GeneratedFile,
 	GenerationError,
 	GenerationRequest,
 	GenerationResult,
 	GenerationWarning,
+	SchemaDefinition,
 	Template,
 	TemplateEngine,
 	ValidationContext,
@@ -18,8 +21,6 @@ import type {
 	ValidationRule,
 	VariableResolver,
 } from "./types.js";
-import { TemplateRegistry } from "./templates/registry.js";
-import { EjsRenderer } from "./templates/ejs-renderer.js";
 
 // ─── Default Configuration ─────────────────────────────────────────────────
 
@@ -50,15 +51,17 @@ export class CodeGenerator {
 	private readonly registry: TemplateRegistry;
 	private readonly renderers: Map<TemplateEngine, TemplateRenderer>;
 	private readonly validationRules: ValidationRule[];
+	private readonly schemas: Map<string, SchemaDefinition>;
 
 	constructor(config: GeneratorConfig = {}) {
 		this.config = { ...DEFAULT_CONFIG, ...config } as Required<GeneratorConfig>;
 		this.registry = new TemplateRegistry();
 		this.renderers = new Map();
 		this.validationRules = [
-			...DEFAULT_CONFIG.validationRules!,
+			...DEFAULT_CONFIG.validationRules,
 			...(config.validationRules ?? []),
 		];
+		this.schemas = new Map();
 
 		// Register default renderers
 		this.registerRenderer("ejs", new EjsRenderer());
@@ -79,6 +82,40 @@ export class CodeGenerator {
 	}
 
 	/**
+	 * Register a schema for code generation.
+	 * Converts the schema into a template and registers it.
+	 */
+	registerSchema(schema: SchemaDefinition): void {
+		const id = schema.id ?? schema.name;
+		this.schemas.set(id, schema);
+
+		// Convert schema to a template for registration
+		const fieldsContent = schema.fields
+			.map((f) => ` * @param ${f.name} - ${f.description ?? f.type}`)
+			.join("\n");
+
+		const template: Template = {
+			id,
+			name: schema.name,
+			description: schema.description ?? `Schema: ${schema.name}`,
+			content: `/**\n${fieldsContent}\n */\nexport interface ${schema.name} {\n<% for (const field of fields) { %>\n  <%= field.name %>: <%= field.type %>;\n<% } %>\n}`,
+			tags: ["schema"],
+			engine: "ejs",
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+		};
+
+		this.registry.register(template);
+	}
+
+	/**
+	 * Get a registered schema by ID or name.
+	 */
+	getSchema(id: string): SchemaDefinition | undefined {
+		return this.schemas.get(id);
+	}
+
+	/**
 	 * Generate code from template
 	 */
 	async generate(request: GenerationRequest): Promise<GenerationResult> {
@@ -90,7 +127,10 @@ export class CodeGenerator {
 		// Get template
 		const template =
 			request.template ??
-			(request.templateId ? this.registry.get(request.templateId) : undefined);
+			(request.templateId
+				? this.registry.get(request.templateId)
+				: undefined) ??
+			(request.schemaId ? this.registry.get(request.schemaId) : undefined);
 
 		if (!template) {
 			return {
@@ -101,7 +141,9 @@ export class CodeGenerator {
 						code: "TEMPLATE_NOT_FOUND",
 						message: request.templateId
 							? `Template '${request.templateId}' not found`
-							: "No template provided",
+							: request.schemaId
+								? `Schema '${request.schemaId}' not found`
+								: "No template provided",
 					},
 				],
 				warnings: [],

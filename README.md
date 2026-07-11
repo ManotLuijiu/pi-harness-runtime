@@ -32,7 +32,6 @@ Requires Pi v0.37.3+.
 ```bash
 /usage              # show full status (local tracking + provider mirror)
 /usage refresh     # force refresh quota from MiniMax console
-/usage sync        # manual sync (fallback if auto-fetch fails)
 /usage today       # today's usage + 5h window
 /usage week        # this week's usage + lifetime totals
 /usage reset       # clear provider mirror
@@ -179,8 +178,6 @@ Quota data is automatically fetched from MiniMax console every 5 minutes:
    ```
 
 3. **Done!** Quota auto-refreshes every 5 minutes
-
-Manual sync (`/usage sync`) is still available as fallback.
 
 ## Roadmap
 

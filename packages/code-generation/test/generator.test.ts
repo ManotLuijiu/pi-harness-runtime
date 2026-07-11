@@ -2,8 +2,8 @@
  * Code Generation Pipeline - Tests
  */
 
-import { describe, it, expect } from "bun:test";
-import { createCodeGenerator, createFaker, SDK_VERSION } from "../src/index.js";
+import { describe, expect, it } from "bun:test";
+import { SDK_VERSION, createCodeGenerator, createFaker } from "../src/index.js";
 
 describe("CodeGeneration", () => {
 	describe("SDK_VERSION", () => {

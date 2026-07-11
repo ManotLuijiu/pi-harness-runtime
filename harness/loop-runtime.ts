@@ -39,6 +39,7 @@ import {
 	createSessionMemoryManager,
 } from "./session-memory.js";
 import { AutoCompactEngine } from "./auto-compact.js";
+import { OutputLimitHandler } from "./output-limit-handler.js";
 import {
 	type ForkedSummarizer,
 	createForkedSummarizer,
@@ -334,6 +335,11 @@ export class LoopRuntime {
 			});
 		}
 
+		const outputLimitHandler = new OutputLimitHandler({
+			jobId: this.config.jobId,
+			taskId: task.id,
+		});
+
 		// 4. Execute with compact support
 		let compactRetries = 0;
 
@@ -355,9 +361,19 @@ export class LoopRuntime {
 					orchestratorCallbacks,
 				);
 
-				if (result.success && result.output) {
-					// Success — process result
+				if (result.success) {
+					const continued = await this.handleAutoContinuation(
+						compactMessages,
+						result,
+						task,
+						outputLimitHandler,
+					);
+					if (continued) {
+						continue;
+					}
+
 					this.handleInvokeSuccess(compactMessages, result, task);
+					outputLimitHandler.reset();
 					await this.runTestsAndReview(task, compactMessages);
 					return;
 				}
@@ -397,7 +413,18 @@ export class LoopRuntime {
 				throw new Error(result?.error ?? "Invoke failed");
 			}
 
+			const continued = await this.handleAutoContinuation(
+				compactMessages,
+				result,
+				task,
+				outputLimitHandler,
+			);
+			if (continued) {
+				continue;
+			}
+
 			this.handleInvokeSuccess(compactMessages, result, task);
+			outputLimitHandler.reset();
 			await this.runTestsAndReview(task, compactMessages);
 			return;
 		}
@@ -405,6 +432,51 @@ export class LoopRuntime {
 		// Max compact retries exceeded
 		this.state.status = "blocked";
 		throw new Error(`Max compact retries (${this.maxCompactRetries}) exceeded`);
+	}
+
+	private async handleAutoContinuation(
+		messages: CompactableMessage[],
+		result: InvokeResult,
+		task: RuntimeTask,
+		outputLimitHandler: OutputLimitHandler,
+	): Promise<boolean> {
+		const output = result.output ?? "";
+		const hitOutputLimit = outputLimitHandler.detectOutputLimit(result.error, {
+			finishReason: result.finishReason,
+		});
+		const hitCompactionBoundary =
+			this.autoCompactEngine?.detectCompaction(output) ?? false;
+
+		if (!hitOutputLimit && !hitCompactionBoundary) {
+			return false;
+		}
+
+		if (!outputLimitHandler.shouldContinue()) {
+			throw new Error(
+				`Output limit recovery exhausted after ${outputLimitHandler.getAttempts()} attempts for task ${task.id}.`,
+			);
+		}
+
+		this.handleInvokeSuccess(messages, result, task);
+		await outputLimitHandler.handleOutputLimit(
+			output,
+			result.finishReason ?? "length",
+		);
+
+		const continueMessage = hitCompactionBoundary
+			? (this.autoCompactEngine?.buildContinueMessage() ?? "continue")
+			: "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if needed and continue the same task.";
+		messages.push({
+			role: "user",
+			content: continueMessage,
+			timestamp: Date.now(),
+			metadata: {
+				autoContinuation: true,
+				reason: hitCompactionBoundary ? "compaction" : "output_limit",
+				attempt: outputLimitHandler.getAttempts(),
+			},
+		});
+		return true;
 	}
 
 	/**
@@ -492,17 +564,6 @@ export class LoopRuntime {
 					timestamp: Date.now(),
 				},
 			]);
-		}
-
-		// Check for continue markers in output
-		if (this.autoCompactEngine?.detectCompaction(result.output ?? "")) {
-			// This is a continue-required scenario
-			const continueMsg = this.autoCompactEngine.buildContinueMessage();
-			messages.push({
-				role: "user",
-				content: continueMsg,
-				timestamp: Date.now(),
-			});
 		}
 	}
 

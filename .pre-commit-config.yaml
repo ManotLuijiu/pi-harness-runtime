@@ -1,0 +1,50 @@
+# Pre-commit hooks for pi-harness-runtime
+# Install: https://pre-commit.com/#install
+# Usage:   pre-commit install
+#
+# Run manually: pre-commit run --all-files
+
+repos:
+  # 1. Gitleaks - scan for secrets (most important!)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+      - id: gitleaks
+
+  # 2. Detect secrets in JSON/YAML/TOML files
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+
+  # 3. No secrets in commit messages
+  - repo: https://github.com/client9/misspell
+    rev: v0.3.4
+    hooks:
+      - id: misspell
+        args: ['--locale=US']
+
+  # 4. TypeScript/JS linting
+  - repo: https://github.com/typescript-eslint/typescript-eslint
+    rev: v7.0.0
+    hooks:
+      - id: prettier
+      - id: eslint
+        args: ['--fix']
+
+  # 5. Lockfile integrity
+  - repo: local
+    hooks:
+      - id: npm-audit
+        name: npm audit
+        entry: npm audit --audit-level=high
+        language: system
+        pass_filenames: false
+        always_run: true

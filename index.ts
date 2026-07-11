@@ -3,32 +3,41 @@
  *
  * Slash commands:
  *   /usage         — show full status (model, local tracking, provider mirror)
- *   /usage sync    — open form to manually mirror provider-side quota
  *   /usage today   — focused: this 5h + today (UTC)
  *   /usage week    — focused: this week + lifetime
- *   /usage reset   — clear mirror (forces re-sync)
+ *   /usage reset   — clear mirror (forces a fresh auto fetch)
  *
  * Auto-tracks every assistant message via the message_end event.
  * Stores data in ~/.pi/usage-status/  (override with PI_USAGE_DIR for testing).
  *
- * No build step — Bun runs this .ts file directly.
+ * Runs directly from Bun.
  */
 
 import type {
+	CompactOptions,
 	ExtensionAPI,
 	ExtensionCommandContext,
+	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
+import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
+import { buildFooterStatusValue } from "./footer-status.ts";
+import {
+	PROACTIVE_COMPACT_COOLDOWN_MS,
+	shouldTriggerProactiveCompact,
+} from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
-import { buildMirrorRecord, parseSyncValues } from "./sync-form.ts";
 import {
 	JobStateMachine,
 	type CheckpointManager,
 } from "./harness/job-state-machine.ts";
-import { TaskGraphManager } from "./harness/task-graph.js";
+import {
+	createTaskGraphManager,
+	type TaskGraphManager,
+} from "./harness/task-graph.js";
 import { MasterPlanner } from "./harness/master-planner.ts";
 import { RepairEngine } from "./harness/repair-engine.ts";
 import {
@@ -38,8 +47,6 @@ import {
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-
-const PROVIDER_DEFAULT = "minimax"; // can be changed via /usage sync form
 
 // ─── Harness Runtime State ────────────────────────────────────────────
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
@@ -99,43 +106,185 @@ export default function (pi: ExtensionAPI) {
 		});
 	});
 
-	// ─── Auto-fetch quota on startup ─────────────────────────────────
-	let _quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
-	const QUOTA_REFRESH_MS = 5 * 60 * 1000; // 5 min
+	// ─── Smart quota fetch for MiniMax status ────────────────────────
+	const MINIMAX_REFRESH_MIN_INTERVAL_MS = 15 * 60 * 1000;
+	const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
+	const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
+	const quotaScraper = process.env.QUOTA_COOKIE_FILE
+		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
+		: new MiniMaxQuotaScraper();
+	const cookieQuotaAutoFetchAvailable = quotaScraper.hasCookieFile();
+	let footerStatusCtx: {
+		ui: { setStatus: (key: string, value: string) => void };
+	} | null = null;
+	let lastQuotaAutoFetchAt = 0;
+	let quotaAutoFetchInFlight = false;
+	let proactiveCompactInFlight = false;
+	let lastProactiveCompactAt = 0;
 
-	async function autoFetchQuota(): Promise<void> {
-		const scraper = new MiniMaxQuotaScraper({
-			cookieFile: process.env.QUOTA_COOKIE_FILE,
-		});
-
-		try {
-			const data = await scraper.scrape();
-			// Convert scraped data to MirrorRecord format
-			const record: MirrorRecord = {
-				synced_at: data.scrapedAt,
-				provider: "minimax",
-				h5_used_pct: data.h5UsedPct,
-				weekly_used_pct: data.weeklyUsedPct,
-			};
-			mirrorStore.write(record);
-			console.log(
-				"[pi-harness] Quota auto-fetched:",
-				data.h5UsedPct + "%, weekly: " + data.weeklyUsedPct + "%",
-			);
-		} catch (error) {
-			// Silent fail - manual sync still available
-			console.log(
-				"[pi-harness] Quota auto-fetch skipped:",
-				error instanceof Error ? error.message : String(error),
-			);
+	function writeMirrorRecord(record: MirrorRecord): void {
+		mirrorStore.write(record);
+		if (footerStatusCtx) {
+			refreshFooterStatus(footerStatusCtx, tracker, mirrorStore);
 		}
 	}
 
-	// Try to auto-fetch on startup (if cookies available)
-	autoFetchQuota();
+	async function hasBrowserProfileAutoFetchSource(): Promise<boolean> {
+		try {
+			const { getLiveSessionPath, getStatusPath } = await import(
+				"./packages/auth/src/minimax-browser-auth.ts"
+			);
+			return existsSync(getLiveSessionPath()) || existsSync(getStatusPath());
+		} catch {
+			return false;
+		}
+	}
 
-	// Periodic refresh
-	_quotaRefreshTimer = setInterval(autoFetchQuota, QUOTA_REFRESH_MS);
+	function isMiniMaxModel(modelId: string | null | undefined): boolean {
+		return /minimax/i.test(modelId ?? "");
+	}
+
+	function getMiniMaxUsageSince(sinceMs: number): {
+		tokens: number;
+		requests: number;
+	} {
+		const records = tracker
+			.since(sinceMs)
+			.filter((record) => isMiniMaxModel(record.model));
+		return {
+			tokens: records.reduce(
+				(sum, record) => sum + record.input + record.output,
+				0,
+			),
+			requests: records.length,
+		};
+	}
+
+	async function autoFetchQuotaFromBrowserProfile(
+		suppressErrors = false,
+	): Promise<MirrorRecord | null> {
+		if (!(await hasBrowserProfileAutoFetchSource())) {
+			return null;
+		}
+
+		try {
+			const { scrapeWithExistingProfile } = await import(
+				"./packages/auth/src/minimax-browser-auth.ts"
+			);
+			const status = await scrapeWithExistingProfile({ quiet: true });
+			if (
+				status.page_url.includes("unified-login") ||
+				status.page_url.includes("login")
+			) {
+				return null;
+			}
+			const rawText =
+				status.usage_lines?.join("\n")?.trim() ||
+				status.detected_text_sample?.trim() ||
+				"";
+			if (!rawText) {
+				return null;
+			}
+
+			const parsed = parseMiniMaxQuotaText(rawText);
+			if (
+				parsed.h5UsedPct === undefined &&
+				parsed.weeklyUsedPct === undefined
+			) {
+				return null;
+			}
+
+			return {
+				synced_at: status.checked_at,
+				provider: "minimax",
+				h5_used_pct: parsed.h5UsedPct,
+				h5_resets_at: parsed.h5ResetsAt,
+				weekly_used_pct: parsed.weeklyUsedPct,
+				weekly_resets_at: parsed.weeklyResetsAt,
+			};
+		} catch (error) {
+			if (!suppressErrors) {
+				console.error(
+					"[pi-harness] Browser-profile quota fetch skipped:",
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			return null;
+		}
+	}
+
+	async function autoFetchQuota(options?: {
+		suppressErrors?: boolean;
+	}): Promise<boolean> {
+		const suppressErrors = options?.suppressErrors === true;
+		const profileRecord =
+			await autoFetchQuotaFromBrowserProfile(suppressErrors);
+		if (profileRecord) {
+			writeMirrorRecord(profileRecord);
+			return true;
+		}
+
+		if (!cookieQuotaAutoFetchAvailable) {
+			return false;
+		}
+
+		try {
+			const data = await quotaScraper.scrape();
+			writeMirrorRecord({
+				synced_at: data.scrapedAt,
+				provider: "minimax",
+				h5_used_pct: data.h5UsedPct,
+				h5_resets_at: data.h5ResetsAt,
+				weekly_used_pct: data.weeklyUsedPct,
+				weekly_resets_at: data.weeklyResetsAt,
+			});
+			return true;
+		} catch (error) {
+			if (!suppressErrors) {
+				console.error(
+					"[pi-harness] Quota auto-fetch skipped:",
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			return false;
+		}
+	}
+
+	async function maybeAutoFetchQuota(
+		modelId: string | null | undefined,
+	): Promise<void> {
+		if (!isMiniMaxModel(modelId) || quotaAutoFetchInFlight) {
+			return;
+		}
+
+		const nowMs = Date.now();
+		if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
+			return;
+		}
+
+		const mirror = mirrorStore.read();
+		const freshness = mirrorStore.freshness(mirror, nowMs);
+		const shouldFetchBaseline = !mirror || freshness === "expired";
+		const usageSinceSync = getMiniMaxUsageSince(
+			mirror?.synced_at ? Date.parse(mirror.synced_at) : 0,
+		);
+		const shouldFetchFromUsage =
+			usageSinceSync.tokens >= MINIMAX_REFRESH_TOKEN_THRESHOLD ||
+			usageSinceSync.requests >= MINIMAX_REFRESH_REQUEST_THRESHOLD ||
+			(freshness === "stale" && usageSinceSync.requests > 0);
+
+		if (!shouldFetchBaseline && !shouldFetchFromUsage) {
+			return;
+		}
+
+		quotaAutoFetchInFlight = true;
+		lastQuotaAutoFetchAt = nowMs;
+		try {
+			await autoFetchQuota({ suppressErrors: true });
+		} finally {
+			quotaAutoFetchInFlight = false;
+		}
+	}
 
 	// ─── /usage — show full status ───────────────────────────────────────
 	pi.registerCommand("usage", {
@@ -159,37 +308,24 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("usage-refresh", {
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const autoFetchAvailable =
+				cookieQuotaAutoFetchAvailable ||
+				(await hasBrowserProfileAutoFetchSource());
+			if (!autoFetchAvailable) {
+				ctx.ui.notify(
+					"Quota auto-fetch is unavailable. Set `QUOTA_COOKIE_FILE` or run `bun packages/auth/src/run-minimax-auth.ts auth` first.",
+					"info",
+				);
+				return;
+			}
 			ctx.ui.notify("Fetching quota from MiniMax console...", "info");
-			await autoFetchQuota();
+			const refreshed = await autoFetchQuota();
 			ctx.ui.notify(
-				"Quota refreshed. Run /usage to see updated status.",
+				refreshed
+					? "Quota refreshed. Run `/usage` to see updated status."
+					: "Quota refresh skipped. Check cookie validity or MiniMax auth profile, then run `/usage` again.",
 				"info",
 			);
-		},
-	});
-
-	// ─── /usage sync — open form ─────────────────────────────────────────
-	pi.registerCommand("usage-sync", {
-		description:
-			"Sync provider quota: /usage sync [provider] [h5%,h,h,m,wk%,d,h]",
-		getArgumentCompletions: (prefix: string) => {
-			const opts = ["minimax", "anthropic", "openai", "openrouter"];
-			const filtered = opts.filter((o) => o.startsWith(prefix));
-			return filtered.length > 0
-				? filtered.map((o) => ({ value: o, label: o }))
-				: null;
-		},
-		handler: async (args: string, ctx: ExtensionCommandContext) => {
-			const parts = (args || "").trim().split(/\s+/).filter(Boolean);
-			let provider = PROVIDER_DEFAULT;
-			let inlineValues = "";
-			if (parts.length > 0 && !/^\d/.test(parts[0])) {
-				provider = parts[0];
-				inlineValues = parts.slice(1).join(" ");
-			} else if (parts.length > 0) {
-				inlineValues = parts.join(" ");
-			}
-			await openSyncForm(ctx, mirrorStore, provider, inlineValues);
 		},
 	});
 
@@ -205,7 +341,7 @@ export default function (pi: ExtensionAPI) {
 				` Today:       ${local.today.tokens} tokens · ${local.today.requests} requests · $${local.today.cost.toFixed(4)}`,
 				` This 5h:     ${local.five_h.tokens} tokens · ${local.five_h.requests} requests · $${local.five_h.cost.toFixed(4)}`,
 				"",
-				" Run /usage for full status or /usage sync to mirror provider quota.",
+				" Run `/usage` for full status with the latest auto-fetched provider quota.",
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
@@ -223,7 +359,7 @@ export default function (pi: ExtensionAPI) {
 				` This week:   ${local.weekly.tokens} tokens · ${local.weekly.requests} requests · $${local.weekly.cost.toFixed(4)}`,
 				` Lifetime:    ${local.lifetime.tokens} tokens · ${local.lifetime.requests} requests · $${local.lifetime.cost.toFixed(4)}`,
 				"",
-				" Run /usage for full status with provider mirror.",
+				" Run `/usage` for full status with provider mirror.",
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
@@ -252,9 +388,11 @@ export default function (pi: ExtensionAPI) {
 				const { getMirrorPath } = await import("./cli.ts");
 				unlinkSync(getMirrorPath());
 				ctx.ui.notify(
-					"Mirror cleared. Run /usage sync to set a new one.",
+					"Mirror cleared. The next auto refresh will repopulate it.",
 					"info",
 				);
+				footerStatusCtx = ctx;
+				refreshFooterStatus(ctx, tracker, mirrorStore);
 			} catch (e) {
 				ctx.ui.notify(`Failed to clear mirror: ${e}`, "error");
 			}
@@ -312,7 +450,7 @@ export default function (pi: ExtensionAPI) {
 				currentSession = {
 					jobId,
 					machine,
-					graph: new TaskGraphManager({ jobId }),
+					graph: createTaskGraphManager(),
 					blackboard,
 					repairEngine,
 					createdAt: new Date().toISOString(),
@@ -397,11 +535,7 @@ export default function (pi: ExtensionAPI) {
 
 			for (const task of tasks) {
 				const status = task.status.padEnd(10);
-				const retry = task.retryCount ? ` (${task.retryCount} retries)` : "";
-				lines.push(`[${task.id}] ${status} ${task.title}${retry}`);
-				if (task.dependencies.length > 0) {
-					lines.push(`  deps: ${task.dependencies.join(", ")}`);
-				}
+				lines.push(`[${task.id}] ${status} ${task.title}`);
 			}
 
 			lines.push(`${"─".repeat(50)}`);
@@ -504,132 +638,80 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.notify(
 				`Job ${sessionJobId} cancelled.\n` +
-					`Run /harness start to begin a new job.`,
+					`Run \`/harness start\` to begin a new job.`,
 				"info",
 			);
 		},
 	});
 
 	// ─── Footer status (persistent badge) ────────────────────────────────
-	pi.on("session_start", async (_event, ctx) => {
-		await refreshFooterStatus(ctx, mirrorStore, tracker);
+	pi.on("session_start", (_event, ctx) => {
+		footerStatusCtx = ctx;
+		refreshFooterStatus(ctx, tracker, mirrorStore);
 	});
 
-	pi.on("turn_end", async (_event, ctx) => {
-		await refreshFooterStatus(ctx, mirrorStore, tracker);
+	pi.on("turn_end", (_event, ctx) => {
+		footerStatusCtx = ctx;
+		refreshFooterStatus(ctx, tracker, mirrorStore);
+		void maybeAutoFetchQuota(ctx.model?.id ?? null);
+		maybeTriggerProactiveCompact(ctx);
 	});
+
+	pi.on("session_compact", (_event, ctx) => {
+		footerStatusCtx = ctx;
+		proactiveCompactInFlight = false;
+		lastProactiveCompactAt = Date.now();
+		refreshFooterStatus(ctx, tracker, mirrorStore);
+	});
+
+	function maybeTriggerProactiveCompact(ctx: ExtensionContext): void {
+		if (proactiveCompactInFlight) {
+			return;
+		}
+		if (!ctx.isIdle() || ctx.hasPendingMessages()) {
+			return;
+		}
+		const usage = ctx.getContextUsage();
+		if (!shouldTriggerProactiveCompact(usage)) {
+			return;
+		}
+		if (Date.now() - lastProactiveCompactAt < PROACTIVE_COMPACT_COOLDOWN_MS) {
+			return;
+		}
+
+		proactiveCompactInFlight = true;
+		lastProactiveCompactAt = Date.now();
+
+		const compactOptions: CompactOptions = {
+			customInstructions:
+				"Preserve the current task, recent code changes, pending work, exact next step, and any unresolved errors. This compaction was triggered proactively near the context limit. After compaction, continue seamlessly without asking the user to resume or recap.",
+			onComplete: () => {
+				proactiveCompactInFlight = false;
+				lastProactiveCompactAt = Date.now();
+			},
+			onError: (error) => {
+				proactiveCompactInFlight = false;
+				console.error("[pi-harness] Proactive compact failed:", error.message);
+			},
+		};
+		ctx.compact(compactOptions);
+	}
 }
 
 // ──────────────────────────────────────────────────────────────────────
 // Helper: refresh persistent footer status with one-line summary
 // ──────────────────────────────────────────────────────────────────────
-async function refreshFooterStatus(
-	ctx: ExtensionCommandContext,
-	mirrorStore: MirrorStore,
+function refreshFooterStatus(
+	ctx: { ui: { setStatus: (key: string, value: string) => void } },
 	tracker: UsageTracker,
+	mirrorStore: MirrorStore,
 ) {
+	const nowMs = Date.now();
 	const local = aggregateWindows(tracker.all());
 	const mirror = mirrorStore.read();
-
-	const todayStr = `${(local.today.tokens / 1000).toFixed(1)}k tok · $${local.today.cost.toFixed(3)}`;
-	let summary = `today: ${todayStr}`;
-
-	if (mirror?.h5_used_pct !== undefined) {
-		const left = Math.max(0, 100 - mirror.h5_used_pct);
-		summary += ` · 5h: ${left}% left`;
-	}
-	if (mirror?.weekly_used_pct !== undefined) {
-		const left = Math.max(0, 100 - mirror.weekly_used_pct);
-		summary += ` · week: ${left}% left`;
-	}
-
-	ctx.ui.setStatus("harness-runtime", summary);
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Helper: open sync form using ctx.ui
-//
-// Usage:
-//   /usage sync                          → prompts for values
-//   /usage sync minimax                  → prompts for values
-//   /usage sync minimax 6,4,8,73,2,13    → no prompts, uses inline values
-//
-// Inline format: h5_pct, h5_h, h5_m, weekly_pct, weekly_d, weekly_h
-// ──────────────────────────────────────────────────────────────────────
-async function openSyncForm(
-	ctx: ExtensionCommandContext,
-	mirrorStore: MirrorStore,
-	provider: string,
-	args: string,
-) {
-	let parsed = parseInlineArgs(args);
-
-	if (!parsed) {
-		// Single prompt with comma-separated values
-		const placeholder = "e.g. 6,4,8,73,2,13 (h5%, h5h, h5m, wk%, wkd, wkh)";
-		const answer = await ctx.ui.input(
-			`Sync ${provider} usage — paste as: h5%, h5 reset h, h5 reset m, weekly%, weekly reset d, weekly reset h`,
-			placeholder,
-		);
-		if (!answer) {
-			ctx.ui.notify("Sync cancelled", "info");
-			return;
-		}
-		parsed = parseInlineArgs(answer);
-		if (!parsed) {
-			ctx.ui.notify(
-				`Invalid format. Expected 6 comma-separated numbers.\nGot: "${answer}"`,
-				"error",
-			);
-			return;
-		}
-	}
-
-	const values = {
-		h5_used_pct: parsed[0],
-		h5_resets_h: parsed[1],
-		h5_resets_m: parsed[2],
-		weekly_used_pct: parsed[3],
-		weekly_resets_d: parsed[4],
-		weekly_resets_h: parsed[5],
-	};
-
-	const validationResult = parseSyncValues({
-		h5_used_pct: String(values.h5_used_pct),
-		h5_resets_h: String(values.h5_resets_h),
-		h5_resets_m: String(values.h5_resets_m),
-		weekly_used_pct: String(values.weekly_used_pct),
-		weekly_resets_d: String(values.weekly_resets_d),
-		weekly_resets_h: String(values.weekly_resets_h),
-	});
-	if (!validationResult) {
-		ctx.ui.notify(
-			`Out of range. h5/wk must be 0-100, h/d/m must fit their bounds.`,
-			"error",
-		);
-		return;
-	}
-
-	const record = buildMirrorRecord(validationResult, provider, Date.now());
-	mirrorStore.write(record);
-	ctx.ui.notify(
-		`Mirror synced for ${provider}.\n` +
-			`  5h: ${validationResult.h5_used_pct}% used, resets in ${validationResult.h5_resets_h}h ${validationResult.h5_resets_m}m\n` +
-			`  weekly: ${validationResult.weekly_used_pct}% used, resets in ${validationResult.weekly_resets_d}d ${validationResult.weekly_resets_h}h\n\n` +
-			`Run /usage to see the full status.`,
-		"info",
+	const freshness = mirrorStore.freshness(mirror, nowMs);
+	ctx.ui.setStatus(
+		"harness-runtime",
+		buildFooterStatusValue(local, mirror, freshness),
 	);
-}
-
-/** Parse "6,4,8,73,2,13" → [6,4,8,73,2,13], or null if invalid. */
-function parseInlineArgs(
-	s: string,
-): [number, number, number, number, number, number] | null {
-	const trimmed = s.trim();
-	if (!trimmed) return null;
-	const parts = trimmed.split(/[,\s]+/).filter(Boolean);
-	if (parts.length !== 6) return null;
-	const nums = parts.map((p) => Number(p));
-	if (nums.some((n) => !Number.isFinite(n))) return null;
-	return nums as [number, number, number, number, number, number];
 }

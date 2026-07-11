@@ -65,6 +65,7 @@ export interface TemplateSet {
  */
 export interface GenerationRequest {
 	templateId?: string;
+	schemaId?: string;
 	template?: Template;
 	variables: Record<string, unknown>;
 	outputPath?: string;
@@ -343,4 +344,30 @@ export interface OutputConfig {
 	encoding?: BufferEncoding;
 	overwrite?: boolean;
 	backup?: boolean;
+}
+
+// ─── Schema Types ─────────────────────────────────────────────────────────
+
+/**
+ * Schema field definition
+ */
+export interface SchemaField {
+	name: string;
+	type: "string" | "number" | "boolean" | "array" | "object" | "enum";
+	description?: string;
+	defaultValue?: unknown;
+}
+
+/**
+ * Schema definition for code generation
+ */
+export interface SchemaDefinition {
+	/** Schema identifier */
+	id?: string;
+	/** Schema name */
+	name: string;
+	/** Schema description */
+	description?: string;
+	/** Schema fields */
+	fields: SchemaField[];
 }

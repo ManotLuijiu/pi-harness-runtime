@@ -12,7 +12,7 @@ import {
 
 // ─── Test Fixtures ───────────────────────────────────────────────────
 
-const TEST_REPO_ROOT = "/Users/manotlj/Projects/Moo_AI/pi-harness-runtime";
+const TEST_REPO_ROOT = process.cwd();
 
 // ─── Language Detection Tests ────────────────────────────────────────
 
