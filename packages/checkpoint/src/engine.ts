@@ -526,7 +526,7 @@ export class CheckpointEngine {
  * Create a checkpoint engine
  */
 export function createCheckpointEngine(
-	config: CheckpointEngineConfig,
+	config: CheckpointEngineConfig = {},
 ): CheckpointEngine {
 	return new CheckpointEngine(config);
 }
