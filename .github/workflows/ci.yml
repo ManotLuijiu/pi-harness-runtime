@@ -31,7 +31,7 @@ jobs:
         run: npm install -g bun
 
       - name: Install dependencies
-        run: bun install  # Project uses bun.lock, not package-lock.json
+        run: bun install # Project uses bun.lock, not package-lock.json
 
       - name: Type check
         run: npm run typecheck 2>/dev/null || echo "No typecheck script"
