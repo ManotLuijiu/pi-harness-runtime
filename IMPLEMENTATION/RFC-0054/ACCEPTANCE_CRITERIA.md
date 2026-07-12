@@ -1,0 +1,8 @@
+- Routing respects task type and capabilities
+- Strategy selection works for all strategies
+- Cost and quota filters are applied correctly
+- Weighted scoring produces reasonable results
+- Fallback providers are used when needed
+- Events are emitted for all routing decisions
+- Unit tests cover all strategies and scenarios
+- Integration with Capability Registry and Model Registry works

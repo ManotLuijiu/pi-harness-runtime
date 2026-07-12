@@ -1,0 +1,8 @@
+- Cost entries are tracked with full metadata
+- Budget status reflects current usage correctly
+- Forecast provides reasonable estimates
+- Model switch recommendations are sensible
+- Optimized selections are Pareto-optimal
+- Events are emitted for budget warnings and exhaustion
+- Unit tests cover all scenarios
+- Integration with Model Registry and Capability Registry works

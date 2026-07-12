@@ -1,0 +1,4 @@
+- Register and query capabilities
+- Filter by score, latency, context window
+- Default profiles loaded
+- Events emitted

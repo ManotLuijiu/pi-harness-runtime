@@ -1,0 +1,8 @@
+- Models can be registered and unregistered
+- Alias lookup works correctly
+- Filters return correctly filtered and sorted results
+- Cost calculation handles all pricing components
+- Default models are loaded on initialization
+- Status changes are tracked
+- Events are emitted for all operations
+- Unit tests cover all query scenarios
