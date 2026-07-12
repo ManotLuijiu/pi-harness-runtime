@@ -28,7 +28,9 @@ export interface OkfConcept {
  * Each .md file becomes one OKF concept.
  * If directory doesn't exist, returns empty array (graceful degradation).
  */
-export function loadOkfConcepts(okfPath: string = DEFAULT_OKF_PATH): OkfConcept[] {
+export function loadOkfConcepts(
+	okfPath: string = DEFAULT_OKF_PATH,
+): OkfConcept[] {
 	// Graceful: if directory doesn't exist, return empty
 	if (!existsSync(okfPath)) {
 		return [];
@@ -70,7 +72,9 @@ export function loadOkfConcepts(okfPath: string = DEFAULT_OKF_PATH): OkfConcept[
 /**
  * Check if OKF directory exists (for informational purposes).
  */
-export function okfDirectoryExists(okfPath: string = DEFAULT_OKF_PATH): boolean {
+export function okfDirectoryExists(
+	okfPath: string = DEFAULT_OKF_PATH,
+): boolean {
 	return existsSync(okfPath);
 }
 
