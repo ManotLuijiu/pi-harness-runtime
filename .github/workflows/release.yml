@@ -4,16 +4,13 @@ name: Release
 #
 # Also triggers on push to main branch (after auto-merge from develop).
 #
-# Pattern adapted from frappe/.github/workflows/create-release.yml
-# (uses secrets for auth to bypass 2FA).
+# npm Trusted Publishing is enabled via GitHub Actions OIDC.
+# No long-lived npm token is required in CI once each package is configured
+# on npmjs.com -> Package -> Settings -> Trusted Publisher.
 #
-# Required GitHub secrets:
-#   NPM_TOKEN      — Granular Access Token from
-#                    https://www.npmjs.com/settings/manotluijiu/tokens
-#                    - Scopes: "pi-harness-runtime", "@pi-harness/*"
-#                    - ✅ Bypass 2FA
-#                    Used as `NODE_AUTH_TOKEN` for npm publish.
-#   RELEASE_TOKEN  — GitHub PAT with repo scope for changelog generation.
+# npm Trusted Publishing is configured per package. For this monorepo, add the
+# same GitHub workflow (`release.yml`) as a trusted publisher for the root
+# package and each published workspace package.
 
 on:
   push:
@@ -28,6 +25,10 @@ on:
         required: false
         default: "false"
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   release:
     name: Release
@@ -40,18 +41,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # Node 22 LTS: npm 10.x is stable for `npm publish`.
-          # Node 24's npm 11 crashes with "Exit handler never
-          # called!" during publish.
+          # Trusted publishing requires Node >= 22.14.0.
+          # Keep to Node 22 LTS, then upgrade npm explicitly below.
           node-version: "22"
-          # registry-url makes setup-node write an .npmrc with
-          # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
-          # which npm publish reads for auth.
           registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install bun
         run: npm install -g bun
@@ -80,12 +86,10 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # npm publish reads NPM_CONFIG_USERCONFIG (generated
-          # by setup-node registry-url) + NODE_AUTH_TOKEN for auth.
-          # bun publish ignores NPM_CONFIG_USERCONFIG, hence npm.
+          # npm automatically uses GitHub Actions OIDC for Trusted Publishing
+          # before falling back to traditional auth. We intentionally avoid
+          # NODE_AUTH_TOKEN here so CI depends on OIDC, not long-lived tokens.
           # Publish root package
           npm publish --access public
           # Publish all workspace packages
