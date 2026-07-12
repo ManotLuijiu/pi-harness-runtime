@@ -78,13 +78,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Publish root package
-          npm publish --access public
+          bun publish --access public
           # Publish all workspace packages
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
               cd "$pkg"
-              npm publish --access public || true
+              bun publish --access public || true
               cd - > /dev/null
             fi
           done
@@ -94,12 +94,12 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          npm publish --access public --dry-run
+          bun publish --access public --dry-run
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Would publish ${pkg}..."
               cd "$pkg"
-              npm publish --access public --dry-run || true
+              bun publish --access public --dry-run || true
               cd - > /dev/null
             fi
           done
