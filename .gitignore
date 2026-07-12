@@ -5,7 +5,6 @@ node_modules/
 .env
 .env.local
 .env.*.local
-.npmrc
 # Local SQLite state (created at runtime in ~/.pi/usage-status/)
 # This file lives outside the repo; nothing to ignore here.
 sample_github_workflows/
