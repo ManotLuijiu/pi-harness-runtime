@@ -122,7 +122,7 @@ jobs:
             fi
           fi
           echo "Performing squash merge..."
-          gh pr merge "$PR_NUMBER" --squash --auto
+          gh pr merge "$PR_NUMBER" --squash --delete-branch=false
 
       - name: Report failure
         if: failure()
