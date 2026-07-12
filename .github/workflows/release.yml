@@ -51,7 +51,7 @@ jobs:
           node-version: "22"
 
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@^11.5.1
+        run: npm install -g npm@11.18.0
 
       - name: Show tool versions
         run: |
@@ -90,14 +90,34 @@ jobs:
           # Avoid setup-node temp npm auth config so npm does not inherit
           # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
+
+          publish_with_retry() {
+            local max_retries=3
+            local retry=1
+            while [ "$retry" -le "$max_retries" ]; do
+              echo "Publish attempt ${retry}/${max_retries} in $(pwd)"
+              if npm publish --access public; then
+                return 0
+              fi
+              if [ "$retry" -lt "$max_retries" ]; then
+                local delay=$((retry * 5))
+                echo "Publish failed; retrying in ${delay}s..."
+                sleep "$delay"
+              fi
+              retry=$((retry + 1))
+            done
+            return 1
+          }
+
           # Publish root package
-          npm publish --access public
+          publish_with_retry
+
           # Publish all workspace packages
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
               cd "$pkg"
-              npm publish --access public || true
+              publish_with_retry || true
               cd - > /dev/null
             fi
           done
