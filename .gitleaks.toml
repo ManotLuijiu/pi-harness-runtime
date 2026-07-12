@@ -1,0 +1,14 @@
+[project]
+  root = "."
+
+[allowlist]
+  description = "Ignored files in .gitignore"
+  files = [
+    "^\\.env$",
+    "^\\.env\\..+$",
+    "^\\.env\\-local$",
+    "^\\.npmrc$",
+    "^\\.npmrc\\..+$",
+    "^.*cookies\\.txt$",
+    "^playwright\\.env$",
+  ]

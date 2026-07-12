@@ -1,9 +1,9 @@
 // standard-version config
 // https://github.com/conventional-changelog/standard-version
 //
-// Adapted from .claude-plugins/moocoding-skills/skills/release-app/SKILL.md
+// ESM version (project uses "type": "module")
 
-module.exports = {
+export default {
 	types: [
 		{ type: "feat", section: "Features" },
 		{ type: "fix", section: "Bug Fixes" },

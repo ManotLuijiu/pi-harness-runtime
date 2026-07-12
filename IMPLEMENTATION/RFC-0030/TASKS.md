@@ -1,0 +1,3 @@
+- [x] Read RFC
+- [x] Implement - AgentWorker interface (packages/types/src/agent-worker-types.ts)
+- [x] Test - Types compile cleanly

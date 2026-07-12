@@ -1,0 +1,25 @@
+{
+  "name": "@pi-harness/requirement-compiler",
+  "version": "1.0.0",
+  "description": "Compiles raw requirements into validated CompiledRequirement with ambiguity detection and risk tagging",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pi-harness/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0"
+  }
+}

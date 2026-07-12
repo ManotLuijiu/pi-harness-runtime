@@ -1,0 +1,260 @@
+[
+  {
+    "path": "IMPLEMENTATION/RFC-0041/ACCEPTANCE_CRITERIA.md",
+    "lines": 8,
+    "words": 40,
+    "sha256": "0a71838b5b6b5c2c4264ec089ec7be80a1348a0b5dc1b505c8c1b6187f4f5172"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0041/AI_BRIEF.md",
+    "lines": 26,
+    "words": 84,
+    "sha256": "fb2dcda98591078f90f48725e533f58512717f8fb0be3c9ca08bb890199cf0b3"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0041/FILES.md",
+    "lines": 12,
+    "words": 34,
+    "sha256": "8735c4e800359e057cec77a5f6240dec0da7798abaf3147318a80f9de9fa1872"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0041/TASKS.md",
+    "lines": 12,
+    "words": 67,
+    "sha256": "7da2e79b727e23f26a87ad848fc2fc6fd25e381e6e031b9d98e8cf503f5967d8"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0041/TESTS.md",
+    "lines": 12,
+    "words": 32,
+    "sha256": "743f169cf497bf0698ce7b378147a6ba748466d9ddf80cd43ffbf5500a0677dc"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0042/ACCEPTANCE_CRITERIA.md",
+    "lines": 7,
+    "words": 38,
+    "sha256": "96e617e5ab8c070a4c666a0c79fca1a1c9150dd4162b3d8929cb5861f472dff4"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0042/AI_BRIEF.md",
+    "lines": 5,
+    "words": 44,
+    "sha256": "7b71fcc2c4963619a376f8653c765efdfaa9aed1092be066667cc1876a13d378"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0042/FILES.md",
+    "lines": 14,
+    "words": 23,
+    "sha256": "387831539867976d1cc1ede540e3ef524dc11a80698f767686ee71a120606674"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0042/TASKS.md",
+    "lines": 12,
+    "words": 72,
+    "sha256": "9a3faf55657d48fd494afb44af3cd4b7f0fe6055ef9eb42dabf1c156079b544d"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0042/TESTS.md",
+    "lines": 11,
+    "words": 26,
+    "sha256": "f8d62ed53f9f943b41d2f4b925535b60f6046d9bde586ef121e81bbb0237edf7"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0043/ACCEPTANCE_CRITERIA.md",
+    "lines": 7,
+    "words": 32,
+    "sha256": "6b5f7f71e67ebb9eb69b12d8b1464f07c585a45f820f9607fad3a82c324f24f7"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0043/AI_BRIEF.md",
+    "lines": 5,
+    "words": 31,
+    "sha256": "696f02fd5cb060737c4432a3ddf55ef4a6744831c995c58c892be528dd856e77"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0043/FILES.md",
+    "lines": 14,
+    "words": 24,
+    "sha256": "e312944626ea8f64ed42e21f03d01340f4c5463880d39aef17e33a18485c063c"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0043/TASKS.md",
+    "lines": 12,
+    "words": 54,
+    "sha256": "01e98f43c2cad52fb451eb14aa5954ce11adaf113336aacf670bc4c957e86956"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0043/TESTS.md",
+    "lines": 10,
+    "words": 24,
+    "sha256": "7dd5c4dca7f0f5a4ab69392ca3b32e868ab5b4e9e162bae5e4f217f1b2fc0e4b"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0044/ACCEPTANCE_CRITERIA.md",
+    "lines": 7,
+    "words": 28,
+    "sha256": "43d1fee14de63d6f40c424e633383fb1a9f88528808554c86ac4f27fef95c76d"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0044/AI_BRIEF.md",
+    "lines": 5,
+    "words": 34,
+    "sha256": "5d7dfd3c0281ecd0db0effe3f9fb5dd0665f17e3c44e315c3746b2a07d85327f"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0044/FILES.md",
+    "lines": 13,
+    "words": 22,
+    "sha256": "41e4afbd7981e86af5e4e91f562512f60173f24b8a2d1b0e911dc3a0e7b99693"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0044/TASKS.md",
+    "lines": 12,
+    "words": 54,
+    "sha256": "56ea009f723995f8edb89871f1a0d05ec91d56e71897fe1d81478ffc8b6976f9"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0044/TESTS.md",
+    "lines": 10,
+    "words": 24,
+    "sha256": "3cafa4a2fac8dc4dd3a9131553a11e524fb0d56c9bd33b9f71e253a41095fc72"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0045/ACCEPTANCE_CRITERIA.md",
+    "lines": 31,
+    "words": 163,
+    "sha256": "937e9dc6bd30913b7d60acad17d1dea5afeaf0acefa9d8b8ad9b02c487ea1f08"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0045/AI_BRIEF.md",
+    "lines": 54,
+    "words": 191,
+    "sha256": "f8260b5e2a854cfa33b287e1695171f02d4de544b29691e6b8a2399b593bf0d5"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0045/FILES.md",
+    "lines": 14,
+    "words": 24,
+    "sha256": "24a733562f9f98ed704c821dbd2ef95aa52b43e5597c19caacb5639945a3e05e"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0045/TASKS.md",
+    "lines": 32,
+    "words": 171,
+    "sha256": "ed2f35c1afbdf7052ecd93fa17de94ce8b11265d212d28f8ddf2f273c248eeaa"
+  },
+  {
+    "path": "IMPLEMENTATION/RFC-0045/TESTS.md",
+    "lines": 63,
+    "words": 205,
+    "sha256": "cd9cb55a3aeb1e1bfd1bce699214e192ab84e23d97a01153d274aa854018ddf4"
+  },
+  {
+    "path": "OKF/INTEGRATION_NOTE.md",
+    "lines": 11,
+    "words": 74,
+    "sha256": "ebc53ff750b51f6452e1011eb5044933185da70f9f47692faf836dea010e00c2"
+  },
+  {
+    "path": "packages/project-analyzer/package.json",
+    "lines": 44,
+    "words": 83,
+    "sha256": "0d6406898731f4f606c1bc7df3afddbe76964216f0e84df5cf10bc27a76f8a5c"
+  },
+  {
+    "path": "packages/project-analyzer/src/analyzer.ts",
+    "lines": 684,
+    "words": 1722,
+    "sha256": "cc33e0e05fbfe247568f97fd369a3f58991104dfbde7a1eaeb4b4ed437fa1dcc"
+  },
+  {
+    "path": "packages/project-analyzer/src/cache.ts",
+    "lines": 330,
+    "words": 868,
+    "sha256": "707e0a30764440981bb542d0e5ca02f3e97737676a85264d6c6fa91aee5f2e82"
+  },
+  {
+    "path": "packages/project-analyzer/src/command-discovery.ts",
+    "lines": 240,
+    "words": 704,
+    "sha256": "c98999aab2198ccb68a38164206a13b1a1b27ecd44f7f7729beaea74c31a7624"
+  },
+  {
+    "path": "packages/project-analyzer/src/index.ts",
+    "lines": 124,
+    "words": 236,
+    "sha256": "0b35bbfda45c513ce5f29477a1dbb407eb31af28a61e96c3789c64219a9c70be"
+  },
+  {
+    "path": "packages/project-analyzer/src/plugins/index.ts",
+    "lines": 17,
+    "words": 29,
+    "sha256": "f040c4bca33acb9adf777d8fbf5c2586bae0f0b793da051754602c06d7f9c46a"
+  },
+  {
+    "path": "packages/project-analyzer/src/rule-discovery.ts",
+    "lines": 283,
+    "words": 807,
+    "sha256": "d1f1802ac6db585e49e646bca53823a429c447bcf1d70a9e09062a2920270cab"
+  },
+  {
+    "path": "packages/project-analyzer/src/signals.ts",
+    "lines": 356,
+    "words": 913,
+    "sha256": "3af10376491352da0731f1a89542fc2fb7497ae6d1392a7095f9d9b941f25a89"
+  },
+  {
+    "path": "packages/project-analyzer/src/types.ts",
+    "lines": 413,
+    "words": 1249,
+    "sha256": "ad317a4f57b128181dc2cf079a386aa36839095fec735a2b2a86ef16dc334bef"
+  },
+  {
+    "path": "packages/project-analyzer/src/walker.ts",
+    "lines": 367,
+    "words": 1065,
+    "sha256": "4bec1dbff26a6d9e92e16a3b8318cdbf162cf55d0b0548ff0c4dcf291db4d06d"
+  },
+  {
+    "path": "packages/project-analyzer/test/index.test.ts",
+    "lines": 232,
+    "words": 592,
+    "sha256": "49b063d800aa1319b4c48b1174a9494203c469bd82cd877d0526e83db3139815"
+  },
+  {
+    "path": "packages/project-analyzer/tsconfig.json",
+    "lines": 22,
+    "words": 42,
+    "sha256": "71f84ebf0c7e907050cbdc619d463dfbe8c690fc8f922a6c3590333aae03172b"
+  },
+  {
+    "path": "RFC/0041_PROMPT_COMPILER.md",
+    "lines": 232,
+    "words": 683,
+    "sha256": "f3d77881fa8fa753f2f6a69717e0269e9ccabca5e279e90d3ee990f8b5cb6e43"
+  },
+  {
+    "path": "RFC/0042_CONTEXT_COMPILER.md",
+    "lines": 216,
+    "words": 654,
+    "sha256": "4227c54e50fd3d33aa5ba03f4d7370d8f6f52272ae836b74a1fd0aba38c10a1c"
+  },
+  {
+    "path": "RFC/0043_REQUIREMENT_COMPILER.md",
+    "lines": 211,
+    "words": 589,
+    "sha256": "74d8043f5042e855018ff2417f55a1e9d0e39d7bd4d0c8ce10072ac685e4dea2"
+  },
+  {
+    "path": "RFC/0044_TASK_COMPILER.md",
+    "lines": 207,
+    "words": 604,
+    "sha256": "bb9c6477c15debc01faab3bf02257e62489304ad6a68fe569a98173eb57941d3"
+  },
+  {
+    "path": "RFC/0045_PROJECT_ANALYZER.md",
+    "lines": 246,
+    "words": 622,
+    "sha256": "83f333138359f9409d05e53d79addf508ea42f28a7014726077247e46d1fe76f"
+  }
+]

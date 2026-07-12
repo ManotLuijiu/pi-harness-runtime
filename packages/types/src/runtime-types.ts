@@ -39,6 +39,14 @@ export interface RuntimeTask {
 	assignedProvider?: string;
 	worktreePath?: string;
 	acceptanceCriteria?: string[];
+	/** Task instructions (used by LoopRuntime for compactable message content) */
+	instructions?: string;
+	/** Tools available for this task */
+	tools?: Array<{
+		name: string;
+		description?: string;
+		input_schema?: Record<string, unknown>;
+	}>;
 }
 
 export interface RuntimeCheckpoint {
@@ -52,6 +60,10 @@ export interface RuntimeCheckpoint {
 	lastError?: string;
 	createdAt: string;
 	updatedAt: string;
+	/** Loop iteration at checkpoint (used by LoopRuntime for resume) */
+	iteration?: number;
+	/** Task ID being executed at checkpoint */
+	taskId?: string;
 }
 
 export interface RuntimeEvent {
@@ -156,6 +168,13 @@ export interface LockInfo {
 
 // ─── Context Window Manager (RFC-0010) ──────────────────────────────
 
+export interface ContextWindowUpdate {
+	provider: string;
+	model: string;
+	maxTokens: number;
+	usedTokens: number;
+}
+
 export interface ContextWindowStats {
 	provider: string;
 	model: string;
@@ -180,7 +199,12 @@ export interface QuotaSignal {
 	remainingPct: number;
 	resetsAt?: string;
 	exhausted: boolean;
-	source: "api_response" | "provider_status" | "playwright" | "local_estimate";
+	source:
+		| "api_response"
+		| "provider_status"
+		| "playwright"
+		| "local_estimate"
+		| "tui_message";
 	capturedAt: string;
 	retryAfterMs?: number;
 }
@@ -212,7 +236,9 @@ export type ProviderCapability =
 	| "plan"
 	| "test"
 	| "e2e"
-	| "refactor";
+	| "refactor"
+	| "analysis"
+	| "debug";
 
 export interface RateLimitConfig {
 	requestsPerMinute?: number;
@@ -420,7 +446,7 @@ export interface WorktreeInfo {
 export interface LoopConfig {
 	jobId: string;
 	requirement: string;
-	providerPolicy: {
+	providerPolicy?: {
 		plannerProvider: string;
 		codeProviders: string[];
 		reviewProvider: string;
@@ -428,12 +454,120 @@ export interface LoopConfig {
 	};
 	maxIterations?: number;
 	checkpointInterval?: number;
+	autoCheckpoint?: boolean;
+	pauseOnQuota?: boolean;
+	maxRepairAttempts?: number;
 }
 
 export interface LoopState {
 	jobId: string;
 	iteration: number;
-	currentTaskId?: string;
-	status: "running" | "paused" | "completed" | "failed";
+	currentTaskId?: string | null;
+	status: JobStatus;
 	lastActivity?: string;
+	lastCheckpoint?: RuntimeCheckpoint | null;
+}
+
+// ─── Compact Types (RFC-0028) ───────────────────────────────────────────────
+
+/** Why a compact was triggered */
+export type CompactTriggerReason =
+	| "token_threshold"
+	| "manual"
+	| "output_limit"
+	| "quota_exceeded"
+	| "error";
+
+/** A single tool-call result that can be microcompacted */
+export interface CompactableToolResult {
+	id: string;
+	name: string;
+	timestamp: number;
+	tokens: number;
+	content: string;
+}
+
+/**
+ * A message in the compactable conversation history.
+ * System-role messages are used as compact boundaries.
+ */
+export interface CompactableMessage {
+	role: "user" | "assistant" | "system";
+	content: string;
+	timestamp: number;
+	toolResults?: CompactableToolResult[];
+	/** Arbitrary per-message metadata (e.g. model, usage stats) */
+	metadata?: Record<string, unknown>;
+}
+
+/** Return type of every LLM invocation */
+export interface InvokeResult {
+	success: boolean;
+	output?: string;
+	error?: string;
+	finishReason?: "stop" | "length" | "content_filter";
+	usage?: {
+		inputTokens: number;
+		outputTokens: number;
+		totalTokens: number;
+	};
+	/** The model that generated this result (used for cost tracking) */
+	model?: string;
+}
+
+/**
+ * Options passed when invoking the LLM through CompactOrchestrator.
+ * The orchestrator injects microcompact / full compact around this call.
+ */
+export interface InvokeWithCompactOptions {
+	messages: CompactableMessage[];
+	model: string;
+	systemPrompt?: string;
+	maxOutputTokens: number;
+	tools?: Array<{
+		name: string;
+		description?: string;
+		input_schema?: Record<string, unknown>;
+	}>;
+	/**
+	 * The actual LLM invoke function.
+	 * When provided in opts, the orchestrator uses it directly.
+	 * Otherwise the orchestrator falls back to callbacks.invokeAgent.
+	 */
+	invokeAgent?: (opts: InvokeWithCompactOptions) => Promise<InvokeResult>;
+}
+
+/** What the orchestrator emits after a full compact */
+export interface CompactResult {
+	trigger: CompactTriggerReason;
+	beforeTokens: number;
+	afterTokens: number;
+	messagesCompacted: number;
+	summary?: string;
+}
+
+/** What the orchestrator emits as its final return value */
+export interface OrchestratedInvokeResult extends InvokeResult {
+	compactResult?: CompactResult;
+	continueMessage?: string;
+}
+
+/** Callbacks the harness provides to CompactOrchestrator */
+export interface CompactOrchestratorCallbacks {
+	/** Called after every successful compaction with the result */
+	onCheckpoint?: (result: CompactResult) => void;
+	/** Called when a quota event occurs */
+	onQuotaEvent?: (
+		event: "paused" | "resumed" | "exhausted",
+		provider?: string,
+	) => void;
+	/**
+	 * Summarize messages via a forked agent.
+	 * Used by runFullCompact() instead of the main conversation.
+	 * Until RFC-0028 is fully wired, falls back to heuristic truncation.
+	 */
+	summarizeViaForkedAgent?: (
+		messages: CompactableMessage[],
+		reason: CompactTriggerReason,
+	) => Promise<{ summary: string; droppedCount: number }>;
 }

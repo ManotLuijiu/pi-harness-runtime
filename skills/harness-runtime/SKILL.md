@@ -1,6 +1,10 @@
+---
+description: Local-first, provider-agnostic AI coding harness runtime for pi.dev with quota management and multi-model coordination
+---
+
 # Harness Runtime — pi Extension
 
-**Status:** v0.2.0 | **RFCs:** 18 defined | **Implementation:** Phase 1-6
+**Status:** v0.3.0 | **RFCs:** 18 defined | **Implementation:** Phase 1-6
 
 ## Overview
 
@@ -29,7 +33,7 @@ Human Requirement
 | Command | Description |
 |---------|-------------|
 | `/usage` | Show full status (local tracking + provider mirror) |
-| `/usage sync` | Sync provider quota from console.minimax.io |
+| `/usage refresh` | Force refresh quota from MiniMax console |
 | `/usage today` | Today's usage + 5h window |
 | `/usage week` | This week's usage + lifetime |
 | `/usage reset` | Clear provider mirror |
@@ -44,6 +48,30 @@ Human Requirement
 | `/harness pause` | Pause the current job |
 | `/harness resume` | Resume a paused job |
 | `/harness cancel` | Cancel the current job |
+
+### Authentication Commands
+
+| Command | Description |
+|---------|-------------|
+| `/harness auth minimax` | Authenticate with MiniMax (opens browser) |
+| `/harness auth check` | Check MiniMax auth status |
+| `/harness auth scrape` | Scrape MiniMax usage (silent, uses saved profile) |
+
+**First-time setup:**
+
+```bash
+harness-auth auth
+# → Opens Chrome browser, login once, profile auto-saves
+# Or: bun packages/auth/src/run-minimax-auth.ts auth
+```
+
+**Subsequent usage:**
+
+```bash
+harness-auth scrape
+# → Silent scraping with saved profile
+# Or: bun packages/auth/src/run-minimax-auth.ts scrape
+```
 
 ## Job State Machine
 

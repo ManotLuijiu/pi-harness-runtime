@@ -1,0 +1,4 @@
+- [x] Read RFC
+- [x] Implement - AgentWorker interface (RFC-0030)
+- [x] Implement - DeepAgentsAdapter (packages/providers/deepagents-adapter.ts)
+- [x] Test - Types compile cleanly

@@ -1,0 +1,9 @@
+packages/model-registry/src/index.ts
+packages/model-registry/src/types.ts
+packages/model-registry/src/registry.ts
+packages/model-registry/src/query.ts
+packages/model-registry/src/cost.ts
+packages/model-registry/src/defaults.ts
+packages/model-registry/test/registry.test.ts
+packages/model-registry/package.json
+packages/model-registry/tsconfig.json

@@ -1,0 +1,7 @@
+- Skills can be registered and unregistered at runtime
+- Trigger matching works for keywords, patterns, and intents
+- Best match returns highest-scoring skill
+- Skill handler receives full context
+- Default skills are loaded on initialization
+- Events are emitted for all operations
+- Unit tests cover all matching scenarios
