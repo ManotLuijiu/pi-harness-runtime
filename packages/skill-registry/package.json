@@ -1,0 +1,41 @@
+{
+  "name": "@pi-harness/skill-registry",
+  "version": "1.0.0",
+  "description": "Skill Registry for pi-harness-runtime — dynamic skill discovery and invocation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "pi",
+    "harness",
+    "runtime",
+    "skill",
+    "registry",
+    "agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "bun-types": "^1.0.0"
+  }
+}
