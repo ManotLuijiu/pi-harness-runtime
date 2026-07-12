@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pi/requirement-compiler": "workspace:*",
-    "@pi/task-compiler": "workspace:*",
+    "@pi-harness/requirement-compiler": "workspace:*",
+    "@pi-harness/task-compiler": "workspace:*",
     "@pi-harness/types": "workspace:*"
   },
   "devDependencies": {
