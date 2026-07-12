@@ -3,7 +3,6 @@
  *
  * Registry for managing provider adapters with lifecycle hooks.
  */
-/// <reference types="node" />
 import { EventEmitter } from "node:events";
 import type { AdapterInfo, AdapterLifecycle, AdapterResult, AdapterState, ErrorAnalysis, HealthCheckResult, ProviderCapability, ProviderRequest } from "./types.js";
 import type { BuiltAdapter } from "./builder.js";

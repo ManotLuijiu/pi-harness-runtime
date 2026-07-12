@@ -57,7 +57,7 @@ jobs:
               --base main \
               --head develop \
               --title "chore: merge develop to main" \
-              --body "Auto-generated PR to merge develop into main. This PR is created automatically by the CI pipeline."
+              --body "Auto-generated PR to merge develop into main"
             PR_NUMBER=$(gh pr list \
               --head develop \
               --base main \
@@ -122,7 +122,7 @@ jobs:
             fi
           fi
           echo "Performing squash merge..."
-          gh pr merge "$PR_NUMBER" --squash --delete-branch --auto
+          gh pr merge "$PR_NUMBER" --squash --auto
 
       - name: Report failure
         if: failure()

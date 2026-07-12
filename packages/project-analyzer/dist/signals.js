@@ -266,7 +266,7 @@ export function createCompositePlugin(customPlugins) {
     return {
         id: "composite",
         version: "1.0.0",
-        priority: 1000,
+        priority: 1000, // Lowest priority
         async detect(fs) {
             const results = await detector.detect(fs);
             if (results.length === 0)

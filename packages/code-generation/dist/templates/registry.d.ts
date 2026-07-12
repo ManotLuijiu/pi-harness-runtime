@@ -3,7 +3,7 @@
  *
  * Registry for managing templates.
  */
-import type { Template, TemplateSet, RegistryQuery, RegistryEntry } from "../types.js";
+import type { RegistryEntry, RegistryQuery, Template, TemplateSet } from "../types.js";
 export declare class TemplateRegistry {
     private templates;
     private sets;

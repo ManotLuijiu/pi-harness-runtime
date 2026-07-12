@@ -102,7 +102,7 @@ export async function detectTestCapabilities(fs, framework) {
             runner: "cypress",
             configFiles: ["cypress.config.ts", "cypress.config.js"],
         },
-        { runner: "bun_test", configFiles: [] },
+        { runner: "bun_test", configFiles: [] }, // Detected via bun.lockb and test scripts
         {
             runner: "pytest",
             configFiles: ["pytest.ini", "setup.cfg", "pyproject.toml"],
