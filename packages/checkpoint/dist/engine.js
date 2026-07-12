@@ -46,9 +46,9 @@ export class CheckpointEngine {
             jobId,
             version,
             type,
-            sizeBytes: 0,
+            sizeBytes: 0, // Will be updated by storage
             compressed: this.config.compression,
-            checksum: "",
+            checksum: "", // Will be updated by storage
             taskProgress: {
                 total: tasks.length,
                 completed: tasks.filter((t) => t.status === "done").length,
@@ -405,7 +405,7 @@ export class CheckpointEngine {
 /**
  * Create a checkpoint engine
  */
-export function createCheckpointEngine(config) {
+export function createCheckpointEngine(config = {}) {
     return new CheckpointEngine(config);
 }
 //# sourceMappingURL=engine.js.map
