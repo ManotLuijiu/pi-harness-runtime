@@ -1,6 +1,6 @@
 {
   "name": "@pi/provider-adapter-sdk",
-  "version": "0.6.3-beta.7",
+  "version": "0.6.3-beta.8",
   "description": "SDK for building, testing, and registering AI provider adapters",
   "type": "module",
   "main": "./dist/index.js",
