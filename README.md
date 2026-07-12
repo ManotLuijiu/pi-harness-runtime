@@ -134,15 +134,46 @@ All data stored locally in `~/.pi/`:
 ├── usage-status/         # /usage data
 │   ├── usage.jsonl
 │   └── mirror.json
-└── harness/            # /harness data
-    └── jobs/
-        └── <job-id>/
-            ├── checkpoint.json
-            ├── events.jsonl
-            ├── task-graph.json
-            ├── blackboard/
-            └── repair-tasks.jsonl
+├── harness/            # /harness data
+│   └── jobs/
+│       └── <job-id>/
+│           ├── checkpoint.json
+│           ├── events.jsonl
+│           ├── task-graph.json
+│           ├── blackboard/
+│           └── repair-tasks.jsonl
+└── okf/               # (optional) Your custom OKF knowledge
 ```
+
+## Custom OKF Knowledge (Optional)
+
+Create `~/.pi/okf/` to add your custom knowledge that the runtime reads during context compilation:
+
+```
+~/.pi/okf/
+├── <skill-name>.md      # Your custom skill/procedure
+├── <domain>.md          # Domain-specific knowledge
+└── <project>.md        # Project-specific rules
+```
+
+The runtime automatically detects and reads these files. If the folder doesn't exist, compilation proceeds without them.
+
+**Example:**
+
+```markdown
+# my-custom-skill
+
+## When to use
+
+This skill applies when...
+
+## Procedure
+
+1. Step one
+2. Step two
+```
+
+See `packages/context-compiler/` for how OKF concepts are loaded.
 
 ## Safety Properties
 
