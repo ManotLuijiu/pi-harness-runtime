@@ -51,10 +51,13 @@ jobs:
         run: npm install -g bun
 
       - name: Install dependencies
-        run: bun install
+        run: |
+          # Project uses bun.lock, so use bun install
+          bun install
 
       - name: Build packages
         run: |
+          # Use bun to build all packages
           bun run build
 
       - name: Bump version
