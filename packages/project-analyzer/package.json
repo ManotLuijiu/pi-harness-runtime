@@ -34,7 +34,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@pi/types": "workspace:*",
+    "@pi-harness/types": "workspace:*",
     "@pi/framework-detector": "workspace:*"
   },
   "devDependencies": {
