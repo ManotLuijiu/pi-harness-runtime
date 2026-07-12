@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/model-registry",
-  "version": "0.6.3-beta.5",
+  "version": "0.6.3-beta.6",
   "description": "Model Registry for pi-harness-runtime — centralized model metadata with pricing",
   "type": "module",
   "main": "./dist/index.js",

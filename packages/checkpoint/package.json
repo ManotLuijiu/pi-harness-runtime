@@ -1,6 +1,6 @@
 {
   "name": "@pi/checkpoint",
-  "version": "0.6.3-beta.5",
+  "version": "0.6.3-beta.6",
   "description": "Enhanced checkpoint system with incremental snapshots, diff-based storage, and recovery strategies",
   "type": "module",
   "main": "./dist/index.js",
