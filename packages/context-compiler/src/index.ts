@@ -50,3 +50,12 @@ export {
 	shouldInvalidate,
 	extractItemHashes,
 } from "./cache.js";
+
+// OKF integration
+export { enrichWithOkf } from "./compiler.js";
+export {
+	loadOkfConcepts,
+	okfDirectoryExists,
+	getOkfPath,
+} from "./okf-loader.js";
+export type { OkfConcept } from "./okf-loader.js";
