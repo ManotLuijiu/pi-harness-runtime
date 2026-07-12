@@ -10,7 +10,7 @@ name: Release
 # Required GitHub secrets:
 #   NPM_TOKEN      — Granular Access Token from
 #                    https://www.npmjs.com/settings/manotluijiu/tokens
-#                    - Packages & scopes: "pi-harness-runtime", "Read and write"
+#                    - Packages: "pi-harness-runtime", "@pi-harness/*"
 #                    - ✅ Bypass 2FA
 #                    Used as `NODE_AUTH_TOKEN` for npm publish.
 #   RELEASE_TOKEN  — GitHub PAT with repo scope for changelog generation.
@@ -68,13 +68,33 @@ jobs:
           github.event.inputs.dry_run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: |
+          # Publish root package
+          npm publish --access public
+          # Publish all workspace packages
+          for pkg in packages/*/; do
+            if [ -f "${pkg}package.json" ]; then
+              echo "Publishing ${pkg}..."
+              cd "$pkg"
+              npm publish --access public || true
+              cd - > /dev/null
+            fi
+          done
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        run: npm publish --access public --dry-run
+        run: |
+          npm publish --access public --dry-run
+          for pkg in packages/*/; do
+            if [ -f "${pkg}package.json" ]; then
+              echo "Would publish ${pkg}..."
+              cd "$pkg"
+              npm publish --access public --dry-run || true
+              cd - > /dev/null
+            fi
+          done
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
