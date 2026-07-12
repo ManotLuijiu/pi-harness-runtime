@@ -29,8 +29,8 @@ export declare class AdapterAlreadyRegisteredError extends AdapterError {
 export declare class AdapterInvocationError extends AdapterError {
     readonly adapterId: string;
     readonly retryable: boolean;
-    readonly originalError?: unknown;
-    constructor(message: string, adapterId: string, retryable: boolean, originalError?: unknown);
+    readonly originalError?: unknown | undefined;
+    constructor(message: string, adapterId: string, retryable: boolean, originalError?: unknown | undefined);
 }
 /**
  * Thrown when a model is not supported
