@@ -49,7 +49,6 @@ jobs:
           # Trusted publishing requires Node >= 22.14.0.
           # Keep to Node 22 LTS, then upgrade npm explicitly below.
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@^11.5.1
@@ -87,9 +86,10 @@ jobs:
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
         run: |
-          # npm automatically uses GitHub Actions OIDC for Trusted Publishing
-          # before falling back to traditional auth. We intentionally avoid
-          # NODE_AUTH_TOKEN here so CI depends on OIDC, not long-lived tokens.
+          # Use pure OIDC trusted publishing.
+          # Avoid setup-node temp npm auth config so npm does not inherit
+          # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
           # Publish root package
           npm publish --access public
           # Publish all workspace packages
@@ -107,6 +107,7 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
           npm publish --access public --dry-run
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
