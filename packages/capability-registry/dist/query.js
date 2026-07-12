@@ -1,0 +1,66 @@
+/**
+ * Capability Query Functions (RFC-0051)
+ */
+const LATENCY_ORDER = {
+    fast: 1,
+    medium: 2,
+    slow: 3,
+};
+/**
+ * Query capabilities from a registry store
+ */
+export function queryCapabilities(getAllModelsWithCapability, capability, requirements) {
+    const all = getAllModelsWithCapability(capability);
+    return all
+        .filter((m) => {
+        if (requirements?.minScore !== undefined &&
+            m.profile.score < requirements.minScore) {
+            return false;
+        }
+        if (requirements?.maxLatency !== undefined &&
+            LATENCY_ORDER[m.profile.latency] >
+                LATENCY_ORDER[requirements.maxLatency]) {
+            return false;
+        }
+        if (requirements?.requiresContextWindow !== undefined &&
+            m.profile.contextWindow < requirements.requiresContextWindow) {
+            return false;
+        }
+        if (requirements?.requiresMaxOutput !== undefined &&
+            m.profile.maxOutputTokens < requirements.requiresMaxOutput) {
+            return false;
+        }
+        return true;
+    })
+        .sort((a, b) => b.profile.score - a.profile.score);
+}
+/**
+ * Find the best model for a capability
+ */
+export function findBestModel(candidates) {
+    if (candidates.length === 0)
+        return undefined;
+    return candidates[0];
+}
+/**
+ * Filter by latency preference
+ */
+export function filterByLatency(candidates, preference) {
+    switch (preference) {
+        case "fast":
+            return candidates.filter((c) => c.profile.latency === "fast");
+        case "quality":
+            return candidates.sort((a, b) => b.profile.score - a.profile.score);
+        case "balanced":
+        default:
+            // Return all candidates sorted by a balanced score
+            return candidates.sort((a, b) => {
+                const latencyScoreA = 4 - LATENCY_ORDER[a.profile.latency];
+                const latencyScoreB = 4 - LATENCY_ORDER[b.profile.latency];
+                const balancedA = a.profile.score * 0.7 + latencyScoreA * 30;
+                const balancedB = b.profile.score * 0.7 + latencyScoreB * 30;
+                return balancedB - balancedA;
+            });
+    }
+}
+//# sourceMappingURL=query.js.map

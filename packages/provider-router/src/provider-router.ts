@@ -1,42 +1,315 @@
-import type { ProviderSelection, RuntimeContext, RuntimeTask } from "../../types/src/runtime-types";
+/**
+ * Enhanced Provider Router (RFC-0054)
+ */
 
-export interface RoutingPolicy {
-  plannerProvider: string;
-  codeProviders: string[];
-  reviewProvider: string;
-  fallbackProviders: string[];
+import type {
+	ProviderCandidate,
+	ProviderRouter,
+	ProviderRouterEvent,
+	RoutingContext,
+	RoutingDecision,
+	RoutingOptions,
+	RoutingPolicy,
+	RoutingStrategy,
+} from "./types.js";
+import { DEFAULT_ROUTING_POLICY } from "./policy.js";
+import {
+	applyStrategy,
+	createDecision,
+	calculateWeightedScore,
+} from "./strategies.js";
+
+type EventHandler = (event: ProviderRouterEvent) => void;
+
+interface CandidateProvider {
+	providerId: string;
+	modelId: string;
+	estimatedCost?: number;
+	estimatedLatency?: "fast" | "medium" | "slow";
+	qualityScore?: number;
 }
 
-export class SimpleProviderRouter {
-  constructor(private readonly policy: RoutingPolicy) {}
+/**
+ * Enhanced Provider Router with capability and cost awareness
+ */
+export class EnhancedProviderRouter implements ProviderRouter {
+	private policy: RoutingPolicy;
+	private eventHandlers: Set<EventHandler> = new Set();
 
-  async selectProvider(task: RuntimeTask, context: RuntimeContext): Promise<ProviderSelection> {
-    const candidates = this.candidatesForTask(task);
+	// Default providers for fallback
+	private defaultCandidates: CandidateProvider[] = [
+		{
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4",
+			estimatedCost: 0.003, // $3/1M tokens average
+			estimatedLatency: "fast",
+			qualityScore: 90,
+		},
+		{
+			providerId: "openai",
+			modelId: "gpt-4o-mini",
+			estimatedCost: 0.0006,
+			estimatedLatency: "fast",
+			qualityScore: 82,
+		},
+		{
+			providerId: "minimax",
+			modelId: "MiniMax-Text-01",
+			estimatedCost: 0.0001,
+			estimatedLatency: "fast",
+			qualityScore: 75,
+		},
+		{
+			providerId: "google",
+			modelId: "gemini-1.5-flash",
+			estimatedCost: 0.00007,
+			estimatedLatency: "fast",
+			qualityScore: 78,
+		},
+	];
 
-    for (const providerId of candidates) {
-      const state = context.providerStates[providerId] ?? "unknown";
-      if (state === "available" || state === "unknown") {
-        return {
-          providerId,
-          reason: `selected ${providerId} for task ${task.id}; state=${state}`,
-        };
-      }
-    }
+	constructor(policy?: RoutingPolicy) {
+		this.policy = policy ?? DEFAULT_ROUTING_POLICY;
+	}
 
-    throw new Error(`No available provider for task ${task.id}`);
-  }
+	/**
+	 * Select the best provider for a task
+	 */
+	async selectProvider(
+		task: RoutingContext["task"],
+		context: RoutingContext,
+		options?: RoutingOptions,
+	): Promise<RoutingDecision> {
+		const candidates = this.buildCandidates(context, options);
 
-  private candidatesForTask(task: RuntimeTask): string[] {
-    const title = task.title.toLowerCase();
+		// Filter candidates
+		const filtered = this.filterCandidates(candidates, context, options);
 
-    if (title.includes("plan") || title.includes("architecture")) {
-      return [this.policy.plannerProvider, ...this.policy.fallbackProviders];
-    }
+		if (filtered.length === 0) {
+			this.emit({
+				type: "router.no_candidates",
+				taskId: task.id,
+				reason: "All candidates filtered out",
+			});
 
-    if (title.includes("review") || title.includes("diff")) {
-      return [this.policy.reviewProvider, ...this.policy.fallbackProviders];
-    }
+			// Fallback to default
+			const fallback = this.policy.fallbackProviders[0];
+			const defaultCandidate =
+				this.defaultCandidates.find((c) => c.providerId === fallback) ??
+				this.defaultCandidates[0];
 
-    return [...this.policy.codeProviders, ...this.policy.fallbackProviders];
-  }
+			return createDecision(
+				{
+					providerId: defaultCandidate.providerId,
+					modelId: defaultCandidate.modelId,
+					capabilities: [],
+					estimatedCost: defaultCandidate.estimatedCost,
+					estimatedLatency: defaultCandidate.estimatedLatency ?? "medium",
+					qualityScore: defaultCandidate.qualityScore,
+					remainingQuotaPct:
+						context.quotaStates[defaultCandidate.providerId]?.remainingPct ?? 1,
+				},
+				`Fallback to ${defaultCandidate.providerId}`,
+			);
+		}
+
+		// Determine strategy
+		const strategy = this.determineStrategy(task, options);
+
+		// Apply strategy
+		const selected = applyStrategy(filtered, strategy, this.policy, options);
+
+		const decision = createDecision(
+			selected,
+			`Selected via ${strategy} strategy`,
+		);
+
+		this.emit({
+			type: "router.provider_selected",
+			taskId: task.id,
+			providerId: decision.providerId,
+			reason: decision.reason,
+		});
+
+		return decision;
+	}
+
+	/**
+	 * Select multiple providers
+	 */
+	async selectProviders(
+		task: RoutingContext["task"],
+		context: RoutingContext,
+		count: number,
+	): Promise<RoutingDecision[]> {
+		const candidates = this.buildCandidates(context);
+		const sorted = candidates.sort((a, b) => {
+			return (
+				calculateWeightedScore(b, this.policy) -
+				calculateWeightedScore(a, this.policy)
+			);
+		});
+
+		const selected = sorted.slice(0, count);
+
+		return selected.map((c, i) =>
+			createDecision(c, `Ranked #${i + 1} for ${task.id}`),
+		);
+	}
+
+	/**
+	 * Get current routing policy
+	 */
+	getRoutingPolicy(): RoutingPolicy {
+		return { ...this.policy };
+	}
+
+	/**
+	 * Update routing policy
+	 */
+	setRoutingPolicy(policy: RoutingPolicy): void {
+		const oldPolicy = this.policy;
+		this.policy = policy;
+
+		this.emit({
+			type: "router.policy_updated",
+			oldPolicy,
+			newPolicy: policy,
+		});
+	}
+
+	/**
+	 * Subscribe to events
+	 */
+	onEvent(handler: EventHandler): () => void {
+		this.eventHandlers.add(handler);
+		return () => this.eventHandlers.delete(handler);
+	}
+
+	/**
+	 * Build candidate list from context
+	 */
+	private buildCandidates(
+		context: RoutingContext,
+		options?: RoutingOptions,
+	): ProviderCandidate[] {
+		const candidates: ProviderCandidate[] = [];
+
+		// Add default candidates
+		for (const candidate of this.defaultCandidates) {
+			const providerState =
+				context.providerStates[candidate.providerId] ?? "unknown";
+			const quotaState = context.quotaStates[candidate.providerId];
+
+			// Skip disabled providers
+			if (providerState === "disabled") continue;
+
+			candidates.push({
+				providerId: candidate.providerId,
+				modelId: candidate.modelId,
+				capabilities: [], // Would be populated from capability registry
+				estimatedCost: candidate.estimatedCost,
+				estimatedLatency: candidate.estimatedLatency ?? "medium",
+				qualityScore: candidate.qualityScore,
+				remainingQuotaPct: quotaState?.remainingPct ?? 1,
+			});
+		}
+
+		return candidates;
+	}
+
+	/**
+	 * Filter candidates based on options and context
+	 */
+	private filterCandidates(
+		candidates: ProviderCandidate[],
+		context: RoutingContext,
+		options?: RoutingOptions,
+	): ProviderCandidate[] {
+		let filtered = [...candidates];
+
+		// Filter by cost
+		if (options?.maxCostPerTask) {
+			filtered = filtered.filter(
+				(c) => (c.estimatedCost ?? Infinity) <= options.maxCostPerTask!,
+			);
+		}
+
+		// Filter by quota
+		filtered = filtered.filter((c) => {
+			const quota = context.quotaStates[c.providerId];
+			return !quota || !quota.exhausted;
+		});
+
+		// Filter by provider state
+		filtered = filtered.filter((c) => {
+			const state = context.providerStates[c.providerId] ?? "unknown";
+			return state !== "disabled" && state !== "exhausted";
+		});
+
+		// Prefer providers
+		if (options?.preferProviders?.length) {
+			filtered.sort((a, b) => {
+				const aPreferred = options.preferProviders!.includes(a.providerId)
+					? 1
+					: 0;
+				const bPreferred = options.preferProviders!.includes(b.providerId)
+					? 1
+					: 0;
+				return bPreferred - aPreferred;
+			});
+		}
+
+		// Avoid providers
+		if (options?.avoidProviders?.length) {
+			filtered = filtered.filter(
+				(c) => !options.avoidProviders!.includes(c.providerId),
+			);
+		}
+
+		return filtered;
+	}
+
+	/**
+	 * Determine routing strategy for a task
+	 */
+	private determineStrategy(
+		task: RoutingContext["task"],
+		options?: RoutingOptions,
+	): RoutingStrategy {
+		// Check for explicit preferences
+		if (options?.preferCheapest) return "cheapest";
+		if (options?.preferFastest) return "fastest";
+		if (options?.preferHighestQuality) return "best_quality";
+
+		// Check task type override
+		if (this.policy.taskTypeOverrides[task.type]) {
+			return this.policy.taskTypeOverrides[task.type];
+		}
+
+		// Fall back to default
+		return this.policy.defaultStrategy;
+	}
+
+	/**
+	 * Emit an event
+	 */
+	private emit(event: ProviderRouterEvent): void {
+		for (const handler of this.eventHandlers) {
+			try {
+				handler(event);
+			} catch {
+				// Ignore handler errors
+			}
+		}
+	}
+}
+
+/**
+ * Create a new provider router
+ */
+export function createProviderRouter(
+	policy?: RoutingPolicy,
+): EnhancedProviderRouter {
+	return new EnhancedProviderRouter(policy);
 }

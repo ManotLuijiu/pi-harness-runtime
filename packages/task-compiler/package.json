@@ -1,0 +1,43 @@
+{
+  "name": "@pi-harness/task-compiler",
+  "version": "1.0.0",
+  "description": "Task Compiler for pi-harness-runtime — produces deterministic task DAG from CompiledRequirement",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "keywords": [
+    "pi",
+    "harness",
+    "runtime",
+    "task",
+    "compiler",
+    "dag"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@pi-harness/requirement-compiler": "workspace:*",
+    "@pi-harness/project-analyzer": "workspace:*",
+    "@pi-harness/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0"
+  }
+}

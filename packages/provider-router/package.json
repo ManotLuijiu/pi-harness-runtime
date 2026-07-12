@@ -1,0 +1,41 @@
+{
+  "name": "@pi-harness/provider-router",
+  "version": "0.4.0-beta.1",
+  "description": "Enhanced Provider Router for pi-harness-runtime — intelligent routing with capabilities, costs, and quotas",
+  "type": "module",
+  "main": "./dist/provider-router.js",
+  "types": "./dist/provider-router.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/provider-router.js",
+      "types": "./dist/provider-router.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "pi",
+    "harness",
+    "runtime",
+    "provider",
+    "router",
+    "routing"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "bun-types": "^1.0.0"
+  }
+}

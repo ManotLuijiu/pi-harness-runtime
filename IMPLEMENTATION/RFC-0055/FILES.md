@@ -1,0 +1,9 @@
+packages/cost-optimizer/src/index.ts
+packages/cost-optimizer/src/types.ts
+packages/cost-optimizer/src/tracker.ts
+packages/cost-optimizer/src/budget.ts
+packages/cost-optimizer/src/selection.ts
+packages/cost-optimizer/src/forecast.ts
+packages/cost-optimizer/test/cost-optimizer.test.ts
+packages/cost-optimizer/package.json
+packages/cost-optimizer/tsconfig.json

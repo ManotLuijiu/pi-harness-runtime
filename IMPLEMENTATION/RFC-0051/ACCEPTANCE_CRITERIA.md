@@ -1,0 +1,6 @@
+- Registry can register/unregister capabilities
+- Query returns models sorted by score
+- Latency and context window filters work correctly
+- Default capabilities are loaded on initialization
+- Events are emitted for all mutations
+- Unit tests cover all query scenarios

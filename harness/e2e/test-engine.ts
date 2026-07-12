@@ -18,19 +18,15 @@ import type {
 	E2EStep,
 	E2EResult,
 	E2EReport,
-} from "../../packages/types/src/runtime-types.ts";
-import { writeJson, appendJsonl } from "../../cli.ts";
-// @ts-expect-error - Bun has built-in Node.js types
+} from "../../packages/types/src/runtime-types.js";
+import { writeJson, appendJsonl } from "../../cli.js";
 import { join } from "node:path";
 
-export interface PlaywrightRunner {
-	navigate(url: string): Promise<void>;
-	click(selector: string): Promise<void>;
-	type(selector: string, text: string): Promise<void>;
-	wait(selector: string, timeout?: number): Promise<void>;
-	screenshot(path: string): Promise<void>;
-	assert(condition: string, message?: string): Promise<boolean>;
-}
+// Re-export from playwright-runner for backwards compatibility
+export type { E2ERunner as PlaywrightRunner } from "./playwright-runner.js";
+
+// Also import locally for use in this file
+import type { E2ERunner } from "./playwright-runner.js";
 
 export interface E2EConfig {
 	baseUrl: string;
@@ -44,7 +40,7 @@ export interface E2EConfig {
 export class E2ETestEngine {
 	private readonly rootDir: string;
 	private readonly config: E2EConfig;
-	private runner: PlaywrightRunner | null = null;
+	private runner: E2ERunner | null = null;
 
 	constructor(rootDir: string, config: E2EConfig) {
 		this.rootDir = rootDir;
@@ -61,7 +57,7 @@ export class E2ETestEngine {
 	/**
 	 * Set the Playwright runner
 	 */
-	setRunner(runner: PlaywrightRunner): void {
+	setRunner(runner: E2ERunner): void {
 		this.runner = runner;
 	}
 

@@ -7,137 +7,55 @@
  * Also used as the E2E runner for testing workflows.
  */
 
+// Dynamic import for Playwright (optional dependency)
+let playwrightModule: typeof import("playwright") | null = null;
+
+async function getPlaywright() {
+	if (!playwrightModule) {
+		try {
+			playwrightModule = await import("playwright");
+		} catch {
+			console.warn(
+				"[PlaywrightRunner] Playwright not installed. E2E tests will be skipped.",
+			);
+			return null;
+		}
+	}
+	return playwrightModule;
+}
+
 export interface PlaywrightRunnerConfig {
 	headless?: boolean;
 	slowMo?: number;
 	timeout?: number;
 	browser?: "chromium" | "firefox" | "webkit";
 	profileDir?: string;
+	viewport?: { width: number; height: number };
 }
 
-export interface PlaywrightBrowser {
-	new (config?: PlaywrightRunnerConfig): PlaywrightBrowserInstance;
-}
-
-export interface PlaywrightBrowserInstance {
-	page(): PlaywrightPage;
-	close(): Promise<void>;
-}
-
-export interface PlaywrightPage {
-	goto(url: string): Promise<void>;
+// Forward-compatible runner interface for E2E Test Engine
+export interface E2ERunner {
+	navigate(url: string): Promise<void>;
 	click(selector: string): Promise<void>;
-	fill(selector: string, value: string): Promise<void>;
-	waitForSelector(
-		selector: string,
-		options?: { timeout?: number },
-	): Promise<void>;
-	screenshot(options?: { path?: string }): Promise<void>;
-	evaluate<T>(fn: (...args: unknown[]) => T, ...args: unknown[]): Promise<T>;
-	content(): Promise<string>;
-	url(): Promise<string>;
+	type(selector: string, text: string): Promise<void>;
+	wait(selector: string, timeout?: number): Promise<void>;
+	screenshot(path: string): Promise<void>;
+	assert(condition: string, message?: string): Promise<boolean>;
 }
 
-export interface QuotaPageData {
-	provider: string;
-	h5UsedPct: number;
-	h5ResetsAt?: string;
-	weeklyUsedPct: number;
-	weeklyResetsAt?: string;
-	dailyUsedPct?: number;
-	dailyResetsAt?: string;
-	raw?: string;
-}
-
-/**
- * MiniMax quota scraper using Playwright
- */
-export class MiniMaxQuotaScraper {
-	private config: PlaywrightRunnerConfig;
-
-	constructor(config: PlaywrightRunnerConfig = {}) {
-		this.config = {
-			headless: true,
-			timeout: 30000,
-			browser: "chromium",
-			...config,
-		};
-	}
-
-	/**
-	 * Scrape quota data from MiniMax console
-	 */
-	async scrape(): Promise<QuotaPageData> {
-		// In a real implementation, this would use playwright
-		// For now, return a placeholder
-		return {
-			provider: "minimax",
-			h5UsedPct: 0,
-			weeklyUsedPct: 0,
-			raw: "Playwright integration placeholder",
-		};
-	}
-
-	/**
-	 * Wait for quota data to load
-	 */
-	async waitForQuotaLoad(
-		page: PlaywrightPage,
-		timeoutMs?: number,
-	): Promise<void> {
-		const selectors = [
-			".quota-used",
-			".usage-percentage",
-			"[data-quota]",
-			".limit-bar",
-		];
-
-		const timeout = timeoutMs ?? this.config.timeout ?? 30000;
-
-		for (const selector of selectors) {
-			try {
-				await page.waitForSelector(selector, { timeout });
-				return;
-			} catch {
-				// Try next selector
-			}
-		}
-
-		throw new Error("Could not find quota element on page");
-	}
-
-	/**
-	 * Parse quota percentage from text
-	 */
-	parsePercentage(text: string): number {
-		const match = text.match(/(\d+(?:\.\d+)?)\s*%/);
-		return match ? parseFloat(match[1]) : 0;
-	}
-
-	/**
-	 * Parse reset time from text
-	 */
-	parseResetTime(text: string): string | undefined {
-		// Examples: "Resets in 4 hr 56 min", "Resets in 2d 13h"
-		const match = text.match(/Resets?\s+in\s+(\d+d\s*)?(\d+h\s*)?(\d+m?)?/i);
-		if (!match) return undefined;
-
-		const parts = [];
-		if (match[1]) parts.push(match[1]);
-		if (match[2]) parts.push(match[2]);
-		if (match[3]) parts.push(match[3]);
-
-		return parts.join("").trim();
-	}
-}
+export { MiniMaxQuotaScraper } from "./minimax-quota-scraper.js";
+export type { MiniMaxQuotaData as QuotaPageData } from "./minimax-quota-scraper.js";
 
 /**
  * Playwright E2E Runner for testing workflows
+ *
+ * Real implementation using Playwright library.
  */
-export class PlaywrightE2ERunner {
+export class PlaywrightE2ERunner implements E2ERunner {
 	private config: PlaywrightRunnerConfig;
-	private browser: PlaywrightBrowserInstance | null = null;
-	private page: PlaywrightPage | null = null;
+	private browser: any = null;
+	private context: any = null;
+	private page: any = null;
 
 	constructor(config: PlaywrightRunnerConfig = {}) {
 		this.config = {
@@ -153,9 +71,30 @@ export class PlaywrightE2ERunner {
 	 * Start the browser
 	 */
 	async start(): Promise<void> {
-		// In a real implementation, this would launch Playwright
-		// this.browser = await chromium.launch({ headless: this.config.headless });
-		// this.page = await this.browser.newPage();
+		const pw = await getPlaywright();
+		if (!pw) {
+			throw new Error(
+				"Playwright not available. Install with: bun add playwright",
+			);
+		}
+
+		const browserType =
+			this.config.browser === "firefox"
+				? pw.firefox
+				: this.config.browser === "webkit"
+					? pw.webkit
+					: pw.chromium;
+
+		this.browser = await browserType.launch({
+			headless: this.config.headless,
+			slowMo: this.config.slowMo,
+		});
+
+		this.context = await this.browser.newContext({
+			viewport: this.config.viewport ?? { width: 1280, height: 720 },
+		});
+
+		this.page = await this.context.newPage();
 	}
 
 	/**
@@ -163,11 +102,15 @@ export class PlaywrightE2ERunner {
 	 */
 	async stop(): Promise<void> {
 		if (this.page) {
-			// await this.page.close();
+			await this.page.close();
 			this.page = null;
 		}
+		if (this.context) {
+			await this.context.close();
+			this.context = null;
+		}
 		if (this.browser) {
-			// await this.browser.close();
+			await this.browser.close();
 			this.browser = null;
 		}
 	}
@@ -177,7 +120,7 @@ export class PlaywrightE2ERunner {
 	 */
 	async navigate(url: string): Promise<void> {
 		if (!this.page) throw new Error("Browser not started");
-		await this.page.goto(url);
+		await this.page.goto(url, { timeout: this.config.timeout });
 	}
 
 	/**
@@ -190,12 +133,12 @@ export class PlaywrightE2ERunner {
 	}
 
 	/**
-	 * Fill an input
+	 * Type text into an input
 	 */
-	async fill(selector: string, value: string): Promise<void> {
+	async type(selector: string, text: string): Promise<void> {
 		if (!this.page) throw new Error("Browser not started");
 		await this.page.waitForSelector(selector, { timeout: this.config.timeout });
-		await this.page.fill(selector, value);
+		await this.page.fill(selector, text);
 	}
 
 	/**
@@ -213,23 +156,7 @@ export class PlaywrightE2ERunner {
 	 */
 	async screenshot(path: string): Promise<void> {
 		if (!this.page) throw new Error("Browser not started");
-		await this.page.screenshot({ path });
-	}
-
-	/**
-	 * Evaluate JavaScript
-	 */
-	async evaluate<T>(fn: () => T): Promise<T> {
-		if (!this.page) throw new Error("Browser not started");
-		return this.page.evaluate(fn);
-	}
-
-	/**
-	 * Get current URL
-	 */
-	async getUrl(): Promise<string> {
-		if (!this.page) throw new Error("Browser not started");
-		return this.page.url();
+		await this.page.screenshot({ path, fullPage: true });
 	}
 
 	/**
@@ -248,5 +175,30 @@ export class PlaywrightE2ERunner {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Get the underlying page for advanced operations
+	 */
+	getPage() {
+		return this.page;
+	}
+
+	/**
+	 * Start tracing for debugging
+	 */
+	async startTracing(_outputPath: string): Promise<void> {
+		if (!this.page) throw new Error("Browser not started");
+		await this.page
+			.context()
+			.tracing.start({ screenshots: true, snapshots: true });
+	}
+
+	/**
+	 * Stop tracing and save
+	 */
+	async stopTracing(outputPath: string): Promise<void> {
+		if (!this.page) throw new Error("Browser not started");
+		await this.page.context().tracing.stop({ path: outputPath });
 	}
 }

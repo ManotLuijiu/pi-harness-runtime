@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NotificationEvent",
+  "type": "object",
+  "required": [
+    "event_type",
+    "job_id",
+    "severity",
+    "message"
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string"
+    },
+    "job_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "error",
+        "success"
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
+    "next_action": {
+      "type": "string"
+    }
+  }
+}
