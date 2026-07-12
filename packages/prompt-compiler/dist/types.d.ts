@@ -3,8 +3,8 @@
  *
  * Type definitions for prompt compilation pipeline.
  */
-import type { CompiledRequirement } from "@pi-harness/requirement-compiler/src/types.js";
-import type { CompiledTask } from "@pi-harness/task-compiler/src/types.js";
+import type { CompiledRequirement } from "@pi-harness/requirement-compiler";
+import type { CompiledTask } from "@pi-harness/task-compiler";
 /**
  * Supported provider targets.
  */

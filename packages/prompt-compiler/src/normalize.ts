@@ -5,8 +5,8 @@
  * Stable array ordering is critical for reproducible prompt hashes.
  */
 
-import type { CompiledRequirement } from "@pi-harness/requirement-compiler/dist/types.js";
-import type { CompiledTask } from "@pi-harness/task-compiler/dist/types.js";
+import type { CompiledRequirement } from "@pi-harness/requirement-compiler";
+import type { CompiledTask } from "@pi-harness/task-compiler";
 import type { ContinuationContext, PromptCompileRequest } from "./types.js";
 
 /**
@@ -81,7 +81,7 @@ export function normalizeRequest(
 		),
 		filesInScope: stableUnique(
 			task.filesInScope.map(
-				(f: CompiledTask["filesInScope"][number]) => f.path,
+				(f: CompiledTask["filesInScope"][number]) => f,
 			),
 		),
 		expectedOutputs: stableUnique(
