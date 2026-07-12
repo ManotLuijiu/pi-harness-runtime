@@ -1,6 +1,6 @@
 {
   "name": "@pi/context-compiler",
-  "version": "0.1.0",
+  "version": "0.5.6-beta.1",
   "description": "Bounded context selection engine for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
