@@ -222,11 +222,15 @@ export class StorageManager {
      * Load a checkpoint by version
      */
     async loadCheckpoint(jobId, version) {
-        // Try full checkpoint first
+        // Try full checkpoint first (only if it's actually a full checkpoint)
         const fullPath = this.checkpointPath(jobId, version);
         try {
             const content = await readFile(fullPath, "utf-8");
             const file = JSON.parse(content);
+            if (file.type !== "full") {
+                // Not a full checkpoint at this path — fall through to incremental
+                throw new Error("Not a full checkpoint");
+            }
             let data = file.data;
             if (file.metadata.compressed) {
                 data = await this.decompress(data);
@@ -237,22 +241,13 @@ export class StorageManager {
                 throw new Error(`Checksum mismatch for checkpoint ${version}`);
             }
             const state = JSON.parse(data);
-            if (file.type === "full") {
-                return {
-                    jobId,
-                    version,
-                    state,
-                    metadata: file.metadata,
-                };
-            }
-            else {
-                return {
-                    jobId,
-                    version,
-                    delta: state,
-                    metadata: file.metadata,
-                };
-            }
+            return {
+                jobId,
+                version,
+                type: "full",
+                state,
+                metadata: file.metadata,
+            };
         }
         catch (fullError) {
             // Try incremental checkpoint
@@ -272,6 +267,7 @@ export class StorageManager {
                 return {
                     jobId,
                     version,
+                    type: "incremental",
                     delta,
                     metadata: file.metadata,
                 };
@@ -297,7 +293,7 @@ export class StorageManager {
             sizeBytes: entry.size,
             compressed: entry.compressed,
             checksum: entry.checksum,
-            taskProgress: { total: 0, completed: 0, failed: 0, running: 0 },
+            taskProgress: { total: 0, completed: 0, failed: 0, running: 0 }, // Would need to load to get actual
             createdAt: entry.createdAt,
             baseVersion: entry.baseVersion,
         }))

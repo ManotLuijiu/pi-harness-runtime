@@ -61,7 +61,7 @@ export class TemplateRegistry {
         let results = this.list();
         // Filter by tags
         if (query.tags && query.tags.length > 0) {
-            results = results.filter((t) => t.tags?.some((tag) => query.tags.includes(tag)));
+            results = results.filter((t) => t.tags?.some((tag) => query.tags?.includes(tag)));
         }
         // Filter by language
         if (query.language) {

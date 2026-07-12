@@ -5,6 +5,7 @@
  * and automatic rollback capabilities.
  */
 // ─── Generator ──────────────────────────────────────────────────────────
+export { createFaker } from "./faker.js";
 export { CodeGenerator, createCodeGenerator, } from "./generator.js";
 // ─── Templates ─────────────────────────────────────────────────────────
 export { TemplateRegistry } from "./templates/registry.js";

@@ -4,8 +4,8 @@
  * Type definitions for prompt compilation pipeline.
  */
 
-import type { CompiledRequirement } from "@pi/requirement-compiler/src/types.js";
-import type { CompiledTask } from "@pi/task-compiler/src/types.js";
+import type { CompiledRequirement } from "@pi-harness/requirement-compiler";
+import type { CompiledTask } from "@pi-harness/task-compiler";
 
 // ─── Provider target ──────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export interface ContextEntry {
 	tags?: string[];
 }
 
-function _contextEntryPriority(): void {
+function __contextEntryPriority(): void {
 	// Compactable priorities (higher = less important):
 	// 0 = critical (never compact)
 	// 1-3 = important

@@ -121,7 +121,7 @@ export const PROHIBITED_BY_DEFAULT: string[] = [
 ];
 
 // ─── Forward-declared types (from other workspace packages) ─────────────
-// In production these are imported from @pi/requirement-compiler and @pi/project-analyzer.
+// In production these are imported from @pi-harness/requirement-compiler and @pi/project-analyzer.
 // Declaring them as interfaces here allows the type checker to resolve without building those packages first.
 
 export interface CompiledRequirement {

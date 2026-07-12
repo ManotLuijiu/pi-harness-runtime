@@ -20,17 +20,17 @@ const DEFAULT_CONFIG = {
     format: "json",
     output: "stdout",
     filePath: "",
-    maxFileSize: 10 * 1024 * 1024,
+    maxFileSize: 10 * 1024 * 1024, // 10MB
     maxFiles: 5,
     correlationIdHeader: "x-correlation-id",
     defaultMeta: {},
 };
 // ─── Colors for Pretty Output ───────────────────────────────────────────────
 const COLORS = {
-    debug: "\x1b[36m",
-    info: "\x1b[32m",
-    warn: "\x1b[33m",
-    error: "\x1b[31m",
+    debug: "\x1b[36m", // Cyan
+    info: "\x1b[32m", // Green
+    warn: "\x1b[33m", // Yellow
+    error: "\x1b[31m", // Red
     fatal: "\x1b[35m", // Magenta
 };
 const RESET = "\x1b[0m";
