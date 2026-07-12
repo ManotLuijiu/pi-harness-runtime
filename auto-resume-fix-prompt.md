@@ -12,23 +12,15 @@ After context overflow compaction with `willRetry=false`, the agent does NOT aut
 2. **For overflow with `stopReason === "stop"`** (the common case):
    - `willRetry = assistantMessage.stopReason !== "stop"` → **FALSE**
    - Calls `_runAutoCompaction("overflow", false)`
-3. **Inside `_runAutoCompaction`**:
+3. **Inside `_runAutoCompaction`** (line 1685):
 
    ```javascript
-   // Line 1621-1632
-   this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
-   if (willRetry) {
-       // ... retry logic
-       return true;
-   }
-   // Auto-compaction can complete while follow-up/steering/custom messages are waiting.
-   // Continue once so queued messages are delivered.
    return this.agent.hasQueuedMessages();  // ← Returns FALSE for overflow case!
    ```
 
-4. **Result**: `hasQueuedMessages()` returns `false` → session pauses
+4. **Result**: Session pauses waiting for user input
 
-### Why Context-Mode Resume Isn't Delivered
+### Why Context-Mode Resume Wasn't Delivered
 
 Context-mode builds resume snapshot in `session_before_compact` and stores it in DB:
 
@@ -40,112 +32,158 @@ pi.on("session_before_compact", () => {
 });
 ```
 
-But resume is injected only in `before_agent_start` via the `context` hook:
+But resume was only injected in `before_agent_start` via the `context` hook:
 
 ```javascript
 pi.on("before_agent_start", async (event, ctx) => {
     const resume = db.getResume(_sessionId);
     if (resume && !resume.consumed && resume.snapshot) {
         parts.push(resume.snapshot);
-        db.markResumeConsumed(_sessionId);  // Marked consumed here
+        db.markResumeConsumed(_sessionId);
     }
     // ...
-});
-
-pi.on("context", (event) => {
-    event.messages.push({ role: "user", content: ctx });
-    return { messages: event.messages };
 });
 ```
 
 **Problem**: `before_agent_start` only fires when a **new prompt is submitted**. After overflow compaction with `willRetry=false`, no prompt is submitted → resume is never delivered.
 
-## Fix Options
+## Solution Implemented: Post-Compaction Message Queue
 
-### Option 1: Queue Resume as Follow-Up Message (Recommended for context-mode)
+Added a new extension API `queuePostCompactionMessage()` that allows extensions to queue messages that should be delivered after compaction completes, even when `willRetry=false`.
 
-Modify context-mode to add the resume to the agent's follow-up queue during `session_compact`:
+### Flow After Fix
 
-**Problem**: Extensions don't have direct access to `agent.followUp()`.
+1. `session_before_compact` → Build resume snapshot in DB
+2. `session_compact` → Queue resume via `ctx.queuePostCompactionMessage()`
+3. After compaction completes → `drainPostCompactionMessages()` delivers queued messages
+4. Agent continues and delivers resume automatically
 
-**Solution**: Add a new extension API mechanism:
+## Files Changed
+
+### 1. `pi-coding-agent/dist/core/extensions/types.d.ts`
+
+Added new API to `ExtensionContext` and `ExtensionContextActions`:
 
 ```typescript
-// In ExtensionContext or session_compact handler:
-ctx.queueFollowUp?.(message)  // New API
+// ExtensionContext
+/**
+ * Queue a message to be delivered after compaction completes.
+ * When willRetry=false (e.g. overflow without context recovery), the agent
+ * will continue and deliver these queued messages before pausing for user input.
+ * Useful for resuming context-mode's snapshot after overflow compaction.
+ */
+queuePostCompactionMessage(message: { role: string; content: string }): void;
+
+// ExtensionContextActions
+queuePostCompactionMessage: (message: { role: string; content: string }) => void;
 ```
 
-### Option 2: Return `true` to Continue After Overflow Compaction
+### 2. `pi-coding-agent/dist/core/extensions/runner.js`
 
-Modify `_runAutoCompaction` to continue when overflow compaction completes (even with `willRetry=false`):
+Added new methods to `ExtensionRunner`:
 
 ```javascript
-// In _runAutoCompaction, after compaction completes:
-if (reason === "overflow" && !willRetry) {
-    // Still continue after overflow - resume context should be delivered
+// Instance variable
+_postCompactionMessages = [];
+
+// Method to queue messages (called from extension context)
+queuePostCompactionMessageFn = (message) => {
+    this._postCompactionMessages.push(message);
+};
+
+// Method to get and clear messages (called by agent-session after compaction)
+drainPostCompactionMessages() {
+    if (this.staleMessage) {
+        return [];  // Don't drain if stale
+    }
+    const messages = this._postCompactionMessages;
+    this._postCompactionMessages = [];
+    return messages;
+}
+
+// Check if runner is stale (without throwing)
+isStale() {
+    return Boolean(this.staleMessage);
+}
+```
+
+### 3. `pi-coding-agent/dist/core/agent-session.js`
+
+Modified `_runAutoCompaction()` to check for and deliver post-compaction messages:
+
+```javascript
+// After compaction completes (line 1682)
+this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+
+if (willRetry) {
+    // ... existing retry logic
     return true;
 }
+
+// Check for post-compaction messages from extensions
+if (this._extensionRunner && !this._extensionRunner.isStale()) {
+    const postCompactionMessages = this._extensionRunner.drainPostCompactionMessages();
+    for (const msg of postCompactionMessages) {
+        await this.agent.followUp(msg.content);
+    }
+    if (postCompactionMessages.length > 0) {
+        return true; // Continue to deliver the queued messages
+    }
+}
+
+// Fall back to existing behavior
 return this.agent.hasQueuedMessages();
 ```
 
-**Downside**: This changes the fundamental design choice that overflow cases require user intervention.
+### 4. `context-mode/build/adapters/pi/extension.js`
 
-### Option 3: Add `session_compact_end` Hook with Continuation Support
-
-Add a new hook that fires after compaction completes and can trigger continuation:
-
-```typescript
-pi.on("session_compact_end", async (event, ctx) => {
-    if (!event.willRetry && event.reason === "overflow") {
-        // Trigger continuation - context hook will fire and deliver resume
-        ctx.continue?.();  // New API needed
-    }
-});
-```
-
-## Implementation Guide for Option 1 (context-mode fix)
-
-### Step 1: Add API to ExtensionContext
-
-In `pi-coding-agent/dist/core/extensions/types.d.ts`:
-
-```typescript
-export interface ExtensionContext {
-    // ... existing methods ...
-    /** Queue a message for delivery after compaction (if willRetry=false) */
-    queuePostCompactionMessage?: (message: { role: string; content: string }) => void;
-}
-```
-
-### Step 2: Implement in ExtensionRunner
-
-Store queued messages and expose them via `getPostCompactionMessages()`.
-
-### Step 3: Modify Agent Loop
-
-After compaction completes, check for post-compaction messages and inject them.
-
-### Step 4: Update context-mode Extension
+Modified `session_compact` handler to queue resume:
 
 ```javascript
-pi.on("session_compact", async (event, ctx) => {
-    if (!event.willRetry && event.reason === "overflow") {
-        const resume = db.getResume(_sessionId);
-        if (resume && !resume.consumed && resume.snapshot) {
-            ctx.queuePostCompactionMessage?.({
-                role: "user",
-                content: resume.snapshot
-            });
+pi.on("session_compact", (event, ctx) => {
+    try {
+        if (!_sessionId)
+            return;
+        db.incrementCompactCount(_sessionId);
+
+        // Queue resume snapshot for post-compaction delivery when willRetry=false
+        if (!event.willRetry) {
+            const resume = db.getResume(_sessionId);
+            if (resume && !resume.consumed && resume.snapshot) {
+                ctx.queuePostCompactionMessage?.({
+                    role: "user",
+                    content: resume.snapshot,
+                });
+                db.markResumeConsumed(_sessionId);
+            }
         }
+    }
+    catch {
+        // best effort
     }
 });
 ```
 
-## Verification
+## Testing
 
-After fix:
+To verify the fix works:
 
-1. Trigger context overflow (long conversation)
-2. Compaction happens automatically
-3. Agent continues WITHOUT user input
-4. Resume snapshot is delivered and agent continues working
+1. **Trigger context overflow** with a long conversation
+2. **Observe compaction happens automatically**
+3. **Agent continues WITHOUT user input**
+4. **Resume snapshot is delivered** and agent continues working
+
+Check with:
+
+```bash
+pi
+# Run a long conversation that triggers overflow
+# Verify agent continues automatically after compaction
+/ctx-stats
+```
+
+## Backward Compatibility
+
+- The new `queuePostCompactionMessage` API is optional (uses `?.` when calling)
+- Extensions that don't use it continue to work unchanged
+- Existing behavior for `willRetry=true` cases is preserved

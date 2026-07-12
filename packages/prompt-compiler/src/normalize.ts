@@ -80,9 +80,7 @@ export function normalizeRequest(
 				.filter(Boolean),
 		),
 		filesInScope: stableUnique(
-			task.filesInScope.map(
-				(f: CompiledTask["filesInScope"][number]) => f,
-			),
+			task.filesInScope.map((f: CompiledTask["filesInScope"][number]) => f),
 		),
 		expectedOutputs: stableUnique(
 			task.expectedOutputs
