@@ -14,9 +14,11 @@ const introspectSkill: Skill = {
 	description: "Lists all registered skills and their triggers",
 	version: "1.0.0",
 	trigger: createKeywordTrigger(["list skills", "show skills", "what skills"]),
-	handler: async () => {
-		const registry = {} as { list(): Skill[] } | undefined;
-		if (!registry) {
+	handler: async (context) => {
+		const registry = context.metadata.registry as
+			| { list(): Skill[] }
+			| undefined;
+		if (!registry || typeof registry.list !== "function") {
 			return { success: false, error: "Registry not available in context" };
 		}
 		const skills = registry.list();
