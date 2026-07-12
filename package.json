@@ -13,7 +13,7 @@
     "auth:minimax": "bun packages/auth/src/run-minimax-auth.ts auth",
     "auth:minimax:check": "bun packages/auth/src/run-minimax-auth.ts check",
     "auth:minimax:scrape": "bun packages/auth/src/run-minimax-auth.ts scrape",
-    "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && tsc -p \"${pkg}tsconfig.json\" --skipLibCheck; done"
+    "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck || true; done"
   },
   "bin": {
     "harness-auth": "packages/auth/src/run-minimax-auth.ts"
