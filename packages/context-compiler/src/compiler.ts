@@ -18,7 +18,11 @@ import { generateCacheKey } from "./cache.js";
 import { deduplicateCandidates, mergeFileSlices } from "./deduplicate.js";
 import { applyPolicyFilter, mergePolicy } from "./filter.js";
 import { mergeWeights, rankCandidates } from "./score.js";
-import { loadOkfConcepts, okfDirectoryExists, getOkfPath } from "./okf-loader.js";
+import {
+	loadOkfConcepts,
+	okfDirectoryExists,
+	getOkfPath,
+} from "./okf-loader.js";
 
 /**
  * Default clock for generating timestamps.
@@ -296,7 +300,9 @@ export function enrichWithOkf(
 
 	// Log for debugging (can be removed in production)
 	if (okfDirectoryExists(okfPath)) {
-		console.log(`[OKF] Loaded ${okfConcepts.length} concepts from ${getOkfPath()}`);
+		console.log(
+			`[OKF] Loaded ${okfConcepts.length} concepts from ${getOkfPath()}`,
+		);
 	}
 
 	// Merge OKF concepts with existing candidates
