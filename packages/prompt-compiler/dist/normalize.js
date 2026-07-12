@@ -27,7 +27,7 @@ export function normalizeRequest(request) {
         constraints: stableUnique(requirement.constraints
             .map((c) => c.description)
             .filter(Boolean)),
-        filesInScope: stableUnique(task.filesInScope.map((f) => f.path)),
+        filesInScope: stableUnique(task.filesInScope.map((f) => f)),
         expectedOutputs: stableUnique(task.expectedOutputs
             .map((o) => {
             if (o.kind === "file")
