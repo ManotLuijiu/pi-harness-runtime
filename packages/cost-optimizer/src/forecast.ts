@@ -3,7 +3,6 @@
  */
 
 import type { CostForecast, TaskRequirements } from "./types.js";
-import { calculateModelCost } from "./selection.js";
 
 // Default model cost per 1K tokens (input + output average)
 const AVG_COST_PER_1K = 0.003; // $0.003 per 1K tokens average
