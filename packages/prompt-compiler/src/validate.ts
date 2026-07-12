@@ -78,7 +78,9 @@ export function validateSections(
 	for (const section of sections) {
 		if (section.required) {
 			for (const ref of section.sourceRefs) {
-				if (!ref.text.trim()) {
+				const refText =
+					typeof ref.text === "string" ? ref.text : String(ref.text ?? "");
+				if (!refText.trim()) {
 					errors.push({
 						code: "UNRESOLVED_REQUIRED_SOURCE",
 						message: `Required source "${ref.source}" has no content`,
