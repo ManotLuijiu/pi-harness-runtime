@@ -81,6 +81,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # bun does NOT read NPM_CONFIG_USERCONFIG (where
+          # setup-node writes the token via registry-url). Write
+          # auth to ~/.npmrc so `bun publish` can find it.
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
           # Publish root package
           bun publish --access public
           # Publish all workspace packages
