@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/task-compiler",
-  "version": "0.6.3-beta.8",
+  "version": "0.6.3-beta.9",
   "description": "Task Compiler for pi-harness-runtime — produces deterministic task DAG from CompiledRequirement",
   "type": "module",
   "main": "./dist/index.js",
