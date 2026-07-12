@@ -107,24 +107,29 @@ jobs:
         run: |
           PR_NUMBER="${{ steps.create-pr.outputs.PR_NUMBER }}"
           echo "Attempting to merge PR #$PR_NUMBER..."
-          MERGEABLE=$(gh pr view $PR_NUMBER --json mergeable --jq '.mergeable')
-          if [ "$MERGEABLE" = "false" ]; then
-            echo "PR has merge conflicts, attempting rebase..."
-            git fetch origin main
-            if git rebase origin/main; then
-              echo "Rebase successful, force pushing..."
-              git push --force-with-lease origin develop
-              sleep 5
-            else
-              echo "Rebase failed"
-              git rebase --abort
-              exit 1
-            fi
+
+          MERGEABLE=$(gh pr view "$PR_NUMBER" \
+            --json mergeable \
+            --jq '.mergeable')
+          MERGE_STATE=$(gh pr view "$PR_NUMBER" \
+            --json mergeStateStatus \
+            --jq '.mergeStateStatus')
+
+          if [ "$MERGEABLE" != "MERGEABLE" ]; then
+            echo "::error::PR #$PR_NUMBER is not mergeable"
+            echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
+            echo "::error::Resolve locally with:"
+            echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
+            echo "::error::git merge origin/main"
+            exit 1
           fi
-          echo "Performing squash merge..."
+
+          echo "PR is mergeable, performing squash merge..."
           gh pr merge "$PR_NUMBER" --squash --delete-branch=false
 
       - name: Report failure
         if: failure()
         run: |
-          echo "Auto-merge failed. Please check CI status and resolve manually."
+          echo "Auto-merge failed."
+          echo "Check PR mergeability."
+          echo "Resolve conflicts manually if required."
