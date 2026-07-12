@@ -13,8 +13,8 @@ const DEFAULT_CONFIG = {
     detectVersions: true,
     resolveImplications: true,
     cache: true,
-    cacheTtlMs: 5 * 60 * 1000,
-    timeoutMs: 30000,
+    cacheTtlMs: 5 * 60 * 1000, // 5 minutes
+    timeoutMs: 30000, // 30 seconds
     signatures: [],
 };
 // ─── Framework Detector ────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ export class FrameworkDetector {
                         description: impliedSig.description,
                         tags: impliedSig.tags ?? [],
                     },
-                    confidence: result.confidence * 0.8,
+                    confidence: result.confidence * 0.8, // Reduced confidence for implied
                     signals: [],
                     metadata: { implied: true, from: result.framework.id },
                 });

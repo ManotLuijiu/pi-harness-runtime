@@ -10,9 +10,9 @@ import { SessionStore } from "./store.js";
 // ─── Default Configuration ─────────────────────────────────────────────────
 const DEFAULT_CONFIG = {
     rootDir: "./sessions",
-    sessionTtlMs: 24 * 60 * 60 * 1000,
-    maxIdleMs: 30 * 60 * 1000,
-    autoSaveIntervalMs: 5000,
+    sessionTtlMs: 24 * 60 * 60 * 1000, // 24 hours
+    maxIdleMs: 30 * 60 * 1000, // 30 minutes
+    autoSaveIntervalMs: 5000, // 5 seconds
     maxMessagesPerSession: 1000,
     maxTokenBudget: 128000,
     enableMetrics: true,

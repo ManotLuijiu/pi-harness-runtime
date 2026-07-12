@@ -4,7 +4,7 @@
  * Compiles requirements into executable, dependency-aware task graphs.
  *
  * @example
- * import { compileTasks } from "@pi/task-compiler";
+ * import { compileTasks } from "@pi-harness/task-compiler";
  *
  * const graph = await compileTasks({
  *   requirement: compiledRequirement,

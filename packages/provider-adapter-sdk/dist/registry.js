@@ -48,7 +48,13 @@ export class AdapterRegistry extends EventEmitter {
                         .join("\n");
                     return simpleAdapter.complete(prompt);
                 },
-                parseError: () => ({ quotaExceeded: false, rateLimited: false, timeout: false, serverError: false, clientError: false }),
+                parseError: () => ({
+                    quotaExceeded: false,
+                    rateLimited: false,
+                    timeout: false,
+                    serverError: false,
+                    clientError: false,
+                }),
                 getCapabilities: () => [],
                 getModels: () => [],
             };
