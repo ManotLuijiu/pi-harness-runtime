@@ -9,3 +9,6 @@ node_modules/
 # Local SQLite state (created at runtime in ~/.pi/usage-status/)
 # This file lives outside the repo; nothing to ignore here.
 sample_github_workflows/
+
+# Open Knowledge Format (local knowledge base)
+OKF/
