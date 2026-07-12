@@ -44,11 +44,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
-          # registry-url makes setup-node write ~/.npmrc with
+          # Node 22 LTS: npm 10.x is stable for `npm publish`.
+          # Node 24's npm 11 crashes with "Exit handler never
+          # called!" during publish.
+          node-version: "22"
+          # registry-url makes setup-node write an .npmrc with
           # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
-          # so `bun publish` can authenticate (bun reads .npmrc
-          # for auth, not the NODE_AUTH_TOKEN env var directly).
+          # which npm publish reads for auth.
           registry-url: "https://registry.npmjs.org"
 
       - name: Install bun
