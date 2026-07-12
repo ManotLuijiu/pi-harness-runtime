@@ -8,7 +8,8 @@ import type {
 	CostEntry,
 	CostPeriod,
 } from "./types.js";
-import { getPeriodBoundaries, isInPeriod } from "./tracker.js";
+import { isInPeriod } from "./tracker.js";
+// Note: getPeriodBoundaries is used internally by tracker.js
 
 /**
  * Calculate budget status for all periods
@@ -93,17 +94,17 @@ function calculatePeriodTotal(
  * Check if a cost exceeds budget
  */
 export function exceedsBudget(
-	cost: number,
+	_cost: number, // eslint-disable-line @typescript-eslint/no-unused-vars
 	budget: CostBudget,
 	status: BudgetStatus,
 ): boolean {
-	if (budget.daily !== undefined && cost > status.daily.remaining) {
+	if (budget.daily !== undefined && _cost > status.daily.remaining) {
 		return true;
 	}
-	if (budget.weekly !== undefined && cost > status.weekly.remaining) {
+	if (budget.weekly !== undefined && _cost > status.weekly.remaining) {
 		return true;
 	}
-	if (budget.monthly !== undefined && cost > status.monthly.remaining) {
+	if (budget.monthly !== undefined && _cost > status.monthly.remaining) {
 		return true;
 	}
 	return false;
@@ -113,7 +114,7 @@ export function exceedsBudget(
  * Get the most restrictive remaining budget
  */
 export function getMostRestrictiveBudget(
-	cost: number,
+	_cost: number, // eslint-disable-line @typescript-eslint/no-unused-vars
 	budget: CostBudget,
 	status: BudgetStatus,
 ): { period: string; remaining: number } | null {

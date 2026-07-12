@@ -3,7 +3,6 @@
  */
 
 import type {
-	CostEntry,
 	ModelSwitchRecommendation,
 	OptimizedSelection,
 	SwitchOptions,

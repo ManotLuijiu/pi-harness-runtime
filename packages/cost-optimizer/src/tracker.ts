@@ -2,7 +2,7 @@
  * Cost Tracking Functions (RFC-0055)
  */
 
-import type { CostEntry, CostPeriod, CostSummary, Currency } from "./types.js";
+import type { CostEntry, CostPeriod, CostSummary } from "./types.js";
 
 let idCounter = 0;
 

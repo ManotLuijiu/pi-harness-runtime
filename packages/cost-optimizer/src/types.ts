@@ -2,7 +2,8 @@
  * Cost Optimizer Types (RFC-0055)
  */
 
-import type { Currency } from "../../model-registry/src/types.ts";
+// Re-export Currency type
+export type Currency = "USD" | "THB";
 
 // ─── Cost Entry Types ─────────────────────────────────────────────────
 
