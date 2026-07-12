@@ -1,6 +1,6 @@
 {
   "name": "@pi/test-data-generator",
-  "version": "0.6.3-beta.4",
+  "version": "0.6.3-beta.5",
   "description": "Test data generation for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
