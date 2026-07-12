@@ -4,16 +4,13 @@ name: Release
 #
 # Also triggers on push to main branch (after auto-merge from develop).
 #
-# Pattern adapted from frappe/.github/workflows/create-release.yml
-# (uses secrets for auth to bypass 2FA).
+# npm Trusted Publishing is enabled via GitHub Actions OIDC.
+# No long-lived npm token is required in CI once each package is configured
+# on npmjs.com -> Package -> Settings -> Trusted Publisher.
 #
-# Required GitHub secrets:
-#   NPM_TOKEN      — Granular Access Token from
-#                    https://www.npmjs.com/settings/manotluijiu/tokens
-#                    - Scopes: "pi-harness-runtime", "@pi-harness/*"
-#                    - ✅ Bypass 2FA
-#                    Used as `NODE_AUTH_TOKEN` for npm publish.
-#   RELEASE_TOKEN  — GitHub PAT with repo scope for changelog generation.
+# npm Trusted Publishing is configured per package. For this monorepo, add the
+# same GitHub workflow (`release.yml`) as a trusted publisher for the root
+# package and each published workspace package.
 
 on:
   push:
@@ -28,6 +25,10 @@ on:
         required: false
         default: "false"
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   release:
     name: Release
@@ -40,11 +41,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          # Trusted publishing requires Node >= 22.14.0.
+          # Keep to Node 22 LTS, then upgrade npm explicitly below.
+          node-version: "22"
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install bun
         run: npm install -g bun
@@ -73,17 +85,19 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # Use pure OIDC trusted publishing.
+          # Avoid setup-node temp npm auth config so npm does not inherit
+          # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
           # Publish root package
-          bun publish --access public
+          npm publish --access public
           # Publish all workspace packages
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
               cd "$pkg"
-              bun publish --access public || true
+              npm publish --access public || true
               cd - > /dev/null
             fi
           done
@@ -93,12 +107,13 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          bun publish --access public --dry-run
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
+          npm publish --access public --dry-run
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Would publish ${pkg}..."
               cd "$pkg"
-              bun publish --access public --dry-run || true
+              npm publish --access public --dry-run || true
               cd - > /dev/null
             fi
           done
