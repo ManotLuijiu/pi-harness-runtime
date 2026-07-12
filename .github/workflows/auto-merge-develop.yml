@@ -108,24 +108,47 @@ jobs:
           PR_NUMBER="${{ steps.create-pr.outputs.PR_NUMBER }}"
           echo "Attempting to merge PR #$PR_NUMBER..."
 
-          MERGEABLE=$(gh pr view "$PR_NUMBER" \
-            --json mergeable \
-            --jq '.mergeable')
-          MERGE_STATE=$(gh pr view "$PR_NUMBER" \
-            --json mergeStateStatus \
-            --jq '.mergeStateStatus')
+          MAX_RETRIES=6
+          RETRY_COUNT=0
 
-          if [ "$MERGEABLE" != "MERGEABLE" ]; then
+          while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            MERGEABLE=$(gh pr view "$PR_NUMBER" \
+              --json mergeable \
+              --jq '.mergeable')
+            MERGE_STATE=$(gh pr view "$PR_NUMBER" \
+              --json mergeStateStatus \
+              --jq '.mergeStateStatus')
+
+            echo "Attempt $((RETRY_COUNT + 1))/${MAX_RETRIES}:"
+            echo "mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
+
+            if [ "$MERGEABLE" = "MERGEABLE" ]; then
+              echo "PR is mergeable, performing squash merge..."
+              gh pr merge "$PR_NUMBER" --squash --delete-branch=false
+              exit $?
+            fi
+
+            if [ "$MERGEABLE" = "UNKNOWN" ] || \
+               [ "$MERGE_STATE" = "DIRTY" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Merge state not ready yet; waiting 10s..."
+              sleep 10
+              continue
+            fi
+
             echo "::error::PR #$PR_NUMBER is not mergeable"
             echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
             echo "::error::Resolve locally with:"
             echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
             echo "::error::git merge origin/main"
             exit 1
-          fi
+          done
 
-          echo "PR is mergeable, performing squash merge..."
-          gh pr merge "$PR_NUMBER" --squash --delete-branch=false
+          echo "::error::PR merge state did not become ready in time"
+          echo "::error::Resolve locally with:"
+          echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
+          echo "::error::git merge origin/main"
+          exit 1
 
       - name: Report failure
         if: failure()
