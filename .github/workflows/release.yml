@@ -79,7 +79,7 @@ jobs:
           bun run release:minor || true
 
       - name: Run tests
-        run: bun test || true # Allow test failures
+        run: bun test
 
       - name: Publish to npm
         if: >-

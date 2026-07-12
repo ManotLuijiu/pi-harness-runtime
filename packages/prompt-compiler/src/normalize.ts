@@ -80,7 +80,13 @@ export function normalizeRequest(
 				.filter(Boolean),
 		),
 		filesInScope: stableUnique(
-			task.filesInScope.map((f: CompiledTask["filesInScope"][number]) => f),
+			task.filesInScope
+				.map((f: CompiledTask["filesInScope"][number]) =>
+					typeof f === "string"
+						? f.trim()
+						: ((f as unknown as { path?: string }).path ?? "").trim(),
+				)
+				.filter(Boolean),
 		),
 		expectedOutputs: stableUnique(
 			task.expectedOutputs
