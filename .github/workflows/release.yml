@@ -51,16 +51,20 @@ jobs:
         run: npm install -g bun
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install
+
+      - name: Build packages
+        run: |
+          bun run build
 
       - name: Bump version
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          npm run release:minor || true
+          bun run release:minor || true
 
       - name: Run tests
-        run: npm test || true # Allow test failures
+        run: bun test || true # Allow test failures
 
       - name: Publish to npm
         if: >-
