@@ -45,6 +45,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          # registry-url makes setup-node write ~/.npmrc with
+          # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+          # so `bun publish` can authenticate (bun reads .npmrc
+          # for auth, not the NODE_AUTH_TOKEN env var directly).
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install bun
         run: npm install -g bun
