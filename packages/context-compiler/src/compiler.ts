@@ -18,6 +18,7 @@ import { generateCacheKey } from "./cache.js";
 import { deduplicateCandidates, mergeFileSlices } from "./deduplicate.js";
 import { applyPolicyFilter, mergePolicy } from "./filter.js";
 import { mergeWeights, rankCandidates } from "./score.js";
+import { loadOkfConcepts, okfDirectoryExists, getOkfPath } from "./okf-loader.js";
 
 /**
  * Default clock for generating timestamps.
@@ -267,4 +268,41 @@ function buildSourceGraph(
 	});
 
 	return edges;
+}
+
+// ─── OKF Integration ────────────────────────────────────────────────────────
+
+/**
+ * Enrich context candidates with OKF concepts from ~/.pi/okf/.
+ *
+ * This is optional - if the OKF directory doesn't exist,
+ * candidates remain unchanged.
+ *
+ * Usage:
+ * ```ts
+ * const enriched = enrichWithOkf(candidates);
+ * const result = await compileContext({ ...request, candidates: enriched });
+ * ```
+ */
+export function enrichWithOkf(
+	candidates: ContextCompileRequest["candidates"],
+	okfPath?: string,
+): ContextCompileRequest["candidates"] {
+	const okfConcepts = loadOkfConcepts(okfPath);
+
+	if (okfConcepts.length === 0) {
+		return candidates;
+	}
+
+	// Log for debugging (can be removed in production)
+	if (okfDirectoryExists(okfPath)) {
+		console.log(`[OKF] Loaded ${okfConcepts.length} concepts from ${getOkfPath()}`);
+	}
+
+	// Merge OKF concepts with existing candidates
+	// Existing candidates take precedence (won't be overwritten)
+	const existingIds = new Set(candidates.map((c) => c.id));
+	const newConcepts = okfConcepts.filter((c) => !existingIds.has(c.id));
+
+	return [...candidates, ...newConcepts];
 }
