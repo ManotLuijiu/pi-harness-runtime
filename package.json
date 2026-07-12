@@ -67,7 +67,8 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
+    "@types/node": "^26.1.0",
+    "@types/ws": "^8.18.1",
     "playwright": "^1.61.1",
     "standard-version": "^9.5.0"
   },
@@ -75,6 +76,7 @@
     "packages/*"
   ],
   "dependencies": {
+    "deepagents": "^1.10.5",
     "pi-harness-runtime": "^0.3.2-beta.1"
   }
 }

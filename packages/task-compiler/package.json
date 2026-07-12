@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@pi-harness/requirement-compiler": "workspace:*",
-    "@pi-harness/project-analyzer": "workspace:*",
+    "@pi/project-analyzer": "workspace:*",
     "@pi-harness/types": "workspace:*"
   },
   "devDependencies": {
