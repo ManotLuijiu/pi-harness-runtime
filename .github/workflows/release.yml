@@ -81,18 +81,17 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # bun does NOT read NPM_CONFIG_USERCONFIG (where
-          # setup-node writes the token via registry-url). Write
-          # auth to ~/.npmrc so `bun publish` can find it.
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+          # npm publish reads NPM_CONFIG_USERCONFIG (generated
+          # by setup-node registry-url) + NODE_AUTH_TOKEN for auth.
+          # bun publish ignores NPM_CONFIG_USERCONFIG, hence npm.
           # Publish root package
-          bun publish --access public
+          npm publish --access public
           # Publish all workspace packages
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
               cd "$pkg"
-              bun publish --access public || true
+              npm publish --access public || true
               cd - > /dev/null
             fi
           done
@@ -102,12 +101,12 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          bun publish --access public --dry-run
+          npm publish --access public --dry-run
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Would publish ${pkg}..."
               cd "$pkg"
-              bun publish --access public --dry-run || true
+              npm publish --access public --dry-run || true
               cd - > /dev/null
             fi
           done
