@@ -13,7 +13,7 @@
  * - Requirement goals and constraints
  */
 export function assignFileScope(candidates, project) {
-    const _projectPath = project.projectPath;
+    const __projectPath = project.projectPath;
     const sourceExts = detectSourceExtensions(project);
     const testExts = detectTestExtensions(project);
     return candidates.map((candidate) => {
