@@ -26,7 +26,7 @@ export function assignFileScope(
 	candidates: TaskCandidate[],
 	project: ProjectProfile,
 ): CompiledTask[] {
-	const _projectPath = project.projectPath;
+	const __projectPath = project.projectPath;
 	const sourceExts = detectSourceExtensions(project);
 	const testExts = detectTestExtensions(project);
 
