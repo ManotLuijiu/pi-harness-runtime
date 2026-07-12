@@ -15,8 +15,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import type { CompiledRequirement } from "@pi/requirement-compiler/src/types.js";
-import type { CompiledTask } from "@pi/task-compiler/src/types.js";
+import type { CompiledRequirement } from "@pi-harness/requirement-compiler";
+import type { CompiledTask } from "@pi-harness/task-compiler";
 import { compactToBudget, estimateTokens } from "../src/budget.js";
 // Import directly from source (TypeScript modules)
 import { compilePrompt, createSyncHasher } from "../src/compiler.js";
