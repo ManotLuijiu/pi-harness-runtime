@@ -5,8 +5,8 @@
  * Stable array ordering is critical for reproducible prompt hashes.
  */
 
-import type { CompiledRequirement } from "@pi/requirement-compiler/src/types.js";
-import type { CompiledTask } from "@pi/task-compiler/src/types.js";
+import type { CompiledRequirement } from "@pi-harness/requirement-compiler/dist/types.js";
+import type { CompiledTask } from "@pi-harness/task-compiler/dist/types.js";
 import type { ContinuationContext, PromptCompileRequest } from "./types.js";
 
 /**

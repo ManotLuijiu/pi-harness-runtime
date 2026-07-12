@@ -3,7 +3,7 @@
  *
  * Main code generation engine with template rendering and validation.
  */
-import type { GenerationRequest, GenerationResult, TemplateEngine, ValidationRule, VariableResolver } from "./types.js";
+import type { GenerationRequest, GenerationResult, SchemaDefinition, TemplateEngine, ValidationRule, VariableResolver } from "./types.js";
 interface GeneratorConfig {
     outputDir?: string;
     dryRun?: boolean;
@@ -18,6 +18,7 @@ export declare class CodeGenerator {
     private readonly registry;
     private readonly renderers;
     private readonly validationRules;
+    private readonly schemas;
     constructor(config?: GeneratorConfig);
     /**
      * Register a template renderer
@@ -27,6 +28,15 @@ export declare class CodeGenerator {
      * Add validation rule
      */
     addValidationRule(rule: ValidationRule): void;
+    /**
+     * Register a schema for code generation.
+     * Converts the schema into a template and registers it.
+     */
+    registerSchema(schema: SchemaDefinition): void;
+    /**
+     * Get a registered schema by ID or name.
+     */
+    getSchema(id: string): SchemaDefinition | undefined;
     /**
      * Generate code from template
      */

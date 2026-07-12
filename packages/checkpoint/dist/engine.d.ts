@@ -70,5 +70,5 @@ export declare class CheckpointEngine {
 /**
  * Create a checkpoint engine
  */
-export declare function createCheckpointEngine(config: CheckpointEngineConfig): CheckpointEngine;
+export declare function createCheckpointEngine(config?: CheckpointEngineConfig): CheckpointEngine;
 //# sourceMappingURL=engine.d.ts.map
