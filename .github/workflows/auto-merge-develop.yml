@@ -128,23 +128,32 @@ jobs:
               exit $?
             fi
 
+            if [ "$MERGEABLE" = "CONFLICTING" ]; then
+              echo "::error::PR #$PR_NUMBER has actual merge conflicts"
+              echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
+              echo "::error::Manual resolution required. Run:"
+              echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
+              echo "::error::git merge origin/main"
+              echo "::error::Resolve conflicts, then git push origin develop"
+              exit 1
+            fi
+
             if [ "$MERGEABLE" = "UNKNOWN" ] || \
+               [ "$MERGE_STATE" = "UNKNOWN" ] || \
                [ "$MERGE_STATE" = "DIRTY" ]; then
               RETRY_COUNT=$((RETRY_COUNT + 1))
-              echo "Merge state not ready yet; waiting 10s..."
+              echo "Merge state is still settling; waiting 10s..."
               sleep 10
               continue
             fi
 
-            echo "::error::PR #$PR_NUMBER is not mergeable"
+            echo "::error::Unexpected PR merge state"
             echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
-            echo "::error::Resolve locally with:"
-            echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
-            echo "::error::git merge origin/main"
             exit 1
           done
 
           echo "::error::PR merge state did not become ready in time"
+          echo "::error::Last observed merge state required manual inspection"
           echo "::error::Resolve locally with:"
           echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
           echo "::error::git merge origin/main"
