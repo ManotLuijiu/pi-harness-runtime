@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/provider-router",
-  "version": "0.7.1",
+  "version": "0.9.0",
   "description": "Enhanced Provider Router for pi-harness-runtime — intelligent routing with capabilities, costs, and quotas",
   "type": "module",
   "main": "./dist/provider-router.js",
