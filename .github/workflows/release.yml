@@ -91,12 +91,32 @@ jobs:
           # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
 
+          publish_args() {
+            local version
+            version=$(node -p "require('./package.json').version")
+            if [[ "$version" == *-* ]]; then
+              echo "--access public --tag beta"
+            else
+              echo "--access public"
+            fi
+          }
+
           publish_with_retry() {
             local max_retries=3
             local retry=1
+            local name
+            local version
+            local args
+            name=$(node -p "require('./package.json').name")
+            version=$(node -p "require('./package.json').version")
+            args=$(publish_args)
+
             while [ "$retry" -le "$max_retries" ]; do
-              echo "Publish attempt ${retry}/${max_retries} in $(pwd)"
-              if npm publish --access public; then
+              echo "Publish attempt ${retry}/${max_retries}"
+              echo "Package: ${name}@${version}"
+              echo "Directory: $(pwd)"
+              echo "npm publish ${args}"
+              if npm publish ${args}; then
                 return 0
               fi
               if [ "$retry" -lt "$max_retries" ]; then
@@ -128,12 +148,25 @@ jobs:
           github.event.inputs.dry_run == 'true'
         run: |
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
-          npm publish --access public --dry-run
+
+          publish_args() {
+            local version
+            version=$(node -p "require('./package.json').version")
+            if [[ "$version" == *-* ]]; then
+              echo "--access public --tag beta --dry-run"
+            else
+              echo "--access public --dry-run"
+            fi
+          }
+
+          echo "Root publish args: $(publish_args)"
+          npm publish $(publish_args)
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
-              echo "Would publish ${pkg}..."
+              echo "Would publish ${pkg} with args:"
               cd "$pkg"
-              npm publish --access public --dry-run || true
+              echo "$(publish_args)"
+              npm publish $(publish_args) || true
               cd - > /dev/null
             fi
           done
