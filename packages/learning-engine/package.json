@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/learning-engine",
-  "version": "0.6.3-beta.10",
+  "version": "0.6.3-beta.11",
   "description": "Learning engine for extracting lessons from runtime execution (RFC-0058)",
   "type": "module",
   "main": "./dist/index.js",
