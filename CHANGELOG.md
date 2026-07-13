@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **release:** set make_latest=true so new releases auto-mark as Latest ([26a7bb9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/26a7bb98f3e603a9d68cbf39ca1558bc579d1a4a))
+
 ### [0.6.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.0...v0.6.3) (2026-07-13)
 
 ## [0.4.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.3.1...v0.4.0) (2026-07-05)
