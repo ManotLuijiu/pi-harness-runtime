@@ -22,6 +22,8 @@
   },
   "files": [
     "index.ts",
+    "footer-status.ts",
+    "proactive-compact.ts",
     "tracker.ts",
     "mirror.ts",
     "windows.ts",
