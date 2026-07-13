@@ -9,3 +9,12 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # Open PRs against develop branch so auto-merge-develop workflow picks them up
+    open-pull-request-strategy: auto
+    target-branch: "develop"
+    # Auto-merge when CI passes (no review needed for dep bumps)
+    automerge: true
+    # Only auto-merge minor/patch updates, not major
+    commit-message:
+      prefix: "chore"
+      include: scope
