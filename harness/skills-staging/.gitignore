@@ -1,0 +1,4 @@
+# Private staging content — never commit to public package
+source-mirror/
+sanitized-candidates/
+reports/
