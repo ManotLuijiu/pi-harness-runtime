@@ -13,6 +13,8 @@
     "auth:minimax": "bun packages/auth/src/run-minimax-auth.ts auth",
     "auth:minimax:check": "bun packages/auth/src/run-minimax-auth.ts check",
     "auth:minimax:scrape": "bun packages/auth/src/run-minimax-auth.ts scrape",
+    "skills:sync": "bun scripts/skills-sync.ts",
+    "skills:sync:check": "bun scripts/skills-sync.ts --check-only",
     "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck || true; done"
   },
   "bin": {
@@ -25,7 +27,7 @@
     "windows.ts",
     "renderer.ts",
     "cli.ts",
-    "harness",
+    "harness/**/*.ts",
     "packages",
     "skills",
     "package.json",
