@@ -211,5 +211,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           generate_release_notes: true
+          make_latest: true
           prerelease: >-
             ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
