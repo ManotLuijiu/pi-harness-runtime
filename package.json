@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "0.6.3-beta.13",
+  "version": "0.6.3",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
