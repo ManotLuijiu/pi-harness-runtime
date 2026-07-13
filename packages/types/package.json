@@ -1,7 +1,6 @@
 {
   "name": "@pi-harness/types",
   "version": "0.9.1",
-  "version": "0.9.1",
   "description": "Shared TypeScript types for pi-harness-runtime packages",
   "type": "module",
   "main": "./src/index.js",

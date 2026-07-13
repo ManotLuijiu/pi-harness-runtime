@@ -1,7 +1,6 @@
 {
   "name": "@pi/prompt-compiler",
   "version": "0.9.1",
-  "version": "0.9.1",
   "description": "Deterministic prompt compiler for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
