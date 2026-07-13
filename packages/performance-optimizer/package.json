@@ -1,0 +1,23 @@
+{
+  "name": "@pi-harness/performance-optimizer",
+  "version": "0.1.0",
+  "description": "Performance optimization analyzer for pi-harness runtime (RFC-0056)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js",
+    "lint": "eslint src --ext .ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
