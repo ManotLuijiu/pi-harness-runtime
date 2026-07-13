@@ -169,3 +169,56 @@ export type { QuotaStatus, QuotaDisplayConfig } from "./e2e/quota-status.js";
 
 // Project Detector
 export { ProjectDetector } from "./project-detector/detector.js";
+
+// ─── RFC-0056: Performance Optimizer ────────────────────────────────────────
+export {
+	PerformanceOptimizer,
+	createPerformanceOptimizer,
+} from "../packages/performance-optimizer/src/index.js";
+export type {
+	PerformanceOptimizationRequest,
+	PerformanceOptimizationPlan,
+	PerformanceRecommendation,
+} from "../packages/performance-optimizer/src/types.js";
+
+// ─── RFC-0057: Evaluation Engine ───────────────────────────────────────────
+export {
+	EvaluationEngine,
+	createEvaluationEngine,
+} from "../packages/evaluation-engine/src/index.js";
+export type {
+	EvaluationRequest,
+	EvaluationResult,
+	EvaluationFinding,
+} from "../packages/evaluation-engine/src/types.js";
+
+// ─── RFC-0058: Learning Engine ─────────────────────────────────────────────
+export {
+	LearningEngine,
+	createLearningEngine,
+} from "../packages/learning-engine/src/index.js";
+export type {
+	LearningRequest,
+	LearnedExperience,
+} from "../packages/learning-engine/src/types.js";
+
+// ─── RFC-0059: Experience Replay ──────────────────────────────────────────
+export {
+	ExperienceReplay,
+	createExperienceReplay,
+} from "../packages/experience-replay/src/index.js";
+export type {
+	ReplayRequest,
+	ReplayResult,
+} from "../packages/experience-replay/src/types.js";
+
+// ─── RFC-0060: Memory Engine ───────────────────────────────────────────────
+export {
+	MemoryEngine,
+	createMemoryEngine,
+} from "../packages/memory-engine/src/index.js";
+export type {
+	OkfConcept,
+	KnowledgeQuery,
+	KnowledgeResult,
+} from "../packages/memory-engine/src/types.js";
