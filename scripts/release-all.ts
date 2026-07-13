@@ -84,7 +84,9 @@ async function setWorkspaceVersion(
 		return;
 	}
 	pkg.version = version;
-	await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+	// Re-serialize via JSON.parse→stringify to collapse any duplicate keys
+	// (duplicate "version" keys are valid JSON but cause bun install to warn/fail)
+	await writeFile(pkgPath, `${JSON.stringify(JSON.parse(JSON.stringify(pkg)), null, 2)}\n`);
 	const name =
 		typeof pkg.name === "string"
 			? `${pkg.name}@${version}`

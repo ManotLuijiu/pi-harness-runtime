@@ -1,7 +1,6 @@
 {
   "name": "@pi-harness/evaluation-engine",
   "version": "0.9.1",
-  "version": "0.9.1",
   "description": "Evaluation engine for pi-harness runtime (RFC-0057)",
   "type": "module",
   "main": "./dist/index.js",
