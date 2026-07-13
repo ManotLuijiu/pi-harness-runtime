@@ -122,6 +122,15 @@ jobs:
             echo "Attempt $((RETRY_COUNT + 1))/${MAX_RETRIES}:"
             echo "mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
 
+            if [ "$MERGEABLE" = "UNKNOWN" ] || \
+               [ "$MERGE_STATE" = "UNKNOWN" ] || \
+               [ "$MERGE_STATE" = "DIRTY" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Merge state is still settling; waiting 10s..."
+              sleep 10
+              continue
+            fi
+
             if [ "$MERGEABLE" = "MERGEABLE" ]; then
               echo "PR is mergeable, performing squash merge..."
               gh pr merge "$PR_NUMBER" --squash --delete-branch=false
@@ -136,15 +145,6 @@ jobs:
               echo "::error::git merge origin/main"
               echo "::error::Resolve conflicts, then git push origin develop"
               exit 1
-            fi
-
-            if [ "$MERGEABLE" = "UNKNOWN" ] || \
-               [ "$MERGE_STATE" = "UNKNOWN" ] || \
-               [ "$MERGE_STATE" = "DIRTY" ]; then
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              echo "Merge state is still settling; waiting 10s..."
-              sleep 10
-              continue
             fi
 
             echo "::error::Unexpected PR merge state"

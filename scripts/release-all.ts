@@ -69,7 +69,10 @@ async function getRootVersion(): Promise<string> {
 	return version;
 }
 
-async function setWorkspaceVersion(workspacePath: string, version: string): Promise<void> {
+async function setWorkspaceVersion(
+	workspacePath: string,
+	version: string,
+): Promise<void> {
 	const pkgPath = join(workspacePath, "package.json");
 	if (!existsSync(pkgPath)) return;
 	let pkg: Record<string, unknown>;
@@ -82,7 +85,10 @@ async function setWorkspaceVersion(workspacePath: string, version: string): Prom
 	}
 	pkg.version = version;
 	await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-	const name = typeof pkg.name === "string" ? `${pkg.name}@${version}` : workspacePath.replace(`${ROOT}/`, "");
+	const name =
+		typeof pkg.name === "string"
+			? `${pkg.name}@${version}`
+			: workspacePath.replace(`${ROOT}/`, "");
 	console.log(`  Updated ${name}`);
 }
 
@@ -95,7 +101,10 @@ function gitAmendCommit(): void {
 	}
 	let status: string;
 	try {
-		status = execSync("git status --short", { cwd: ROOT, encoding: "utf-8" }).trim();
+		status = execSync("git status --short", {
+			cwd: ROOT,
+			encoding: "utf-8",
+		}).trim();
 	} catch {
 		return;
 	}
@@ -117,7 +126,10 @@ async function main(): Promise<void> {
 	const isDryRun = args.includes("--dry-run");
 	const releaseArgs = args.filter((a) => a !== "--dry-run");
 	const cmdParts = releaseArgs.filter((a) => !a.startsWith("--dry-run"));
-	const stdCmd = cmdParts.length > 0 ? `npx standard-version ${cmdParts.join(" ")}` : "npx standard-version";
+	const stdCmd =
+		cmdParts.length > 0
+			? `npx standard-version ${cmdParts.join(" ")}`
+			: "npx standard-version";
 	const cmd = isDryRun ? `${stdCmd} --dry-run` : stdCmd;
 
 	console.log("\n🚀 Synced monorepo release\n");
@@ -140,9 +152,13 @@ async function main(): Promise<void> {
 
 	// Step 3: Sync workspaces
 	const workspaces = getWorkspaceDirs();
-	console.log(`\n📦 Step 3: Syncing ${workspaces.length} workspace packages to ${newVersion}...`);
+	console.log(
+		`\n📦 Step 3: Syncing ${workspaces.length} workspace packages to ${newVersion}...`,
+	);
 	if (!isDryRun) {
-		await Promise.all(workspaces.map((ws) => setWorkspaceVersion(ws, newVersion)));
+		await Promise.all(
+			workspaces.map((ws) => setWorkspaceVersion(ws, newVersion)),
+		);
 	} else {
 		for (const ws of workspaces) {
 			const name = ws.replace(`${ROOT}/`, "");

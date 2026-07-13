@@ -1,6 +1,7 @@
 {
   "name": "@pi-harness/experience-replay",
   "version": "0.9.1",
+  "version": "0.9.1",
   "description": "Experience replay for debugging and reproducibility (RFC-0059)",
   "type": "module",
   "main": "./dist/index.js",
