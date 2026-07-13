@@ -72,7 +72,9 @@ jobs:
           bun run build
 
       - name: Bump version
-        if: "!contains(github.ref, 'beta')"
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') &&
+          !contains(github.ref, 'beta')
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -99,6 +101,17 @@ jobs:
             else
               echo "--access public"
             fi
+          }
+
+          stage_dir() {
+            local source_dir="$1"
+            local staged_dir
+            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
+            rsync -a --delete \
+              --exclude '.git' \
+              --exclude 'node_modules' \
+              "${source_dir%/}/" "${staged_dir}/"
+            echo "$staged_dir"
           }
 
           publish_with_retry() {
@@ -129,14 +142,18 @@ jobs:
             return 1
           }
 
-          # Publish root package
+          # Publish root package from a clean staged copy.
+          root_stage=$(stage_dir ".")
+          cd "$root_stage"
           publish_with_retry
+          cd - > /dev/null
 
-          # Publish all workspace packages
+          # Publish all workspace packages from clean staged copies.
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
-              cd "$pkg"
+              pkg_stage=$(stage_dir "$pkg")
+              cd "$pkg_stage"
               publish_with_retry || true
               cd - > /dev/null
             fi
@@ -159,12 +176,28 @@ jobs:
             fi
           }
 
+          stage_dir() {
+            local source_dir="$1"
+            local staged_dir
+            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
+            rsync -a --delete \
+              --exclude '.git' \
+              --exclude 'node_modules' \
+              "${source_dir%/}/" "${staged_dir}/"
+            echo "$staged_dir"
+          }
+
+          root_stage=$(stage_dir ".")
+          cd "$root_stage"
           echo "Root publish args: $(publish_args)"
           npm publish $(publish_args)
+          cd - > /dev/null
+
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Would publish ${pkg} with args:"
-              cd "$pkg"
+              pkg_stage=$(stage_dir "$pkg")
+              cd "$pkg_stage"
               echo "$(publish_args)"
               npm publish $(publish_args) || true
               cd - > /dev/null
