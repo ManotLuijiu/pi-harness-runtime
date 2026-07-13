@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.9.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.0) (2026-07-13)
+
+
+### Features
+
+* **release:** add synced-workspace release script ([617649d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/617649d0b2227ebb4355eec4979b0c65822d60e3))
+
+
+### Bug Fixes
+
+* **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
+
 ### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
 
 
