@@ -5,7 +5,12 @@
 import type { FrameworkExtension } from "../../framework-plugin-sdk/src/types.js";
 import { analyzeWeb } from "./analyzer.js";
 
-export type { GenericWebAnalysis, WebFrameworkType, PageRoute, ApiEndpoint } from "./types.js";
+export type {
+	GenericWebAnalysis,
+	WebFrameworkType,
+	PageRoute,
+	ApiEndpoint,
+} from "./types.js";
 
 /**
  * Analyze a generic web project (RFC-0066)

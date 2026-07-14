@@ -45,7 +45,11 @@ describe("analyzeFrappe", () => {
 
 	it("detects frappe workspace via apps.txt", async () => {
 		const dir = await mkdtemp();
-		await fs.writeFile(path.join(dir, "apps.txt"), "frappe\nerpnext\n", "utf-8");
+		await fs.writeFile(
+			path.join(dir, "apps.txt"),
+			"frappe\nerpnext\n",
+			"utf-8",
+		);
 		const result = await analyzeFrappe(dir);
 		expect(result).not.toBeNull();
 	});
@@ -53,10 +57,16 @@ describe("analyzeFrappe", () => {
 	it("parses apps from apps.txt", async () => {
 		const dir = await mkdtemp();
 		await fs.mkdir(path.join(dir, "apps"), { recursive: true });
-		await fs.writeFile(path.join(dir, "apps.txt"), "frappe\nerpnext\nmy_custom_app\n", "utf-8");
+		await fs.writeFile(
+			path.join(dir, "apps.txt"),
+			"frappe\nerpnext\nmy_custom_app\n",
+			"utf-8",
+		);
 		await fs.mkdir(path.join(dir, "apps", "frappe"), { recursive: true });
 		await fs.mkdir(path.join(dir, "apps", "erpnext"), { recursive: true });
-		await fs.mkdir(path.join(dir, "apps", "my_custom_app"), { recursive: true });
+		await fs.mkdir(path.join(dir, "apps", "my_custom_app"), {
+			recursive: true,
+		});
 		const result = await analyzeFrappe(dir);
 		expect(result).not.toBeNull();
 		const appNames = result!.apps.map((a) => a.name);
@@ -66,12 +76,10 @@ describe("analyzeFrappe", () => {
 
 	it("parses hooks.py to extract app_name and __version__", async () => {
 		const dir = await mkdtemp();
-		await fs.mkdir(path.join(dir, "apps", "myapp", "myapp"), { recursive: true });
-		await fs.writeFile(
-			path.join(dir, "apps.txt"),
-			"myapp\n",
-			"utf-8",
-		);
+		await fs.mkdir(path.join(dir, "apps", "myapp", "myapp"), {
+			recursive: true,
+		});
+		await fs.writeFile(path.join(dir, "apps.txt"), "myapp\n", "utf-8");
 		await fs.writeFile(
 			path.join(dir, "apps", "myapp", "myapp", "hooks.py"),
 			`
@@ -99,18 +107,26 @@ docevents = {
 
 	it("detects ERPNext from package.json dependencies", async () => {
 		const dir = await mkdtemp();
-			await fs.mkdir(path.join(dir, "apps", "erpnext", "erpnext"), { recursive: true });
-		await fs.mkdir(path.join(dir, "apps", "frappe", "frappe"), { recursive: true });
-		await fs.writeFile(path.join(dir, "apps.txt"), "frappe\nerpnext\n", "utf-8");
+		await fs.mkdir(path.join(dir, "apps", "erpnext", "erpnext"), {
+			recursive: true,
+		});
+		await fs.mkdir(path.join(dir, "apps", "frappe", "frappe"), {
+			recursive: true,
+		});
 		await fs.writeFile(
-				path.join(dir, "apps", "erpnext", "package.json"),
-				JSON.stringify({
-					name: "erpnext",
-					version: "14.0.0",
-					dependencies: { frappe: "^14.0.0", erpnext: "^14.0.0" },
-				}),
-				"utf-8",
-			);
+			path.join(dir, "apps.txt"),
+			"frappe\nerpnext\n",
+			"utf-8",
+		);
+		await fs.writeFile(
+			path.join(dir, "apps", "erpnext", "package.json"),
+			JSON.stringify({
+				name: "erpnext",
+				version: "14.0.0",
+				dependencies: { frappe: "^14.0.0", erpnext: "^14.0.0" },
+			}),
+			"utf-8",
+		);
 		await fs.writeFile(
 			path.join(dir, "apps", "erpnext", "erpnext", "hooks.py"),
 			"app_name = 'erpnext'\n",
@@ -146,21 +162,34 @@ docevents = {
 
 	it("counts DocTypes in app module directory", async () => {
 		const dir = await mkdtemp();
-		await fs.mkdir(path.join(dir, "apps", "myapp", "myapp", "doctype", "customer"), { recursive: true });
-		await fs.mkdir(path.join(dir, "apps", "myapp", "myapp", "doctype", "order"), { recursive: true });
-		await fs.mkdir(path.join(dir, "apps", "myapp", "myapp", "doctype", "custom_so"), { recursive: true });
-		await fs.writeFile(
-			path.join(dir, "apps.txt"),
-			"myapp\n",
-			"utf-8",
+		await fs.mkdir(
+			path.join(dir, "apps", "myapp", "myapp", "doctype", "customer"),
+			{ recursive: true },
 		);
+		await fs.mkdir(
+			path.join(dir, "apps", "myapp", "myapp", "doctype", "order"),
+			{ recursive: true },
+		);
+		await fs.mkdir(
+			path.join(dir, "apps", "myapp", "myapp", "doctype", "custom_so"),
+			{ recursive: true },
+		);
+		await fs.writeFile(path.join(dir, "apps.txt"), "myapp\n", "utf-8");
 		await fs.writeFile(
 			path.join(dir, "apps", "myapp", "myapp", "hooks.py"),
 			"app_name = 'myapp'\n",
 			"utf-8",
 		);
 		await fs.writeFile(
-			path.join(dir, "apps", "myapp", "myapp", "doctype", "customer", "customer.json"),
+			path.join(
+				dir,
+				"apps",
+				"myapp",
+				"myapp",
+				"doctype",
+				"customer",
+				"customer.json",
+			),
 			JSON.stringify({
 				doctype: "DocType",
 				name: "Customer",
@@ -169,7 +198,15 @@ docevents = {
 			"utf-8",
 		);
 		await fs.writeFile(
-			path.join(dir, "apps", "myapp", "myapp", "doctype", "order", "order.json"),
+			path.join(
+				dir,
+				"apps",
+				"myapp",
+				"myapp",
+				"doctype",
+				"order",
+				"order.json",
+			),
 			JSON.stringify({
 				doctype: "DocType",
 				name: "Sales Order",
@@ -180,7 +217,9 @@ docevents = {
 		);
 
 		const result = await analyzeFrappe(dir);
-		expect(result!.apps.find((a) => a.name === "myapp")!.doctypeCount).toBeGreaterThanOrEqual(2);
+		expect(
+			result!.apps.find((a) => a.name === "myapp")!.doctypeCount,
+		).toBeGreaterThanOrEqual(2);
 		const customerDt = result!.doctypes.find((d) => d.name === "customer");
 		expect(customerDt).toBeDefined();
 		expect(customerDt!.nFields).toBe(2);
@@ -190,7 +229,9 @@ docevents = {
 
 	it("detects Frappe SPA from package.json", async () => {
 		const dir = await mkdtemp();
-		await fs.mkdir(path.join(dir, "apps", "frappe", "frappe"), { recursive: true });
+		await fs.mkdir(path.join(dir, "apps", "frappe", "frappe"), {
+			recursive: true,
+		});
 		await fs.writeFile(path.join(dir, "apps.txt"), "frappe\n", "utf-8");
 		await fs.writeFile(
 			path.join(dir, "apps", "frappe", "package.json"),

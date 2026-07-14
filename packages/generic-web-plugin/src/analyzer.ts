@@ -7,7 +7,12 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import type { GenericWebAnalysis, WebFrameworkType, PageRoute, ApiEndpoint } from "./types.js";
+import type {
+	GenericWebAnalysis,
+	WebFrameworkType,
+	PageRoute,
+	ApiEndpoint,
+} from "./types.js";
 
 // ─── Detection ────────────────────────────────────────────────────────────────
 
@@ -17,14 +22,20 @@ import type { GenericWebAnalysis, WebFrameworkType, PageRoute, ApiEndpoint } fro
 export async function detectWeb(root: string): Promise<boolean> {
 	const hasPackageJson = existsSync(join(root, "package.json"));
 	const hasNodeModules = existsSync(join(root, "node_modules"));
-	const hasSrc = existsSync(join(root, "src")) || existsSync(join(root, "app")) || existsSync(join(root, "pages")) || existsSync(join(root, "components"));
+	const hasSrc =
+		existsSync(join(root, "src")) ||
+		existsSync(join(root, "app")) ||
+		existsSync(join(root, "pages")) ||
+		existsSync(join(root, "components"));
 	return hasPackageJson && (hasNodeModules || hasSrc);
 }
 
 // ─── Framework Detection ────────────────────────────────────────────────────
 
 async function detectFramework(root: string): Promise<WebFrameworkType> {
-	const pkgJson = await readFile(join(root, "package.json"), "utf-8").catch(() => "{}");
+	const pkgJson = await readFile(join(root, "package.json"), "utf-8").catch(
+		() => "{}",
+	);
 	const pkg = JSON.parse(pkgJson);
 	const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 	const scripts: Record<string, string> = pkg.scripts || {};
@@ -91,7 +102,10 @@ interface RoutePattern {
 function getRoutePatterns(framework: WebFrameworkType): RoutePattern[] {
 	switch (framework) {
 		case "next":
-			return [{ dir: "pages", exts: [".tsx", ".jsx", ".ts", ".js"] }, { dir: "app", exts: [".tsx", ".jsx"] }];
+			return [
+				{ dir: "pages", exts: [".tsx", ".jsx", ".ts", ".js"] },
+				{ dir: "app", exts: [".tsx", ".jsx"] },
+			];
 		case "nuxt":
 		case "remix":
 		case "astro":
@@ -112,19 +126,36 @@ function getRoutePatterns(framework: WebFrameworkType): RoutePattern[] {
 		case "hono":
 			return [{ dir: "routes", exts: [".ts", ".js"] }];
 		case "django":
-			return [{ dir: "templates", exts: [".html"] }, { dir: "views", exts: [".py"] }];
+			return [
+				{ dir: "templates", exts: [".html"] },
+				{ dir: "views", exts: [".py"] },
+			];
 		case "flask":
-			return [{ dir: "templates", exts: [".html"] }, { dir: "routes", exts: [".py"] }];
+			return [
+				{ dir: "templates", exts: [".html"] },
+				{ dir: "routes", exts: [".py"] },
+			];
 		case "rails":
-			return [{ dir: "app/views", exts: [".html.erb", ".html.slim", ".html.haml"] }, { dir: "app/controllers", exts: [".rb"] }];
+			return [
+				{ dir: "app/views", exts: [".html.erb", ".html.slim", ".html.haml"] },
+				{ dir: "app/controllers", exts: [".rb"] },
+			];
 		case "laravel":
-			return [{ dir: "resources/views", exts: [".blade.php", ".php"] }, { dir: "routes", exts: [".php"] }];
+			return [
+				{ dir: "resources/views", exts: [".blade.php", ".php"] },
+				{ dir: "routes", exts: [".php"] },
+			];
 	}
 }
 
 type DirScanner = (filePath: string, relPath: string) => void;
 
-async function scanDir(dir: string, base: string, exts: string[], emit: DirScanner): Promise<void> {
+async function scanDir(
+	dir: string,
+	base: string,
+	exts: string[],
+	emit: DirScanner,
+): Promise<void> {
 	let entries;
 	try {
 		entries = await readdir(dir, { withFileTypes: true });
@@ -136,7 +167,9 @@ async function scanDir(dir: string, base: string, exts: string[], emit: DirScann
 		if (entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
 
 		const fullPath = join(dir, entry.name);
-		const relPath = join(base, entry.name).slice(join(base, "").length).replace(/^[/\\]/, "");
+		const relPath = join(base, entry.name)
+			.slice(join(base, "").length)
+			.replace(/^[/\\]/, "");
 
 		if (entry.isDirectory()) {
 			await scanDir(fullPath, base, exts, emit);
@@ -178,8 +211,23 @@ function deduplicateRoutes(routes: PageRoute[]): PageRoute[] {
 
 // ─── API Endpoint Detection ──────────────────────────────────────────────────
 
-async function findApiEndpoints(root: string, framework: WebFrameworkType): Promise<ApiEndpoint[]> {
-	if (!["express", "fastify", "koa", "hono", "flask", "django", "rails", "laravel", "next"].includes(framework)) {
+async function findApiEndpoints(
+	root: string,
+	framework: WebFrameworkType,
+): Promise<ApiEndpoint[]> {
+	if (
+		![
+			"express",
+			"fastify",
+			"koa",
+			"hono",
+			"flask",
+			"django",
+			"rails",
+			"laravel",
+			"next",
+		].includes(framework)
+	) {
 		return [];
 	}
 
@@ -223,17 +271,35 @@ function getApiPatterns(framework: WebFrameworkType): ApiPattern[] {
 		case "fastify":
 		case "koa":
 		case "hono":
-			return [{ dir: "routes", exts: [".ts", ".js"] }, { dir: "src/routes", exts: [".ts", ".js"] }];
+			return [
+				{ dir: "routes", exts: [".ts", ".js"] },
+				{ dir: "src/routes", exts: [".ts", ".js"] },
+			];
 		case "next":
-			return [{ dir: "pages/api", exts: [".ts", ".js"] }, { dir: "app/api", exts: [".ts", ".tsx"] }];
+			return [
+				{ dir: "pages/api", exts: [".ts", ".js"] },
+				{ dir: "app/api", exts: [".ts", ".tsx"] },
+			];
 		case "flask":
-			return [{ dir: "routes", exts: [".py"] }, { dir: "app", exts: [".py"] }];
+			return [
+				{ dir: "routes", exts: [".py"] },
+				{ dir: "app", exts: [".py"] },
+			];
 		case "django":
-			return [{ dir: "views", exts: [".py"] }, { dir: "api", exts: [".py"] }];
+			return [
+				{ dir: "views", exts: [".py"] },
+				{ dir: "api", exts: [".py"] },
+			];
 		case "rails":
-			return [{ dir: "config/routes.rb", exts: [".rb"] }, { dir: "app/controllers", exts: [".rb"] }];
+			return [
+				{ dir: "config/routes.rb", exts: [".rb"] },
+				{ dir: "app/controllers", exts: [".rb"] },
+			];
 		case "laravel":
-			return [{ dir: "routes", exts: [".php"] }, { dir: "app/Http/Controllers", exts: [".php"] }];
+			return [
+				{ dir: "routes", exts: [".php"] },
+				{ dir: "app/Http/Controllers", exts: [".php"] },
+			];
 		default:
 			return [];
 	}
@@ -260,7 +326,9 @@ function extractHttpMethods(filePath: string): string[] {
 /**
  * Deep analysis of a generic web project
  */
-export async function analyzeWeb(root: string): Promise<GenericWebAnalysis | null> {
+export async function analyzeWeb(
+	root: string,
+): Promise<GenericWebAnalysis | null> {
 	const detected = await detectWeb(root);
 	if (!detected) return null;
 
