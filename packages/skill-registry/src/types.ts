@@ -78,7 +78,7 @@ export interface SkillRegistry {
 	find(trigger: { type: TriggerType; value: string }): Skill[];
 	invoke(skillId: string, context: SkillContext): Promise<SkillResult>;
 	invokeBestMatch(
-		trigger: { type: TriggerType; value: string },
+		trigger: SkillTrigger,
 		context: SkillContext,
 	): Promise<SkillResult>;
 }

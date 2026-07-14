@@ -1,0 +1,3 @@
+- Happy path
+- Invalid input
+- Deterministic output
