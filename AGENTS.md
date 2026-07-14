@@ -209,3 +209,9 @@ Guidelines for this section:
 - Redact JWTs, API keys, bearer tokens, session IDs, and cookie values.
 - Prefer `/tmp/` for temporary HTML, bundle, or response captures.
 - If the user provides cookies, use them only for the requested domain and task.
+
+## Release Numbering
+
+- If a tag or package version is already out of sync with npm, do not reuse the old number.
+- Bump to the next fresh semver tag and version instead.
+- Release workflow reference: [release-app](/home/frappe/frappe-bench/.claude-plugins/moocoding-skills/skills/release-app/SKILL.md)
