@@ -1,0 +1,13 @@
+{
+  "name": "@pi/rate-limiter",
+  "version": "0.9.4",
+  "type": "module",
+  "description": "Rate limiting with token bucket algorithm (RFC-0023)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "scripts": { "build": "tsc --noEmit", "test": "bun test" },
+  "devDependencies": { "bun-types": "^1.0.0" }
+}
