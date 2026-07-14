@@ -65,10 +65,7 @@ export interface SkillRegistry {
         value: string;
     }): Skill[];
     invoke(skillId: string, context: SkillContext): Promise<SkillResult>;
-    invokeBestMatch(trigger: {
-        type: TriggerType;
-        value: string;
-    }, context: SkillContext): Promise<SkillResult>;
+    invokeBestMatch(trigger: SkillTrigger, context: SkillContext): Promise<SkillResult>;
 }
 export type SkillRegistryEvent = {
     type: "skill.registered";
