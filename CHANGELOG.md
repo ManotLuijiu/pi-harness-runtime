@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.4](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.4) (2026-07-14)
+
+
+### Features
+
+* configure Dependabot to target develop with auto-merge ([9e12b46](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9e12b4620179b91d2dc1a4627e199920d3890f31))
+* persist memory engine bundles ([07af7a9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/07af7a96e301bfd8afadd82547cb93e8bec26b12))
+* RFC-0052 skill-registry gap fixes + 40 new RFCs (0061-0100) ([6defd26](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6defd26ff931fb9f93548647bf3a76098aa1d48b))
+* RFC-0060 memory-engine fixes + simplify auto-resume ([#52](https://github.com/ManotLuijiu/pi-harness-runtime/issues/52)) ([fb4de1a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fb4de1a9d1de74b875aabb58d0c06f7116994ca3))
+
+
+### Bug Fixes
+
+* collapse duplicate version keys in workspace package.json files ([f3a7289](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3a728923a96308296e45d7ce3db8fe3ad36780a))
+
+### [0.4.2-beta.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.1-beta.1...v0.4.2-beta.1) (2026-07-12)
+
 ### [0.9.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.1) (2026-07-13)
 
 

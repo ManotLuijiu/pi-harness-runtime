@@ -1,7 +1,7 @@
 {
   "name": "@pi-harness/model-registry",
-  "version": "0.9.1",
-  "description": "Model Registry for pi-harness-runtime \u2014 centralized model metadata with pricing",
+  "version": "0.9.4",
+  "description": "Model Registry for pi-harness-runtime — centralized model metadata with pricing",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
