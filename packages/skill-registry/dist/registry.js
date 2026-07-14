@@ -65,11 +65,10 @@ export class InMemorySkillRegistry {
      */
     find(trigger) {
         const all = this.list();
-        const input = trigger.value;
         // Filter by type first
         const matchingType = all.filter((s) => s.trigger.type === trigger.type);
         // Then score
-        const scored = findAllMatches(matchingType, input);
+        const scored = findAllMatches(matchingType, trigger.value);
         return scored.map((s) => s.skill);
     }
     /**
@@ -102,17 +101,41 @@ export class InMemorySkillRegistry {
         }
     }
     /**
-     * Invoke the best matching skill for a trigger
+     * Invoke the best matching skill for a trigger (RFC-0052)
+     *
+     * Uses trigger.confidence as minConfidence threshold per RFC spec:
+     * "Best match returns highest-scoring skill above confidence threshold."
      */
     async invokeBestMatch(trigger, context) {
         const all = this.list();
+        // Filter by type first
         const matching = all.filter((s) => s.trigger.type === trigger.type);
-        const bestMatch = findBestMatch(matching, trigger.value);
+        // Use trigger.confidence as min threshold, fallback to 0.5
+        const minConfidence = trigger.confidence ?? 0.5;
+        const bestMatch = findBestMatch(matching, trigger.value, minConfidence);
         if (!bestMatch) {
             return {
                 success: false,
                 error: "No matching skill found",
             };
+        }
+        // Capability check (RFC-0052: "requiresCapabilities in metadata")
+        if (bestMatch.metadata.requiresCapabilities?.length) {
+            const capabilityRegistry = context.metadata.capabilityRegistry;
+            if (!capabilityRegistry) {
+                return {
+                    success: false,
+                    error: `Skill "${bestMatch.name}" requires capabilities ${JSON.stringify(bestMatch.metadata.requiresCapabilities)} but no capability registry is available`,
+                };
+            }
+            for (const cap of bestMatch.metadata.requiresCapabilities) {
+                if (!capabilityRegistry.has(cap)) {
+                    return {
+                        success: false,
+                        error: `Skill "${bestMatch.name}" requires capability "${cap}" which is not available`,
+                    };
+                }
+            }
         }
         return this.invoke(bestMatch.id, context);
     }

@@ -6,7 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { formatQuotaStatus } from "../harness/e2e/quota-status.ts";
-import { buildFooterStatusValue } from "../footer-status.ts";
+import { buildFooterStatusValue, parseFooterStatusValue } from "../footer-status.ts";
+import {
+	parseContextWindowStatusLine,
+	parseQuotaUsageStatusLine,
+} from "../status-parsers.ts";
 
 test("formatQuotaStatus always includes weekly remaining quota", () => {
 	const status = formatQuotaStatus({
@@ -73,4 +77,41 @@ test("buildFooterStatusValue ignores expired mirror data and falls back to local
 	);
 
 	assert.equal(status, "today: 12.5k tok · $0.123");
+});
+
+test("parseQuotaUsageStatusLine maps footer quota display back to h5_used_pct and weekly_used_pct", () => {
+	const parsed = parseQuotaUsageStatusLine("5h: 80% left · week: 20% left");
+
+	assert.deepEqual(parsed, {
+		h5UsedPct: 20,
+		weeklyUsedPct: 80,
+	});
+});
+
+test("parseContextWindowStatusLine parses percent and total window", () => {
+	const parsed = parseContextWindowStatusLine("68.4%/205k (auto) MiniMax-M2.7 • high");
+
+	assert.deepEqual(parsed, {
+		usagePct: 68.4,
+		contextWindowTokens: 205000,
+		usedTokens: 140220,
+	});
+});
+
+test("parseFooterStatusValue distinguishes quota and context-window status lines", () => {
+	const quota = parseFooterStatusValue("5h: 80% left · week: 20% left");
+	assert.equal(quota.kind, "quota");
+	assert.deepEqual(quota.value, { h5UsedPct: 20, weeklyUsedPct: 80 });
+
+	const contextWindow = parseFooterStatusValue("68.4%/205k (auto) MiniMax-M2.7 • high");
+	assert.equal(contextWindow.kind, "context-window");
+	assert.deepEqual(contextWindow.value, {
+		usagePct: 68.4,
+		contextWindowTokens: 205000,
+		usedTokens: 140220,
+	});
+
+	const today = parseFooterStatusValue("today: 12.5k tok · $0.123");
+	assert.equal(today.kind, "today");
+	assert.deepEqual(today.value, { tokens: 12500, cost: 0.123 });
 });

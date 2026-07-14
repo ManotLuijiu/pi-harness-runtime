@@ -11,9 +11,9 @@ const introspectSkill = {
     description: "Lists all registered skills and their triggers",
     version: "1.0.0",
     trigger: createKeywordTrigger(["list skills", "show skills", "what skills"]),
-    handler: async () => {
-        const registry = {};
-        if (!registry) {
+    handler: async (context) => {
+        const registry = context.metadata.registry;
+        if (!registry || typeof registry.list !== "function") {
             return { success: false, error: "Registry not available in context" };
         }
         const skills = registry.list();
@@ -77,9 +77,60 @@ const statusSkill = {
         examples: ["check status", "show stats"],
     },
 };
+/**
+ * Context compile skill — suggests context compilation strategy
+ */
+const contextCompileSkill = {
+    id: "skill-context-compile",
+    name: "Context Compiler",
+    description: "Analyzes current context and suggests optimization strategies",
+    version: "1.0.0",
+    trigger: createKeywordTrigger([
+        "optimize context",
+        "context too long",
+        "trim context",
+        "reduce context",
+    ]),
+    handler: async (context) => {
+        const msgCount = context.messages.length;
+        const tools = context.tools.length;
+        return {
+            success: true,
+            output: `Context analysis:\n- Messages: ${msgCount}\n- Available tools: ${tools}\nSuggestion: Use /compact to summarize older turns.`,
+            metadata: { msgCount, toolCount: tools },
+        };
+    },
+    metadata: {
+        tags: ["context", "optimization", "performance"],
+        examples: ["context is too long", "trim my context"],
+    },
+};
+/**
+ * Skill install skill — lists available skills for discovery
+ */
+const skillInstallSkill = {
+    id: "skill-install",
+    name: "Install Skill",
+    description: "Lists or installs additional skills",
+    version: "1.0.0",
+    trigger: createIntentTrigger(["install skill", "add skill", "load skill"]),
+    handler: async (context) => {
+        return {
+            success: true,
+            output: "To install a skill:\n1. Write the skill file to your skills directory\n2. The skill registry auto-discovers it on next session\n\nSkill format: { id, name, description, trigger, handler, metadata }",
+            metadata: { tip: "skills auto-discover" },
+        };
+    },
+    metadata: {
+        tags: ["skills", "installation", "meta"],
+        examples: ["install a new skill", "add skill"],
+    },
+};
 export const DEFAULT_SKILLS = [
     introspectSkill,
     helpSkill,
     statusSkill,
+    contextCompileSkill,
+    skillInstallSkill,
 ];
 //# sourceMappingURL=defaults.js.map
