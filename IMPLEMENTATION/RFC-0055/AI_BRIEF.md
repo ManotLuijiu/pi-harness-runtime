@@ -1,24 +1,17 @@
-# RFC-0055 Cost Optimizer
+# AI Brief — TUI (RFC-0055)
 
-Implement intelligent cost management with budget tracking, cost forecasting, and model selection optimization.
+**Status:** ⚠️ Stub
 
-## Key Components
+## Implemented
 
-- `CostOptimizer` - Track costs, manage budgets, optimize selections
-- `CostEntry` - Detailed cost records per task/job
-- `CostBudget` - Daily/weekly/monthly limits
-- `ModelSwitchRecommendation` - Cost-saving suggestions
+- `packages/tui/`
+- No source files implemented yet — package is an empty scaffold
 
-## Features
+## Planned
 
-- Real-time cost tracking
-- Budget status monitoring
-- Cost forecasting for job requirements
-- Model switch recommendations
-- Pareto-optimal model selection
+- Terminal UI for pi-harness-runtime
+- Interactive command interface
 
-## Integration Points
+## Tests
 
-- Uses Model Registry for pricing data
-- Uses Capability Registry for quality scoring
-- Provider Router respects cost constraints
+- None (no implementation yet)

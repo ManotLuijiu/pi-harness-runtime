@@ -1,16 +1,19 @@
-# RFC-0052 Skill Registry
+# AI Brief — Providers (RFC-0052)
 
-Implement a centralized skill registry for dynamic skill discovery, loading, and invocation at runtime.
+**Status:** ✅ Done
 
-## Key Components
+## Implemented
 
-- `Skill` - Skill definition with trigger, handler, metadata
-- `SkillRegistry` - Register, find, invoke skills
-- Trigger matching - Keywords, patterns, intents
-- Default skills for introspection
+- `packages/providers/`
+- `DeepAgentsAdapter`, `GLMUsage`, `OpenAIUsage`
+- Provider adapters for DeepAgents, GLM, and OpenAI usage tracking
 
-## Integration Points
+## Features
 
-- Agent Worker uses Skill Registry for skill discovery
-- Context Compiler injects skill results
-- Task Compiler references skills for specialized tasks
+- Multi-provider adapter system
+- Usage tracking for GLM and OpenAI
+- DeepAgents integration
+
+## Tests
+
+- 27 tests pass (added by subagent)
