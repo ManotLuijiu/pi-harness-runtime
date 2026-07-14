@@ -249,7 +249,8 @@ export class MemoryEngine {
                         await walkDir(fullPath);
                     }
                 }
-                else if (entry.name.endsWith(".md") && !RESERVED_FILES.includes(entry.name)) {
+                else if (entry.name.endsWith(".md") &&
+                    !RESERVED_FILES.includes(entry.name)) {
                     const content = await fs.readFile(fullPath, "utf-8").catch(() => "");
                     const parsed = parseFrontmatter(content);
                     if (parsed && parsed.frontmatter.type) {
@@ -376,7 +377,9 @@ export class MemoryEngine {
                 .toLowerCase()
                 .replace(/[^a-z0-9]+/g, "-")
                 .replace(/^-|-$/g, "")
-                .slice(0, 64) + "-" + randomUUID().slice(0, 8)
+                .slice(0, 64) +
+                "-" +
+                randomUUID().slice(0, 8)
             : randomUUID();
         const timestamp = new Date().toISOString();
         const concept = {
@@ -455,9 +458,18 @@ export class MemoryEngine {
         // Collect concept-level metadata only, excluding top-level OKF fields
         // and any bundle-level reserved fields that might be present.
         const reserved = new Set([
-            "id", "type", "title", "description", "resource",
-            "tags", "timestamp", "body", "links",
-            "index", "log", "directories",
+            "id",
+            "type",
+            "title",
+            "description",
+            "resource",
+            "tags",
+            "timestamp",
+            "body",
+            "links",
+            "index",
+            "log",
+            "directories",
         ]);
         const conceptMetadata = {};
         const meta = concept.metadata ?? {};
