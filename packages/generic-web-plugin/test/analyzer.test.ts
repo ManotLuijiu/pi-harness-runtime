@@ -121,10 +121,10 @@ describe("analyzeWeb", () => {
 	it("marks static site as non-SSR", async () => {
 		const dir = await mkdtemp();
 		await fs.writeFile(
-				path.join(dir, "package.json"),
-				JSON.stringify({ dependencies: { astro: "^3.0.0" } }),
-				"utf-8",
-			);
+			path.join(dir, "package.json"),
+			JSON.stringify({ dependencies: { astro: "^3.0.0" } }),
+			"utf-8",
+		);
 		await fs.mkdir(path.join(dir, "node_modules"), { recursive: true });
 
 		const result = await analyzeWeb(dir);

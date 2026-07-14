@@ -50,9 +50,7 @@ async function getAppsList(benchPath: string): Promise<string[]> {
 	if (existsSync(appsDir)) {
 		try {
 			const entries = await readdir(appsDir);
-			return entries.filter(
-				(e) => !e.startsWith(".") && e !== "node_modules",
-			);
+			return entries.filter((e) => !e.startsWith(".") && e !== "node_modules");
 		} catch {
 			// ignore
 		}
@@ -101,14 +99,16 @@ async function parseHooksFile(
 
 // ─── DocType Scanner ───────────────────────────────────────────────────────
 
-async function countDocTypes(appPath: string, appName: string): Promise<number> {
+async function countDocTypes(
+	appPath: string,
+	appName: string,
+): Promise<number> {
 	const moduleDir = join(appPath, appName, "doctype");
 	if (!existsSync(moduleDir)) return 0;
 	try {
 		const entries = await readdir(moduleDir);
-		return entries.filter(
-			(e) => !e.startsWith(".") && !e.startsWith("_"),
-		).length;
+		return entries.filter((e) => !e.startsWith(".") && !e.startsWith("_"))
+			.length;
 	} catch {
 		return 0;
 	}
@@ -160,7 +160,9 @@ async function scanDocTypeFolder(
 			if (fieldsMatch) {
 				nFields = fieldsMatch[1].split(",").filter((f) => f.trim()).length;
 			}
-			isSubmittable = /is_submittable\s*:\s*1|is_submittable\s*=\s*1/.test(content);
+			isSubmittable = /is_submittable\s*:\s*1|is_submittable\s*=\s*1/.test(
+				content,
+			);
 			singleDoc = /single\s*:\s*1|single\s*=\s*1/.test(content);
 		} catch {
 			// ignore
@@ -177,15 +179,23 @@ async function analyzeApp(
 	appName: string,
 ): Promise<{ isErpNext: boolean; hasSPA: boolean }> {
 	const appPath = join(benchPath, "apps", appName);
-	const packageJson = await readFile(join(appPath, "package.json"), "utf-8").catch(() => "");
+	const packageJson = await readFile(
+		join(appPath, "package.json"),
+		"utf-8",
+	).catch(() => "");
 
 	let isErpNext = false;
 	let hasSPA = false;
 
 	try {
 		const pkg = JSON.parse(packageJson);
-		const allDeps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
-		isErpNext = !!(allDeps["erpnext"] || allDeps["frappe"]?.includes("erpnext"));
+		const allDeps = {
+			...(pkg.dependencies ?? {}),
+			...(pkg.devDependencies ?? {}),
+		};
+		isErpNext = !!(
+			allDeps["erpnext"] || allDeps["frappe"]?.includes("erpnext")
+		);
 		hasSPA = !!(allDeps["@frappe/ui"] || allDeps["frappe-ui"]);
 	} catch {
 		// ignore
@@ -196,9 +206,7 @@ async function analyzeApp(
 
 // ─── Sites Scanner ─────────────────────────────────────────────────────────
 
-async function scanSites(
-	sitesPath: string,
-): Promise<
+async function scanSites(sitesPath: string): Promise<
 	{
 		name: string;
 		path: string;
@@ -220,11 +228,14 @@ async function scanSites(
 	try {
 		const entries = await readdir(sitesPath);
 		for (const entry of entries) {
-			if (entry.startsWith(".") || entry === "assets" || entry === "certs") continue;
+			if (entry.startsWith(".") || entry === "assets" || entry === "certs")
+				continue;
 			const sitePath = join(sitesPath, entry);
 			let isDir = false;
 			try {
-				isDir = (await import("node:fs/promises").then((m) => m.stat(sitePath))).isDirectory();
+				isDir = (
+					await import("node:fs/promises").then((m) => m.stat(sitePath))
+				).isDirectory();
 			} catch {
 				continue;
 			}
@@ -238,7 +249,9 @@ async function scanSites(
 			if (existsSync(siteConfigPath)) {
 				hasSiteConfig = true;
 				try {
-					const siteConfig = JSON.parse(await readFile(siteConfigPath, "utf-8"));
+					const siteConfig = JSON.parse(
+						await readFile(siteConfigPath, "utf-8"),
+					);
 					if (siteConfig.db_port) dbPort = Number(siteConfig.db_port);
 					if (siteConfig.redis_port) redisPort = Number(siteConfig.redis_port);
 				} catch {
@@ -246,7 +259,13 @@ async function scanSites(
 				}
 			}
 
-			sites.push({ name: entry, path: sitePath, hasSiteConfig, dbPort, redisPort });
+			sites.push({
+				name: entry,
+				path: sitePath,
+				hasSiteConfig,
+				dbPort,
+				redisPort,
+			});
 		}
 	} catch {
 		// ignore
@@ -259,13 +278,18 @@ async function scanSites(
 
 async function estimateCustomFields(
 	benchPath: string,
-): Promise<{ totalCustomFields: number; totalPropertySetters: number; linkedTo: string[] }> {
+): Promise<{
+	totalCustomFields: number;
+	totalPropertySetters: number;
+	linkedTo: string[];
+}> {
 	let totalCustomFields = 0;
 	let totalPropertySetters = 0;
 	const linkedTo = new Set<string>();
 
 	const appsDir = join(benchPath, "apps");
-	if (!existsSync(appsDir)) return { totalCustomFields: 0, totalPropertySetters: 0, linkedTo: [] };
+	if (!existsSync(appsDir))
+		return { totalCustomFields: 0, totalPropertySetters: 0, linkedTo: [] };
 
 	let apps: string[] = [];
 	try {
@@ -304,7 +328,11 @@ async function estimateCustomFields(
 		}
 	}
 
-	return { totalCustomFields, totalPropertySetters, linkedTo: Array.from(linkedTo) };
+	return {
+		totalCustomFields,
+		totalPropertySetters,
+		linkedTo: Array.from(linkedTo),
+	};
 }
 
 // ─── Main Analyzer ─────────────────────────────────────────────────────────
@@ -352,8 +380,13 @@ export async function analyzeFrappe(
 		// Extract __version__ from hooks.py
 		let version: string | undefined;
 		try {
-			const hooksContent = await readFile(join(appPath, appName, "hooks.py"), "utf-8");
-			const versionMatch = hooksContent.match(/^__version__\s*=\s*["']([^"']+)["']/m);
+			const hooksContent = await readFile(
+				join(appPath, appName, "hooks.py"),
+				"utf-8",
+			);
+			const versionMatch = hooksContent.match(
+				/^__version__\s*=\s*["']([^"']+)["']/m,
+			);
 			if (versionMatch) version = versionMatch[1];
 		} catch {
 			// ignore
