@@ -26,16 +26,32 @@ export class ExecutionSandbox {
             });
             let stdout = "";
             let stderr = "";
-            proc.stdout?.on("data", (data) => { stdout += data.toString(); });
-            proc.stderr?.on("data", (data) => { stderr += data.toString(); });
-            const timer = setTimeout(() => { proc.kill("SIGKILL"); }, this.config.timeout);
+            proc.stdout?.on("data", (data) => {
+                stdout += data.toString();
+            });
+            proc.stderr?.on("data", (data) => {
+                stderr += data.toString();
+            });
+            const timer = setTimeout(() => {
+                proc.kill("SIGKILL");
+            }, this.config.timeout);
             proc.on("close", (code) => {
                 clearTimeout(timer);
-                resolve({ stdout, stderr, exitCode: code ?? -1, durationMs: Date.now() - start });
+                resolve({
+                    stdout,
+                    stderr,
+                    exitCode: code ?? -1,
+                    durationMs: Date.now() - start,
+                });
             });
             proc.on("error", (err) => {
                 clearTimeout(timer);
-                resolve({ stdout, stderr, exitCode: -1, durationMs: Date.now() - start });
+                resolve({
+                    stdout,
+                    stderr,
+                    exitCode: -1,
+                    durationMs: Date.now() - start,
+                });
             });
         });
     }

@@ -57,22 +57,27 @@ export class CodexProvider {
             const text = await response.text();
             throw new Error(`OpenAI API error ${response.status}: ${text}`);
         }
-        const data = await response.json();
+        const data = (await response.json());
         const choice = data.choices[0];
         let content = choice.message.content ?? "";
         if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-            content += "\n\n[Tool calls: " +
-                choice.message.tool_calls.map((tc) => `${tc.function.name}(${tc.function.arguments})`).join(", ") +
-                "]";
+            content +=
+                "\n\n[Tool calls: " +
+                    choice.message.tool_calls
+                        .map((tc) => `${tc.function.name}(${tc.function.arguments})`)
+                        .join(", ") +
+                    "]";
         }
         return {
             content,
             finishReason: choice.finish_reason,
-            usage: data.usage ? {
-                inputTokens: data.usage.prompt_tokens,
-                outputTokens: data.usage.completion_tokens,
-                totalTokens: data.usage.total_tokens,
-            } : undefined,
+            usage: data.usage
+                ? {
+                    inputTokens: data.usage.prompt_tokens,
+                    outputTokens: data.usage.completion_tokens,
+                    totalTokens: data.usage.total_tokens,
+                }
+                : undefined,
         };
     }
     async *stream(prompt, options) {
@@ -158,7 +163,8 @@ export class CodexProvider {
             "o4-mini": { input: 1.0, output: 4.0 },
         };
         const p = pricing[this.cfg.model] ?? pricing["gpt-4o"];
-        return (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output;
+        return ((inputTokens / 1_000_000) * p.input +
+            (outputTokens / 1_000_000) * p.output);
     }
 }
 //# sourceMappingURL=provider.js.map
