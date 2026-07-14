@@ -1,0 +1,23 @@
+{
+  "name": "@pi-harness/nextjs-plugin",
+  "version": "0.9.3",
+  "description": "Next.js framework detection and analysis for pi-harness-runtime (RFC-0062)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": ["pi-harness", "nextjs", "framework", "detection"]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@pi/laravel-plugin",
+  "version": "0.1.0",
+  "description": "Laravel framework analysis — artisan commands, Eloquent models, Blade",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
