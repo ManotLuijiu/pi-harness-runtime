@@ -1,0 +1,13 @@
+{
+  "name": "@pi-harness/test-generator",
+  "version": "0.9.4",
+  "description": "Auto-Test Generator — generate unit and E2E tests from source code (RFC-0013)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "scripts": { "build": "tsc", "test": "bun test" },
+  "devDependencies": { "bun-types": "^1.0.0" }
+}

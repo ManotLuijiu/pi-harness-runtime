@@ -13,8 +13,7 @@ import {
 } from "../src/index";
 
 describe("roughTokenCount", () => {
-	it("returns 0 for empty string", () =>
-		expect(roughTokenCount("")).toBe(0));
+	it("returns 0 for empty string", () => expect(roughTokenCount("")).toBe(0));
 
 	it("returns 0 for null-like input", () =>
 		expect(roughTokenCount("   ")).toBeGreaterThanOrEqual(0));
@@ -51,7 +50,9 @@ describe("roughMessageTokens", () => {
 			role: "assistant",
 			content: [{ type: "text", text: "the answer is 42" }],
 		});
-		expect(tokens).toBeGreaterThanOrEqual(4 + roughTokenCount("the answer is 42"));
+		expect(tokens).toBeGreaterThanOrEqual(
+			4 + roughTokenCount("the answer is 42"),
+		);
 	});
 
 	it("estimates tool_use blocks", () => {
@@ -88,9 +89,7 @@ describe("roughMessageTokens", () => {
 		const tokens = roughMessageTokens({
 			role: "assistant",
 			content: null,
-			tool_calls: [
-				{ id: "call-1", name: "search", input: { q: "test" } },
-			],
+			tool_calls: [{ id: "call-1", name: "search", input: { q: "test" } }],
 		});
 		expect(tokens).toBeGreaterThan(4 + roughTokenCount("search"));
 	});
@@ -104,7 +103,9 @@ describe("roughMessageTokens", () => {
 			content: null,
 			thinking: "I should use the search tool here",
 		});
-		expect(tokens).toBeGreaterThanOrEqual(4 + roughTokenCount("I should use the search tool here"));
+		expect(tokens).toBeGreaterThanOrEqual(
+			4 + roughTokenCount("I should use the search tool here"),
+		);
 	});
 });
 
@@ -115,7 +116,8 @@ describe("roughMessagesTokens", () => {
 			{ role: "assistant", content: "hi there" },
 		];
 		const total = roughMessagesTokens(messages);
-		const individual = roughMessageTokens({ role: "user", content: "hello" }) +
+		const individual =
+			roughMessageTokens({ role: "user", content: "hello" }) +
 			roughMessageTokens({ role: "assistant", content: "hi there" });
 		expect(total).toBe(individual);
 	});
@@ -127,7 +129,9 @@ describe("roughMessagesTokens", () => {
 describe("roughSystemPromptTokens", () => {
 	it("includes overhead plus content", () => {
 		const tokens = roughSystemPromptTokens("You are a helpful assistant");
-		expect(tokens).toBeGreaterThanOrEqual(15 + roughTokenCount("You are a helpful assistant"));
+		expect(tokens).toBeGreaterThanOrEqual(
+			15 + roughTokenCount("You are a helpful assistant"),
+		);
 	});
 
 	it("handles empty system prompt", () =>
@@ -139,12 +143,17 @@ describe("roughToolDefinitionTokens", () => {
 		const tokens = roughToolDefinitionTokens({
 			name: "get_weather",
 			description: "Get current weather",
-			input_schema: { type: "object", properties: { city: { type: "string" } } },
+			input_schema: {
+				type: "object",
+				properties: { city: { type: "string" } },
+			},
 		});
 		expect(tokens).toBeGreaterThanOrEqual(
 			roughTokenCount("get_weather") +
-			roughTokenCount("Get current weather") +
-			roughTokenCount('{"type":"object","properties":{"city":{"type":"string"}}}'),
+				roughTokenCount("Get current weather") +
+				roughTokenCount(
+					'{"type":"object","properties":{"city":{"type":"string"}}}',
+				),
 		);
 	});
 
@@ -165,7 +174,9 @@ describe("estimateRequestTokens", () => {
 		expect(estimate.total).toBeGreaterThan(estimate.systemPrompt);
 		expect(estimate.total).toBeGreaterThan(estimate.messages);
 		expect(estimate.total).toBeGreaterThan(estimate.tools);
-		expect(estimate.total).toBe(estimate.systemPrompt + estimate.messages + estimate.tools);
+		expect(estimate.total).toBe(
+			estimate.systemPrompt + estimate.messages + estimate.tools,
+		);
 	});
 
 	it("computes availableForContext correctly", () => {
