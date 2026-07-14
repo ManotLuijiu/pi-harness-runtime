@@ -2,7 +2,7 @@
  * Generic Web Plugin — Main Entry (RFC-0066)
  */
 import type { FrameworkExtension } from "../../framework-plugin-sdk/src/types.js";
-export type { GenericWebAnalysis, WebFrameworkType, PageRoute, ApiEndpoint } from "./types.js";
+export type { GenericWebAnalysis, WebFrameworkType, PageRoute, ApiEndpoint, } from "./types.js";
 /**
  * Analyze a generic web project (RFC-0066)
  */

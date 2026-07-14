@@ -91,7 +91,8 @@ async function countDocTypes(appPath, appName) {
         return 0;
     try {
         const entries = await readdir(moduleDir);
-        return entries.filter((e) => !e.startsWith(".") && !e.startsWith("_")).length;
+        return entries.filter((e) => !e.startsWith(".") && !e.startsWith("_"))
+            .length;
     }
     catch {
         return 0;
@@ -152,7 +153,10 @@ async function analyzeApp(benchPath, appName) {
     let hasSPA = false;
     try {
         const pkg = JSON.parse(packageJson);
-        const allDeps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+        const allDeps = {
+            ...(pkg.dependencies ?? {}),
+            ...(pkg.devDependencies ?? {}),
+        };
         isErpNext = !!(allDeps["erpnext"] || allDeps["frappe"]?.includes("erpnext"));
         hasSPA = !!(allDeps["@frappe/ui"] || allDeps["frappe-ui"]);
     }
@@ -198,7 +202,13 @@ async function scanSites(sitesPath) {
                     // ignore
                 }
             }
-            sites.push({ name: entry, path: sitePath, hasSiteConfig, dbPort, redisPort });
+            sites.push({
+                name: entry,
+                path: sitePath,
+                hasSiteConfig,
+                dbPort,
+                redisPort,
+            });
         }
     }
     catch {
@@ -252,7 +262,11 @@ async function estimateCustomFields(benchPath) {
             // ignore
         }
     }
-    return { totalCustomFields, totalPropertySetters, linkedTo: Array.from(linkedTo) };
+    return {
+        totalCustomFields,
+        totalPropertySetters,
+        linkedTo: Array.from(linkedTo),
+    };
 }
 // ─── Main Analyzer ─────────────────────────────────────────────────────────
 /**
