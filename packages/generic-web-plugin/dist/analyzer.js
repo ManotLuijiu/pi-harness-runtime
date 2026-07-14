@@ -13,7 +13,10 @@ import { join, extname } from "node:path";
 export async function detectWeb(root) {
     const hasPackageJson = existsSync(join(root, "package.json"));
     const hasNodeModules = existsSync(join(root, "node_modules"));
-    const hasSrc = existsSync(join(root, "src")) || existsSync(join(root, "app")) || existsSync(join(root, "pages")) || existsSync(join(root, "components"));
+    const hasSrc = existsSync(join(root, "src")) ||
+        existsSync(join(root, "app")) ||
+        existsSync(join(root, "pages")) ||
+        existsSync(join(root, "components"));
     return hasPackageJson && (hasNodeModules || hasSrc);
 }
 // ─── Framework Detection ────────────────────────────────────────────────────
@@ -87,7 +90,10 @@ async function findRouteFiles(root, framework) {
 function getRoutePatterns(framework) {
     switch (framework) {
         case "next":
-            return [{ dir: "pages", exts: [".tsx", ".jsx", ".ts", ".js"] }, { dir: "app", exts: [".tsx", ".jsx"] }];
+            return [
+                { dir: "pages", exts: [".tsx", ".jsx", ".ts", ".js"] },
+                { dir: "app", exts: [".tsx", ".jsx"] },
+            ];
         case "nuxt":
         case "remix":
         case "astro":
@@ -108,13 +114,25 @@ function getRoutePatterns(framework) {
         case "hono":
             return [{ dir: "routes", exts: [".ts", ".js"] }];
         case "django":
-            return [{ dir: "templates", exts: [".html"] }, { dir: "views", exts: [".py"] }];
+            return [
+                { dir: "templates", exts: [".html"] },
+                { dir: "views", exts: [".py"] },
+            ];
         case "flask":
-            return [{ dir: "templates", exts: [".html"] }, { dir: "routes", exts: [".py"] }];
+            return [
+                { dir: "templates", exts: [".html"] },
+                { dir: "routes", exts: [".py"] },
+            ];
         case "rails":
-            return [{ dir: "app/views", exts: [".html.erb", ".html.slim", ".html.haml"] }, { dir: "app/controllers", exts: [".rb"] }];
+            return [
+                { dir: "app/views", exts: [".html.erb", ".html.slim", ".html.haml"] },
+                { dir: "app/controllers", exts: [".rb"] },
+            ];
         case "laravel":
-            return [{ dir: "resources/views", exts: [".blade.php", ".php"] }, { dir: "routes", exts: [".php"] }];
+            return [
+                { dir: "resources/views", exts: [".blade.php", ".php"] },
+                { dir: "routes", exts: [".php"] },
+            ];
     }
 }
 async function scanDir(dir, base, exts, emit) {
@@ -129,7 +147,9 @@ async function scanDir(dir, base, exts, emit) {
         if (entry.name.startsWith(".") || entry.name.startsWith("_"))
             continue;
         const fullPath = join(dir, entry.name);
-        const relPath = join(base, entry.name).slice(join(base, "").length).replace(/^[/\\]/, "");
+        const relPath = join(base, entry.name)
+            .slice(join(base, "").length)
+            .replace(/^[/\\]/, "");
         if (entry.isDirectory()) {
             await scanDir(fullPath, base, exts, emit);
         }
@@ -168,7 +188,17 @@ function deduplicateRoutes(routes) {
 }
 // ─── API Endpoint Detection ──────────────────────────────────────────────────
 async function findApiEndpoints(root, framework) {
-    if (!["express", "fastify", "koa", "hono", "flask", "django", "rails", "laravel", "next"].includes(framework)) {
+    if (![
+        "express",
+        "fastify",
+        "koa",
+        "hono",
+        "flask",
+        "django",
+        "rails",
+        "laravel",
+        "next",
+    ].includes(framework)) {
         return [];
     }
     const endpoints = [];
@@ -202,17 +232,35 @@ function getApiPatterns(framework) {
         case "fastify":
         case "koa":
         case "hono":
-            return [{ dir: "routes", exts: [".ts", ".js"] }, { dir: "src/routes", exts: [".ts", ".js"] }];
+            return [
+                { dir: "routes", exts: [".ts", ".js"] },
+                { dir: "src/routes", exts: [".ts", ".js"] },
+            ];
         case "next":
-            return [{ dir: "pages/api", exts: [".ts", ".js"] }, { dir: "app/api", exts: [".ts", ".tsx"] }];
+            return [
+                { dir: "pages/api", exts: [".ts", ".js"] },
+                { dir: "app/api", exts: [".ts", ".tsx"] },
+            ];
         case "flask":
-            return [{ dir: "routes", exts: [".py"] }, { dir: "app", exts: [".py"] }];
+            return [
+                { dir: "routes", exts: [".py"] },
+                { dir: "app", exts: [".py"] },
+            ];
         case "django":
-            return [{ dir: "views", exts: [".py"] }, { dir: "api", exts: [".py"] }];
+            return [
+                { dir: "views", exts: [".py"] },
+                { dir: "api", exts: [".py"] },
+            ];
         case "rails":
-            return [{ dir: "config/routes.rb", exts: [".rb"] }, { dir: "app/controllers", exts: [".rb"] }];
+            return [
+                { dir: "config/routes.rb", exts: [".rb"] },
+                { dir: "app/controllers", exts: [".rb"] },
+            ];
         case "laravel":
-            return [{ dir: "routes", exts: [".php"] }, { dir: "app/Http/Controllers", exts: [".php"] }];
+            return [
+                { dir: "routes", exts: [".php"] },
+                { dir: "app/Http/Controllers", exts: [".php"] },
+            ];
         default:
             return [];
     }
