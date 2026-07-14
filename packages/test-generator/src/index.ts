@@ -3,9 +3,9 @@
  */
 
 export {
-  detectAssertions,
-  generateUnitTests,
-  generateE2ETests,
-  generateMockFixtures,
+	detectAssertions,
+	generateUnitTests,
+	generateE2ETests,
+	generateMockFixtures,
 } from "./generator.js";
 export type * from "./types.js";

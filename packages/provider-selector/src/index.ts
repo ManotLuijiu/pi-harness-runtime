@@ -3,11 +3,11 @@
  */
 
 export {
-  selectProvider,
-  rank,
-  compareCost,
-  compareLatency,
-  filterByCapability,
-  filterByRegion,
+	selectProvider,
+	rank,
+	compareCost,
+	compareLatency,
+	filterByCapability,
+	filterByRegion,
 } from "./selector.js";
 export type * from "./types.js";
