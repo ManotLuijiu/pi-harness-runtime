@@ -36,7 +36,10 @@ export const DEFAULT_TOOLS = [
             type: "object",
             properties: {
                 command: { type: "string", description: "Shell command to execute" },
-                timeout: { type: "number", description: "Max execution time in seconds" },
+                timeout: {
+                    type: "number",
+                    description: "Max execution time in seconds",
+                },
             },
             required: ["command"],
         },
@@ -49,7 +52,10 @@ export const DEFAULT_TOOLS = [
             type: "object",
             properties: {
                 query: { type: "string", description: "Search query" },
-                max_results: { type: "number", description: "Max results (default: 5)" },
+                max_results: {
+                    type: "number",
+                    description: "Max results (default: 5)",
+                },
             },
             required: ["query"],
         },

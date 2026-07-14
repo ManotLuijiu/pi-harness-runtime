@@ -28,11 +28,12 @@ import {
 	parseComposerScripts,
 } from "../src/command-discovery.js";
 import { FileSystemWalker } from "../src/walker.js";
+import { GenericFrameworkDetector, scanSignals } from "../src/signals.js";
 import {
-	GenericFrameworkDetector,
-	scanSignals,
-} from "../src/signals.js";
-import { parseRuleFile, discoverRuleFiles, mergeRules } from "../src/rule-discovery.js";
+	parseRuleFile,
+	discoverRuleFiles,
+	mergeRules,
+} from "../src/rule-discovery.js";
 
 // ─── Temp Fixture Helpers ─────────────────────────────────────────────
 
@@ -321,7 +322,9 @@ describe("parsePackageJsonScripts", () => {
 	test("marks non-standard scripts as non-primary", () => {
 		const pkg = { scripts: { myscript: "echo hello" } };
 		const cmds = parsePackageJsonScripts(pkg);
-		expect(cmds.find((c) => c.command === "npm run myscript")?.primary).toBe(false);
+		expect(cmds.find((c) => c.command === "npm run myscript")?.primary).toBe(
+			false,
+		);
 	});
 
 	test("handles empty scripts object", () => {
@@ -351,13 +354,17 @@ describe("parsePackageJsonScripts", () => {
 
 describe("categorizeCommands", () => {
 	test("categorizes jest test commands", () => {
-		const cmds = [{ command: "npm run test", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "npm run test", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.unitTest).toContain("npm run test");
 	});
 
 	test("categorizes vitest commands", () => {
-		const cmds = [{ command: "vitest run", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "vitest run", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.unitTest.some((c) => c.includes("vitest"))).toBe(true);
 	});
@@ -369,55 +376,73 @@ describe("categorizeCommands", () => {
 	});
 
 	test("categorizes playwright e2e commands", () => {
-		const cmds = [{ command: "playwright e2e", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "playwright e2e", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.e2eTest).toContain("playwright e2e");
 	});
 
 	test("categorizes cypress e2e commands", () => {
-		const cmds = [{ command: "cypress run", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "cypress run", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.e2eTest).toContain("cypress run");
 	});
 
 	test("categorizes eslint lint commands", () => {
-		const cmds = [{ command: "eslint .", source: "package.json", primary: false }];
+		const cmds = [
+			{ command: "eslint .", source: "package.json", primary: false },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.lint.some((c) => c.includes("eslint"))).toBe(true);
 	});
 
 	test("categorizes prettier lint commands", () => {
-		const cmds = [{ command: "prettier --check .", source: "package.json", primary: false }];
+		const cmds = [
+			{ command: "prettier --check .", source: "package.json", primary: false },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.lint.some((c) => c.includes("prettier"))).toBe(true);
 	});
 
 	test("categorizes build commands", () => {
-		const cmds = [{ command: "npm run build", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "npm run build", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.build).toContain("npm run build");
 	});
 
 	test("categorizes vite build commands", () => {
-		const cmds = [{ command: "vite build", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "vite build", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.build.some((c) => c.includes("vite"))).toBe(true);
 	});
 
 	test("categorizes next build commands", () => {
-		const cmds = [{ command: "next build", source: "package.json", primary: true }];
+		const cmds = [
+			{ command: "next build", source: "package.json", primary: true },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.build.some((c) => c.includes("next"))).toBe(true);
 	});
 
 	test("categorizes migrate commands", () => {
-		const cmds = [{ command: "npm run migrate", source: "package.json", primary: false }];
+		const cmds = [
+			{ command: "npm run migrate", source: "package.json", primary: false },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.migrate).toContain("npm run migrate");
 	});
 
 	test("categorizes bench migrate commands", () => {
-		const cmds = [{ command: "bench migrate", source: "package.json", primary: false }];
+		const cmds = [
+			{ command: "bench migrate", source: "package.json", primary: false },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.migrate.some((c) => c.includes("bench"))).toBe(true);
 	});
@@ -428,7 +453,9 @@ describe("categorizeCommands", () => {
 			{ command: "npm run test", source: "package.json", primary: true },
 		];
 		const categorized = categorizeCommands(cmds);
-		expect(categorized.unitTest.filter((c) => c === "npm run test").length).toBe(1);
+		expect(
+			categorized.unitTest.filter((c) => c === "npm run test").length,
+		).toBe(1);
 	});
 
 	test("handles empty command list", () => {
@@ -438,13 +465,21 @@ describe("categorizeCommands", () => {
 	});
 
 	test("categorizes integration test commands", () => {
-		const cmds = [{ command: "npm run integration-tests", source: "package.json", primary: false }];
+		const cmds = [
+			{
+				command: "npm run integration-tests",
+				source: "package.json",
+				primary: false,
+			},
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.integrationTest).toContain("npm run integration-tests");
 	});
 
 	test("categorizes typecheck commands", () => {
-		const cmds = [{ command: "tsc --noEmit", source: "package.json", primary: false }];
+		const cmds = [
+			{ command: "tsc --noEmit", source: "package.json", primary: false },
+		];
 		const categorized = categorizeCommands(cmds);
 		expect(categorized.typecheck.some((c) => c.includes("tsc"))).toBe(true);
 	});
@@ -573,31 +608,35 @@ describe("AnalysisCache", () => {
 		const cache = new AnalysisCache({ enabled: false });
 		const key = cache.generateKey("/repo", "abc", "def");
 		await expect(
-			cache.set(key, {
-				repositoryRoot: "/repo",
-				repositoryName: "repo",
-				revision: "abc",
-				frameworks: [],
-				languages: [],
-				packageManagers: [],
-				applications: [],
-				commands: {
-					unitTest: [],
-					integrationTest: [],
-					e2eTest: [],
-					lint: [],
-					typecheck: [],
-					build: [],
-					migrate: [],
+			cache.set(
+				key,
+				{
+					repositoryRoot: "/repo",
+					repositoryName: "repo",
+					revision: "abc",
+					frameworks: [],
+					languages: [],
+					packageManagers: [],
+					applications: [],
+					commands: {
+						unitTest: [],
+						integrationTest: [],
+						e2eTest: [],
+						lint: [],
+						typecheck: [],
+						build: [],
+						migrate: [],
+					},
+					rules: [],
+					sensitivePaths: [],
+					generatedPaths: [],
+					testCapabilities: [],
+					confidence: 0,
+					warnings: [],
+					analyzedAt: new Date().toISOString(),
 				},
-				rules: [],
-				sensitivePaths: [],
-				generatedPaths: [],
-				testCapabilities: [],
-				confidence: 0,
-				warnings: [],
-				analyzedAt: new Date().toISOString(),
-			}, { ruleHash: "r", manifestHash: "m", configHash: "c" }),
+				{ ruleHash: "r", manifestHash: "m", configHash: "c" },
+			),
 		).resolves.toBeUndefined();
 	});
 
@@ -662,7 +701,10 @@ describe("hashManifestFiles", () => {
 
 	test("only scripts and deps are hashed", async () => {
 		const files = [
-			{ path: "package.json", content: '{"scripts":{"test":"jest"},"extra":"ignored"}' },
+			{
+				path: "package.json",
+				content: '{"scripts":{"test":"jest"},"extra":"ignored"}',
+			},
 		];
 		const hash = await hashManifestFiles(files);
 		expect(typeof hash).toBe("string");
@@ -748,7 +790,9 @@ describe("FileSystemWalker", () => {
 		const walker = new FileSystemWalker(dir);
 		const result = await walker.scan();
 
-		const hiddenFiles = result.files.filter((f) => f.relativePath.includes(".hidden"));
+		const hiddenFiles = result.files.filter((f) =>
+			f.relativePath.includes(".hidden"),
+		);
 		expect(hiddenFiles).toEqual([]);
 		// .git should be included (not skipped)
 	});
@@ -861,7 +905,11 @@ describe("rule-discovery", () => {
 
 	test("discoverRuleFiles finds files in temp repo", async () => {
 		const dir = await tmpDir();
-		await writeFile(join(dir, "AGENTS.md"), "# Agent Rules\n\nUse TypeScript.", "utf-8");
+		await writeFile(
+			join(dir, "AGENTS.md"),
+			"# Agent Rules\n\nUse TypeScript.",
+			"utf-8",
+		);
 
 		const fs = {
 			exists: async (p: string) => {
@@ -947,8 +995,16 @@ describe("scanSignals", () => {
 describe("GenericFrameworkDetector", () => {
 	test("detects Next.js from next.config.js", async () => {
 		const dir = await tmpDir();
-		await writeFile(join(dir, "next.config.js"), "module.exports = {}", "utf-8");
-		await writeFile(join(dir, "package.json"), '{"dependencies":{"next":"14"}}', "utf-8");
+		await writeFile(
+			join(dir, "next.config.js"),
+			"module.exports = {}",
+			"utf-8",
+		);
+		await writeFile(
+			join(dir, "package.json"),
+			'{"dependencies":{"next":"14"}}',
+			"utf-8",
+		);
 
 		const walker = new FileSystemWalker(dir);
 		const roFs = {
@@ -1019,7 +1075,9 @@ describe("GenericFrameworkDetector", () => {
 		await tmpDir(); // Creates empty temp dir
 		const roFs = {
 			exists: async () => false,
-			readFile: async () => { throw new Error("not found"); },
+			readFile: async () => {
+				throw new Error("not found");
+			},
 			readDir: async () => [],
 			isDirectory: async () => false,
 			glob: async () => [],
@@ -1038,7 +1096,9 @@ describe("ProjectAnalyzer", () => {
 	let analyzer: ProjectAnalyzer;
 
 	beforeEach(() => {
-		analyzer = createProjectAnalyzer({ cache: new AnalysisCache({ enabled: false }) });
+		analyzer = createProjectAnalyzer({
+			cache: new AnalysisCache({ enabled: false }),
+		});
 	});
 
 	test("analyzer is instance of ProjectAnalyzer", () => {
@@ -1052,9 +1112,17 @@ describe("ProjectAnalyzer", () => {
 			JSON.stringify({ dependencies: { next: "14.0.0" } }),
 			"utf-8",
 		);
-		await writeFile(join(dir, "next.config.js"), "module.exports = {}", "utf-8");
+		await writeFile(
+			join(dir, "next.config.js"),
+			"module.exports = {}",
+			"utf-8",
+		);
 		await mkdir(join(dir, "app"), { recursive: true });
-		await writeFile(join(dir, "app/page.tsx"), "export default function(){}", "utf-8");
+		await writeFile(
+			join(dir, "app/page.tsx"),
+			"export default function(){}",
+			"utf-8",
+		);
 
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
@@ -1069,12 +1137,23 @@ describe("ProjectAnalyzer", () => {
 		const dir = await tmpDir();
 		await writeFile(
 			join(dir, "package.json"),
-			JSON.stringify({ dependencies: { react: "^18" }, devDependencies: { vite: "^5" } }),
+			JSON.stringify({
+				dependencies: { react: "^18" },
+				devDependencies: { vite: "^5" },
+			}),
 			"utf-8",
 		);
-		await writeFile(join(dir, "vite.config.ts"), "import { defineConfig } from 'vite'", "utf-8");
+		await writeFile(
+			join(dir, "vite.config.ts"),
+			"import { defineConfig } from 'vite'",
+			"utf-8",
+		);
 		await mkdir(join(dir, "src"), { recursive: true });
-		await writeFile(join(dir, "src/main.tsx"), "import React from 'react'", "utf-8");
+		await writeFile(
+			join(dir, "src/main.tsx"),
+			"import React from 'react'",
+			"utf-8",
+		);
 
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
@@ -1181,19 +1260,27 @@ describe("ProjectAnalyzer", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.profile!.testCapabilities.length).toBeGreaterThan(0);
-		const vitest = result.profile!.testCapabilities.find((t) => t.runner === "vitest");
+		const vitest = result.profile!.testCapabilities.find(
+			(t) => t.runner === "vitest",
+		);
 		expect(vitest).toBeDefined();
 		expect(vitest!.available).toBe(true);
 	});
 
 	test("detects pytest from pyproject.toml", async () => {
 		const dir = await tmpDir();
-		await writeFile(join(dir, "pyproject.toml"), "[tool.pytest]\ntestpaths = ['tests']", "utf-8");
+		await writeFile(
+			join(dir, "pyproject.toml"),
+			"[tool.pytest]\ntestpaths = ['tests']",
+			"utf-8",
+		);
 
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
 		expect(result.success).toBe(true);
-		const pytest = result.profile!.testCapabilities.find((t) => t.runner === "pytest");
+		const pytest = result.profile!.testCapabilities.find(
+			(t) => t.runner === "pytest",
+		);
 		expect(pytest).toBeDefined();
 	});
 
@@ -1251,9 +1338,17 @@ describe("ProjectAnalyzer", () => {
 
 	test("analyzer with no monorepo detection", async () => {
 		const dir = await tmpDir();
-		await writeFile(join(dir, "package.json"), JSON.stringify({ name: "root" }), "utf-8");
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({ name: "root" }),
+			"utf-8",
+		);
 		await mkdir(join(dir, "packages", "app"), { recursive: true });
-		await writeFile(join(dir, "packages", "app", "package.json"), JSON.stringify({ name: "app" }), "utf-8");
+		await writeFile(
+			join(dir, "packages", "app", "package.json"),
+			JSON.stringify({ name: "app" }),
+			"utf-8",
+		);
 
 		const result = await analyzer.analyze({
 			repositoryRoot: dir,
@@ -1266,8 +1361,16 @@ describe("ProjectAnalyzer", () => {
 	test("generates warnings for conflicting frameworks", async () => {
 		const dir = await tmpDir();
 		await writeFile(join(dir, "package.json"), "{}", "utf-8");
-		await writeFile(join(dir, "next.config.js"), "module.exports = {}", "utf-8");
-		await writeFile(join(dir, "vite.config.ts"), "import { defineConfig } from 'vite'", "utf-8");
+		await writeFile(
+			join(dir, "next.config.js"),
+			"module.exports = {}",
+			"utf-8",
+		);
+		await writeFile(
+			join(dir, "vite.config.ts"),
+			"import { defineConfig } from 'vite'",
+			"utf-8",
+		);
 
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
@@ -1323,7 +1426,11 @@ describe("complexity signals from FileSystemWalker", () => {
 		const dir = await tmpDir();
 		await mkdir(join(dir, "node_modules"), { recursive: true });
 		await mkdir(join(dir, "node_modules/lodash"), { recursive: true });
-		await writeFile(join(dir, "node_modules/lodash/index.js"), "module.exports={};", "utf-8");
+		await writeFile(
+			join(dir, "node_modules/lodash/index.js"),
+			"module.exports={};",
+			"utf-8",
+		);
 		await mkdir(join(dir, "src"), { recursive: true });
 		await writeFile(join(dir, "src/main.ts"), "", "utf-8");
 
@@ -1348,7 +1455,9 @@ describe("complexity signals from FileSystemWalker", () => {
 		const walker = new FileSystemWalker(dir, { maxDepth: 5 });
 		const result = await walker.scan();
 
-		const deepFile = result.files.find((f) => f.relativePath.includes("deep.ts"));
+		const deepFile = result.files.find((f) =>
+			f.relativePath.includes("deep.ts"),
+		);
 		expect(deepFile).toBeUndefined();
 	});
 });
@@ -1360,7 +1469,9 @@ describe("error handling", () => {
 		const dir = await tmpDir();
 		await writeFile(join(dir, "package.json"), "{ invalid json }", "utf-8");
 
-		const analyzer = createProjectAnalyzer({ cache: new AnalysisCache({ enabled: false }) });
+		const analyzer = createProjectAnalyzer({
+			cache: new AnalysisCache({ enabled: false }),
+		});
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
 		// Should still succeed with partial results
@@ -1377,9 +1488,15 @@ describe("error handling", () => {
 
 	test("analyzer handles missing package.json scripts", async () => {
 		const dir = await tmpDir();
-		await writeFile(join(dir, "package.json"), JSON.stringify({ name: "no-scripts" }), "utf-8");
+		await writeFile(
+			join(dir, "package.json"),
+			JSON.stringify({ name: "no-scripts" }),
+			"utf-8",
+		);
 
-		const analyzer = createProjectAnalyzer({ cache: new AnalysisCache({ enabled: false }) });
+		const analyzer = createProjectAnalyzer({
+			cache: new AnalysisCache({ enabled: false }),
+		});
 		const result = await analyzer.analyze({ repositoryRoot: dir });
 
 		expect(result.success).toBe(true);
@@ -1455,9 +1572,19 @@ describe("AnalysisCache TTL behavior", () => {
 			repositoryRoot: "/test-repo",
 			repositoryName: "test-repo",
 			revision: "abc123",
-			frameworks: [{ category: "react" as const, name: "React", confidence: 0.9, signals: [], primary: true }],
+			frameworks: [
+				{
+					category: "react" as const,
+					name: "React",
+					confidence: 0.9,
+					signals: [],
+					primary: true,
+				},
+			],
 			languages: [{ name: "TypeScript", coverage: 1.0 }],
-			packageManagers: [{ type: "npm" as const, configPath: "package.json", primary: true }],
+			packageManagers: [
+				{ type: "npm" as const, configPath: "package.json", primary: true },
+			],
 			applications: [],
 			commands: {
 				unitTest: ["npm run test"],
@@ -1478,7 +1605,11 @@ describe("AnalysisCache TTL behavior", () => {
 		};
 
 		const key = cache.generateKey("/test-repo", "abc123", "xyz");
-		await cache.set(key, profile, { ruleHash: "r", manifestHash: "m", configHash: "xyz" });
+		await cache.set(key, profile, {
+			ruleHash: "r",
+			manifestHash: "m",
+			configHash: "xyz",
+		});
 
 		const retrieved = await cache.get(key);
 		expect(retrieved).not.toBeNull();
@@ -1510,8 +1641,13 @@ describe("AnalysisCache TTL behavior", () => {
 				packageManagers: [],
 				applications: [],
 				commands: {
-					unitTest: [], integrationTest: [], e2eTest: [], lint: [],
-					typecheck: [], build: [], migrate: [],
+					unitTest: [],
+					integrationTest: [],
+					e2eTest: [],
+					lint: [],
+					typecheck: [],
+					build: [],
+					migrate: [],
 				},
 				rules: [],
 				sensitivePaths: [],
@@ -1553,8 +1689,13 @@ describe("AnalysisCache TTL behavior", () => {
 					packageManagers: [],
 					applications: [],
 					commands: {
-						unitTest: [], integrationTest: [], e2eTest: [], lint: [],
-						typecheck: [], build: [], migrate: [],
+						unitTest: [],
+						integrationTest: [],
+						e2eTest: [],
+						lint: [],
+						typecheck: [],
+						build: [],
+						migrate: [],
 					},
 					rules: [],
 					sensitivePaths: [],
