@@ -13,13 +13,23 @@ import {
 	saveAuthStatus,
 	loadLiveBrowserSession,
 } from "../src/minimax-browser-auth";
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	rmSync,
+	writeFileSync,
+	readFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 const TMP = join(process.cwd(), ".test-auth-tmp");
 
-function tmpStatus() { return join(TMP, "auth-status.json"); }
-function tmpLiveSession() { return join(TMP, "live-session.json"); }
+function tmpStatus() {
+	return join(TMP, "auth-status.json");
+}
+function tmpLiveSession() {
+	return join(TMP, "live-session.json");
+}
 
 beforeEach(() => {
 	rmSync(TMP, { force: true, recursive: true });
@@ -65,8 +75,11 @@ describe("saveAuthStatus", () => {
 		saveAuthStatus(status, { statusPath: tmpStatus() });
 		expect(existsSync(tmpStatus())).toBe(true);
 		let loaded: any;
-		try { loaded = JSON.parse(readFileSync(tmpStatus(), "utf-8")); }
-		catch { throw new Error("saveAuthStatus did not write valid JSON"); }
+		try {
+			loaded = JSON.parse(readFileSync(tmpStatus(), "utf-8"));
+		} catch {
+			throw new Error("saveAuthStatus did not write valid JSON");
+		}
 		expect(loaded.authenticated).toBe(true);
 		expect(loaded.provider).toBe("minimax");
 		expect(loaded.usage_lines).toHaveLength(3);
@@ -84,15 +97,28 @@ describe("saveAuthStatus", () => {
 		};
 		saveAuthStatus(status, { statusPath: tmpStatus() });
 		let loaded: any;
-		try { loaded = JSON.parse(readFileSync(tmpStatus(), "utf-8")); }
-		catch { throw new Error("saveAuthStatus did not write valid JSON"); }
+		try {
+			loaded = JSON.parse(readFileSync(tmpStatus(), "utf-8"));
+		} catch {
+			throw new Error("saveAuthStatus did not write valid JSON");
+		}
 		expect(loaded.authenticated).toBe(false);
 		expect(loaded.error_message).toBe("Session expired");
 	});
 
 	it("creates parent directories", () => {
 		const nestedPath = join(TMP, "deeply", "nested", "status.json");
-		saveAuthStatus({ provider: "minimax" as const, authenticated: false, checked_at: "", page_url: "", detected_text_sample: null, profile_path: "/" } as any, { statusPath: nestedPath });
+		saveAuthStatus(
+			{
+				provider: "minimax" as const,
+				authenticated: false,
+				checked_at: "",
+				page_url: "",
+				detected_text_sample: null,
+				profile_path: "/",
+			} as any,
+			{ statusPath: nestedPath },
+		);
 		expect(existsSync(nestedPath)).toBe(true);
 	});
 });
@@ -133,7 +159,8 @@ describe("loadLiveBrowserSession", () => {
 
 describe("detectUsagePage", () => {
 	it("detects page with usage keywords", () => {
-		const body = "Your Usage: 5h limit, resets in 1 hour. Weekly limit used 71%. Token Plan · Monthly Plus";
+		const body =
+			"Your Usage: 5h limit, resets in 1 hour. Weekly limit used 71%. Token Plan · Monthly Plus";
 		const result = detectUsagePage(body);
 		expect(result.detected).toBe(true);
 		expect(result.sample).not.toBeNull();
@@ -141,7 +168,8 @@ describe("detectUsagePage", () => {
 	});
 
 	it("does not detect page with few keywords", () => {
-		const body = "Welcome to our website. This is a generic page with no usage information.";
+		const body =
+			"Welcome to our website. This is a generic page with no usage information.";
 		const result = detectUsagePage(body);
 		expect(result.detected).toBe(false);
 		expect(result.sample).toBeNull();
@@ -154,7 +182,8 @@ describe("detectUsagePage", () => {
 	});
 
 	it("sample is truncated to 200 chars", () => {
-		const body = "A".repeat(300) + " special_usage_keyword_here and another_token";
+		const body =
+			"A".repeat(300) + " special_usage_keyword_here and another_token";
 		const result = detectUsagePage(body);
 		expect(result.detected).toBe(true);
 		expect(result.sample!.length).toBeLessThanOrEqual(200);
@@ -174,13 +203,15 @@ describe("detectUsagePage", () => {
 
 describe("extractUsageLines", () => {
 	it("extracts lines with usage keywords", () => {
-		const body = "<div>Your Token Plan</div><span>Monthly Plus</span><p>Used 71%</p>";
+		const body =
+			"<div>Your Token Plan</div><span>Monthly Plus</span><p>Used 71%</p>";
 		const lines = extractUsageLines(body);
 		expect(lines.length).toBeGreaterThan(0);
 	});
 
 	it("strips script and style tags", () => {
-		const body = "<script>{\"secret\": true}</script><style>body{}</style>Visible content usage quota 71%";
+		const body =
+			'<script>{"secret": true}</script><style>body{}</style>Visible content usage quota 71%';
 		const lines = extractUsageLines(body);
 		expect(lines.some((l) => l.includes("secret"))).toBe(false);
 	});

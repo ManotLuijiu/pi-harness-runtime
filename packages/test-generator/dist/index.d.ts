@@ -1,0 +1,6 @@
+/**
+ * Test Generator — Main Entry (RFC-0013)
+ */
+export { detectAssertions, generateUnitTests, generateE2ETests, generateMockFixtures, } from "./generator.js";
+export type * from "./types.js";
+//# sourceMappingURL=index.d.ts.map
