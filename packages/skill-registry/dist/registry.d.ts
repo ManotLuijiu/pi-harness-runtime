@@ -1,7 +1,7 @@
 /**
  * Skill Registry Implementation (RFC-0052)
  */
-import type { Skill, SkillContext, SkillResult, SkillRegistryEvent, TriggerType } from "./types.js";
+import type { Skill, SkillContext, SkillResult, SkillRegistryEvent, SkillTrigger, TriggerType } from "./types.js";
 type EventHandler = (event: SkillRegistryEvent) => void;
 /**
  * In-memory skill registry with event emission
@@ -42,12 +42,12 @@ export declare class InMemorySkillRegistry {
      */
     invoke(skillId: string, context: SkillContext): Promise<SkillResult>;
     /**
-     * Invoke the best matching skill for a trigger
+     * Invoke the best matching skill for a trigger (RFC-0052)
+     *
+     * Uses trigger.confidence as minConfidence threshold per RFC spec:
+     * "Best match returns highest-scoring skill above confidence threshold."
      */
-    invokeBestMatch(trigger: {
-        type: TriggerType;
-        value: string;
-    }, context: SkillContext): Promise<SkillResult>;
+    invokeBestMatch(trigger: SkillTrigger, context: SkillContext): Promise<SkillResult>;
     /**
      * Subscribe to events
      */

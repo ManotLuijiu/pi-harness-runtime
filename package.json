@@ -33,6 +33,7 @@
     "packages",
     "skills",
     "package.json",
+    "status-parsers.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

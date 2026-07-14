@@ -6,7 +6,6 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import {
 	createSkillRegistry,
 	type InMemorySkillRegistry,
-	DEFAULT_SKILLS,
 	matchTrigger,
 	findBestMatch,
 	findAllMatches,
@@ -229,6 +228,151 @@ describe("SkillRegistry", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("No matching skill");
+		});
+	});
+
+	describe("Capability Checking", () => {
+		it("should invoke skill when capabilities are available", async () => {
+			const capSkill: Skill = {
+				id: "cap-test",
+				name: "Cap Test",
+				description: "",
+				version: "1.0.0",
+				trigger: createKeywordTrigger(["captest"]),
+				handler: async () => ({ success: true, output: "ok" }),
+				metadata: { tags: [], requiresCapabilities: ["filesystem"] },
+			};
+			registry.register(capSkill);
+
+			const context: SkillContext = {
+				messages: [],
+				tools: [],
+				metadata: {
+					capabilityRegistry: { has: (cap: string) => cap === "filesystem" },
+				},
+			};
+
+			const result = await registry.invokeBestMatch(
+				{ type: "keyword", value: "captest" },
+				context,
+			);
+			expect(result.success).toBe(true);
+		});
+
+		it("should fail when required capability is missing", async () => {
+			const capSkill: Skill = {
+				id: "cap-missing",
+				name: "Cap Missing",
+				description: "",
+				version: "1.0.0",
+				trigger: createKeywordTrigger(["capmiss"]),
+				handler: async () => ({ success: true }),
+				metadata: { tags: [], requiresCapabilities: ["database"] },
+			};
+			registry.register(capSkill);
+
+			const context: SkillContext = {
+				messages: [],
+				tools: [],
+				metadata: {
+					capabilityRegistry: { has: (cap: string) => cap === "filesystem" },
+				},
+			};
+
+			const result = await registry.invokeBestMatch(
+				{ type: "keyword", value: "capmiss" },
+				context,
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("database");
+			expect(result.error).toContain("not available");
+		});
+
+		it("should fail gracefully when no capability registry", async () => {
+			const capSkill: Skill = {
+				id: "cap-no-registry",
+				name: "Cap No Registry",
+				description: "",
+				version: "1.0.0",
+				trigger: createKeywordTrigger(["capnoreg"]),
+				handler: async () => ({ success: true }),
+				metadata: { tags: [], requiresCapabilities: ["expensive"] },
+			};
+			registry.register(capSkill);
+
+			const context: SkillContext = {
+				messages: [],
+				tools: [],
+				metadata: {},
+			};
+
+			const result = await registry.invokeBestMatch(
+				{ type: "keyword", value: "capnoreg" },
+				context,
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("no capability registry");
+		});
+	});
+
+	describe("Confidence Threshold", () => {
+		it("should respect trigger.confidence as min threshold", async () => {
+			// introspect skill keywords: ["list skills", "show skills", "what skills"]
+			// match score for "xyz" = 0 (no keywords match)
+			// minConfidence = 0.8 → should not match
+			const result = await registry.invokeBestMatch(
+				{ type: "keyword", value: "xyz", confidence: 0.8 },
+				{ messages: [], tools: [], metadata: {} },
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("No matching skill");
+		});
+	});
+
+	describe("Extended Default Skills", () => {
+		it("should load at least 5 default skills", () => {
+			// introspect, help, status, context-compile, skill-install
+			const skills = registry.list();
+			expect(skills.length).toBeGreaterThanOrEqual(5);
+		});
+
+		it("should have context-compile skill", () => {
+			const skill = registry.get("skill-context-compile");
+			expect(skill).toBeDefined();
+			expect(skill!.name).toBe("Context Compiler");
+		});
+
+		it("should have skill-install skill", () => {
+			const skill = registry.get("skill-install");
+			expect(skill).toBeDefined();
+			expect(skill!.name).toBe("Install Skill");
+		});
+
+		it("context-compile skill should analyze context", async () => {
+			const context: SkillContext = {
+				messages: [
+					{ role: "user", content: "hello" },
+					{ role: "assistant", content: "hi" },
+				],
+				tools: [{ name: "bash" }, { name: "read" }],
+				metadata: {},
+			};
+
+			const result = await registry.invoke("skill-context-compile", context);
+			expect(result.success).toBe(true);
+			expect(result.output).toContain("Context analysis");
+			expect(result.output).toContain("Messages: 2");
+			expect(result.output).toContain("Available tools: 2");
+		});
+
+		it("skill-install skill should provide guidance", async () => {
+			const result = await registry.invoke("skill-install", {
+				messages: [],
+				tools: [],
+				metadata: {},
+			});
+			expect(result.success).toBe(true);
+			expect(result.output).toContain("skills directory");
 		});
 	});
 });
