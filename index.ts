@@ -28,7 +28,6 @@ import {
 	PROACTIVE_COMPACT_COOLDOWN_MS,
 	shouldTriggerProactiveCompact,
 } from "./proactive-compact.ts";
-import { continuePromptGenerator } from "./harness/continue-prompt.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import {
@@ -668,13 +667,8 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// Overflow compaction can complete while the agent is still processing.
-		// Queue the resume prompt explicitly so it is delivered as a follow-up.
-		const resumePrompt = continuePromptGenerator.generateMinimal({
-			summary: event.compactionEntry.summary,
-			recentMessages: [],
-		});
-		pi.sendUserMessage(resumePrompt, { deliverAs: "followUp" });
+		// pi.dev expects the literal "resume" command to continue after compaction.
+		pi.sendUserMessage("resume", { deliverAs: "followUp" });
 	});
 
 	function maybeTriggerProactiveCompact(ctx: ExtensionContext): void {
