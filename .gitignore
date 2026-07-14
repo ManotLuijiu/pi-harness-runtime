@@ -55,3 +55,5 @@ packages/token-estimation/dist/
 packages/tui/dist/
 packages/types/dist/
 packages/worktree/dist/
+.pi-subagents/
+harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
