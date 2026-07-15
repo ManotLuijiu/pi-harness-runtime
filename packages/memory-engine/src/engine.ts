@@ -5,45 +5,47 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, writeFile, mkdir } from "fs/promises";
-import { resolve, join, relative } from "path";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { RESERVED_FILES } from "./types.js";
 import type {
 	OkfConcept,
 	OkfFrontmatter,
 	OkfLink,
 	KnowledgeBundle,
+	KnowledgeDirectory,
 	ValidationResult,
 	ValidationError,
 	KnowledgeQuery,
 	KnowledgeResult,
 	WriteConceptRequest,
 } from "./types.js";
-import {
-	filterSecrets,
-	AUTHORITY_PRIORITY,
-	type Authority,
-	RESERVED_FILES,
-} from "./types.js";
+import { filterSecrets, AUTHORITY_PRIORITY, type Authority } from "./types.js";
 
 // ─── YAML Frontmatter Parsing ─────────────────────────────────────────────────
 
 function parseFrontmatter(
 	content: string,
 ): { frontmatter: OkfFrontmatter; body: string; raw: string } | null {
-	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-	if (!match) return null;
+	const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
+	if (!match) {
+		return null;
+	}
 
 	const [, yamlStr, body] = match;
 	const frontmatter: OkfFrontmatter = { type: "" };
+	const lines = yamlStr.split("\n");
 
-	for (const line of yamlStr.split("\n")) {
+	for (const line of lines) {
 		const colonIdx = line.indexOf(":");
 		if (colonIdx === -1) continue;
+
 		const key = line.slice(0, colonIdx).trim();
 		const value = line.slice(colonIdx + 1).trim();
-		if (!key) continue;
 
 		if (value.startsWith("[") && value.endsWith("]")) {
+			// Array
 			frontmatter[key] = value
 				.slice(1, -1)
 				.split(",")
@@ -62,32 +64,49 @@ function parseFrontmatter(
 
 function serializeFrontmatter(data: OkfFrontmatter): string {
 	const lines: string[] = [];
+
 	for (const [key, value] of Object.entries(data)) {
 		if (value === undefined || value === null) continue;
+
 		if (Array.isArray(value)) {
 			lines.push(`${key}: [${value.join(", ")}]`);
-		} else if (typeof value === "boolean" || typeof value === "object") {
+		} else if (typeof value === "boolean") {
+			lines.push(`${key}: ${value}`);
+		} else if (typeof value === "object") {
 			lines.push(`${key}: ${JSON.stringify(value)}`);
 		} else {
 			lines.push(`${key}: ${value}`);
 		}
 	}
+
 	return lines.join("\n");
 }
 
-// ─── Link Extraction ───────────────────────────────────────────────────────────
+// ─── Concept Parsing ────────────────────────────────────────────────────────
 
+// ─── Link Extraction ─────────────────────────────────────────────────────────
+
+/**
+ * Extract markdown links from content
+ * Used for link validation and concept parsing
+ */
 export function extractLinks(markdown: string): OkfLink[] {
 	const links: OkfLink[] = [];
+
+	// Extract markdown links
 	const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
 	let match;
 	while ((match = linkRegex.exec(markdown)) !== null) {
-		links.push({ href: match[2], title: match[1] });
+		links.push({
+			href: match[2],
+			title: match[1],
+		});
 	}
+
 	return links;
 }
 
-// ─── Validation ───────────────────────────────────────────────────────────────
+// ─── Validation ──────────────────────────────────────────────────────────────
 
 export function validateConcept(
 	content: string,
@@ -96,17 +115,28 @@ export function validateConcept(
 	const errors: ValidationError[] = [];
 	const warnings: ValidationError[] = [];
 
+	// Check for YAML frontmatter
 	if (!content.startsWith("---")) {
-		errors.push({ path, message: "Missing YAML frontmatter", severity: "error" });
+		errors.push({
+			path,
+			message: "Missing YAML frontmatter",
+			severity: "error",
+		});
 		return { valid: false, errors, warnings };
 	}
 
+	// Parse frontmatter
 	const parsed = parseFrontmatter(content);
 	if (!parsed) {
-		errors.push({ path, message: "Invalid YAML frontmatter", severity: "error" });
+		errors.push({
+			path,
+			message: "Invalid YAML frontmatter",
+			severity: "error",
+		});
 		return { valid: false, errors, warnings };
 	}
 
+	// Check for required type field
 	if (!parsed.frontmatter.type) {
 		errors.push({
 			path,
@@ -115,10 +145,17 @@ export function validateConcept(
 		});
 	}
 
-	return { valid: errors.length === 0, errors, warnings };
+	// Check for broken links - extractLinks would be used for validation
+	// Note: link validation would be done here with filesystem access
+
+	return {
+		valid: errors.length === 0,
+		errors,
+		warnings,
+	};
 }
 
-// ─── Index Generation ────────────────────────────────────────────────────────
+// ─── Index Generation ─────────────────────────────────────────────────────────
 
 function generateIndex(concepts: OkfConcept[]): string {
 	const lines = [
@@ -130,6 +167,7 @@ function generateIndex(concepts: OkfConcept[]): string {
 		"",
 	];
 
+	// Group by type
 	const byType = new Map<string, OkfConcept[]>();
 	for (const concept of concepts) {
 		const existing = byType.get(concept.type) || [];
@@ -146,6 +184,7 @@ function generateIndex(concepts: OkfConcept[]): string {
 		lines.push("");
 	}
 
+	// Group by tag
 	lines.push("## By Tag");
 	lines.push("");
 	const byTag = new Map<string, OkfConcept[]>();
@@ -169,7 +208,7 @@ function generateIndex(concepts: OkfConcept[]): string {
 	return lines.join("\n");
 }
 
-// ─── Search ───────────────────────────────────────────────────────────────────
+// ─── Search ──────────────────────────────────────────────────────────────────
 
 function calculateRelevance(
 	concept: OkfConcept,
@@ -178,6 +217,7 @@ function calculateRelevance(
 	let score = 0;
 	const matchedOn: KnowledgeResult["matchedOn"] = [];
 
+	// Title match
 	if (
 		query.text &&
 		concept.title?.toLowerCase().includes(query.text.toLowerCase())
@@ -186,6 +226,7 @@ function calculateRelevance(
 		matchedOn.push("title");
 	}
 
+	// Tag match
 	if (query.tags) {
 		for (const tag of query.tags) {
 			if (concept.tags.includes(tag)) {
@@ -196,18 +237,20 @@ function calculateRelevance(
 		}
 	}
 
+	// Type match
 	if (query.types && query.types.includes(concept.type)) {
 		score += 15;
 		matchedOn.push("type");
 	}
 
-	const authority =
-		(concept.metadata?.authority as Authority) || "unverified";
+	// Authority match
+	const authority = (concept.metadata?.authority as Authority) || "unverified";
 	if (query.authority && query.authority.includes(authority)) {
 		score += 10 * AUTHORITY_PRIORITY[authority];
 		matchedOn.push("authority");
 	}
 
+	// Body match
 	if (
 		query.text &&
 		concept.body.toLowerCase().includes(query.text.toLowerCase())
@@ -216,15 +259,6 @@ function calculateRelevance(
 	}
 
 	return score;
-}
-
-// ─── Slug Generation ─────────────────────────────────────────────────────────
-
-function slugify(text: string): string {
-	return text
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
 }
 
 // ─── Main Engine ─────────────────────────────────────────────────────────────
@@ -242,138 +276,105 @@ export class MemoryEngine {
 				directories: [],
 			};
 		}
+
 		return this.bundle;
 	}
 
 	/**
 	 * Load an OKF bundle from a directory path.
-	 * Recursively walks the directory tree, skipping reserved files (index.md, log.md)
-	 * and node_modules. index.md and log.md are loaded as bundle metadata.
+	 * Recursively reads all .md files, parses frontmatter + body,
+	 * and builds the in-memory concept index.
 	 */
 	async loadBundle(bundlePath: string): Promise<KnowledgeBundle> {
 		const concepts: OkfConcept[] = [];
-		const directories: KnowledgeBundle["directories"] = [];
+		const directories: KnowledgeDirectory[] = [];
 
-		async function walkDir(
-			dir: string,
-			relPath: string = "",
-		): Promise<void> {
+		// Walk directory recursively for .md files
+		async function walkDir(dir: string): Promise<void> {
 			let entries;
 			try {
-				entries = await readdir(dir, { withFileTypes: true });
+				entries = await fs.readdir(dir, { withFileTypes: true });
 			} catch {
-				return;
+				return; // Ignore missing directories
 			}
-
-			const subdirs: string[] = [];
 			for (const entry of entries) {
-				const full = join(dir, entry.name);
-				const rel = relPath ? `${relPath}/${entry.name}` : entry.name;
-
+				const fullPath = path.join(dir, entry.name);
 				if (entry.isDirectory()) {
 					if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
-						subdirs.push(entry.name);
-						await walkDir(full, rel);
+						directories.push({
+							path: path.relative(bundlePath, fullPath),
+							name: entry.name,
+							files: [],
+							subdirectories: [],
+						});
+						await walkDir(fullPath);
 					}
-				} else if (entry.name === "index.md") {
-					// index.md is bundle metadata, not a concept
-					continue;
-				} else if (entry.name === "log.md") {
-					// log.md is bundle metadata, not a concept
-					continue;
-				} else if (entry.name.endsWith(".md")) {
-					try {
-						const content = await readFile(full, "utf-8");
-						const concept = this_._parseConceptFromFile(content, rel);
-						if (concept) concepts.push(concept);
-					} catch {
-						// Skip unreadable files
+				} else if (
+					entry.name.endsWith(".md") &&
+					!RESERVED_FILES.includes(entry.name)
+				) {
+					const content = await fs.readFile(fullPath, "utf-8").catch(() => "");
+					const parsed = parseFrontmatter(content);
+					if (parsed && parsed.frontmatter.type) {
+						const id = path.relative(bundlePath, fullPath).replace(/\.md$/, "");
+						concepts.push({
+							id,
+							type: parsed.frontmatter.type as string,
+							title: parsed.frontmatter.title as string | undefined,
+							description: parsed.frontmatter.description as string | undefined,
+							resource: parsed.frontmatter.resource as string | undefined,
+							tags: (parsed.frontmatter.tags as string[]) || [],
+							timestamp: parsed.frontmatter.timestamp as string | undefined,
+							metadata: { ...parsed.frontmatter },
+							body: parsed.body,
+							links: extractLinks(parsed.body),
+						});
+						// Prune OKF-reserved fields from metadata (they are top-level on OkfConcept)
+						delete (
+							concepts[concepts.length - 1].metadata as Record<string, unknown>
+						)["type"];
+						delete (
+							concepts[concepts.length - 1].metadata as Record<string, unknown>
+						)["title"];
+						delete (
+							concepts[concepts.length - 1].metadata as Record<string, unknown>
+						)["tags"];
+						delete (
+							concepts[concepts.length - 1].metadata as Record<string, unknown>
+						)["timestamp"];
 					}
 				}
 			}
-
-			if (subdirs.length > 0) {
-				directories.push({
-					path: relPath || ".",
-					name: relPath.split("/").pop() || ".",
-					files: [],
-					subdirectories: subdirs,
-				});
-			}
 		}
 
-		const this_ = this;
 		await walkDir(bundlePath);
 
-		// Load index.md and log.md as bundle metadata
-		let indexContent = "";
-		let logContent = "";
-
-		try {
-			indexContent =
-				(await readFile(join(bundlePath, "index.md"), "utf-8").catch(
-					() => "",
-				)) ?? "";
-		} catch {
-			indexContent = "";
-		}
-
-		try {
-			logContent =
-				(await readFile(join(bundlePath, "log.md"), "utf-8").catch(() => "")) ?? "";
-		} catch {
-			logContent = "";
-		}
-
-		this.bundle = {
+		const bundle: KnowledgeBundle = {
 			path: bundlePath,
 			concepts,
-			index: indexContent,
-			log: logContent,
+			index: "",
+			log: "",
 			directories,
 		};
 
-		return this.bundle;
-	}
+		// Load reserved files: index.md and log.md
+		const [indexPath, logPath] = ["index.md", "log.md"].map((f) =>
+			path.join(bundlePath, f),
+		);
+		try {
+			bundle.index = await fs.readFile(indexPath, "utf-8");
+		} catch {
+			// No index yet — generate fresh
+			bundle.index = generateIndex(concepts);
+		}
+		try {
+			bundle.log = await fs.readFile(logPath, "utf-8");
+		} catch {
+			// No log yet — that's fine
+		}
 
-	private _parseConceptFromFile(
-		content: string,
-		filePath: string,
-	): OkfConcept | null {
-		const parsed = parseFrontmatter(content);
-		if (!parsed) return null;
-
-		const fm = parsed.frontmatter;
-		const body = parsed.body;
-
-		// Build concept ID from file path
-		const id = filePath.replace(/\.md$/, "");
-
-		return {
-			id,
-			type: fm.type || "unknown",
-			title: fm.title as string | undefined,
-			description: fm.description as string | undefined,
-			resource: fm.resource as string | undefined,
-			tags: (fm.tags as string[]) || [],
-			timestamp: fm.timestamp as string | undefined,
-			metadata: Object.fromEntries(
-				Object.entries(fm).filter(
-					([k]) =>
-						![
-							"type",
-							"title",
-							"description",
-							"resource",
-							"tags",
-							"timestamp",
-							"authority",
-						].includes(k),
-				),
-			),
-			body,
-			links: extractLinks(body),
-		};
+		this.bundle = bundle;
+		return bundle;
 	}
 
 	/**
@@ -384,7 +385,7 @@ export class MemoryEngine {
 		const warnings: ValidationError[] = [];
 
 		for (const concept of bundle.concepts) {
-			if (!concept.type || concept.type === "unknown") {
+			if (!concept.type) {
 				errors.push({
 					path: concept.id,
 					message: "Concept missing required 'type' field",
@@ -393,7 +394,11 @@ export class MemoryEngine {
 			}
 		}
 
-		return { valid: errors.length === 0, errors, warnings };
+		return {
+			valid: errors.length === 0,
+			errors,
+			warnings,
+		};
 	}
 
 	/**
@@ -404,39 +409,66 @@ export class MemoryEngine {
 		const results: KnowledgeResult[] = [];
 
 		for (const concept of bundle.concepts) {
+			// Filter by authority
 			if (query.authority) {
 				const authority =
 					(concept.metadata?.authority as Authority) || "unverified";
-				if (!query.authority.includes(authority)) continue;
+				if (!query.authority.includes(authority)) {
+					continue;
+				}
 			}
-			if (query.types && !query.types.includes(concept.type)) continue;
+
+			// Filter by type
+			if (query.types && !query.types.includes(concept.type)) {
+				continue;
+			}
+
+			// Filter by tags
 			if (query.tags) {
 				const hasTag = query.tags.some((t) => concept.tags.includes(t));
-				if (!hasTag) continue;
+				if (!hasTag) {
+					continue;
+				}
 			}
 
 			const relevance = calculateRelevance(concept, query);
 			if (relevance > 0 || !query.text) {
-				results.push({ concept, relevance, matchedOn: [] });
+				results.push({
+					concept,
+					relevance,
+					matchedOn: [],
+				});
 			}
 		}
 
+		// Sort by relevance
 		results.sort((a, b) => b.relevance - a.relevance);
-		if (query.limit) return results.slice(0, query.limit);
+
+		// Apply limit
+		if (query.limit) {
+			return results.slice(0, query.limit);
+		}
+
 		return results;
 	}
 
 	/**
-	 * Write a concept to disk (persistence) and update in-memory bundle.
+	 * Write a new concept (RFC-0060)
 	 *
-	 * Writes to: {bundlePath}/{type}/{slug}.md
-	 * If bundlePath is not set, only updates in-memory bundle.
+	 * Persists to disk at {bundle.path}/{id}.md and updates bundle index.
+	 * File name is derived from the title slug (first 64 chars).
 	 */
-	writeConcept(
-		request: WriteConceptRequest,
-		bundlePath?: string,
-	): OkfConcept {
-		const id = randomUUID();
+	async writeConcept(request: WriteConceptRequest): Promise<OkfConcept> {
+		const id = request.title
+			? request.title
+					.toLowerCase()
+					.replace(/[^a-z0-9]+/g, "-")
+					.replace(/^-|-$/g, "")
+					.slice(0, 64) +
+				"-" +
+				randomUUID().slice(0, 8)
+			: randomUUID();
+
 		const timestamp = new Date().toISOString();
 
 		const concept: OkfConcept = {
@@ -450,35 +482,23 @@ export class MemoryEngine {
 				authority: request.authority || "generated",
 			},
 			body: request.body,
-			links: request.links || extractLinks(request.body),
+			links: request.links || [],
 		};
 
 		const bundle = this.ensureBundle();
+
+		// Persist to disk
+		if (bundle.path && bundle.path !== "memory://in-memory") {
+			const filePath = path.join(bundle.path, `${id}.md`);
+			const okfContent = this.exportToOkf(concept);
+			await fs.mkdir(bundle.path, { recursive: true });
+			await fs.writeFile(filePath, okfContent, "utf-8");
+		}
+
 		bundle.concepts.push(concept);
 		bundle.index = generateIndex(bundle.concepts);
 
-		// Persist to disk if bundlePath is known
-		if (bundle.path && bundle.path !== "memory://in-memory" && bundlePath) {
-			this._writeConceptToDisk(concept, bundlePath).catch(() => {
-				// Non-fatal: in-memory update succeeded
-			});
-		}
-
 		return concept;
-	}
-
-	private async _writeConceptToDisk(
-		concept: OkfConcept,
-		bundlePath: string,
-	): Promise<void> {
-		const dir = join(bundlePath, concept.type);
-		await mkdir(dir, { recursive: true });
-
-		const slug = slugify(concept.title || concept.id);
-		const filePath = join(dir, `${slug}.md`);
-
-		const okfContent = this.exportToOkf(concept);
-		await writeFile(filePath, okfContent, "utf-8");
 	}
 
 	/**
@@ -488,6 +508,7 @@ export class MemoryEngine {
 		blackboardContent: string,
 		metadata: Record<string, unknown>,
 	): WriteConceptRequest {
+		// Filter secrets before promoting
 		const filteredContent = filterSecrets(blackboardContent);
 
 		return {
@@ -501,19 +522,25 @@ export class MemoryEngine {
 	}
 
 	/**
-	 * Rebuild the index from disk and persist index.md to the bundle directory.
-	 * If no path is provided, uses the current bundle's path.
+	 * Rebuild the index from disk and persist index.md to bundle directory.
 	 */
 	async rebuildIndex(bundlePath?: string): Promise<void> {
-		const targetPath =
-			bundlePath ?? this.bundle?.path ?? "memory://in-memory";
-		if (targetPath === "memory://in-memory") return;
+		const targetPath = bundlePath ?? this.bundle?.path;
+		if (!targetPath || targetPath === "memory://in-memory") {
+			if (this.bundle) {
+				this.bundle.index = generateIndex(this.bundle.concepts);
+			}
+			return;
+		}
 
-		await this.loadBundle(targetPath);
+		if (!this.bundle || this.bundle.path !== targetPath) {
+			await this.loadBundle(targetPath);
+		}
+
 		if (this.bundle) {
 			this.bundle.index = generateIndex(this.bundle.concepts);
-			const indexPath = join(targetPath, "index.md");
-			await writeFile(indexPath, this.bundle.index, "utf-8");
+			const indexPath = path.join(targetPath, "index.md");
+			await fs.writeFile(indexPath, this.bundle.index, "utf-8");
 		}
 	}
 
@@ -525,13 +552,16 @@ export class MemoryEngine {
 	}
 
 	/**
-	 * Export a concept to OKF format (RFC-0060).
-	 * Strips bundle-level metadata fields (path, index, log, directories)
-	 * from the frontmatter to ensure clean round-trip parsing.
+	 * Export a concept to OKF format (RFC-0060)
+	 *
+	 * Excludes bundle-level metadata fields (index, log, directories)
+	 * from the concept frontmatter to ensure clean round-trip parsing.
 	 */
 	exportToOkf(concept: OkfConcept): string {
-		// Exclude OKF bundle fields and top-level concept fields from metadata
+		// Collect concept-level metadata only, excluding top-level OKF fields
+		// and any bundle-level reserved fields that might be present.
 		const reserved = new Set([
+			"id",
 			"type",
 			"title",
 			"description",
@@ -540,33 +570,27 @@ export class MemoryEngine {
 			"timestamp",
 			"body",
 			"links",
-			"id",
-			"metadata",
-			// Bundle-level fields that might leak in
-			"path",
 			"index",
 			"log",
 			"directories",
 		]);
-
-		// Start with concept top-level fields
-		const frontmatter: OkfFrontmatter = {
-			type: concept.type,
-			title: concept.title,
-			tags: concept.tags,
-			timestamp: concept.timestamp,
-		};
-
-		// Add non-reserved metadata fields
-		for (const [key, value] of Object.entries(concept.metadata)) {
-			if (!reserved.has(key)) {
-				frontmatter[key] = value as string;
+		const conceptMetadata: Record<string, unknown> = {};
+		const meta = concept.metadata ?? {};
+		for (const [k, v] of Object.entries(meta)) {
+			if (!reserved.has(k)) {
+				conceptMetadata[k] = v;
 			}
 		}
 
 		const lines = [
 			"---",
-			serializeFrontmatter(frontmatter),
+			serializeFrontmatter({
+				type: concept.type,
+				title: concept.title,
+				tags: concept.tags,
+				timestamp: concept.timestamp,
+				...conceptMetadata,
+			}),
 			"---",
 			"",
 			concept.body,

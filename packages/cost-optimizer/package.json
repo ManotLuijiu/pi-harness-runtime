@@ -1,7 +1,7 @@
 {
   "name": "@pi-harness/cost-optimizer",
-  "version": "0.9.1",
-  "description": "Cost Optimizer for pi-harness-runtime \u2014 budget tracking, forecasting, and model selection optimization",
+  "version": "0.9.5",
+  "description": "Cost Optimizer for pi-harness-runtime — budget tracking, forecasting, and model selection optimization",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

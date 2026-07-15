@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+AGENTS.md
 # Local SQLite state (created at runtime in ~/.pi/usage-status/)
 # This file lives outside the repo; nothing to ignore here.
 sample_github_workflows/
@@ -17,3 +18,47 @@ OKF/
 harness/skills-staging/source-mirror/
 harness/skills-staging/sanitized-candidates/
 harness/skills-staging/reports/
+
+# Build outputs
+packages/auth/dist/
+packages/capability-registry/dist/
+packages/checkpoint/dist/
+packages/code-generation/dist/
+packages/code-review/dist/
+packages/context-compiler/dist/
+packages/cost-optimizer/dist/
+packages/evaluation-engine/dist/
+packages/experience-replay/dist/
+packages/framework-detector/dist/
+packages/framework-plugin-sdk/dist/
+packages/learning-engine/dist/
+packages/memory-engine/dist/
+packages/model-registry/dist/
+packages/notification/dist/
+packages/observability/dist/
+packages/performance-optimizer/dist/
+packages/project-analyzer/dist/
+packages/prompt-compiler/dist/
+packages/provider-adapter-sdk/dist/
+packages/provider-router/dist/
+packages/providers/dist/
+packages/quota-manager/dist/
+packages/requirement-compiler/dist/
+packages/runtime/dist/
+packages/scheduler/dist/
+packages/session/dist/
+packages/shared-context/dist/
+packages/skill-registry/dist/
+packages/task-compiler/dist/
+packages/test-data-generator/dist/
+packages/token-estimation/dist/
+packages/tui/dist/
+packages/types/dist/
+packages/worktree/dist/
+.pi-subagents/
+harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

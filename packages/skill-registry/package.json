@@ -1,7 +1,7 @@
 {
   "name": "@pi-harness/skill-registry",
-  "version": "0.9.1",
-  "description": "Skill Registry for pi-harness-runtime \u2014 dynamic skill discovery and invocation",
+  "version": "0.9.5",
+  "description": "Skill Registry for pi-harness-runtime — dynamic skill discovery and invocation",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

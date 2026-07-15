@@ -2,7 +2,10 @@
  * Memory Engine Tests (RFC-0060)
  */
 
-import { describe, it, expect, beforeEach } from "@jest/globals";
+import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as os from "node:os";
 import {
 	type MemoryEngine,
 	createMemoryEngine,
@@ -10,6 +13,27 @@ import {
 	validateConcept,
 } from "../src/index.js";
 import type { WriteConceptRequest } from "../src/index.js";
+
+// Temp directories for filesystem tests
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+	// Clean up temp directories
+	for (const dir of tempDirs) {
+		try {
+			await fs.rm(dir, { recursive: true, force: true });
+		} catch {
+			// ignore
+		}
+	}
+	tempDirs.length = 0;
+});
+
+async function mkdtemp(): Promise<string> {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "memory-engine-"));
+	tempDirs.push(dir);
+	return dir;
+}
 
 describe("MemoryEngine", () => {
 	let engine: MemoryEngine;
@@ -29,7 +53,7 @@ describe("MemoryEngine", () => {
 	});
 
 	describe("writeConcept", () => {
-		it("writes a new concept", () => {
+		it("writes a new concept", async () => {
 			const request: WriteConceptRequest = {
 				type: "Engineering Lesson",
 				title: "Test Lesson",
@@ -38,7 +62,7 @@ describe("MemoryEngine", () => {
 				authority: "generated",
 			};
 
-			const concept = engine.writeConcept(request);
+			const concept = await engine.writeConcept(request);
 
 			expect(concept).toBeDefined();
 			expect(concept.type).toBe("Engineering Lesson");
@@ -49,14 +73,14 @@ describe("MemoryEngine", () => {
 			expect(concept.timestamp).toBeDefined();
 		});
 
-		it("generates unique IDs", () => {
+		it("generates unique IDs", async () => {
 			const request: WriteConceptRequest = {
 				type: "Test",
 				body: "Test body",
 			};
 
-			const concept1 = engine.writeConcept(request);
-			const concept2 = engine.writeConcept(request);
+			const concept1 = await engine.writeConcept(request);
+			const concept2 = await engine.writeConcept(request);
 
 			expect(concept1.id).not.toBe(concept2.id);
 		});
@@ -179,8 +203,8 @@ Body content`;
 	});
 
 	describe("exportToOkf", () => {
-		it("exports concept to OKF format", () => {
-			const concept = engine.writeConcept({
+		it("exports concept to OKF format", async () => {
+			const concept = await engine.writeConcept({
 				type: "Lesson",
 				title: "Export Test",
 				body: "Test body content",
@@ -195,6 +219,167 @@ Body content`;
 			expect(okf).toContain("title: Export Test");
 			expect(okf).toContain("authority: approved");
 			expect(okf).toContain("Test body content");
+		});
+
+		it("excludes bundle-level fields from exported frontmatter", async () => {
+			const concept = await engine.writeConcept({
+				type: "Lesson",
+				title: "Bundle Fields Test",
+				body: "Body",
+				authority: "approved",
+			});
+
+			// Simulate bundle-level metadata merged by loadBundle
+			const withBundleMeta = {
+				...concept,
+				metadata: {
+					...concept.metadata,
+					index: "previous-index-content",
+					log: "previous-log-content",
+					directories: ["/some/path"],
+					extra: "should-appear",
+				},
+			};
+
+			const okf = engine.exportToOkf(withBundleMeta);
+
+			expect(okf).not.toContain("index:");
+			expect(okf).not.toContain("log:");
+			expect(okf).not.toContain("directories:");
+			expect(okf).toContain("extra: should-appear");
+		});
+	});
+
+	describe("Filesystem Operations", () => {
+		it("writeConcept persists file to disk", async () => {
+			const dir = await mkdtemp();
+			const e = createMemoryEngine();
+			await e.loadBundle(dir);
+
+			await e.writeConcept({
+				type: "Lesson",
+				title: "Persisted Concept",
+				body: "This was written to disk",
+				tags: ["disk"],
+				authority: "approved",
+			});
+
+			// Verify file was created
+			const files = await fs.readdir(dir);
+			const conceptFile = files.find(
+				(f) => f.endsWith(".md") && f !== "index.md" && f !== "log.md",
+			);
+			expect(conceptFile).toBeDefined();
+
+			const content = await fs.readFile(path.join(dir, conceptFile!), "utf-8");
+			expect(content).toContain("Persisted Concept");
+			expect(content).toContain("This was written to disk");
+		});
+
+		it("loadBundle reads files from disk", async () => {
+			const dir = await mkdtemp();
+
+			// Write a concept file directly
+			await fs.writeFile(
+				path.join(dir, "from-disk.md"),
+				`---
+type: Lesson
+title: From Disk
+tags: [loaded, disk]
+authority: approved
+---
+
+This concept was written directly to disk.`,
+				"utf-8",
+			);
+			await fs.writeFile(
+				path.join(dir, "index.md"),
+				"# Knowledge Index",
+				"utf-8",
+			);
+			await fs.writeFile(
+				path.join(dir, "log.md"),
+				"## Log\n- Entry 1",
+				"utf-8",
+			);
+
+			const e = createMemoryEngine();
+			const bundle = await e.loadBundle(dir);
+
+			expect(bundle.concepts.length).toBeGreaterThanOrEqual(1);
+			const loaded = bundle.concepts.find((c) => c.title === "From Disk");
+			expect(loaded).toBeDefined();
+			expect(loaded!.type).toBe("Lesson");
+			expect(loaded!.tags).toContain("loaded");
+			expect(loaded!.body).toContain("directly to disk");
+			expect(bundle.index).toContain("Knowledge Index");
+			expect(bundle.log).toContain("Entry 1");
+		});
+
+		it("loadBundle excludes reserved files (index.md, log.md)", async () => {
+			const dir = await mkdtemp();
+
+			await fs.writeFile(
+				path.join(dir, "index.md"),
+				"# Index Content",
+				"utf-8",
+			);
+			await fs.writeFile(path.join(dir, "log.md"), "# Log Content", "utf-8");
+			await fs.writeFile(
+				path.join(dir, "real-concept.md"),
+				`---
+type: Pattern
+title: Real Concept
+---
+
+Body`,
+				"utf-8",
+			);
+
+			const e = createMemoryEngine();
+			const bundle = await e.loadBundle(dir);
+
+			expect(bundle.concepts.some((c) => c.title === "Real Concept")).toBe(
+				true,
+			);
+			expect(bundle.concepts.some((c) => c.id === "index")).toBe(false);
+			expect(bundle.concepts.some((c) => c.id === "log")).toBe(false);
+		});
+
+		it("writeConcept generates slug-based IDs from title", async () => {
+			const dir = await mkdtemp();
+			const e = createMemoryEngine();
+			await e.loadBundle(dir);
+
+			const concept = await e.writeConcept({
+				type: "Lesson",
+				title: "My Test Concept Title",
+				body: "Body",
+			});
+
+			// ID should start with slugified title
+			expect(concept.id).toMatch(/^my-test-concept-title-/);
+		});
+
+		it("rebuildIndex writes index.md to disk", async () => {
+			const dir = await mkdtemp();
+			const e = createMemoryEngine();
+			await e.loadBundle(dir);
+
+			await e.writeConcept({
+				type: "Pattern",
+				title: "Indexed Concept",
+				body: "Body",
+			});
+
+			await e.rebuildIndex(dir);
+
+			const indexContent = await fs.readFile(
+				path.join(dir, "index.md"),
+				"utf-8",
+			);
+			expect(indexContent).toContain("Knowledge Index");
+			expect(indexContent).toContain("Indexed Concept");
 		});
 	});
 });

@@ -1,0 +1,21 @@
+{
+  "name": "@pi/prompt-versioning",
+  "version": "0.9.5",
+  "type": "module",
+  "description": "Version control for prompts with rollback support (RFC-0019)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "^1.0.0"
+  }
+}
