@@ -1,13 +1,21 @@
 {
   "name": "@pi/cache-strategy",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "type": "module",
   "description": "Smart caching with TTL and invalidation strategies (RFC-0022)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
-  "scripts": { "build": "tsc --noEmit", "test": "bun test" },
-  "devDependencies": { "bun-types": "^1.0.0" }
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "^1.0.0"
+  }
 }

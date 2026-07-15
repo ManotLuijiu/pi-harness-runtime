@@ -1,13 +1,21 @@
 {
   "name": "@pi/release-manager",
-  "version": "0.1.0",
+  "version": "0.9.5",
   "type": "module",
   "description": "Release management for pi-harness",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
-  "scripts": { "build": "tsc --noEmit", "test": "bun test" },
-  "devDependencies": { "bun-types": "^1.0.0" }
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "^1.0.0"
+  }
 }
