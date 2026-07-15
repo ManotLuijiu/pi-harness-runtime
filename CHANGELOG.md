@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.5](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.4...v0.9.5) (2026-07-15)
+
+
+### Features
+
+* add 15 packages from subagent batch + test expansions ([c82d898](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c82d898277779886cdd1f7f42087698762becde3))
+* add 4 adapter packages for Day 3 (RFC-0067-0070) ([f1e3a6f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f1e3a6f1c8b4e1bdaeeb1de0ec4b4353baf48012))
+* add 4 packages for Day 4 (RFC-0074, 0078, 0079, 0092) ([c252195](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c252195728141dfea9767caea0de95ed425857c3))
+* add 5 new packages (RFC-0010-0014) + test expansions ([b552c6f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b552c6fa0bd03c231e3afe8e4f59c29b3f8a6d99))
+* add 5 packages for RFCs 0019-0023 ([30da266](https://github.com/ManotLuijiu/pi-harness-runtime/commit/30da266f5bf247eb3c9cad85ee8653e6e88ff844))
+* add 6 framework plugins (RFC-0061-0066) ([51b7a79](https://github.com/ManotLuijiu/pi-harness-runtime/commit/51b7a79e576a5d9f5782dd2cd66d1509c0d14485))
+* add package metadata for auth, scheduler, shared-context, token-estimation ([67e2621](https://github.com/ManotLuijiu/pi-harness-runtime/commit/67e26211633f01de4f0d5eca76abc4d40d1ee0ea))
+* flesh out RFC 71-75 specs + fix codex-adapter LSP types ([38b8643](https://github.com/ManotLuijiu/pi-harness-runtime/commit/38b86438ef45f75d1c34caf5b4f401d29c76d44d))
+
+
+### Bug Fixes
+
+* auto-resume after compaction and output limits ([0cff2bc](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0cff2bcf9035a699496e2726b74a1576863cf82e))
+
+### [0.9.4](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.4) (2026-07-14)
+
+
+### Features
+
+* configure Dependabot to target develop with auto-merge ([9e12b46](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9e12b4620179b91d2dc1a4627e199920d3890f31))
+* persist memory engine bundles ([07af7a9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/07af7a96e301bfd8afadd82547cb93e8bec26b12))
+* RFC-0052 skill-registry gap fixes + 40 new RFCs (0061-0100) ([6defd26](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6defd26ff931fb9f93548647bf3a76098aa1d48b))
+* RFC-0060 memory-engine fixes + simplify auto-resume ([#52](https://github.com/ManotLuijiu/pi-harness-runtime/issues/52)) ([fb4de1a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fb4de1a9d1de74b875aabb58d0c06f7116994ca3))
+
+
+### Bug Fixes
+
+* collapse duplicate version keys in workspace package.json files ([f3a7289](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3a728923a96308296e45d7ce3db8fe3ad36780a))
+
+### [0.4.2-beta.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.1-beta.1...v0.4.2-beta.1) (2026-07-12)
+
 ### [0.9.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.1) (2026-07-13)
 
 

@@ -1,0 +1,74 @@
+#!/bin/bash
+# Pre-commit hook to scan for sensitive information
+# Place in .git/hooks/pre-commit (or use pre-commit framework)
+
+set -e
+
+echo "🔍 Scanning for sensitive information..."
+
+# Patterns that indicate secrets
+PATTERNS=(
+  "ghp_[0-9a-zA-Z]{36}"          # GitHub Personal Access Tokens
+  "github_pat_[0-9a-zA-Z_]{82}" # GitHub Fine-grained PATs
+  "npm_[0-9a-zA-Z]{36,}"         # npm tokens
+  "sk-[0-9a-zA-Z]{48}"           # OpenAI/API keys
+  "sk-or-v1-[0-9a-zA-Z_-]{50,}"  # OpenRouter keys
+  "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}" # emails (optional)
+  "xox[baprs]-[0-9a-zA-Z]{10,}"  # Slack tokens
+  "AKIA[0-9A-Z]{16}"             # AWS Access Key
+)
+
+# Files to check (staged changes)
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+FOUND=0
+for pattern in "${PATTERNS[@]}"; do
+  MATCHES=$(echo "$FILES" | xargs grep -h -E "$pattern" 2>/dev/null || true)
+  if [ -n "$MATCHES" ]; then
+    echo "❌ BLOCKED: Found pattern matching $pattern"
+    echo "$MATCHES" | head -5
+    FOUND=1
+  fi
+done
+
+# Also check file names
+SENSITIVE_FILES="(\.env|credentials\.json|secrets\.json|\.pem|\.key|id_rsa|aws_.*\.json)"
+if echo "$FILES" | grep -qE "$SENSITIVE_FILES" 2>/dev/null; then
+  echo "❌ BLOCKED: Attempting to commit sensitive file pattern"
+  FOUND=1
+fi
+
+if [ $FOUND -eq 1 ]; then
+  echo ""
+  echo "⚠️  Secrets detected! Commit blocked."
+  echo "   If this is a false positive, use --no-verify to bypass"
+  echo "   but ensure no real secrets are being committed."
+  exit 1
+fi
+
+echo "✅ No obvious secrets detected"
+exit 0
+
+# --- BEGIN BEADS INTEGRATION v1.0.3 ---
+# This section is managed by beads. Do not remove these markers.
+if command -v bd >/dev/null 2>&1; then
+  export BD_GIT_HOOK=1
+  _bd_timeout=${BEADS_HOOK_TIMEOUT:-300}
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_bd_timeout" bd hooks run pre-commit "$@"
+    _bd_exit=$?
+    if [ $_bd_exit -eq 124 ]; then
+      echo >&2 "beads: hook 'pre-commit' timed out after ${_bd_timeout}s — continuing without beads"
+      _bd_exit=0
+    fi
+  else
+    bd hooks run pre-commit "$@"
+    _bd_exit=$?
+  fi
+  if [ $_bd_exit -eq 3 ]; then
+    echo >&2 "beads: database not initialized — skipping hook 'pre-commit'"
+    _bd_exit=0
+  fi
+  if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
+fi
+# --- END BEADS INTEGRATION v1.0.3 ---

@@ -1,15 +1,18 @@
-# AI Brief — Performance Optimizer
+# AI Brief — Worktree (RFC-0056)
 
-Implement an advisory optimizer. It must never directly mutate runtime state.
+**Status:** ✅ Done
 
-Primary package:
+## Implemented
 
-```text
-packages/performance-optimizer/src/
-├── types.ts
-├── metrics.ts
-├── bottleneck-detector.ts
-├── recommendation-engine.ts
-├── conflict-resolver.ts
-└── optimizer.ts
-```
+- `packages/worktree/`
+- `WorktreeManager` class
+
+## Features
+
+- Git worktree management for parallel development
+- Worktree creation and cleanup
+- Branch management per worktree
+
+## Tests
+
+- 18 tests pass (added by subagent)

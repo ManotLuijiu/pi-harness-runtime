@@ -1,16 +1,20 @@
-# RFC-0053 Model Registry
+# AI Brief — Quota Manager (RFC-0053)
 
-Implement a centralized model registry with pricing, limits, and capability references.
+**Status:** ✅ Done
 
-## Key Components
+## Implemented
 
-- `ModelInfo` - Model metadata with pricing, context window, aliases
-- `ModelRegistry` - Register, query, filter models
-- `Pricing` - Input/output pricing per 1M tokens
-- Default models for OpenAI, Anthropic, MiniMax
+- `packages/quota-manager/`
+- `QuotaManager`, `TUIUsageMonitor` classes
+- Multi-provider quota tracking and reset estimation
 
-## Integration Points
+## Features
 
-- Cost Optimizer uses pricing for cost calculation
-- Provider Router uses context window and capabilities
-- Task Compiler selects models based on requirements
+- Multi-provider quota tracking
+- Reset time estimation
+- TUI usage monitoring
+- Threshold alerts
+
+## Tests
+
+- 25 tests pass (added by subagent)

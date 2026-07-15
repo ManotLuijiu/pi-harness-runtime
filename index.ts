@@ -25,7 +25,10 @@ import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import {
+	OUTPUT_LIMIT_RESUME_PROMPT,
 	PROACTIVE_COMPACT_COOLDOWN_MS,
+	shouldQueueOutputLimitResume,
+	shouldQueuePostCompactionResume,
 	shouldTriggerProactiveCompact,
 } from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
@@ -86,6 +89,9 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant") return;
 		const m = event.message as {
+			role?: string;
+			stopReason?: unknown;
+			errorMessage?: unknown;
 			usage?: {
 				input?: number;
 				output?: number;
@@ -94,6 +100,20 @@ export default function (pi: ExtensionAPI) {
 				cost?: { total?: number };
 			};
 		};
+
+		if (
+			shouldQueueOutputLimitResume(
+				m,
+				outputLimitResumeAttempts,
+				ctx.hasPendingMessages(),
+			)
+		) {
+			outputLimitResumeAttempts += 1;
+			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT);
+		} else if (m.stopReason === "stop") {
+			outputLimitResumeAttempts = 0;
+		}
+
 		if (!m.usage) return;
 		tracker.append({
 			ts: Date.now(),
@@ -121,6 +141,7 @@ export default function (pi: ExtensionAPI) {
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
+	let outputLimitResumeAttempts = 0;
 
 	function writeMirrorRecord(record: MirrorRecord): void {
 		mirrorStore.write(record);
@@ -661,15 +682,27 @@ export default function (pi: ExtensionAPI) {
 		footerStatusCtx = ctx;
 		proactiveCompactInFlight = false;
 		lastProactiveCompactAt = Date.now();
+		outputLimitResumeAttempts = 0;
 		refreshFooterStatus(ctx, tracker, mirrorStore);
 
-		if (event.reason !== "overflow" || event.willRetry) {
+		if (!shouldQueuePostCompactionResume(event, ctx.hasPendingMessages())) {
 			return;
 		}
 
 		// pi.dev expects the literal "resume" command to continue after compaction.
-		pi.sendUserMessage("resume", { deliverAs: "followUp" });
+		queueAutoResume("post-compact", "resume");
 	});
+
+	function queueAutoResume(reason: string, content: string): void {
+		try {
+			pi.sendUserMessage(content, { deliverAs: "followUp" });
+		} catch (error) {
+			console.error(
+				`[pi-harness] Failed to queue ${reason} auto-resume:`,
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+	}
 
 	function maybeTriggerProactiveCompact(ctx: ExtensionContext): void {
 		if (proactiveCompactInFlight) {

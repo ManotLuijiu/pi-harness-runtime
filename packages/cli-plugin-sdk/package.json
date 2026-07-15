@@ -1,0 +1,24 @@
+{
+  "name": "@pi/cli-plugin-sdk",
+  "version": "0.9.5",
+  "type": "module",
+  "description": "CLI Plugin SDK for pi-harness — install, list, remove, update, invoke plugins",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@pi/frappe-plugin",
+  "version": "0.9.5",
+  "description": "Frappe/ERPNext framework analysis — DocTypes, hooks, bench sites, site config",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "pi_harness_runtime",
+  "project_id": "0803578c-6d41-415d-a8cc-b21b50666e9f"
+}
