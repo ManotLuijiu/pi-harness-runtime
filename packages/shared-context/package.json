@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/shared-context",
-  "version": "0.9.0",
+  "version": "0.9.5",
   "description": "pi-harness-runtime — shared-context",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "bun test"
