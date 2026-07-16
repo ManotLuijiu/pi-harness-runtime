@@ -1,6 +1,6 @@
 {
   "name": "@pi/a2a-adapter",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "type": "module",
   "description": "Google Agent-to-Agent (A2A) protocol adapter for pi-harness",
   "main": "dist/index.js",
