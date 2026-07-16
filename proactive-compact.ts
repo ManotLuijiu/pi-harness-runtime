@@ -1,20 +1,32 @@
 import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 
 export const PROACTIVE_COMPACT_THRESHOLD = 0.9;
+export const PROACTIVE_COMPACT_HEADROOM_TOKENS = 15_000;
 export const PROACTIVE_COMPACT_COOLDOWN_MS = 10 * 60 * 1000;
+export const MAX_PROACTIVE_COMPACT_FAILURES = 3;
 export const OUTPUT_LIMIT_AUTO_RESUME_LIMIT = 3;
 export const OUTPUT_LIMIT_RESUME_PROMPT =
 	"Output token limit hit. Resume directly — no apology, no recap. Pick up mid-thought if the cut happened there. Break remaining work into smaller pieces.";
 
 export function shouldTriggerProactiveCompact(
 	usage: ContextUsage | undefined,
-	options?: { threshold?: number },
+	options?: { threshold?: number; headroomTokens?: number },
 ): boolean {
-	const threshold = options?.threshold ?? PROACTIVE_COMPACT_THRESHOLD;
-	if (!usage || usage.percent === null) {
+	if (!usage) {
 		return false;
 	}
-	return usage.percent >= threshold;
+
+	const headroomTokens =
+		options?.headroomTokens ?? PROACTIVE_COMPACT_HEADROOM_TOKENS;
+	if (
+		usage.tokens !== null &&
+		usage.contextWindow - usage.tokens <= headroomTokens
+	) {
+		return true;
+	}
+
+	const threshold = options?.threshold ?? PROACTIVE_COMPACT_THRESHOLD;
+	return usage.percent !== null && usage.percent >= threshold;
 }
 
 export type AssistantStopLike = {
@@ -61,8 +73,18 @@ export function shouldQueueOutputLimitResume(
 }
 
 export function shouldQueuePostCompactionResume(
-	event: { willRetry?: boolean },
+	event: {
+		willRetry?: boolean;
+		reason?: "manual" | "threshold" | "overflow" | string;
+	},
 	hasPendingMessages: boolean,
+	options?: { force?: boolean },
 ): boolean {
-	return event.willRetry !== true && !hasPendingMessages;
+	if (event.reason === "manual" && options?.force !== true) {
+		return false;
+	}
+
+	return (
+		(options?.force === true || event.willRetry !== true) && !hasPendingMessages
+	);
 }
