@@ -81,6 +81,33 @@ async function getCheckpointManager(): Promise<CheckpointManager> {
 	) as unknown as CheckpointManager;
 }
 
+function isOutputLimitResumePromptMessage(message: {
+	role?: string;
+	content?: unknown;
+}): boolean {
+	if (message.role !== "user") {
+		return false;
+	}
+	if (typeof message.content === "string") {
+		return message.content === OUTPUT_LIMIT_RESUME_PROMPT;
+	}
+	if (!Array.isArray(message.content)) {
+		return false;
+	}
+	return (
+		message.content
+			.filter(
+				(part): part is { type: "text"; text: string } =>
+					part &&
+					typeof part === "object" &&
+					(part as { type?: unknown }).type === "text" &&
+					typeof (part as { text?: unknown }).text === "string",
+			)
+			.map((part) => part.text)
+			.join("\n") === OUTPUT_LIMIT_RESUME_PROMPT
+	);
+}
+
 export default function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
@@ -88,6 +115,10 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Auto-track every assistant message ──────────────────────────────
 	pi.on("message_end", async (event, ctx) => {
+		if (isOutputLimitResumePromptMessage(event.message)) {
+			pendingOutputLimitResumeAfterSettled = false;
+			return;
+		}
 		if (event.message.role !== "assistant") return;
 		const m = event.message as {
 			role?: string;
@@ -111,9 +142,11 @@ export default function (pi: ExtensionAPI) {
 		) {
 			outputLimitResumeAttempts += 1;
 			pendingOutputLimitResumeAfterCompact = true;
+			pendingOutputLimitResumeAfterSettled = true;
 			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
+			pendingOutputLimitResumeAfterSettled = false;
 		}
 
 		if (!m.usage) return;
@@ -147,6 +180,7 @@ export default function (pi: ExtensionAPI) {
 	let proactiveCompactCircuitReported = false;
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
+	let pendingOutputLimitResumeAfterSettled = false;
 
 	function writeMirrorRecord(record: MirrorRecord): void {
 		mirrorStore.write(record);
@@ -681,6 +715,20 @@ export default function (pi: ExtensionAPI) {
 		refreshFooterStatus(ctx, tracker, mirrorStore);
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
+	});
+
+	pi.on("agent_end", () => {
+		setTimeout(() => {
+			if (!pendingOutputLimitResumeAfterSettled) {
+				return;
+			}
+			pendingOutputLimitResumeAfterSettled = false;
+			queueAutoResume(
+				"output-limit-settled",
+				OUTPUT_LIMIT_RESUME_PROMPT,
+				"followUp",
+			);
+		}, 0);
 	});
 
 	pi.on("session_compact", (event, ctx) => {
