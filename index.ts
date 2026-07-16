@@ -25,6 +25,7 @@ import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import {
+	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
 	PROACTIVE_COMPACT_COOLDOWN_MS,
 	shouldQueueOutputLimitResume,
@@ -109,7 +110,8 @@ export default function (pi: ExtensionAPI) {
 			)
 		) {
 			outputLimitResumeAttempts += 1;
-			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT);
+			pendingOutputLimitResumeAfterCompact = true;
+			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
 		}
@@ -141,7 +143,10 @@ export default function (pi: ExtensionAPI) {
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
+	let consecutiveCompactFailures = 0;
+	let proactiveCompactCircuitReported = false;
 	let outputLimitResumeAttempts = 0;
+	let pendingOutputLimitResumeAfterCompact = false;
 
 	function writeMirrorRecord(record: MirrorRecord): void {
 		mirrorStore.write(record);
@@ -682,20 +687,42 @@ export default function (pi: ExtensionAPI) {
 		footerStatusCtx = ctx;
 		proactiveCompactInFlight = false;
 		lastProactiveCompactAt = Date.now();
-		outputLimitResumeAttempts = 0;
+		consecutiveCompactFailures = 0;
+		proactiveCompactCircuitReported = false;
 		refreshFooterStatus(ctx, tracker, mirrorStore);
 
-		if (!shouldQueuePostCompactionResume(event, ctx.hasPendingMessages())) {
+		const forceOutputLimitResume = pendingOutputLimitResumeAfterCompact;
+		pendingOutputLimitResumeAfterCompact = false;
+
+		if (
+			!shouldQueuePostCompactionResume(event, ctx.hasPendingMessages(), {
+				force: forceOutputLimitResume,
+			})
+		) {
 			return;
 		}
 
+		if (forceOutputLimitResume) {
+			queueAutoResume(
+				"post-compact-output-limit",
+				OUTPUT_LIMIT_RESUME_PROMPT,
+				event.willRetry ? "steer" : "followUp",
+			);
+			return;
+		}
+
+		outputLimitResumeAttempts = 0;
 		// pi.dev expects the literal "resume" command to continue after compaction.
-		queueAutoResume("post-compact", "resume");
+		queueAutoResume("post-compact", "resume", "followUp");
 	});
 
-	function queueAutoResume(reason: string, content: string): void {
+	function queueAutoResume(
+		reason: string,
+		content: string,
+		deliverAs: "steer" | "followUp",
+	): void {
 		try {
-			pi.sendUserMessage(content, { deliverAs: "followUp" });
+			pi.sendUserMessage(content, { deliverAs });
 		} catch (error) {
 			console.error(
 				`[pi-harness] Failed to queue ${reason} auto-resume:`,
@@ -706,6 +733,15 @@ export default function (pi: ExtensionAPI) {
 
 	function maybeTriggerProactiveCompact(ctx: ExtensionContext): void {
 		if (proactiveCompactInFlight) {
+			return;
+		}
+		if (consecutiveCompactFailures >= MAX_PROACTIVE_COMPACT_FAILURES) {
+			if (!proactiveCompactCircuitReported) {
+				proactiveCompactCircuitReported = true;
+				console.error(
+					`[pi-harness] Proactive compact disabled after ${consecutiveCompactFailures} consecutive failures`,
+				);
+			}
 			return;
 		}
 		if (!ctx.isIdle() || ctx.hasPendingMessages()) {
@@ -728,9 +764,12 @@ export default function (pi: ExtensionAPI) {
 			onComplete: () => {
 				proactiveCompactInFlight = false;
 				lastProactiveCompactAt = Date.now();
+				consecutiveCompactFailures = 0;
+				proactiveCompactCircuitReported = false;
 			},
 			onError: (error) => {
 				proactiveCompactInFlight = false;
+				consecutiveCompactFailures += 1;
 				console.error("[pi-harness] Proactive compact failed:", error.message);
 			},
 		};

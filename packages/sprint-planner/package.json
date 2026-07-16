@@ -1,6 +1,6 @@
 {
   "name": "@pi/sprint-planner",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "type": "module",
   "description": "Sprint planning engine for pi-harness",
   "main": "dist/index.js",
