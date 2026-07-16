@@ -1,6 +1,6 @@
 {
   "name": "@pi/observability",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Comprehensive observability system with structured logging, tracing, metrics, and alerting",
   "type": "module",
   "main": "./dist/index.js",
