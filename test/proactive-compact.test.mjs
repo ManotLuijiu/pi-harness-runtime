@@ -35,6 +35,17 @@ test("shouldTriggerProactiveCompact returns false below threshold", () => {
 	);
 });
 
+test("shouldTriggerProactiveCompact returns true when token headroom is low", () => {
+	assert.equal(
+		shouldTriggerProactiveCompact({
+			tokens: 258000,
+			contextWindow: 272000,
+			percent: 0.88,
+		}),
+		true,
+	);
+});
+
 test("shouldTriggerProactiveCompact returns true at threshold", () => {
 	assert.equal(
 		shouldTriggerProactiveCompact({
@@ -49,6 +60,20 @@ test("shouldTriggerProactiveCompact returns true at threshold", () => {
 test("isOutputLimitAssistantMessage detects length stop and provider text", () => {
 	assert.equal(
 		isOutputLimitAssistantMessage({ role: "assistant", stopReason: "length" }),
+		true,
+	);
+	assert.equal(
+		isOutputLimitAssistantMessage({
+			role: "assistant",
+			stopReason: "max_output_tokens",
+		}),
+		true,
+	);
+	assert.equal(
+		isOutputLimitAssistantMessage({
+			role: "assistant",
+			stopReason: "max_tokens",
+		}),
 		true,
 	);
 	assert.equal(
@@ -76,17 +101,48 @@ test("shouldQueueOutputLimitResume honors pending messages and attempt limit", (
 	);
 });
 
-test("shouldQueuePostCompactionResume queues after non-retry compaction only", () => {
+test("shouldQueuePostCompactionResume respects reason, retry, force, and pending messages", () => {
 	assert.equal(
-		shouldQueuePostCompactionResume({ willRetry: false }, false),
-		true,
-	);
-	assert.equal(
-		shouldQueuePostCompactionResume({ willRetry: true }, false),
+		shouldQueuePostCompactionResume(
+			{ willRetry: false, reason: "manual" },
+			false,
+		),
 		false,
 	);
 	assert.equal(
-		shouldQueuePostCompactionResume({ willRetry: false }, true),
+		shouldQueuePostCompactionResume(
+			{ willRetry: false, reason: "overflow" },
+			false,
+		),
+		true,
+	);
+	assert.equal(
+		shouldQueuePostCompactionResume(
+			{ willRetry: false, reason: "threshold" },
+			false,
+		),
+		true,
+	);
+	assert.equal(
+		shouldQueuePostCompactionResume(
+			{ willRetry: true, reason: "overflow" },
+			false,
+		),
+		false,
+	);
+	assert.equal(
+		shouldQueuePostCompactionResume(
+			{ willRetry: true, reason: "manual" },
+			false,
+			{ force: true },
+		),
+		true,
+	);
+	assert.equal(
+		shouldQueuePostCompactionResume(
+			{ willRetry: false, reason: "overflow" },
+			true,
+		),
 		false,
 	);
 });
