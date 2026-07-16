@@ -72,7 +72,7 @@ jobs:
           bun run build
 
       - name: Run tests
-        run: bun test
+        run: bun test test/*.test.mjs
 
       - name: Publish to npm
         if: >-
