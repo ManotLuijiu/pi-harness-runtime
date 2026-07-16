@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/auth",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "pi-harness-runtime — auth",
   "type": "module",
   "main": "./dist/index.js",
