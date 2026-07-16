@@ -1,6 +1,6 @@
 {
   "name": "@pi/rate-limiter",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "type": "module",
   "description": "Rate limiting with token bucket algorithm (RFC-0023)",
   "main": "dist/index.js",
