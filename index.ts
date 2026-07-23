@@ -23,6 +23,20 @@ import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
+import {
+	CookieWatcher,
+	DEFAULT_DROP_DIR as COOKIE_DROP_DIR,
+	hasAnyCookieSource as sanitizerHasAnyCookieSource,
+} from "./packages/cookie-sanitizer/src/index.ts";
+import {
+	providerFromModelId,
+	type ProviderId,
+} from "./packages/providers/src/provider-id.ts";
+import {
+	TUIUsageMonitor,
+	type TUIUsageSignal,
+} from "./packages/quota-manager/src/tui-usage-monitor.ts";
+import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
@@ -65,6 +79,39 @@ interface HarnessSession {
 }
 
 let currentSession: HarnessSession | null = null;
+
+/**
+ * Safely extract a text view from an LLM message. Used to feed the TUI
+ * quota-signal extractor. Handles string content, array-of-parts content
+ * (with `text` fields), and falls back to a stringified JSON for unknown
+ * shapes. Never throws.
+ */
+function readMessageText(message: unknown): string {
+	try {
+		if (!message || typeof message !== "object") return "";
+		const m = message as { role?: unknown; content?: unknown };
+		if (typeof m.content === "string") return m.content;
+		if (Array.isArray(m.content)) {
+			const parts: string[] = [];
+			for (const p of m.content) {
+				if (!p) continue;
+				if (typeof p === "string") {
+					parts.push(p);
+				} else if (typeof p === "object") {
+					const obj = p as { text?: unknown; content?: unknown };
+					if (typeof obj.text === "string") parts.push(obj.text);
+					else if (typeof obj.content === "string") parts.push(obj.content);
+				}
+			}
+			return parts.join("\n");
+		}
+		// Fallback: best-effort stringification. Never include cookie-shaped
+		// data; we only stringify LLM message shapes which are JSON-safe.
+		return JSON.stringify(message).slice(0, 8000);
+	} catch {
+		return "";
+	}
+}
 
 function ensureHarnessDir() {
 	if (!existsSync(HARNESS_ROOT_DIR)) {
@@ -159,6 +206,19 @@ export default function (pi: ExtensionAPI) {
 			cache_write: m.usage.cacheWrite ?? 0,
 			cost: m.usage.cost?.total ?? 0,
 		});
+
+		// Feed TUI quota-signal extractor with the assistant message text.
+		// Best-effort — never throws. Coalesces provider quota notifications
+		// (e.g. "OpenAI: context length exceeded, reset in 3 hr 27 min") into
+		// the per-provider mirror via `tuiMonitor`.
+		try {
+			const text = readMessageText(event.message);
+			if (text) {
+				tuiMonitor.processMessage(text);
+			}
+		} catch {
+			// best-effort
+		}
 	});
 
 	// ─── Smart quota fetch for MiniMax status ────────────────────────
@@ -168,7 +228,84 @@ export default function (pi: ExtensionAPI) {
 	const quotaScraper = process.env.QUOTA_COOKIE_FILE
 		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
 		: new MiniMaxQuotaScraper();
-	const cookieQuotaAutoFetchAvailable = quotaScraper.hasCookieFile();
+
+	// ─── Cookie sanitizer integration ────────────────────────────────────
+	// The drop folder is the user-facing, forgiving input. The canonical
+	// cache (`~/.config/minimax-cookies.txt`) is the runtime-owned,
+	// normalized output that `MiniMaxQuotaScraper` reads. Either being
+	// present enables scraping.
+	const cookieDropDir = COOKIE_DROP_DIR;
+	const cookieCachePath = join(homedir(), ".config", "minimax-cookies.txt");
+
+	const hasCookieSource = (): boolean => {
+		try {
+			if (existsSync(cookieCachePath)) return true;
+		} catch {
+			// ignore
+		}
+		try {
+			return sanitizerHasAnyCookieSource(cookieDropDir);
+		} catch {
+			return false;
+		}
+	};
+
+	const cookieQuotaAutoFetchAvailable = hasCookieSource();
+
+	// ─── TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) ──
+	// The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
+	// TUI / message stream and emits signals we write to per-provider mirror
+	// entries. For providers that don't expose a continuous usage API this is
+	// the only path to surface data in the footer.
+	const quotaManager = new QuotaManager();
+	const tuiMonitor = new TUIUsageMonitor({ quotaManager });
+
+	tuiMonitor.on("signal", (signal: TUIUsageSignal) => {
+		try {
+			writeMirrorRecord(signal.provider as ProviderId, {
+				synced_at: signal.timestamp,
+				source: "tui-signal",
+				exhausted: signal.exhausted,
+				limitType: signal.limitType,
+				remainingPct: signal.remainingPct,
+				resets_at: signal.resetsAt,
+			});
+		} catch (e) {
+			console.error(
+				"[pi-harness] tui-signal write failed:",
+				e instanceof Error ? e.message : String(e),
+			);
+		}
+	});
+
+	// Live watcher — sanitises on every change in the drop folder.
+	const cookieWatcher = new CookieWatcher({
+		dropDir: cookieDropDir,
+		syncOptions: { cachePath: cookieCachePath },
+		onEvent: (event) => {
+			if (event.kind === "sync-error" || event.kind === "watcher-error") {
+				console.error(
+					"[pi-harness] cookie-sanitizer:",
+					"message" in event ? event.message : "",
+				);
+			}
+			// A successful sync means the canonical cache is fresh; the
+			// next autoFetchQuota() should pick it up immediately. Reset
+			// the rate-limit so we don't wait 15 min for the first scrape.
+			if (event.kind === "sync-ok") {
+				lastQuotaAutoFetchAt = 0;
+			}
+		},
+	});
+	try {
+		cookieWatcher.start();
+	} catch (e) {
+		console.error(
+			"[pi-harness] cookie-sanitizer watcher failed to start:",
+			e instanceof Error ? e.message : String(e),
+		);
+	}
+
 	let footerStatusCtx: {
 		ui: { setStatus: (key: string, value: string) => void };
 	} | null = null;
@@ -182,10 +319,19 @@ export default function (pi: ExtensionAPI) {
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
 
-	function writeMirrorRecord(record: MirrorRecord): void {
-		mirrorStore.write(record);
+	function writeMirrorRecord(
+		provider: ProviderId,
+		record: Omit<import("./mirror.js").ProviderMirrorRecord, "provider">,
+	): void {
+		mirrorStore.writeProvider(provider, { ...record, provider });
 		if (footerStatusCtx) {
-			refreshFooterStatus(footerStatusCtx, tracker, mirrorStore);
+			refreshFooterStatus(
+				footerStatusCtx,
+				tracker,
+				mirrorStore,
+				hasCookieSource,
+				() => lastActiveProvider,
+			);
 		}
 	}
 
@@ -201,7 +347,27 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function isMiniMaxModel(modelId: string | null | undefined): boolean {
-		return /minimax/i.test(modelId ?? "");
+		return providerFromModelId(modelId) === "minimax";
+	}
+
+	/** Active provider for the current/last-seen model. Updated by event handlers. */
+	let lastActiveProvider: ProviderId | null = null;
+
+	/** Set the active provider; triggers a footer refresh. */
+	function noteActiveProvider(modelId: string | null | undefined): void {
+		const p = providerFromModelId(modelId);
+		if (p !== lastActiveProvider) {
+			lastActiveProvider = p;
+			if (footerStatusCtx) {
+				refreshFooterStatus(
+					footerStatusCtx,
+					tracker,
+					mirrorStore,
+					hasCookieSource,
+					() => lastActiveProvider,
+				);
+			}
+		}
 	}
 
 	function getMiniMaxUsageSince(sinceMs: number): {
@@ -280,7 +446,15 @@ export default function (pi: ExtensionAPI) {
 		const profileRecord =
 			await autoFetchQuotaFromBrowserProfile(suppressErrors);
 		if (profileRecord) {
-			writeMirrorRecord(profileRecord);
+			writeMirrorRecord("minimax", {
+				synced_at: profileRecord.synced_at,
+				source: "scrape",
+				model: profileRecord.model,
+				h5_used_pct: profileRecord.h5_used_pct,
+				h5_resets_at: profileRecord.h5_resets_at,
+				weekly_used_pct: profileRecord.weekly_used_pct,
+				weekly_resets_at: profileRecord.weekly_resets_at,
+			});
 			return true;
 		}
 
@@ -290,9 +464,9 @@ export default function (pi: ExtensionAPI) {
 
 		try {
 			const data = await quotaScraper.scrape();
-			writeMirrorRecord({
+			writeMirrorRecord("minimax", {
 				synced_at: data.scrapedAt,
-				provider: "minimax",
+				source: "scrape",
 				h5_used_pct: data.h5UsedPct,
 				h5_resets_at: data.h5ResetsAt,
 				weekly_used_pct: data.weeklyUsedPct,
@@ -373,8 +547,8 @@ export default function (pi: ExtensionAPI) {
 				(await hasBrowserProfileAutoFetchSource());
 			if (!autoFetchAvailable) {
 				ctx.ui.notify(
-					"Quota auto-fetch is unavailable. Set `QUOTA_COOKIE_FILE` or run `bun packages/auth/src/run-minimax-auth.ts auth` first.",
-					"info",
+					"MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.",
+					"warning",
 				);
 				return;
 			}
@@ -452,7 +626,13 @@ export default function (pi: ExtensionAPI) {
 					"info",
 				);
 				footerStatusCtx = ctx;
-				refreshFooterStatus(ctx, tracker, mirrorStore);
+				refreshFooterStatus(
+					ctx,
+					tracker,
+					mirrorStore,
+					hasCookieSource,
+					() => lastActiveProvider,
+				);
 			} catch (e) {
 				ctx.ui.notify(`Failed to clear mirror: ${e}`, "error");
 			}
@@ -707,12 +887,25 @@ export default function (pi: ExtensionAPI) {
 	// ─── Footer status (persistent badge) ────────────────────────────────
 	pi.on("session_start", (_event, ctx) => {
 		footerStatusCtx = ctx;
-		refreshFooterStatus(ctx, tracker, mirrorStore);
+		refreshFooterStatus(
+			ctx,
+			tracker,
+			mirrorStore,
+			hasCookieSource,
+			() => lastActiveProvider,
+		);
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
+		noteActiveProvider(ctx.model?.id ?? null);
 		footerStatusCtx = ctx;
-		refreshFooterStatus(ctx, tracker, mirrorStore);
+		refreshFooterStatus(
+			ctx,
+			tracker,
+			mirrorStore,
+			hasCookieSource,
+			() => lastActiveProvider,
+		);
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
 	});
@@ -737,7 +930,13 @@ export default function (pi: ExtensionAPI) {
 		lastProactiveCompactAt = Date.now();
 		consecutiveCompactFailures = 0;
 		proactiveCompactCircuitReported = false;
-		refreshFooterStatus(ctx, tracker, mirrorStore);
+		refreshFooterStatus(
+			ctx,
+			tracker,
+			mirrorStore,
+			hasCookieSource,
+			() => lastActiveProvider,
+		);
 
 		const forceOutputLimitResume = pendingOutputLimitResumeAfterCompact;
 		pendingOutputLimitResumeAfterCompact = false;
@@ -832,13 +1031,22 @@ function refreshFooterStatus(
 	ctx: { ui: { setStatus: (key: string, value: string) => void } },
 	tracker: UsageTracker,
 	mirrorStore: MirrorStore,
+	hasCookieSource: () => boolean,
+	getActiveProvider: () => ProviderId | null = () => null,
 ) {
 	const nowMs = Date.now();
 	const local = aggregateWindows(tracker.all());
-	const mirror = mirrorStore.read();
+	const provider = getActiveProvider();
+	const mirror = provider ? mirrorStore.readProvider(provider) : null;
 	const freshness = mirrorStore.freshness(mirror, nowMs);
 	ctx.ui.setStatus(
 		"harness-runtime",
-		buildFooterStatusValue(local, mirror, freshness),
+		buildFooterStatusValue(
+			local,
+			mirror,
+			freshness,
+			hasCookieSource(),
+			provider,
+		),
 	);
 }
