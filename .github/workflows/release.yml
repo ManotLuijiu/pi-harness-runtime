@@ -140,15 +140,24 @@ jobs:
           cd - > /dev/null
 
           # Publish all workspace packages from clean staged copies.
+          failed=0
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Publishing ${pkg}..."
               pkg_stage=$(stage_dir "$pkg")
               cd "$pkg_stage"
-              publish_with_retry || true
+              if ! publish_with_retry; then
+                echo "ERROR: Failed to publish ${pkg}"
+                failed=$((failed + 1))
+              fi
               cd - > /dev/null
             fi
           done
+
+          if [ $failed -gt 0 ]; then
+            echo "ERROR: $failed workspace package(s) failed to publish."
+            exit 1
+          fi
 
       - name: Publish to npm (dry-run)
         if: >-
@@ -184,16 +193,26 @@ jobs:
           npm publish $(publish_args)
           cd - > /dev/null
 
+          failed=0
           for pkg in packages/*/; do
             if [ -f "${pkg}package.json" ]; then
               echo "Would publish ${pkg} with args:"
               pkg_stage=$(stage_dir "$pkg")
               cd "$pkg_stage"
               echo "$(publish_args)"
-              npm publish $(publish_args) || true
+              if ! npm publish $(publish_args); then
+                echo "ERROR: Dry-run publish failed for ${pkg}"
+                failed=$((failed + 1))
+              fi
               cd - > /dev/null
             fi
           done
+
+          if [ $failed -gt 0 ]; then
+            echo "ERROR: $failed workspace package(s) would fail to publish."
+            echo "Set up Trusted Publisher at npmjs.com -> package -> Settings."
+            exit 1
+          fi
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
