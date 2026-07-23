@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.10](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.10) (2026-07-23)
+
+### Bug Fixes
+
+* **tests:** update footer-status expectations for provider label prefix
+
 ### [0.9.9](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.9) (2026-07-23)
 
 ### Bug Fixes
