@@ -34,9 +34,10 @@ test("buildFooterStatusValue prefers quota mirror data for footer badge", () => 
 			weekly_used_pct: 74,
 		},
 		"fresh",
+		false,
 	);
 
-	assert.equal(status, "5h: 100% left · week: 26% left");
+	assert.equal(status, "MiniMax: 5h: 100% left · week: 26% left");
 });
 
 test("buildFooterStatusValue falls back to local today summary when mirror is missing", () => {
@@ -44,6 +45,7 @@ test("buildFooterStatusValue falls back to local today summary when mirror is mi
 		{ today: { tokens: 12500, cost: 0.1234 } },
 		null,
 		"missing",
+		false,
 	);
 
 	assert.equal(status, "today: 12.5k tok · $0.123");
@@ -59,9 +61,10 @@ test("buildFooterStatusValue marks stale quota mirror data", () => {
 			weekly_used_pct: 80,
 		},
 		"stale",
+		false,
 	);
 
-	assert.equal(status, "5h: 80% left · week: 20% left · stale");
+	assert.equal(status, "MiniMax: 5h: 80% left · week: 20% left · stale");
 });
 
 test("buildFooterStatusValue ignores expired mirror data and falls back to local today summary", () => {
@@ -74,9 +77,14 @@ test("buildFooterStatusValue ignores expired mirror data and falls back to local
 			weekly_used_pct: 74,
 		},
 		"expired",
+		false,
 	);
 
-	assert.equal(status, "today: 12.5k tok · $0.123");
+	// When mirror is expired but provider is known: show hint instead of stale data.
+	assert.equal(
+		status,
+		"MiniMax: 5h: -- (drop minimax cookies into ~/.pi-harness-runtime/cookies/)",
+	);
 });
 
 test("parseQuotaUsageStatusLine maps footer quota display back to h5_used_pct and weekly_used_pct", () => {
