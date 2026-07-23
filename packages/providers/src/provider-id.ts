@@ -35,6 +35,18 @@ export type KnownProvider =
 	| "anthropic"
 	| "openrouter";
 
+/** True if the given string is a known, canonical provider id. */
+export function isKnownAiProvider(value: string): value is KnownProvider {
+	return (
+		value === "minimax" ||
+		value === "openai" ||
+		value === "openai-codex" ||
+		value === "glm" ||
+		value === "anthropic" ||
+		value === "openrouter"
+	);
+}
+
 export type ProviderId = KnownProvider | (string & {});
 
 const MODEL_PREFIXES: Array<{ prefix: string; provider: ProviderId }> = [

@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/provider-selector",
-  "version": "0.9.11",
+  "version": "0.9.13",
   "description": "Multi-Provider Selector — route requests by cost, quality, and latency (RFC-0012)",
   "type": "module",
   "main": "./dist/index.js",

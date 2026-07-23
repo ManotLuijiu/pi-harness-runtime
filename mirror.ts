@@ -32,6 +32,27 @@
 
 import { getMirrorPath, readJson, writeJson } from "./cli.ts";
 
+/**
+ * Canonical lowercase provider ids — mirrors the KNOWN_AI_PROVIDERS from
+ * packages/types/src/ai-providers.ts. Duplicated here to avoid import path
+ * resolution issues in the root workspace.
+ */
+const KNOWN_PROVIDER_IDS = [
+	"minimax",
+	"openai",
+	"anthropic",
+	"glm",
+	"openrouter",
+	"openai-codex",
+	"deepseek",
+	"gemini",
+	"kimi",
+] as const;
+
+function isKnownProvider(id: string): boolean {
+	return (KNOWN_PROVIDER_IDS as readonly string[]).includes(id);
+}
+
 /** Where a piece of data came from. */
 export type MirrorSource = "scrape" | "tui-signal" | "manual";
 
@@ -49,10 +70,14 @@ export interface ProviderMirrorRecord {
 	h5_used_pct?: number;
 	/** When the 5h window resets — human-readable or ISO. */
 	h5_resets_at?: string;
+	/** Epoch ms when the 5h window resets — precise UTC timestamp. */
+	h5_resets_at_epoch?: number;
 	/** Weekly used percent. */
 	weekly_used_pct?: number;
 	/** When the weekly window resets. */
 	weekly_resets_at?: string;
+	/** Epoch ms when the weekly window resets — precise UTC timestamp. */
+	weekly_resets_at_epoch?: number;
 	/** Set when a limit was hit and we have the exhaustion signal. */
 	exhausted?: boolean;
 	/** Limit type from TUI signal: tokens, context_window, rate_limit, unknown. */
@@ -81,15 +106,7 @@ export interface MirrorRecord {
 	weekly_resets_at?: string;
 }
 
-/** Known provider ids used as keys in the per-provider map. */
-export type KnownProviderId =
-	| "minimax"
-	| "openai"
-	| "openai-codex"
-	| "glm"
-	| "anthropic"
-	| "openrouter"
-	| (string & {}); // allow extension
+
 
 const STALE_WARN_MS = 30 * 60 * 1000; // 30 min → orange
 const STALE_ERROR_MS = 2 * 60 * 60 * 1000; // 2 h   → red
@@ -112,11 +129,12 @@ function isLegacyShape(raw: unknown): raw is MirrorRecord & {
 }
 
 /** Convert a legacy single-row record to per-provider shape. */
-function upgradeLegacyRecord(legacy: MirrorRecord): PerProviderMirror {
+function upgradeLegacyRecord(legacy: MirrorRecord): PerProviderMirror | null {
 	const provider = legacy.provider ?? "minimax";
+	const known = isKnownProvider(provider) ? provider : "minimax";
 	const rec: ProviderMirrorRecord = {
 		synced_at: legacy.synced_at ?? new Date().toISOString(),
-		provider,
+		provider: known,
 		source: "scrape", // legacy was always scrape
 		model: legacy.model,
 		h5_used_pct: legacy.h5_used_pct,
@@ -124,7 +142,7 @@ function upgradeLegacyRecord(legacy: MirrorRecord): PerProviderMirror {
 		weekly_used_pct: legacy.weekly_used_pct,
 		weekly_resets_at: legacy.weekly_resets_at,
 	};
-	return { [provider]: rec };
+	return { [known]: rec };
 }
 
 export class MirrorStore {
@@ -152,13 +170,17 @@ export class MirrorStore {
 
 		if (isLegacyShape(raw)) {
 			const upgraded = upgradeLegacyRecord(raw as MirrorRecord);
-			// Persist the upgrade so subsequent reads are fast.
-			try {
-				writeJson(this.path, upgraded);
-			} catch {
-				// best-effort
+			if (upgraded) {
+				// Persist the upgrade so subsequent reads are fast.
+				try {
+					writeJson(this.path, upgraded);
+				} catch {
+					// best-effort
+				}
+				return upgraded;
 			}
-			return upgraded;
+			// Unknown legacy provider — treat as absent.
+			return null;
 		}
 
 		// Already per-provider shape.

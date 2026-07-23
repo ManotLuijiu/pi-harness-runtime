@@ -21,10 +21,14 @@ export interface MiniMaxQuotaData {
 	h5UsedPct: number;
 	/** When the 5h window resets (e.g., "in 4 hr 56 min") */
 	h5ResetsAt?: string;
+	/** Epoch ms when the 5h window resets — precise UTC timestamp. */
+	h5ResetsAtEpoch?: number;
 	/** Weekly usage percentage (0-100) */
 	weeklyUsedPct: number;
 	/** When the weekly window resets */
 	weeklyResetsAt?: string;
+	/** Epoch ms when the weekly window resets — precise UTC timestamp. */
+	weeklyResetsAtEpoch?: number;
 	/** Monthly usage percentage (0-100) */
 	monthlyUsedPct?: number;
 	/** When the monthly window resets */
@@ -301,10 +305,10 @@ export class MiniMaxQuotaScraper {
 		const weeklyUsedPct = parsePctStr(
 			general.current_weekly_used_percent as unknown,
 		);
-		const h5ResetsAt = formatRemainsMs(general.end_time as number | undefined);
-		const weeklyResetsAt = formatRemainsMs(
-			general.weekly_end_time as number | undefined,
-		);
+		const h5ResetsAtEpoch = general.end_time as number | undefined;
+		const h5ResetsAt = formatRemainsMs(h5ResetsAtEpoch);
+		const weeklyResetsAtEpoch = general.weekly_end_time as number | undefined;
+		const weeklyResetsAt = formatRemainsMs(weeklyResetsAtEpoch);
 
 		// Best-effort: token usage summary
 		let tokenUsage: MiniMaxQuotaData["tokenUsage"];
@@ -357,8 +361,10 @@ export class MiniMaxQuotaScraper {
 			provider: "minimax",
 			h5UsedPct: h5UsedPct ?? 0,
 			h5ResetsAt,
+			h5ResetsAtEpoch,
 			weeklyUsedPct: weeklyUsedPct ?? 0,
 			weeklyResetsAt,
+			weeklyResetsAtEpoch,
 			creditBalance,
 			tokenUsage,
 			apiEndpoints: [
