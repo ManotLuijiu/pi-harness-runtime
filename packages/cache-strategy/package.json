@@ -1,6 +1,6 @@
 {
   "name": "@pi/cache-strategy",
-  "version": "0.9.8",
+  "version": "0.9.11",
   "type": "module",
   "description": "Smart caching with TTL and invalidation strategies (RFC-0022)",
   "main": "dist/index.js",
