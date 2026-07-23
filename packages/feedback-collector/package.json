@@ -1,6 +1,6 @@
 {
   "name": "@pi/feedback-collector",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "type": "module",
   "description": "Collect and aggregate human/automated feedback (RFC-0021)",
   "main": "dist/index.js",

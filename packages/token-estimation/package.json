@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/token-estimation",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "description": "pi-harness-runtime — token-estimation",
   "type": "module",
   "main": "./dist/index.js",
