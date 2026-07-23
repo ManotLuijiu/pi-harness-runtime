@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/memory-engine",
-  "version": "0.9.11",
+  "version": "0.9.13",
   "description": "Memory engine with OKF integration for durable knowledge management (RFC-0060)",
   "type": "module",
   "main": "./dist/index.js",

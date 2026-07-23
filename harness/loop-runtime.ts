@@ -26,6 +26,7 @@ import type {
 	CompactResult,
 	RuntimeEvent,
 } from "../packages/types/src/runtime-types.js";
+import { MirrorStore } from "../mirror.js";
 import {
 	JobStateMachine,
 	type CheckpointManager,
@@ -80,6 +81,14 @@ export interface LoopCallbacks {
 		event: "paused" | "resumed" | "exhausted",
 		provider?: string,
 	) => Promise<void>;
+	/** Get current checkpoint (used by auto-resume to read resumeAt) */
+	onGetCheckpoint?: () => Promise<RuntimeCheckpoint | null>;
+	/** Check mirror for a provider (used by auto-resume to detect early reset) */
+	onCheckMirror?: (
+		provider: string,
+	) => Promise<{ h5_used_pct?: number } | null>;
+	/** Generic notify (used by auto-resume to tell user wait time) */
+	onNotify?: (msg: string, type?: string) => Promise<void>;
 	/** Save checkpoint (call persistence layer) */
 	onCheckpoint?: (checkpoint: RuntimeCheckpoint) => Promise<void>;
 	/** Notify each loop iteration */
@@ -106,6 +115,7 @@ export class LoopRuntime {
 	private readonly config: Required<LoopConfig>;
 	private readonly state: LoopState;
 	private readonly jobState: JobStateMachine;
+	private readonly mirrorStore: MirrorStore;
 	private readonly callbacks: LoopCallbacks;
 	private running = false;
 	private paused = false;
@@ -172,6 +182,7 @@ export class LoopRuntime {
 				},
 			},
 		});
+		this.mirrorStore = new MirrorStore();
 
 		// Initialize session memory
 		this.sessionMemory = createSessionMemoryManager(config.jobId);
@@ -214,6 +225,35 @@ export class LoopRuntime {
 
 	async run(): Promise<LoopResult> {
 		this.running = true;
+
+		// ─── Auto-resume from quota pause ──────────────────────────────────
+		const checkpoint = await this.callbacks.onGetCheckpoint?.();
+		if (checkpoint?.status === "paused_quota" && checkpoint.resumeAt) {
+			const resumeMs = new Date(checkpoint.resumeAt).getTime();
+			const now = Date.now();
+			const waitMs = resumeMs - now;
+			if (waitMs > 0) {
+				const waitMin = Math.ceil(waitMs / 60_000);
+				const notify = this.callbacks.onNotify ?? (() => {});
+				await notify(
+					`Quota reset in ${waitMin} min — auto-resuming at ${checkpoint.resumeAt}`,
+					"info",
+				);
+				// Wait in 5-minute chunks so we don't block forever if quota resets early
+				while (this.running && Date.now() < resumeMs) {
+					await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
+					// Re-check mirror — quota may have reset early
+					const fresh = await this.callbacks.onCheckMirror?.("minimax");
+					if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
+						break; // quota reset early, resume now
+					}
+				}
+				// Transition back to running
+				await this.jobState.transition("running");
+				this.callbacks.onQuotaEvent?.("resumed");
+			}
+		}
+
 		this.state.status = "running";
 
 		try {
@@ -652,6 +692,23 @@ export class LoopRuntime {
 		this.paused = true;
 		this.state.status = "paused_quota";
 		this.jobState.transition("paused_quota");
+
+		// Set resumeAt from the mirror's known reset epoch so the auto-resume
+		// timer knows when to wake this job up.
+		const mirror = this.mirrorStore.readProvider("minimax");
+		const epoch = mirror?.h5_resets_at_epoch;
+		if (epoch) {
+			const resumeAt = new Date(epoch).toISOString();
+			await this.jobState.setResumeTime(resumeAt);
+			console.log(
+				`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
+			);
+		} else {
+			console.log(
+				"[LoopRuntime] Paused for quota but no reset time known yet.",
+			);
+		}
+
 		await this.callbacks.onQuotaEvent?.("paused");
 		await this.saveCheckpoint();
 	}
