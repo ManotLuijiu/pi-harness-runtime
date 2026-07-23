@@ -139,6 +139,12 @@ jobs:
           # have no npm Trusted Publishing configured and are private to
           # this monorepo.
 
+          root_stage=$(stage_dir ".")
+          cd "$root_stage"
+          echo "Root publish args: $(publish_args)"
+          publish_with_retry
+          cd - > /dev/null
+
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
