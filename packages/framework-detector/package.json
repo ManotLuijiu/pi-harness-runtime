@@ -1,6 +1,6 @@
 {
   "name": "@pi/framework-detector",
-  "version": "0.9.8",
+  "version": "0.9.11",
   "description": "Framework detection system for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/quota-manager",
-  "version": "0.9.8",
+  "version": "0.9.11",
   "description": "pi-harness-runtime — quota-manager",
   "type": "module",
   "main": "./dist/index.js",

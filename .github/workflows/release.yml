@@ -133,22 +133,11 @@ jobs:
             return 1
           }
 
-          # Publish root package from a clean staged copy.
-          root_stage=$(stage_dir ".")
-          cd "$root_stage"
-          publish_with_retry
-          cd - > /dev/null
-
-          # Publish all workspace packages from clean staged copies.
-          for pkg in packages/*/; do
-            if [ -f "${pkg}package.json" ]; then
-              echo "Publishing ${pkg}..."
-              pkg_stage=$(stage_dir "$pkg")
-              cd "$pkg_stage"
-              publish_with_retry || true
-              cd - > /dev/null
-            fi
-          done
+          # Only the root pi-harness-runtime package is published.
+          # Workspace packages (@pi-harness/*) are bundled into the root package
+          # via the files whitelist and are NOT published individually — they
+          # have no npm Trusted Publishing configured and are private to
+          # this monorepo.
 
       - name: Publish to npm (dry-run)
         if: >-
@@ -178,22 +167,13 @@ jobs:
             echo "$staged_dir"
           }
 
+          # Dry-run: only root package.
           root_stage=$(stage_dir ".")
           cd "$root_stage"
           echo "Root publish args: $(publish_args)"
           npm publish $(publish_args)
           cd - > /dev/null
-
-          for pkg in packages/*/; do
-            if [ -f "${pkg}package.json" ]; then
-              echo "Would publish ${pkg} with args:"
-              pkg_stage=$(stage_dir "$pkg")
-              cd "$pkg_stage"
-              echo "$(publish_args)"
-              npm publish $(publish_args) || true
-              cd - > /dev/null
-            fi
-          done
+          echo "Skipping workspace packages: bundled into root package."
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
