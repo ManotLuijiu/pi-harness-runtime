@@ -62,6 +62,10 @@ import {
 	type SharedBlackboard,
 	createBlackboard,
 } from "./harness/blackboard.ts";
+import {
+	scheduleAutoResume,
+	cancelAutoResume,
+} from "./harness/index.js";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -469,8 +473,10 @@ export default function (pi: ExtensionAPI) {
 				source: "scrape",
 				h5_used_pct: data.h5UsedPct,
 				h5_resets_at: data.h5ResetsAt,
+				h5_resets_at_epoch: data.h5ResetsAtEpoch,
 				weekly_used_pct: data.weeklyUsedPct,
 				weekly_resets_at: data.weeklyResetsAt,
+				weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
 			});
 			return true;
 		} catch (error) {
@@ -794,25 +800,51 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const checkpoint = currentSession.machine.getCheckpoint();
-			if (!checkpoint) {
-				ctx.ui.notify("Failed to get checkpoint.", "error");
-				return;
-			}
+		const checkpoint = currentSession.machine.getCheckpoint();
+		if (!checkpoint) {
+			ctx.ui.notify("Failed to get checkpoint.", "error");
+			return;
+		}
 
-			const result = await currentSession.machine.transition("paused_quota");
-			if (!result.success) {
-				ctx.ui.notify(`Failed to pause: ${result.error}`, "error");
-				return;
-			}
+		// Read 5h reset epoch from mirror so we can schedule auto-resume
+		const mirror = mirrorStore.readProvider("minimax");
+		const resumeAtIso = mirror?.h5_resets_at_epoch
+			? new Date(mirror.h5_resets_at_epoch).toISOString()
+			: undefined;
 
+		const result = await currentSession.machine.transition("paused_quota");
+		if (!result.success) {
+			ctx.ui.notify(`Failed to pause: ${result.error}`, "error");
+			return;
+		}
+
+		// Persist resumeAt so auto-resume survives worker restart
+		if (resumeAtIso) {
+			await currentSession.machine.setResumeTime(resumeAtIso);
+		}
+
+		// Schedule auto-resume for 5h quota
+		if (resumeAtIso) {
+			const scheduled = scheduleAutoResume(
+				"minimax",
+				currentSession.machine,
+				mirrorStore,
+			);
+			ctx.ui.notify(
+				`Job paused.\n` +
+					`Auto-resume at ${scheduled ?? resumeAtIso} (5h quota exhausted).\n` +
+					`Run /harness cancel to abort.`,
+				"info",
+			);
+		} else {
 			ctx.ui.notify(
 				`Job ${currentSession.jobId} paused.\n` +
 					`Current status: paused_quota\n` +
 					`Run /harness resume to continue.`,
 				"info",
 			);
-		},
+		}
+		}
 	});
 
 	// ─── /harness resume — Resume the harness job ───────────────────────
@@ -838,6 +870,9 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Failed to resume: ${result.error}`, "error");
 				return;
 			}
+
+			// Cancel any scheduled auto-resume for this job
+			cancelAutoResume(currentSession.jobId);
 
 			ctx.ui.notify(
 				`Job ${currentSession.jobId} resumed.\n` +
@@ -873,6 +908,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			cancelAutoResume(currentSession.jobId);
 			const sessionJobId = currentSession.jobId;
 			currentSession = null;
 

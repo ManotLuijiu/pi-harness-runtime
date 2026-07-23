@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/token-optimizer",
-  "version": "0.9.11",
+  "version": "0.9.13",
   "description": "Token Budget Optimizer — maximize prompt value within token limits (RFC-0011)",
   "type": "module",
   "main": "./dist/index.js",
