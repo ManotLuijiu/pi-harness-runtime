@@ -1,0 +1,35 @@
+{
+  "name": "@pi/privilege-broker",
+  "version": "0.9.15",
+  "description": "Privilege Broker — capability registry and command executor for autonomous runtime (RFC-0101 §7)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "privilege",
+    "broker",
+    "capability",
+    "security",
+    "rfc-0101"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^7.0.2"
+  }
+}

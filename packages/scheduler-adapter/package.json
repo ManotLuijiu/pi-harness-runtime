@@ -1,0 +1,32 @@
+{
+  "name": "@pi/scheduler-adapter",
+  "version": "0.9.15",
+  "description": "Scheduler Adapter — cron, systemd, launchd, internal adapters for autonomous runtime (RFC-0101 §6)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "scheduler",
+    "cron",
+    "systemd",
+    "launchd",
+    "rfc-0101"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^7.0.2"
+  }
+}
