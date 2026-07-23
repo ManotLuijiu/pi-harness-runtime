@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.8](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.8) (2026-07-23)
+
+
+### Features
+
+* **cookie-sanitizer:** discoverable drop folder + per-provider mirror ([772eda5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/772eda5c5c698572a1cef2dc93df0278e9a380ee))
+
+
+### Bug Fixes
+
+* harden auto-resume after compaction ([13378e8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/13378e852c984ead0e66f0adeffc073ff58af50c))
+* resume after output-limit error stops ([8c75a24](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8c75a2432082c4f9ba6296ffe2d04b636863bf2f))
+
+### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
+
 ### [0.9.7](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.7) (2026-07-16)
 
 

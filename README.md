@@ -191,9 +191,26 @@ bun test   # 131+ tests passing
 
 ## Automatic Quota Fetching
 
-Quota data is automatically fetched from MiniMax console every 5 minutes:
+Quota data is automatically surfaced per-provider:
 
-1. **Setup cookies** (one-time):
+| Provider | Source | Cadence |
+|---|---|---|
+| MiniMax | Playwright + cookies (continuous scrape) | every ~15 min |
+| OpenAI / OpenAI Codex | TUI message capture (signal on limit) | on first limit hit |
+| GLM (Z.ai / Zhipu) | TUI message capture (signal on limit) | on first limit hit |
+| Anthropic | TUI message capture (signal on limit) | on first limit hit |
+| OpenRouter | TUI message capture (signal on limit) | on first limit hit |
+| Other / unknown | (no data — footer shows hint) | — |
+
+The footer line carries the provider label, so you always know which LLM the data is from:
+
+```
+MiniMax:  5h: 92% left · week: 80% left           # continuous (scrape)
+OpenAI:   5h: -- · week: -- (no signal yet)        # pending first limit hit
+GLM:      limit hit (tokens), reset 2026-07-23T17:28:00Z   # TUI signal observed
+```
+
+1. **MiniMax setup** (one-time):
 
    ```bash
    # Install EditThisCookie Chrome extension
@@ -202,13 +219,33 @@ Quota data is automatically fetched from MiniMax console every 5 minutes:
    # Save to ~/.config/minimax-cookies.txt
    ```
 
-2. **Environment** (optional):
+   **Recommended:** drop the file into the dedicated cookie folder. The runtime
+   normalizes any format (Netscape or EditThisCookie JSON, any filename) on its own:
 
    ```bash
-   export QUOTA_COOKIE_FILE=~/.config/minimax-cookies.txt
+   # Save cookies as any name, any format into:
+   mkdir -p ~/.pi-harness-runtime/cookies
+   cp ~/Downloads/platform.minimax.io_cookies.txt ~/.pi-harness-runtime/cookies/
+   # …or use the EditThisCookie extension export (JSON) — same folder works.
    ```
 
-3. **Done!** Quota auto-refreshes every 5 minutes
+   The `cookie-sanitizer` package (`@pi-harness/cookie-sanitizer`) runs chokidar v5 on this
+   folder, normalizes everything to standard Netscape, and writes the canonical cache at
+   `~/.config/minimax-cookies.txt`. Live update latency: <1 second after drop.
+
+2. **Other providers**: no setup needed. The runtime reads messages from the active
+   session and captures quota-exhaustion signals from the TUI. Once any limit is hit
+   (e.g. `OpenAI: context length exceeded, reset in 3 hr 27 min`), the footer updates
+   immediately and the data persists across `~/.pi/usage-status/mirror.json`.
+
+3. **Environment** (optional override):
+
+   ```bash
+   export QUOTA_COOKIE_FILE=/path/to/your/cookies.txt
+   # When set, the sanitizer is bypassed and the scraper reads this file directly.
+   ```
+
+4. **Done!** Quota auto-refreshes every 5 minutes. Cookie file changes sync within ~1 second.
 
 ## Roadmap
 

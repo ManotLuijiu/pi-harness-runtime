@@ -12,6 +12,7 @@ sample_github_workflows/
 
 # Open Knowledge Format (local knowledge base)
 OKF/
+wiki/
 .npmrc
 
 # Skills sync staging — private generated content (manifests/ IS committed)
