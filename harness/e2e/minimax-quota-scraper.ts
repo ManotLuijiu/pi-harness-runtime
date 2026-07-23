@@ -10,7 +10,7 @@
  * - Capture API responses for usage data
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { parseMiniMaxQuotaText } from "./minimax-quota-parser.js";
@@ -385,10 +385,19 @@ export class MiniMaxQuotaScraper {
 			throw new Error(msg);
 		}
 
+		// Pre-load the canonical cache so that the runtime-owned file
+		// (written by packages/cookie-sanitizer) takes precedence over
+		// whatever `this.config.cookieFile` points at. Both eventually
+		// resolve to the same standard Netscape format.
 		const cookies = loadNetscapeCookies(this.config.cookieFile!);
 
 		if (cookies.length === 0) {
-			const msg = `No cookies found in ${this.config.cookieFile}\nExport cookies from browser in Netscape format.`;
+			const dropHint = join(homedir(), ".pi-harness-runtime", "cookies");
+			const msg =
+				`No cookies found.\n` +
+				`Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:\n` +
+				`  ${dropHint}\n` +
+				`…or run: bun packages/auth/src/run-minimax-auth.ts auth`;
 			if (!this.config.quiet) console.error("[MiniMaxQuotaScraper] " + msg);
 			throw new Error(msg);
 		}
@@ -474,10 +483,43 @@ export class MiniMaxQuotaScraper {
 	}
 
 	/**
-	 * Check if cookie file exists
+	 * Check if any cookie source exists.
+	 *
+	 * "Source" can be either:
+	 *   - the canonical cache (this.config.cookieFile) — runtime-owned,
+	 *     populated by packages/cookie-sanitizer
+	 *   - the user-facing drop folder — ~/.pi-harness-runtime/cookies/
+	 *     — populated by humans (any name, any format)
+	 *
+	 * Either is enough to attempt the scrape.
 	 */
 	hasCookieFile(): boolean {
-		return existsSync(this.config.cookieFile!);
+		// Canonical cache present?
+		if (existsSync(this.config.cookieFile!)) return true;
+
+		// Drop folder has anything readable? (Sync would normalize it on the next trigger.)
+		try {
+			const dropDir = join(homedir(), ".pi-harness-runtime", "cookies");
+			if (existsSync(dropDir)) {
+				const entries = readdirSync(dropDir);
+				if (entries.length > 0) return true;
+				// One-level walk into subfolders.
+				for (const name of entries) {
+					try {
+						if (statSync(join(dropDir, name)).isDirectory()) {
+							const sub = readdirSync(join(dropDir, name));
+							if (sub.length > 0) return true;
+						}
+					} catch {
+						// ignore unreadable sub-entry
+					}
+				}
+			}
+		} catch {
+			// best-effort; treat as no
+		}
+
+		return false;
 	}
 
 	/**

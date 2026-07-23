@@ -1,0 +1,27 @@
+{
+  "name": "@pi-harness/cookie-sanitizer",
+  "version": "0.9.8",
+  "description": "pi-harness-runtime — cookie sanitizer (provider-quota cookie file normaliser)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@types/node": ">=20"
+  }
+}
