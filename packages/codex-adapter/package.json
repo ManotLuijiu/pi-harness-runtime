@@ -16,7 +16,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "openai": "^4.85.0"
+    "openai": "^6.48.0"
   },
   "devDependencies": {
     "bun-types": "^1.0.0"
