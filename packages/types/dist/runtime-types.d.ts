@@ -27,6 +27,10 @@ export interface RuntimeCheckpoint {
     provider?: string;
     resumeAt?: string;
     lastError?: string;
+    /** Provider that caused a quota pause (e.g. "minimax"). */
+    quotaProvider?: string;
+    /** Limit type that triggered the pause ("tokens" | "context_window" | etc.). */
+    quotaLimitType?: string;
     createdAt: string;
     updatedAt: string;
     /** Loop iteration at checkpoint (used by LoopRuntime for resume) */
@@ -409,4 +413,6 @@ export interface CompactOrchestratorCallbacks {
         droppedCount: number;
     }>;
 }
+export { KNOWN_AI_PROVIDERS, PROVIDER_LABELS, SCRAPEABLE_PROVIDERS, TUI_SIGNAL_PROVIDERS, isKnownAiProvider, getProviderLabel, } from "./ai-providers.js";
+export type { KnownAiProvider } from "./ai-providers.js";
 //# sourceMappingURL=runtime-types.d.ts.map
