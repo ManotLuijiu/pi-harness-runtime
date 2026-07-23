@@ -21,17 +21,19 @@ test("read returns null if missing", () => {
 test("write + read round-trip", () => {
 	const path = join(TEST_DIR, "mirror.json");
 	const store = new MirrorStore(path);
+	// write() adds source: 'scrape' when routing through writeProvider.
 	const record = {
 		synced_at: "2026-06-26T15:00:00.000Z",
 		provider: "minimax",
+		source: "scrape",
 		h5_used_pct: 18,
 		h5_resets_at: "2026-06-26T20:00:00.000Z",
 		weekly_used_pct: 72,
 		weekly_resets_at: "2026-06-28T22:00:00.000Z",
 	};
 	store.write(record);
-	const read = store.read();
-	assert.deepEqual(read, record);
+	// write() writes per-provider shape: { minimax: { ...flat record fields... } }
+	assert.deepEqual(store.read(), { minimax: record });
 	assert.ok(existsSync(path));
 });
 
