@@ -31,11 +31,16 @@ function combinedScore(p, criteria, all) {
     const l = latencyScore(p, all);
     const q = qualityScoreFn(p);
     switch (criteria) {
-        case "cost": return c * 0.8 + q * 0.1 + l * 0.1;
-        case "latency": return l * 0.7 + q * 0.2 + c * 0.1;
-        case "quality": return q * 0.9 + l * 0.05 + c * 0.05;
-        case "balanced": return c * 0.33 + l * 0.33 + q * 0.34;
-        default: return q;
+        case "cost":
+            return c * 0.8 + q * 0.1 + l * 0.1;
+        case "latency":
+            return l * 0.7 + q * 0.2 + c * 0.1;
+        case "quality":
+            return q * 0.9 + l * 0.05 + c * 0.05;
+        case "balanced":
+            return c * 0.33 + l * 0.33 + q * 0.34;
+        default:
+            return q;
     }
 }
 /** Select the best provider based on criteria. */

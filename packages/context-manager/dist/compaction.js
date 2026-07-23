@@ -24,7 +24,9 @@ function extractQuestions(messages) {
     for (const msg of messages) {
         for (const line of msg.content.split("\n")) {
             const trimmed = line.trim();
-            if (trimmed.includes("?") || /\bTODO\b/i.test(trimmed) || /\bTBD\b/i.test(trimmed)) {
+            if (trimmed.includes("?") ||
+                /\bTODO\b/i.test(trimmed) ||
+                /\bTBD\b/i.test(trimmed)) {
                 const cleaned = trimmed.replace(/^[*>-]+\s*/, "").trim();
                 if (cleaned.length > 5)
                     questions.push(cleaned);
@@ -54,7 +56,8 @@ export function compactContext(messages, maxTokens, policy = DEFAULT_POLICY) {
     let tokenCount = 0;
     const kept = [];
     for (const msg of prioritized) {
-        if (tokenCount + msg.tokens <= Math.floor(maxTokens * policy.compactThreshold)) {
+        if (tokenCount + msg.tokens <=
+            Math.floor(maxTokens * policy.compactThreshold)) {
             kept.push(msg.content);
             tokenCount += msg.tokens;
         }
