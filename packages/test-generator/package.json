@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/test-generator",
-  "version": "0.9.13",
+  "version": "0.9.15",
   "description": "Auto-Test Generator — generate unit and E2E tests from source code (RFC-0013)",
   "type": "module",
   "main": "./dist/index.js",

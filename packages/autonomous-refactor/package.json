@@ -1,6 +1,6 @@
 {
   "name": "@pi/autonomous-refactor",
-  "version": "0.9.13",
+  "version": "0.9.15",
   "type": "module",
   "description": "Autonomous refactoring engine",
   "main": "dist/index.js",
