@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/worktree",
-  "version": "0.9.11",
+  "version": "0.9.13",
   "description": "pi-harness-runtime — worktree",
   "type": "module",
   "main": "./dist/index.js",

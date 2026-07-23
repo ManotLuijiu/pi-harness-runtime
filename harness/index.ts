@@ -54,6 +54,14 @@ export type { LoopResult, LoopCallbacks } from "./loop-runtime.js";
 export { RepairEngine } from "./repair-engine.js";
 export type { RepairResult } from "./repair-engine.js";
 
+// Auto Quota Resume (5h window auto-resume)
+export {
+	scheduleAutoResume,
+	cancelAutoResume,
+	getScheduledResume,
+} from "./auto-quota-resume.js";
+export type {} from "./auto-quota-resume.js";
+
 // Master Planner
 export { MasterPlanner } from "./master-planner.js";
 export type { PlanResult } from "./master-planner.js";

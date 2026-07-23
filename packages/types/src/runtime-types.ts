@@ -58,6 +58,10 @@ export interface RuntimeCheckpoint {
 	provider?: string;
 	resumeAt?: string;
 	lastError?: string;
+	/** Provider that caused a quota pause (e.g. "minimax"). */
+	quotaProvider?: string;
+	/** Limit type that triggered the pause ("tokens" | "context_window" | etc.). */
+	quotaLimitType?: string;
 	createdAt: string;
 	updatedAt: string;
 	/** Loop iteration at checkpoint (used by LoopRuntime for resume) */
