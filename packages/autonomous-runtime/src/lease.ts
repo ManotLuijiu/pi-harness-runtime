@@ -18,16 +18,18 @@
  * - On startup, recoverOrphanLeases() cleans up any stale leases.
  */
 import {
-	constants,
+	closeSync,
 	existsSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
 	readdirSync,
 	renameSync,
 	unlinkSync,
 	writeFileSync,
+	writeSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import type { TaskLease } from "./types.js";
 import { getLeasesDir } from "./types.js";
 
@@ -108,24 +110,27 @@ export class LeaseManager {
 		};
 
 		const targetPath = this._leasePath(taskId);
-		const tmpPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
 
-		// Write to temp file in the same directory (ensures atomic rename works across filesystems)
-		writeFileSync(tmpPath, JSON.stringify(lease), "utf8");
-
+		// Use open() with O_CREAT | O_EXCL — this is atomic and fails immediately
+		// if another worker has already created the lease file. No tmp file needed.
+		let fd: number;
 		try {
-			// Atomic rename — if another worker already wrote the file, this throws EEXIST
-			renameSync(tmpPath, targetPath);
-			return lease;
+			fd = openSync(targetPath, "wx", 0o644); // mode 0644 = rw-r--r--
 		} catch (err: unknown) {
-			// Clean up the tmp file
-			try { unlinkSync(tmpPath); } catch { /* ignore */ }
-
 			const code = (err as NodeJS.ErrnoException).code;
 			if (code === "EEXIST") {
-				// Another worker won the race
-				return null;
+				return null; // another worker already claimed
 			}
+			throw err;
+		}
+
+		try {
+			writeSync(fd, JSON.stringify(lease) + "\n");
+			closeSync(fd);
+			return lease;
+		} catch (err: unknown) {
+			try { closeSync(fd); } catch { /* ignore */ }
+			try { unlinkSync(targetPath); } catch { /* ignore */ }
 			throw err;
 		}
 	}

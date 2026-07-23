@@ -17,7 +17,7 @@
  * - A worker that dies: its lease expires, the reaper releases it back to queued.
  * - On startup, recoverOrphanLeases() cleans up any stale leases.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, writeSync, } from "node:fs";
 import { join } from "node:path";
 import { getLeasesDir } from "./types.js";
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -77,25 +77,33 @@ export class LeaseManager {
             attempt,
         };
         const targetPath = this._leasePath(taskId);
-        const tmpPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
-        // Write to temp file in the same directory (ensures atomic rename works across filesystems)
-        writeFileSync(tmpPath, JSON.stringify(lease), "utf8");
+        // Use open() with O_CREAT | O_EXCL — this is atomic and fails immediately
+        // if another worker has already created the lease file. No tmp file needed.
+        let fd;
         try {
-            // Atomic rename — if another worker already wrote the file, this throws EEXIST
-            renameSync(tmpPath, targetPath);
+            fd = openSync(targetPath, "wx", 0o644); // mode 0644 = rw-r--r--
+        }
+        catch (err) {
+            const code = err.code;
+            if (code === "EEXIST") {
+                return null; // another worker already claimed
+            }
+            throw err;
+        }
+        try {
+            writeSync(fd, JSON.stringify(lease) + "\n");
+            closeSync(fd);
             return lease;
         }
         catch (err) {
-            // Clean up the tmp file
             try {
-                unlinkSync(tmpPath);
+                closeSync(fd);
             }
             catch { /* ignore */ }
-            const code = err.code;
-            if (code === "EEXIST") {
-                // Another worker won the race
-                return null;
+            try {
+                unlinkSync(targetPath);
             }
+            catch { /* ignore */ }
             throw err;
         }
     }
