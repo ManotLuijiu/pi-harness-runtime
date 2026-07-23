@@ -129,8 +129,16 @@ export class LeaseManager {
 			closeSync(fd);
 			return lease;
 		} catch (err: unknown) {
-			try { closeSync(fd); } catch { /* ignore */ }
-			try { unlinkSync(targetPath); } catch { /* ignore */ }
+			try {
+				closeSync(fd);
+			} catch {
+				/* ignore */
+			}
+			try {
+				unlinkSync(targetPath);
+			} catch {
+				/* ignore */
+			}
 			throw err;
 		}
 	}
@@ -219,7 +227,11 @@ export class LeaseManager {
 				}
 			} catch {
 				// Corrupt file — remove it
-				try { unlinkSync(path); } catch { /* ignore */ }
+				try {
+					unlinkSync(path);
+				} catch {
+					/* ignore */
+				}
 			}
 		}
 
@@ -275,7 +287,11 @@ export class LeaseManager {
 				}
 			} catch {
 				// Corrupt — remove
-				try { unlinkSync(path); } catch { /* ignore */ }
+				try {
+					unlinkSync(path);
+				} catch {
+					/* ignore */
+				}
 			}
 		}
 

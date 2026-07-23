@@ -25,7 +25,12 @@ export class NoOpAuditLogger implements AuditLogger {
 /** Console logger — writes human-readable lines to stdout/stderr. */
 export class ConsoleAuditLogger implements AuditLogger {
 	log(entry: AuditEntry): void {
-		const prefix = entry.outcome === "granted" ? "✅" : entry.outcome === "denied" ? "❌" : "⚠️";
+		const prefix =
+			entry.outcome === "granted"
+				? "✅"
+				: entry.outcome === "denied"
+					? "❌"
+					: "⚠️";
 		const line = [
 			prefix,
 			`${entry.outcome.toUpperCase()}`,
@@ -53,11 +58,13 @@ export class FileAuditLogger implements AuditLogger {
 	private readonly maxSizeBytes: number;
 	private readonly maxRotations: number;
 
-	constructor(options: {
-		logPath?: string;
-		maxSizeBytes?: number;
-		maxRotations?: number;
-	} = {}) {
+	constructor(
+		options: {
+			logPath?: string;
+			maxSizeBytes?: number;
+			maxRotations?: number;
+		} = {},
+	) {
 		const home = process.env["HOME"] ?? "/tmp";
 		this.logPath =
 			options.logPath ?? join(home, ".pi", "harness", "broker-audit.logl");
@@ -120,15 +127,9 @@ export class FileAuditLogger implements AuditLogger {
 				const e = JSON.parse(line) as AuditEntry;
 				if (options?.workerId && e.workerId !== options.workerId) continue;
 				if (options?.taskId && e.taskId !== options.taskId) continue;
-				if (
-					options?.capability &&
-					e.capability !== options.capability
-				)
+				if (options?.capability && e.capability !== options.capability)
 					continue;
-				if (
-					options?.success !== undefined &&
-					e.success !== options.success
-				)
+				if (options?.success !== undefined && e.success !== options.success)
 					continue;
 				entries.push(e);
 			} catch {

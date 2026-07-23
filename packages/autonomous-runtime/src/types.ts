@@ -150,7 +150,10 @@ export interface ApprovalRequest {
 /** A scheduled recurring task. */
 export interface ScheduledTask {
 	id: string;
-	taskTemplate: Omit<TaskRecord, "id" | "status" | "attempts" | "createdAt" | "updatedAt" | "history">;
+	taskTemplate: Omit<
+		TaskRecord,
+		"id" | "status" | "attempts" | "createdAt" | "updatedAt" | "history"
+	>;
 	schedule: ScheduleSpec;
 	enabled: boolean;
 	lastFiredAt?: string;
@@ -215,7 +218,11 @@ export interface TaskResult {
 	taskId: string;
 	status: "completed" | "failed" | "dead_letter";
 	deliverables?: { path: string; mime: string }[];
-	acceptanceCriteriaMet: { criterion: string; passed: boolean; evidence?: string }[];
+	acceptanceCriteriaMet: {
+		criterion: string;
+		passed: boolean;
+		evidence?: string;
+	}[];
 	durationMs: number;
 	modelUsage?: { inputTokens: number; outputTokens: number; provider: string };
 }

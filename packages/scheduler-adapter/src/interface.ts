@@ -11,7 +11,10 @@
 export type ScheduledTask = {
 	id: string;
 	taskTemplate: Record<string, unknown>;
-	schedule: { kind: "cron"; expression: string } | { kind: "interval"; intervalMs: number } | { kind: "once"; at: string };
+	schedule:
+		| { kind: "cron"; expression: string }
+		| { kind: "interval"; intervalMs: number }
+		| { kind: "once"; at: string };
 	enabled: boolean;
 	lastFiredAt?: string;
 	nextFireAt?: string;

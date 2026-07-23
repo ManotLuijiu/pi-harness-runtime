@@ -66,7 +66,12 @@ export interface CapabilityGrant {
 }
 
 /** Log entry for audit trail. */
-export type AuditOutcome = "granted" | "denied" | "auto_denied" | "auto_approved" | "error";
+export type AuditOutcome =
+	| "granted"
+	| "denied"
+	| "auto_denied"
+	| "auto_approved"
+	| "error";
 
 export interface AuditEntry {
 	timestamp: string;

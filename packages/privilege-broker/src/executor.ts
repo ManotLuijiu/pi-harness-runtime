@@ -81,7 +81,9 @@ export class BrokerExecutor {
 				this.audit.log({
 					timestamp: new Date().toISOString(),
 					actor,
-					capability: capability as Parameters<typeof this.audit.log>[0]["capability"],
+					capability: capability as Parameters<
+						typeof this.audit.log
+					>[0]["capability"],
 					reason,
 					outcome: exitCode === 0 ? "granted" : "error",
 					error: exitCode !== 0 ? `exit ${exitCode}` : undefined,
@@ -94,7 +96,9 @@ export class BrokerExecutor {
 				this.audit.log({
 					timestamp: new Date().toISOString(),
 					actor,
-					capability: capability as Parameters<typeof this.audit.log>[0]["capability"],
+					capability: capability as Parameters<
+						typeof this.audit.log
+					>[0]["capability"],
 					reason,
 					outcome: "error",
 					error: err.message,
