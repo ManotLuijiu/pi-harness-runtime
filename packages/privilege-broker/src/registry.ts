@@ -67,9 +67,7 @@ export function loadRegistry(path?: string): PrivilegeRegistry {
 }
 
 /** Lightweight validation — check required fields. */
-export function validate(
-	registry: PrivilegeRegistry,
-): string[] {
+export function validate(registry: PrivilegeRegistry): string[] {
 	const errors: string[] = [];
 	if (!registry || typeof registry !== "object") {
 		errors.push("registry must be an object");

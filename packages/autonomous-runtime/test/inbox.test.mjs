@@ -32,12 +32,19 @@ function makeTask(overrides = {}) {
 }
 
 beforeEach(() => {
-	testDir = join(tmpdir(), `pi-harness-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	testDir = join(
+		tmpdir(),
+		`pi-harness-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	);
 	mkdirSync(testDir, { recursive: true });
 });
 
 afterEach(() => {
-	try { rmSync(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
+	try {
+		rmSync(testDir, { recursive: true, force: true });
+	} catch {
+		/* ignore */
+	}
 });
 
 const tasksPath = () => join(testDir, "tasks.jsonl");
@@ -66,7 +73,13 @@ describe("TaskInbox", () => {
 		const inbox = new TaskInbox({ tasksPath: tasksPath() });
 		inbox.append(makeTask({ id: "a", priority: 1 }));
 		inbox.append(makeTask({ id: "b", priority: 2 }));
-		inbox.append(makeTask({ id: "c", priority: 1, createdAt: new Date(Date.now() + 1000).toISOString() }));
+		inbox.append(
+			makeTask({
+				id: "c",
+				priority: 1,
+				createdAt: new Date(Date.now() + 1000).toISOString(),
+			}),
+		);
 		expect(inbox.list().map((t) => t.id)).toEqual(["a", "c", "b"]);
 	});
 
@@ -75,7 +88,9 @@ describe("TaskInbox", () => {
 		inbox.append(makeTask({ id: "queued-1", status: "queued" }));
 		inbox.append(makeTask({ id: "running-1", status: "running" }));
 		inbox.append(makeTask({ id: "completed-1", status: "completed" }));
-		expect(inbox.list({ status: "queued" }).map((t) => t.id)).toEqual(["queued-1"]);
+		expect(inbox.list({ status: "queued" }).map((t) => t.id)).toEqual([
+			"queued-1",
+		]);
 	});
 
 	it("get returns a task by id", () => {
@@ -105,7 +120,12 @@ describe("TaskInbox", () => {
 		const inbox = new TaskInbox({ tasksPath: tasksPath() });
 		const task = makeTask();
 		inbox.append(task);
-		const result = { taskId: task.id, status: "completed", acceptanceCriteriaMet: [], durationMs: 1000 };
+		const result = {
+			taskId: task.id,
+			status: "completed",
+			acceptanceCriteriaMet: [],
+			durationMs: 1000,
+		};
 		const updated = inbox.complete(task.id, result);
 		expect(updated.status).toBe("completed");
 		expect(updated.result).toEqual(result);

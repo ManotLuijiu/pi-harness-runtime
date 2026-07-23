@@ -26,8 +26,7 @@ export class SystemdAdapter implements SchedulerAdapter {
 	private installed = false;
 
 	constructor(unitDir?: string) {
-		this.unitDir =
-			unitDir ?? join(homedir(), ".config", "systemd", "user");
+		this.unitDir = unitDir ?? join(homedir(), ".config", "systemd", "user");
 	}
 
 	async install(): Promise<void> {
@@ -186,9 +185,7 @@ export class SystemdAdapter implements SchedulerAdapter {
 	}
 
 	/** Convert a schedule to a systemd.timer OnCalendar or OnUnitActiveSec line. */
-	private _toTimerLine(
-		schedule: ScheduledTask["schedule"],
-	): string {
+	private _toTimerLine(schedule: ScheduledTask["schedule"]): string {
 		if (schedule.kind === "cron") {
 			// Convert cron to systemd calendar format
 			const parts = schedule.expression.trim().split(/\s+/);
@@ -213,7 +210,9 @@ export class SystemdAdapter implements SchedulerAdapter {
 
 	async healthCheck(): Promise<{ healthy: boolean; error?: string }> {
 		try {
-			execSync("systemctl --user show-environment >/dev/null 2>&1", { stdio: "pipe" });
+			execSync("systemctl --user show-environment >/dev/null 2>&1", {
+				stdio: "pipe",
+			});
 			return { healthy: true };
 		} catch {
 			return { healthy: false, error: "systemd user mode not available" };

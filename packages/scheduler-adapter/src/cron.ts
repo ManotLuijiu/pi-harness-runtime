@@ -97,7 +97,11 @@ export class CronAdapter implements SchedulerAdapter {
 			writeFileSync(tmpFile, content);
 			execSync(`crontab "${tmpFile}"`, { stdio: "pipe" });
 		} finally {
-			try { unlinkSync(tmpFile); } catch { /* ignore */ }
+			try {
+				unlinkSync(tmpFile);
+			} catch {
+				/* ignore */
+			}
 		}
 	}
 
