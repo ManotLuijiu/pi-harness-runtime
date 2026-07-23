@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/performance-optimizer",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "Performance optimization analyzer for pi-harness runtime (RFC-0056)",
   "type": "module",
   "main": "./dist/index.js",

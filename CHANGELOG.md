@@ -2,13 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [0.9.8](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.8) (2026-07-23)
+### [0.9.9](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.9) (2026-07-23)
 
+### Bug Fixes
+
+* **release:** test workflow trigger via manual version bump
+
+### [0.9.8](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.8) (2026-07-23)
 
 ### Features
 
 * **cookie-sanitizer:** discoverable drop folder + per-provider mirror ([772eda5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/772eda5c5c698572a1cef2dc93df0278e9a380ee))
-
 
 ### Bug Fixes
 
@@ -16,7 +20,6 @@ All notable changes to this project will be documented in this file. See [standa
 * resume after output-limit error stops ([8c75a24](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8c75a2432082c4f9ba6296ffe2d04b636863bf2f))
 
 ### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
-
 
 ### Bug Fixes
 
@@ -24,7 +27,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.9.7](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.7) (2026-07-16)
 
-
 ### Bug Fixes
 
 * harden auto-resume after compaction ([13378e8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/13378e852c984ead0e66f0adeffc073ff58af50c))
@@ -32,13 +34,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
 
-
 ### Bug Fixes
 
 * auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
 
 ### [0.9.6](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.6) (2026-07-16)
-
 
 ### Bug Fixes
 
@@ -46,13 +46,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
 
-
 ### Bug Fixes
 
 * auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
 
 ### [0.9.5](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.4...v0.9.5) (2026-07-15)
-
 
 ### Features
 
@@ -65,13 +63,11 @@ All notable changes to this project will be documented in this file. See [standa
 * add package metadata for auth, scheduler, shared-context, token-estimation ([67e2621](https://github.com/ManotLuijiu/pi-harness-runtime/commit/67e26211633f01de4f0d5eca76abc4d40d1ee0ea))
 * flesh out RFC 71-75 specs + fix codex-adapter LSP types ([38b8643](https://github.com/ManotLuijiu/pi-harness-runtime/commit/38b86438ef45f75d1c34caf5b4f401d29c76d44d))
 
-
 ### Bug Fixes
 
 * auto-resume after compaction and output limits ([0cff2bc](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0cff2bcf9035a699496e2726b74a1576863cf82e))
 
 ### [0.9.4](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.4) (2026-07-14)
-
 
 ### Features
 
@@ -79,7 +75,6 @@ All notable changes to this project will be documented in this file. See [standa
 * persist memory engine bundles ([07af7a9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/07af7a96e301bfd8afadd82547cb93e8bec26b12))
 * RFC-0052 skill-registry gap fixes + 40 new RFCs (0061-0100) ([6defd26](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6defd26ff931fb9f93548647bf3a76098aa1d48b))
 * RFC-0060 memory-engine fixes + simplify auto-resume ([#52](https://github.com/ManotLuijiu/pi-harness-runtime/issues/52)) ([fb4de1a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fb4de1a9d1de74b875aabb58d0c06f7116994ca3))
-
 
 ### Bug Fixes
 
@@ -89,11 +84,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.9.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.1) (2026-07-13)
 
-
 ### Features
 
 * **release:** add synced-workspace release script ([617649d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/617649d0b2227ebb4355eec4979b0c65822d60e3))
-
 
 ### Bug Fixes
 
@@ -102,18 +95,15 @@ All notable changes to this project will be documented in this file. See [standa
 
 ## [0.9.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.0) (2026-07-13)
 
-
 ### Features
 
 * **release:** add synced-workspace release script ([617649d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/617649d0b2227ebb4355eec4979b0c65822d60e3))
-
 
 ### Bug Fixes
 
 * **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
 ### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
-
 
 ### Bug Fixes
 
