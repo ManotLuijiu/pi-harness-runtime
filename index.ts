@@ -121,6 +121,11 @@ function ensureHarnessDir() {
 	if (!existsSync(HARNESS_ROOT_DIR)) {
 		mkdirSync(HARNESS_ROOT_DIR, { recursive: true });
 	}
+	// Also ensure the shared cookie drop folder exists
+	const cookieDropDir = join(homedir(), ".pi-harness-runtime", "cookies");
+	if (!existsSync(cookieDropDir)) {
+		mkdirSync(cookieDropDir, { recursive: true });
+	}
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
