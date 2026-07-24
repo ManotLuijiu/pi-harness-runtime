@@ -15,7 +15,13 @@
  * use file basenames and 64-char previews with values redacted.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { CanonicalCookie, SyncOptions, SyncResult } from "./types.js";
 import { buildDetectedFile, safePreview } from "./detect-format.js";
