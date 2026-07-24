@@ -15,7 +15,7 @@
  * use file basenames and 64-char previews with values redacted.
  */
 
-import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CanonicalCookie, SyncOptions, SyncResult } from "./types.js";
 import { buildDetectedFile, safePreview } from "./detect-format.js";
@@ -134,6 +134,8 @@ export function readInputFile(filePath: string): {
  */
 export function sync(opts: SyncOptions = {}): SyncResult {
 	const dropDir = opts.dropDir ?? DEFAULT_DROP_DIR;
+	// Ensure the drop directory exists so users don't need to mkdir manually
+	if (!existsSync(dropDir)) mkdirSync(dropDir, { recursive: true });
 
 	const tmpResult: SyncResult = {
 		provider: null,
