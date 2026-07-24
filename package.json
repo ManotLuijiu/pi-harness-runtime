@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies",
     "release": "bun scripts/release-all.ts",
     "release:patch": "bun scripts/release-all.ts --release-as patch",
     "release:minor": "bun scripts/release-all.ts --release-as minor",
