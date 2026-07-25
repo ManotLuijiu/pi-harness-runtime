@@ -313,10 +313,22 @@ export default function (pi: ExtensionAPI) {
 	try {
 		cookieWatcher.start();
 	} catch (e) {
-		console.error(
-			"[pi-harness] cookie-sanitizer watcher failed to start:",
-			e instanceof Error ? e.message : String(e),
-		);
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes("ENOSPC")) {
+			console.error(
+				"[pi-harness] cookie-sanitizer watcher: ENOSPC — " +
+				"inotify watcher limit reached.\n" +
+				"Fix (once, as root):\n" +
+				"  echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
+				"  sudo sysctl --system\n" +
+				"Drop folder sync still works — polling will resume automatically.",
+			);
+		} else {
+			console.error(
+				"[pi-harness] cookie-sanitizer watcher failed to start:",
+				msg,
+			);
+		}
 	}
 
 	let footerStatusCtx: {
