@@ -290,10 +290,17 @@ export default function (pi: ExtensionAPI) {
 		syncOptions: { cachePath: cookieCachePath },
 		onEvent: (event) => {
 			if (event.kind === "sync-error" || event.kind === "watcher-error") {
-				console.error(
-					"[pi-harness] cookie-sanitizer:",
-					"message" in event ? event.message : "",
-				);
+				const msg = "message" in event ? event.message : "";
+				if (msg.includes("ENOSPC")) {
+					console.error(
+						"[pi-harness] cookie-sanitizer: ENOSPC — inotify watchers exhausted.\n" +
+						"  Fix (run once as sudo):\n" +
+						"    echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
+						"    sudo sysctl --system",
+					);
+				} else {
+					console.error("[pi-harness] cookie-sanitizer:", msg);
+				}
 			}
 			// A successful sync means the canonical cache is fresh; the
 			// next autoFetchQuota() should pick it up immediately. Reset
