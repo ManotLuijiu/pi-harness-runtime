@@ -51,7 +51,12 @@ export function buildSemanticEvents(events: SessionEvent[]): SemanticEvent[] {
 }
 
 export class WorkflowStateMachine {
-	private state: WorkflowState = { id: "main", status: "idle", tasks: [], blockers: [] };
+	private state: WorkflowState = {
+		id: "main",
+		status: "idle",
+		tasks: [],
+		blockers: [],
+	};
 	private history: WorkflowTransition[] = [];
 
 	transition(event: SemanticEvent): WorkflowTransition {
@@ -72,6 +77,10 @@ export class WorkflowStateMachine {
 		return t;
 	}
 
-	getState(): WorkflowState { return { ...this.state }; }
-	getHistory(): WorkflowTransition[] { return [...this.history]; }
+	getState(): WorkflowState {
+		return { ...this.state };
+	}
+	getHistory(): WorkflowTransition[] {
+		return [...this.history];
+	}
 }

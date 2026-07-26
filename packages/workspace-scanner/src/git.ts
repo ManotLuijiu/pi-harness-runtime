@@ -42,11 +42,14 @@ export function getGitState(rootPath: string): GitState | null {
 		let ahead = 0;
 		let behind = 0;
 		try {
-			const revlist = execSync("git rev-list --left-right --count HEAD@{upstream}...HEAD", {
-				cwd: rootPath,
-				encoding: "utf8",
-				stdio: ["ignore", "pipe", "ignore"],
-			}).trim();
+			const revlist = execSync(
+				"git rev-list --left-right --count HEAD@{upstream}...HEAD",
+				{
+					cwd: rootPath,
+					encoding: "utf8",
+					stdio: ["ignore", "pipe", "ignore"],
+				},
+			).trim();
 			const [a, b] = revlist.split("\t");
 			ahead = parseInt(a, 10) || 0;
 			behind = parseInt(b, 10) || 0;

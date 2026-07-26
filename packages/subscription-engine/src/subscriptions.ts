@@ -14,9 +14,21 @@ export interface Sub {
 export class SubscriptionRegistry {
 	private subs: Map<string, Sub> = new Map();
 
-	register(topic: string, subscriberId: string, predicate?: (data: unknown) => boolean, priority = 0): string {
+	register(
+		topic: string,
+		subscriberId: string,
+		predicate?: (data: unknown) => boolean,
+		priority = 0,
+	): string {
 		const id = Math.random().toString(36).slice(2);
-		this.subs.set(id, { id, topic, predicate, priority, subscriberId, active: true });
+		this.subs.set(id, {
+			id,
+			topic,
+			predicate,
+			priority,
+			subscriberId,
+			active: true,
+		});
 		return id;
 	}
 

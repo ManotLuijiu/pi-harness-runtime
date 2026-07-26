@@ -14,7 +14,7 @@
  * Sec-001: Cookie VALUES never appear in any log line. Diagnostics
  * use file basenames and 64-char previews with values redacted.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, } from "node:fs";
 import { join } from "node:path";
 import { buildDetectedFile, safePreview } from "./detect-format.js";
 import { parseNetscape, serializeNetscape } from "./parse-netscape.js";

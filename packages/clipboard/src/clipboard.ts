@@ -6,12 +6,18 @@ import { writeFileSync, readFileSync } from "node:fs";
 import type { ClipboardOptions } from "./types.js";
 
 /** Write text to system clipboard. */
-export async function copy(text: string, _options?: ClipboardOptions): Promise<void> {
+export async function copy(
+	text: string,
+	_options?: ClipboardOptions,
+): Promise<void> {
 	try {
 		// Linux: prefer xclip, fall back to /dev/clipboard
 		const { execSync } = require("node:child_process");
 		try {
-			execSync(`echo '${text.replace(/'/g, "'\"'\"'")}' | xclip -selection clipboard`, { stdio: "ignore" });
+			execSync(
+				`echo '${text.replace(/'/g, "'\"'\"'")}' | xclip -selection clipboard`,
+				{ stdio: "ignore" },
+			);
 		} catch {
 			writeFileSync("/dev/clipboard", text);
 		}
@@ -24,7 +30,10 @@ export async function copy(text: string, _options?: ClipboardOptions): Promise<v
 export async function read(): Promise<string> {
 	try {
 		const { execSync } = require("node:child_process");
-		return execSync("xclip -selection clipboard -o", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		return execSync("xclip -selection clipboard -o", {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
 	} catch {
 		try {
 			return readFileSync("/dev/clipboard", "utf8");

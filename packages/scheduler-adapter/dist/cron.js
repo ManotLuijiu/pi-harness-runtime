@@ -90,7 +90,9 @@ export class CronAdapter {
             try {
                 unlinkSync(tmpFile);
             }
-            catch { /* ignore */ }
+            catch {
+                /* ignore */
+            }
         }
     }
     _toCronExpr(task) {

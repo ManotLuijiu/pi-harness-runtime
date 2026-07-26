@@ -2,7 +2,11 @@
  * Subscription Engine
  */
 
-import type { Predicate, TopicSubscription, SubscriptionResult } from "./types.js";
+import type {
+	Predicate,
+	TopicSubscription,
+	SubscriptionResult,
+} from "./types.js";
 
 export class SubscriptionEngine {
 	private subs: Map<string, TopicSubscription> = new Map();
@@ -37,7 +41,8 @@ export class SubscriptionEngine {
 	}
 
 	getSubscriptions(agentId?: string): TopicSubscription[] {
-		if (agentId) return [...this.subs.values()].filter((s) => s.subscriberId === agentId);
+		if (agentId)
+			return [...this.subs.values()].filter((s) => s.subscriberId === agentId);
 		return [...this.subs.values()];
 	}
 

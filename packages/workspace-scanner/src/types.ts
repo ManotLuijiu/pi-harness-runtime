@@ -14,7 +14,17 @@ export interface GitState {
 
 export interface ProjectConfig {
 	name?: string;
-	packageManager?: "npm" | "pnpm" | "yarn" | "bun" | "pip" | "go" | "cargo" | "maven" | "gradle" | "composer";
+	packageManager?:
+		| "npm"
+		| "pnpm"
+		| "yarn"
+		| "bun"
+		| "pip"
+		| "go"
+		| "cargo"
+		| "maven"
+		| "gradle"
+		| "composer";
 	language?: string;
 	framework?: string;
 	buildTool?: string;

@@ -72,9 +72,19 @@ export class SessionServiceImpl implements SessionService {
 	private events: SessionEvent[] = [];
 	private decisions: Decision[] = [];
 	private tasks: TaskState[] = [];
-	private summary: SessionSummary = { sessionId: "", durationMs: 0, messageCount: 0, toolCount: 0, decisionCount: 0, taskCount: 0, topics: [] };
+	private summary: SessionSummary = {
+		sessionId: "",
+		durationMs: 0,
+		messageCount: 0,
+		toolCount: 0,
+		decisionCount: 0,
+		taskCount: 0,
+		topics: [],
+	};
 
-	loadEvents(events: SessionEvent[]): void { this.events = events; }
+	loadEvents(events: SessionEvent[]): void {
+		this.events = events;
+	}
 
 	async getLatestDecision(): Promise<Decision | null> {
 		return this.decisions[this.decisions.length - 1] ?? null;
@@ -85,11 +95,15 @@ export class SessionServiceImpl implements SessionService {
 	async getRecentFailures(limit = 10): Promise<SessionEvent[]> {
 		return this.events.filter((e) => e.type === "tool_error").slice(-limit);
 	}
-	async getArchitectureHistory(): Promise<ArchitectureDecision[]> { return []; }
+	async getArchitectureHistory(): Promise<ArchitectureDecision[]> {
+		return [];
+	}
 	async getWorkflowState(): Promise<WorkflowState> {
 		return { id: "main", status: "running", tasks: [], blockers: [] };
 	}
-	async getLatestSummary(): Promise<SessionSummary> { return this.summary; }
+	async getLatestSummary(): Promise<SessionSummary> {
+		return this.summary;
+	}
 	async search(query: string): Promise<SessionEvent[]> {
 		const q = query.toLowerCase();
 		return this.events.filter((e) => e.content?.toLowerCase().includes(q));

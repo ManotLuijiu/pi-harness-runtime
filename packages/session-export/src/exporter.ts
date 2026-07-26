@@ -37,19 +37,33 @@ function toMarkdown(events: SessionEvent[]): string {
 }
 
 function toJson(events: SessionEvent[]): string {
-	return JSON.stringify({ events, exportedAt: new Date().toISOString() }, null, 2);
+	return JSON.stringify(
+		{ events, exportedAt: new Date().toISOString() },
+		null,
+		2,
+	);
 }
 
 function toText(events: SessionEvent[]): string {
-	return events.map((e) => `[${e.timestamp}] ${e.role ?? e.type}: ${e.content ?? ""}`).join("\n");
+	return events
+		.map((e) => `[${e.timestamp}] ${e.role ?? e.type}: ${e.content ?? ""}`)
+		.join("\n");
 }
 
 function toHtml(events: SessionEvent[]): string {
-	const body = events.map((e) => `<li><strong>${e.role ?? e.type}</strong>: ${e.content ?? ""}</li>`).join("\n");
+	const body = events
+		.map(
+			(e) =>
+				`<li><strong>${e.role ?? e.type}</strong>: ${e.content ?? ""}</li>`,
+		)
+		.join("\n");
 	return `<!DOCTYPE html><html><body><ul>${body}</ul></body></html>`;
 }
 
-export function exportSession(request: ExportRequest, events: SessionEvent[]): ExportResult {
+export function exportSession(
+	request: ExportRequest,
+	events: SessionEvent[],
+): ExportResult {
 	const generators: Record<string, (e: SessionEvent[]) => string> = {
 		markdown: toMarkdown,
 		json: toJson,

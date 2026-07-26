@@ -88,7 +88,6 @@
   ],
   "dependencies": {
     "chokidar": "^5.0.0",
-    "deepagents": "^1.10.5",
-    "pi-harness-runtime": "^0.3.2-beta.1"
+    "deepagents": "^1.10.5"
   }
 }
