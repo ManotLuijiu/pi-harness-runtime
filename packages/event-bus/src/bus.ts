@@ -12,12 +12,21 @@ export class EventBus {
 	publish<T>(topic: string, data: T, source = "system"): string {
 		const eventId = randomUUID();
 		const timestamp = new Date().toISOString();
-		const payload: EventPayload<T> = { topic, data, timestamp, eventId, source };
+		const payload: EventPayload<T> = {
+			topic,
+			data,
+			timestamp,
+			eventId,
+			source,
+		};
 
 		const topicIds = this.byTopic.get(topic) ?? new Set();
 		const wildcardIds = this.byTopic.get("*") ?? new Set();
 
-		const matches: Array<{ sub: Subscription; payload: EventPayload<unknown> }> = [];
+		const matches: Array<{
+			sub: Subscription;
+			payload: EventPayload<unknown>;
+		}> = [];
 		for (const sid of [...topicIds, ...wildcardIds]) {
 			const sub = this.subs.get(sid);
 			if (!sub || !sub.active) continue;
@@ -93,7 +102,9 @@ export class EventBus {
 	getSubscribers(topic?: string): Subscription[] {
 		if (topic) {
 			const ids = this.byTopic.get(topic) ?? new Set();
-			return [...ids].map((id) => this.subs.get(id)!).filter((s): s is Subscription => s !== undefined);
+			return [...ids]
+				.map((id) => this.subs.get(id)!)
+				.filter((s): s is Subscription => s !== undefined);
 		}
 		return [...this.subs.values()].filter((s) => s.active);
 	}

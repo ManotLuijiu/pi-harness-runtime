@@ -21,8 +21,7 @@ export class SystemdAdapter {
     unitDir;
     installed = false;
     constructor(unitDir) {
-        this.unitDir =
-            unitDir ?? join(homedir(), ".config", "systemd", "user");
+        this.unitDir = unitDir ?? join(homedir(), ".config", "systemd", "user");
     }
     async install() {
         // Verify systemd user mode is available
@@ -191,7 +190,9 @@ export class SystemdAdapter {
     }
     async healthCheck() {
         try {
-            execSync("systemctl --user show-environment >/dev/null 2>&1", { stdio: "pipe" });
+            execSync("systemctl --user show-environment >/dev/null 2>&1", {
+                stdio: "pipe",
+            });
             return { healthy: true };
         }
         catch {

@@ -3,8 +3,18 @@
  */
 
 export class WorkflowPipeline {
-	private state = { id: "main", status: "idle", tasks: [] as string[], blockers: [] as string[] };
-	private history: Array<{ from: string; to: string; trigger: string; timestamp: string }> = [];
+	private state = {
+		id: "main",
+		status: "idle",
+		tasks: [] as string[],
+		blockers: [] as string[],
+	};
+	private history: Array<{
+		from: string;
+		to: string;
+		trigger: string;
+		timestamp: string;
+	}> = [];
 
 	transition(kind: string, data: Record<string, unknown> = {}): void {
 		const prev = this.state.status;
@@ -22,6 +32,10 @@ export class WorkflowPipeline {
 		});
 	}
 
-	getState() { return { ...this.state }; }
-	getHistory() { return [...this.history]; }
+	getState() {
+		return { ...this.state };
+	}
+	getHistory() {
+		return [...this.history];
+	}
 }

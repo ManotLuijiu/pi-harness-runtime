@@ -39,7 +39,10 @@ describe("parseImports", () => {
 	});
 
 	it("deduplicates imports", () => {
-		const result = parseImports("import x from './y';\nimport z from './y';", "file.ts");
+		const result = parseImports(
+			"import x from './y';\nimport z from './y';",
+			"file.ts",
+		);
 		deepEqual(result, ["./y"]);
 	});
 });

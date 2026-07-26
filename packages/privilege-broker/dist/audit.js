@@ -16,7 +16,11 @@ export class NoOpAuditLogger {
 /** Console logger — writes human-readable lines to stdout/stderr. */
 export class ConsoleAuditLogger {
     log(entry) {
-        const prefix = entry.outcome === "granted" ? "✅" : entry.outcome === "denied" ? "❌" : "⚠️";
+        const prefix = entry.outcome === "granted"
+            ? "✅"
+            : entry.outcome === "denied"
+                ? "❌"
+                : "⚠️";
         const line = [
             prefix,
             `${entry.outcome.toUpperCase()}`,
@@ -104,11 +108,9 @@ export class FileAuditLogger {
                     continue;
                 if (options?.taskId && e.taskId !== options.taskId)
                     continue;
-                if (options?.capability &&
-                    e.capability !== options.capability)
+                if (options?.capability && e.capability !== options.capability)
                     continue;
-                if (options?.success !== undefined &&
-                    e.success !== options.success)
+                if (options?.success !== undefined && e.success !== options.success)
                     continue;
                 entries.push(e);
             }

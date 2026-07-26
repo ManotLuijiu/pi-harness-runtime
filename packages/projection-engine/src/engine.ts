@@ -70,7 +70,14 @@ export class ProjectionEngine {
 						sources: [],
 					});
 				}
-				const topicKeywords = ["deploy", "test", "fix", "refactor", "migrate", "security"];
+				const topicKeywords = [
+					"deploy",
+					"test",
+					"fix",
+					"refactor",
+					"migrate",
+					"security",
+				];
 				for (const kw of topicKeywords) {
 					if (text.toLowerCase().includes(kw)) this.topics.add(kw);
 				}
@@ -92,8 +99,12 @@ export class ProjectionEngine {
 		}
 	}
 
-	getDecisions(): Decision[] { return this.decisions; }
-	getTaskStates(): TaskState[] { return [...this.taskStates.values()]; }
+	getDecisions(): Decision[] {
+		return this.decisions;
+	}
+	getTaskStates(): TaskState[] {
+		return [...this.taskStates.values()];
+	}
 	getSummary(): SessionSummary {
 		return {
 			sessionId: this.sessionId,
@@ -106,7 +117,10 @@ export class ProjectionEngine {
 		};
 	}
 	getTimeline(agentId?: string): AgentTimeline[] {
-		if (agentId) return [this.agentTimelines.get(agentId)].filter(Boolean) as AgentTimeline[];
+		if (agentId)
+			return [this.agentTimelines.get(agentId)].filter(
+				Boolean,
+			) as AgentTimeline[];
 		return [...this.agentTimelines.values()];
 	}
 	reset(): void {

@@ -11,7 +11,10 @@ describe("WorkspaceScanner", () => {
 	afterEach(() => rmSync(testDir, { recursive: true, force: true }));
 
 	it("detects package.json", async () => {
-		writeFileSync(join(testDir, "package.json"), JSON.stringify({ name: "test" }));
+		writeFileSync(
+			join(testDir, "package.json"),
+			JSON.stringify({ name: "test" }),
+		);
 		const scanner = new WorkspaceScanner(testDir);
 		const snap = await scanner.scan();
 		equal(snap.hasNode, true);

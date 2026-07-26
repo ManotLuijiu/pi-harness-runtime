@@ -4,7 +4,7 @@
  * Append-only durable store for TaskRecords backed by `tasks.jsonl`.
  * One JSONL line per task — easy to tail, grep, and replay.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, } from "node:fs";
 import { getInboxDir, getTasksPath } from "./types.js";
 // ─── Errors ───────────────────────────────────────────────────────────────────
 export class InboxError extends Error {
@@ -93,7 +93,9 @@ export class TaskInbox {
         // Filter by status
         let filtered = tasks;
         if (filter?.status !== undefined) {
-            const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
+            const statuses = Array.isArray(filter.status)
+                ? filter.status
+                : [filter.status];
             filtered = tasks.filter((t) => statuses.includes(t.status));
         }
         // Sort: priority ASC, then createdAt ASC
@@ -149,7 +151,11 @@ export class TaskInbox {
                 ],
         };
         // Rewrite tasks.jsonl atomically
-        this._rewriteAll([...tasks.slice(0, idx), updated, ...tasks.slice(idx + 1)]);
+        this._rewriteAll([
+            ...tasks.slice(0, idx),
+            updated,
+            ...tasks.slice(idx + 1),
+        ]);
         this._cache = null;
         return updated;
     }

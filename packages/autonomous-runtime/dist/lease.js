@@ -99,11 +99,15 @@ export class LeaseManager {
             try {
                 closeSync(fd);
             }
-            catch { /* ignore */ }
+            catch {
+                /* ignore */
+            }
             try {
                 unlinkSync(targetPath);
             }
-            catch { /* ignore */ }
+            catch {
+                /* ignore */
+            }
             throw err;
         }
     }
@@ -185,7 +189,9 @@ export class LeaseManager {
                 try {
                     unlinkSync(path);
                 }
-                catch { /* ignore */ }
+                catch {
+                    /* ignore */
+                }
             }
         }
         return expired;
@@ -241,7 +247,9 @@ export class LeaseManager {
                 try {
                     unlinkSync(path);
                 }
-                catch { /* ignore */ }
+                catch {
+                    /* ignore */
+                }
             }
         }
         return active;

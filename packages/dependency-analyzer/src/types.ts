@@ -2,7 +2,13 @@
  * Dependency Analyzer — Types
  */
 
-export type DependencyKind = "import" | "export" | "extends" | "implements" | "call" | "reference";
+export type DependencyKind =
+	| "import"
+	| "export"
+	| "extends"
+	| "implements"
+	| "call"
+	| "reference";
 
 export interface DependencyNode {
 	id: string;

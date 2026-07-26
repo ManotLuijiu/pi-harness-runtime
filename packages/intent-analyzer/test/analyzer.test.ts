@@ -57,7 +57,10 @@ describe("IntentAnalyzer", () => {
 
 	it("returns matched signals", () => {
 		const result = analyzer.analyze("fix the authentication bug");
-		equal(result.signals.some(s => s.keyword === "fix"), true);
+		equal(
+			result.signals.some((s) => s.keyword === "fix"),
+			true,
+		);
 	});
 
 	it("analyzeBatch returns multiple intents", () => {

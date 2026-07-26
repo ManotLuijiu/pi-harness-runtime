@@ -2,7 +2,15 @@
  * Event Store — JSONL-backed immutable event store
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, createReadStream, createWriteStream } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	statSync,
+	createReadStream,
+	createWriteStream,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -31,7 +39,9 @@ export class EventStore {
 		return join(this.sessionsDir, `${sessionId}.jsonl`);
 	}
 
-	async append(event: Omit<SessionEvent, "id" | "timestamp">): Promise<WriteResult> {
+	async append(
+		event: Omit<SessionEvent, "id" | "timestamp">,
+	): Promise<WriteResult> {
 		const id = randomUUID();
 		const timestamp = new Date().toISOString();
 		const full: SessionEvent = { ...event, id, timestamp };
@@ -55,7 +65,10 @@ export class EventStore {
 			const path = this.getPath(sid);
 			if (!existsSync(path)) continue;
 
-			const stream = createReadStream(path, { encoding: "utf8", highWaterMark: 64 * 1024 });
+			const stream = createReadStream(path, {
+				encoding: "utf8",
+				highWaterMark: 64 * 1024,
+			});
 			let buffer = "";
 
 			for await (const chunk of stream) {
@@ -69,7 +82,10 @@ export class EventStore {
 						const evt = JSON.parse(line) as SessionEvent;
 						if (opts.since && evt.timestamp <= opts.since) continue;
 						if (opts.types && !opts.types.includes(evt.type)) continue;
-						if (skipped < offset) { skipped++; continue; }
+						if (skipped < offset) {
+							skipped++;
+							continue;
+						}
 						events.push(evt);
 						if (events.length >= limit) {
 							stream.destroy();
@@ -105,7 +121,10 @@ export class EventStore {
 						const evt = JSON.parse(line) as SessionEvent;
 						if (evt.content?.toLowerCase().includes(query)) {
 							events.push(evt);
-							if (events.length >= limit) { stream.destroy(); return events; }
+							if (events.length >= limit) {
+								stream.destroy();
+								return events;
+							}
 						}
 					} catch {
 						// skip
@@ -124,10 +143,16 @@ export class EventStore {
 		}
 		const st = statSync(path);
 		const events = readFileSync(path, "utf8").split("\n").filter(Boolean);
-		const last = events.length > 0
-			? (JSON.parse(events[events.length - 1]) as SessionEvent).timestamp
-			: null;
-		return { sessionId, totalEvents: events.length, sizeBytes: st.size, lastEventAt: last };
+		const last =
+			events.length > 0
+				? (JSON.parse(events[events.length - 1]) as SessionEvent).timestamp
+				: null;
+		return {
+			sessionId,
+			totalEvents: events.length,
+			sizeBytes: st.size,
+			lastEventAt: last,
+		};
 	}
 
 	list(): string[] {
