@@ -1,6 +1,6 @@
 {
   "name": "@pi/autonomous-runtime",
-  "version": "0.9.24",
+  "version": "0.9.25",
   "description": "Autonomous Operations Runtime — task inbox, lease management, and worker lifecycle (RFC-0101)",
   "type": "module",
   "main": "./dist/index.js",
