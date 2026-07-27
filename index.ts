@@ -173,6 +173,10 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		if (event.message.role !== "assistant") return;
+
+		// DEBUG: Log model ID
+		console.log("[DEBUG message_end] ctx.model?.id =", ctx.model?.id);
+
 		const m = event.message as {
 			role?: string;
 			stopReason?: unknown;
@@ -220,10 +224,14 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const text = readMessageText(event.message);
 			if (text) {
+				console.log(
+					"[DEBUG message_end] Processing TUI text (first 200 chars):",
+					text.substring(0, 200),
+				);
 				tuiMonitor.processMessage(text);
 			}
-		} catch {
-			// best-effort
+		} catch (e) {
+			console.error("[DEBUG message_end] TUI processMessage error:", e);
 		}
 	});
 
@@ -267,6 +275,10 @@ export default function (pi: ExtensionAPI) {
 	const tuiMonitor = new TUIUsageMonitor({ quotaManager });
 
 	tuiMonitor.on("signal", (signal: TUIUsageSignal) => {
+		console.log(
+			"[DEBUG tuiMonitor signal] Received signal:",
+			JSON.stringify(signal),
+		);
 		try {
 			writeMirrorRecord(signal.provider as ProviderId, {
 				synced_at: signal.timestamp,
@@ -348,6 +360,12 @@ export default function (pi: ExtensionAPI) {
 		provider: ProviderId,
 		record: Omit<import("./mirror.js").ProviderMirrorRecord, "provider">,
 	): void {
+		console.log(
+			"[DEBUG writeMirrorRecord] Writing record for provider:",
+			provider,
+			"record:",
+			JSON.stringify(record),
+		);
 		mirrorStore.writeProvider(provider, { ...record, provider });
 		if (footerStatusCtx) {
 			refreshFooterStatus(
@@ -381,6 +399,12 @@ export default function (pi: ExtensionAPI) {
 	/** Set the active provider; triggers a footer refresh. */
 	function noteActiveProvider(modelId: string | null | undefined): void {
 		const p = providerFromModelId(modelId);
+		console.log(
+			"[DEBUG noteActiveProvider] modelId =",
+			modelId,
+			"-> provider =",
+			p,
+		);
 		if (p !== lastActiveProvider) {
 			lastActiveProvider = p;
 			if (footerStatusCtx) {
@@ -954,6 +978,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
+		console.log("[DEBUG turn_end] ctx.model?.id =", ctx.model?.id);
 		noteActiveProvider(ctx.model?.id ?? null);
 		footerStatusCtx = ctx;
 		refreshFooterStatus(
@@ -1094,8 +1119,14 @@ function refreshFooterStatus(
 	const nowMs = Date.now();
 	const local = aggregateWindows(tracker.all());
 	const provider = getActiveProvider();
+	console.log("[DEBUG refreshFooterStatus] provider =", provider);
 	const mirror = provider ? mirrorStore.readProvider(provider) : null;
+	console.log(
+		"[DEBUG refreshFooterStatus] mirror =",
+		mirror ? JSON.stringify(mirror) : null,
+	);
 	const freshness = mirrorStore.freshness(mirror, nowMs);
+	console.log("[DEBUG refreshFooterStatus] freshness =", freshness);
 	ctx.ui.setStatus(
 		"harness-runtime",
 		buildFooterStatusValue(

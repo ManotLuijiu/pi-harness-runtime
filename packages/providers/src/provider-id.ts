@@ -82,6 +82,8 @@ export function providerFromModelId(
 		lower.startsWith("glm")
 	)
 		return "glm";
+	// Fallback for bare model names (no provider prefix)
+	if (lower.startsWith("gpt")) return "openai"; // e.g., "gpt-5.4" → openai
 	return null;
 }
 
