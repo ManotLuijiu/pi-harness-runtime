@@ -234,14 +234,14 @@ export class MiniMaxQuotaScraper {
 			const apiData = await this.scrapeViaDirectApi();
 			if (apiData) {
 				if (!this.config.quiet) {
-					console.log("[MiniMaxQuotaScraper] direct API success");
+					// console.log("[MiniMaxQuotaScraper] direct API success");
 				}
 				return apiData;
 			}
 			if (!this.config.quiet) {
-				console.log(
-					"[MiniMaxQuotaScraper] direct API unavailable, falling back to browser",
-				);
+				// console.log(
+				// 	"[MiniMaxQuotaScraper] direct API unavailable, falling back to browser",
+				// );
 			}
 		} catch (error) {
 			if (!this.config.quiet) {
@@ -400,11 +400,11 @@ export class MiniMaxQuotaScraper {
 		if (cookies.length === 0) {
 			const dropHint = join(homedir(), ".pi-harness-runtime", "cookies");
 			const msg =
-				`No cookies found.\n` +
-				`Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:\n` +
-				`  ${dropHint}\n` +
-				`…or run: bun packages/auth/src/run-minimax-auth.ts auth`;
-			if (!this.config.quiet) console.error("[MiniMaxQuotaScraper] " + msg);
+				`No cookies found.
+Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:
+  ${dropHint}
+…or run: bun packages/auth/src/run-minimax-auth.ts auth`;
+			if (!this.config.quiet) console.error(`[MiniMaxQuotaScraper] ${msg}`);
 			throw new Error(msg);
 		}
 

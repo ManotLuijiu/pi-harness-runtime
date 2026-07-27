@@ -244,7 +244,11 @@ export class LoopRuntime {
 					await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
 					// Re-check mirror — quota may have reset early
 					const fresh = await this.callbacks.onCheckMirror?.("minimax");
-					if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
+					if (
+						fresh &&
+						fresh.h5_used_pct !== undefined &&
+						fresh.h5_used_pct < 100
+					) {
 						break; // quota reset early, resume now
 					}
 				}
@@ -700,13 +704,13 @@ export class LoopRuntime {
 		if (epoch) {
 			const resumeAt = new Date(epoch).toISOString();
 			await this.jobState.setResumeTime(resumeAt);
-			console.log(
-				`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
-			);
+			// console.log(
+			// 	`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
+			// );
 		} else {
-			console.log(
-				"[LoopRuntime] Paused for quota but no reset time known yet.",
-			);
+			// console.log(
+			// 	"[LoopRuntime] Paused for quota but no reset time known yet.",
+			// );
 		}
 
 		await this.callbacks.onQuotaEvent?.("paused");
