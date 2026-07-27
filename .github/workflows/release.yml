@@ -72,7 +72,11 @@ jobs:
           bun run build
 
       - name: Run tests
-        run: bun test test/*.test.mjs
+        run: |
+          # Unit tests only — browser tests need real auth, run locally
+          bun test packages/*/test/*.test.ts
+          bun test test/*.test.ts
+        # Browser tests: bun test test/*.test.mjs
 
       - name: Publish to npm
         if: >-
