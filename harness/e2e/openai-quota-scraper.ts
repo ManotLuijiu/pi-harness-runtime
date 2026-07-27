@@ -45,6 +45,25 @@ export interface OpenAIQuotaData {
 	scrapedAt: string;
 }
 
+/** Typed API response from /backend-api/wham/usage */
+interface OpenAIUsageResponse {
+	route_rate_limits?: Array<{
+		rate_limit?: { limit_window_seconds?: number; used_percent?: number };
+	}>;
+	rate_limit?: {
+		primary_window?: {
+			used_percent?: number;
+			limit_window_seconds?: number;
+			reset_after_seconds?: number;
+			reset_at?: number;
+		};
+	};
+	credits?: {
+		has_credits?: boolean;
+		balance?: string;
+	};
+}
+
 export interface OpenAIScraperConfig {
 	/** Path to Netscape-format cookie file */
 	cookieFile?: string;
@@ -336,7 +355,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 				return null;
 			}
 
-			const data = await response.json();
+			const data = (await response.json()) as OpenAIUsageResponse;
 			const primaryWindow = data?.rate_limit?.primary_window;
 			const weeklyUsedPct = primaryWindow?.used_percent ?? 0;
 			const resetAfterSeconds = primaryWindow?.reset_after_seconds ?? 0;
