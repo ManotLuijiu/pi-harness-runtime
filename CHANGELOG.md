@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci:** explicitly list test files to exclude cookie auth tests in release workflow ([1c96002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1c9600232282a1ef9323300fbd763c962aff49f6))
+* **ci:** skip browser auth tests in release workflow ([6117ed5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6117ed5af11357c6f12d11f4cd8d3441de519043))
+* **ci:** skip tests in release workflow ([8357ecd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8357ecd0b7d9c0c6ef81680902ca731da59a37c4))
+* **e2e:** add OpenAIUsageResponse type to fix rate_limit TS error ([2ed0891](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2ed08911410ec07815d828028db1a6c9eaf2df2c))
+* **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
+
 ### [0.9.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.24) (2026-07-27)
 
 
