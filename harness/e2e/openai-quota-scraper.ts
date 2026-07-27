@@ -182,12 +182,11 @@ export class OpenAIQuotaScraper {
 		const cookies = loadNetscapeCookies(this.config.cookieFile);
 		if (cookies.length === 0) {
 			const dropHint = join(homedir(), ".pi-harness-runtime", "cookies");
-			const msg =
-				`No OpenAI cookies found.\n` +
-				`Drop your chatgpt.com cookies (Netscape or EditThisCookie JSON) into:\n` +
-				`  ${dropHint}\n` +
-				`Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
-			if (!this.config.quiet) console.error("[OpenAIQuotaScraper] " + msg);
+			const msg = `No OpenAI cookies found.
+Drop your chatgpt.com cookies (Netscape or EditThisCookie JSON) into:
+  ${dropHint}
+Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
+			if (!this.config.quiet) console.error(`[OpenAIQuotaScraper] ${msg}`);
 			throw new Error(msg);
 		}
 
