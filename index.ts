@@ -22,6 +22,7 @@ import type {
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
+import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
@@ -64,8 +65,48 @@ import {
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
 import { homedir } from "node:os";
-import { existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+
+// ─── Debug log → file instead of TUI ─────────────────────────────────
+const DEBUG_LOG_DIR = join(homedir(), ".pi", "harness-logs");
+const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
+
+try {
+	if (!existsSync(DEBUG_LOG_DIR)) mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+} catch { /* non-fatal */ }
+
+// Write harness runtime logs to file only (NOT to TUI stdout)
+function _debugLog(...args: unknown[]): void {
+	try {
+		const line =
+			new Date().toISOString() +
+			" " +
+			args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+		appendFileSync(DEBUG_LOG_PATH, line + "\n");
+	} catch {
+		// non-fatal
+	}
+}
+
+// ─── Selective console override — harness DEBUG → file only ────────
+// Real errors (no [DEBUG prefix) still print to TUI so you notice problems.
+const _origLog = console.log.bind(console);
+const _origError = console.error.bind(console);
+
+console.log = (...args: unknown[]) => {
+	_origLog(...args);
+	_debugLog(...args);
+};
+console.error = (...args: unknown[]) => {
+	const first = String(args[0] ?? "");
+	if (first.startsWith("[DEBUG")) {
+		_debugLog(...args);
+	} else {
+		_origError(...args);
+		_debugLog(...args);
+	}
+};
 
 // ─── Harness Runtime State ────────────────────────────────────────────
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
@@ -175,7 +216,6 @@ export default function (pi: ExtensionAPI) {
 		if (event.message.role !== "assistant") return;
 
 		// DEBUG: Log model ID
-		console.log("[DEBUG message_end] ctx.model?.id =", ctx.model?.id);
 
 		const m = event.message as {
 			role?: string;
@@ -224,14 +264,13 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const text = readMessageText(event.message);
 			if (text) {
-				console.log(
-					"[DEBUG message_end] Processing TUI text (first 200 chars):",
-					text.substring(0, 200),
-				);
+				// 	"[DEBUG message_end] Processing TUI text (first 200 chars):",
+				// 	text.substring(0, 200),
+				// );
 				tuiMonitor.processMessage(text);
 			}
 		} catch (e) {
-			console.error("[DEBUG message_end] TUI processMessage error:", e);
+			// console.error("[DEBUG message_end] TUI processMessage error:", e);
 		}
 	});
 
@@ -242,6 +281,11 @@ export default function (pi: ExtensionAPI) {
 	const quotaScraper = process.env.QUOTA_COOKIE_FILE
 		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
 		: new MiniMaxQuotaScraper();
+
+	// ─── Smart quota fetch for OpenAI status ─────────────────────────
+	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+	const _openaiQuotaScraper = new OpenAIQuotaScraper();
+	let lastOpenAIQuotaFetchAt = 0;
 
 	// ─── Cookie sanitizer integration ────────────────────────────────────
 	// The drop folder is the user-facing, forgiving input. The canonical
@@ -275,10 +319,9 @@ export default function (pi: ExtensionAPI) {
 	const tuiMonitor = new TUIUsageMonitor({ quotaManager });
 
 	tuiMonitor.on("signal", (signal: TUIUsageSignal) => {
-		console.log(
-			"[DEBUG tuiMonitor signal] Received signal:",
-			JSON.stringify(signal),
-		);
+		// 	"[DEBUG tuiMonitor signal] Received signal:",
+		// 	JSON.stringify(signal),
+		// );
 		try {
 			writeMirrorRecord(signal.provider as ProviderId, {
 				synced_at: signal.timestamp,
@@ -360,12 +403,11 @@ export default function (pi: ExtensionAPI) {
 		provider: ProviderId,
 		record: Omit<import("./mirror.js").ProviderMirrorRecord, "provider">,
 	): void {
-		console.log(
-			"[DEBUG writeMirrorRecord] Writing record for provider:",
-			provider,
-			"record:",
-			JSON.stringify(record),
-		);
+		// 	"[DEBUG writeMirrorRecord] Writing record for provider:",
+		// 	provider,
+		// 	"record:",
+		// 	JSON.stringify(record),
+		// );
 		mirrorStore.writeProvider(provider, { ...record, provider });
 		if (footerStatusCtx) {
 			refreshFooterStatus(
@@ -399,12 +441,11 @@ export default function (pi: ExtensionAPI) {
 	/** Set the active provider; triggers a footer refresh. */
 	function noteActiveProvider(modelId: string | null | undefined): void {
 		const p = providerFromModelId(modelId);
-		console.log(
-			"[DEBUG noteActiveProvider] modelId =",
-			modelId,
-			"-> provider =",
-			p,
-		);
+		// 	"[DEBUG noteActiveProvider] modelId =",
+		// 	modelId,
+		// 	"-> provider =",
+		// 	p,
+		// );
 		if (p !== lastActiveProvider) {
 			lastActiveProvider = p;
 			if (footerStatusCtx) {
@@ -535,40 +576,120 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	/**
+	 * Auto-fetch OpenAI quota via ChatGPT Codex analytics.
+	 * GPT has WEEKLY-ONLY limits (no 5h window).
+	 */
+	async function autoFetchOpenAIQuota(options?: {
+		suppressErrors?: boolean;
+	}): Promise<boolean> {
+		const suppressErrors = options?.suppressErrors === true;
+
+		try {
+			// Try direct API first (faster)
+			const directResult = await _openaiQuotaScraper.scrapeDirect();
+			if (directResult) {
+				writeMirrorRecord("openai", {
+					synced_at: directResult.scrapedAt,
+					source: "scrape",
+					weekly_used_pct: directResult.weeklyUsedPct,
+					weekly_resets_at: directResult.weeklyResetsAt,
+					weekly_resets_at_epoch: directResult.weeklyResetsAtEpoch,
+					// No 5h window for GPT - set to undefined
+					h5_used_pct: undefined,
+				});
+				return true;
+			}
+
+			// Fall back to browser scrape
+			const data = await _openaiQuotaScraper.scrape();
+			writeMirrorRecord("openai", {
+				synced_at: data.scrapedAt,
+				source: "scrape",
+				weekly_used_pct: data.weeklyUsedPct,
+				weekly_resets_at: data.weeklyResetsAt,
+				weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
+				// No 5h window for GPT - set to undefined
+				h5_used_pct: undefined,
+			});
+			return true;
+		} catch (error) {
+			if (!suppressErrors) {
+				console.error(
+					"[pi-harness] OpenAI quota auto-fetch skipped:",
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			return false;
+		}
+	}
+
 	async function maybeAutoFetchQuota(
 		modelId: string | null | undefined,
 	): Promise<void> {
-		if (!isMiniMaxModel(modelId) || quotaAutoFetchInFlight) {
+		const provider = providerFromModelId(modelId);
+
+		// MiniMax path
+		if (provider === "minimax") {
+			if (quotaAutoFetchInFlight) return;
+
+			const nowMs = Date.now();
+			if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			const mirror = mirrorStore.read();
+			const freshness = mirrorStore.freshness(mirror, nowMs);
+			const shouldFetchBaseline = !mirror || freshness === "expired";
+			const usageSinceSync = getMiniMaxUsageSince(
+				mirror?.synced_at ? Date.parse(mirror.synced_at) : 0,
+			);
+			const shouldFetchFromUsage =
+				usageSinceSync.tokens >= MINIMAX_REFRESH_TOKEN_THRESHOLD ||
+				usageSinceSync.requests >= MINIMAX_REFRESH_REQUEST_THRESHOLD ||
+				(freshness === "stale" && usageSinceSync.requests > 0);
+
+			if (!shouldFetchBaseline && !shouldFetchFromUsage) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastQuotaAutoFetchAt = nowMs;
+			try {
+				await autoFetchQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
 			return;
 		}
 
-		const nowMs = Date.now();
-		if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
+		// OpenAI path (GPT has weekly-only limits, no 5h window)
+		if (provider === "openai") {
+			if (quotaAutoFetchInFlight) return;
+
+			const nowMs = Date.now();
+			if (nowMs - lastOpenAIQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			// Check if OpenAI cookie file exists
+			const openaiCookieFile = join(homedir(), ".config", "openai-cookies.txt");
+			if (!existsSync(openaiCookieFile)) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastOpenAIQuotaFetchAt = nowMs;
+			try {
+				await autoFetchOpenAIQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
 			return;
 		}
 
-		const mirror = mirrorStore.read();
-		const freshness = mirrorStore.freshness(mirror, nowMs);
-		const shouldFetchBaseline = !mirror || freshness === "expired";
-		const usageSinceSync = getMiniMaxUsageSince(
-			mirror?.synced_at ? Date.parse(mirror.synced_at) : 0,
-		);
-		const shouldFetchFromUsage =
-			usageSinceSync.tokens >= MINIMAX_REFRESH_TOKEN_THRESHOLD ||
-			usageSinceSync.requests >= MINIMAX_REFRESH_REQUEST_THRESHOLD ||
-			(freshness === "stale" && usageSinceSync.requests > 0);
-
-		if (!shouldFetchBaseline && !shouldFetchFromUsage) {
-			return;
-		}
-
-		quotaAutoFetchInFlight = true;
-		lastQuotaAutoFetchAt = nowMs;
-		try {
-			await autoFetchQuota({ suppressErrors: true });
-		} finally {
-			quotaAutoFetchInFlight = false;
-		}
+		// Other providers (GLM, Anthropic, etc.) - TUI signal path only for now
+		return;
 	}
 
 	// ─── /usage — show full status ───────────────────────────────────────
@@ -978,7 +1099,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
-		console.log("[DEBUG turn_end] ctx.model?.id =", ctx.model?.id);
 		noteActiveProvider(ctx.model?.id ?? null);
 		footerStatusCtx = ctx;
 		refreshFooterStatus(
@@ -1119,14 +1239,11 @@ function refreshFooterStatus(
 	const nowMs = Date.now();
 	const local = aggregateWindows(tracker.all());
 	const provider = getActiveProvider();
-	console.log("[DEBUG refreshFooterStatus] provider =", provider);
 	const mirror = provider ? mirrorStore.readProvider(provider) : null;
-	console.log(
-		"[DEBUG refreshFooterStatus] mirror =",
-		mirror ? JSON.stringify(mirror) : null,
-	);
+	// 	"[DEBUG refreshFooterStatus] mirror =",
+	// 	mirror ? JSON.stringify(mirror) : null,
+	// );
 	const freshness = mirrorStore.freshness(mirror, nowMs);
-	console.log("[DEBUG refreshFooterStatus] freshness =", freshness);
 	ctx.ui.setStatus(
 		"harness-runtime",
 		buildFooterStatusValue(

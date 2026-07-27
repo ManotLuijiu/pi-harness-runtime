@@ -7,7 +7,6 @@
       "dependencies": {
         "chokidar": "^5.0.0",
         "deepagents": "^1.10.5",
-        "pi-harness-runtime": "^0.3.2-beta.1",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.7",
@@ -16,7 +15,7 @@
         "@types/node": "^26.1.0",
         "@types/ws": "^8.18.1",
         "husky": "^9.1.7",
-        "playwright": "^1.61.1",
+        "playwright": "^1.62.0",
         "standard-version": "^9.5.0",
       },
       "peerDependencies": {
@@ -28,25 +27,25 @@
     },
     "packages/a2a-adapter": {
       "name": "@pi/a2a-adapter",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/auth": {
       "name": "@pi-harness/auth",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/autonomous-refactor": {
       "name": "@pi/autonomous-refactor",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/autonomous-runtime": {
       "name": "@pi/autonomous-runtime",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -54,14 +53,14 @@
     },
     "packages/cache-strategy": {
       "name": "@pi/cache-strategy",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/capability-registry": {
       "name": "@pi-harness/capability-registry",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -69,7 +68,7 @@
     },
     "packages/checkpoint": {
       "name": "@pi/checkpoint",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -77,7 +76,7 @@
     },
     "packages/cli-plugin-sdk": {
       "name": "@pi/cli-plugin-sdk",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "execa": "^9.5.2",
       },
@@ -85,23 +84,27 @@
         "bun-types": "^1.3.14",
       },
     },
+    "packages/clipboard": {
+      "name": "@pi/clipboard",
+      "version": "0.9.22",
+    },
     "packages/code-generation": {
       "name": "@pi/code-generation",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/code-review": {
       "name": "@pi/code-review",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/codex-adapter": {
       "name": "@pi/codex-adapter",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "openai": "^4.85.0",
       },
@@ -111,7 +114,7 @@
     },
     "packages/context-compiler": {
       "name": "@pi/context-compiler",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/task-compiler": "workspace:*",
@@ -123,16 +126,20 @@
         "bun-types": "^1.0.0",
       },
     },
+    "packages/context-discovery": {
+      "name": "@pi/context-discovery",
+      "version": "0.9.22",
+    },
     "packages/context-manager": {
       "name": "@pi-harness/context-manager",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/cookie-sanitizer": {
       "name": "@pi-harness/cookie-sanitizer",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "chokidar": "^5.0.0",
       },
@@ -142,26 +149,30 @@
     },
     "packages/cost-optimizer": {
       "name": "@pi-harness/cost-optimizer",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
       },
     },
+    "packages/dependency-analyzer": {
+      "name": "@pi/dependency-analyzer",
+      "version": "0.9.22",
+    },
     "packages/django-plugin": {
       "name": "@pi/django-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/doc-generator": {
       "name": "@pi-harness/doc-generator",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/evaluation-engine": {
       "name": "@pi-harness/evaluation-engine",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -169,14 +180,22 @@
     },
     "packages/evaluation-runner": {
       "name": "@pi/evaluation-runner",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
+    "packages/event-bus": {
+      "name": "@pi/event-bus",
+      "version": "0.9.22",
+    },
+    "packages/event-store": {
+      "name": "@pi/event-store",
+      "version": "0.9.22",
+    },
     "packages/experience-replay": {
       "name": "@pi-harness/experience-replay",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -184,47 +203,51 @@
     },
     "packages/feedback-collector": {
       "name": "@pi/feedback-collector",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/framework-detector": {
       "name": "@pi/framework-detector",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/framework-plugin-sdk": {
       "name": "@pi/framework-plugin-sdk",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/frappe-plugin": {
       "name": "@pi/frappe-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/generic-web-plugin": {
       "name": "@pi/generic-web-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/health-monitor": {
       "name": "@pi/health-monitor",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
+    "packages/intent-analyzer": {
+      "name": "@pi/intent-analyzer",
+      "version": "0.9.22",
+    },
     "packages/laravel-plugin": {
       "name": "@pi/laravel-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/learning-engine": {
       "name": "@pi-harness/learning-engine",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -232,14 +255,14 @@
     },
     "packages/mcp-adapter": {
       "name": "@pi/mcp-adapter",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/memory-engine": {
       "name": "@pi-harness/memory-engine",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -247,7 +270,7 @@
     },
     "packages/model-registry": {
       "name": "@pi-harness/model-registry",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -255,15 +278,15 @@
     },
     "packages/nextjs-plugin": {
       "name": "@pi-harness/nextjs-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/notification": {
       "name": "@pi-harness/notification",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/observability": {
       "name": "@pi/observability",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -271,7 +294,7 @@
     },
     "packages/performance-optimizer": {
       "name": "@pi-harness/performance-optimizer",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -279,7 +302,7 @@
     },
     "packages/privilege-broker": {
       "name": "@pi/privilege-broker",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "yaml": "^2.5.0",
       },
@@ -290,7 +313,7 @@
     },
     "packages/project-analyzer": {
       "name": "@pi/project-analyzer",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "@pi-harness/types": "workspace:*",
         "@pi/framework-detector": "workspace:*",
@@ -299,9 +322,13 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/projection-engine": {
+      "name": "@pi/projection-engine",
+      "version": "0.9.22",
+    },
     "packages/prompt-compiler": {
       "name": "@pi/prompt-compiler",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/task-compiler": "workspace:*",
@@ -315,14 +342,14 @@
     },
     "packages/prompt-versioning": {
       "name": "@pi/prompt-versioning",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/provider-adapter-sdk": {
       "name": "@pi/provider-adapter-sdk",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -333,7 +360,7 @@
     },
     "packages/provider-router": {
       "name": "@pi-harness/provider-router",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -341,40 +368,40 @@
     },
     "packages/provider-selector": {
       "name": "@pi-harness/provider-selector",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/providers": {
       "name": "@pi-harness/providers",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/quota-manager": {
       "name": "@pi-harness/quota-manager",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/rate-limiter": {
       "name": "@pi/rate-limiter",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/react-vite-plugin": {
       "name": "@pi/react-vite-plugin",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/release-manager": {
       "name": "@pi/release-manager",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/requirement-compiler": {
       "name": "@pi-harness/requirement-compiler",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "@pi-harness/types": "workspace:*",
       },
@@ -384,15 +411,15 @@
     },
     "packages/runtime": {
       "name": "@pi-harness/runtime",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/scheduler": {
       "name": "@pi-harness/scheduler",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/scheduler-adapter": {
       "name": "@pi/scheduler-adapter",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -400,18 +427,26 @@
     },
     "packages/session": {
       "name": "@pi/session",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
+    "packages/session-api": {
+      "name": "@pi/session-api",
+      "version": "0.9.22",
+    },
+    "packages/session-export": {
+      "name": "@pi/session-export",
+      "version": "0.9.22",
+    },
     "packages/shared-context": {
       "name": "@pi-harness/shared-context",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/skill-registry": {
       "name": "@pi-harness/skill-registry",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -419,14 +454,18 @@
     },
     "packages/sprint-planner": {
       "name": "@pi/sprint-planner",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
+    "packages/subscription-engine": {
+      "name": "@pi/subscription-engine",
+      "version": "0.9.22",
+    },
     "packages/task-compiler": {
       "name": "@pi-harness/task-compiler",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/types": "workspace:*",
@@ -438,40 +477,48 @@
     },
     "packages/test-data-generator": {
       "name": "@pi/test-data-generator",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/test-generator": {
       "name": "@pi-harness/test-generator",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/token-estimation": {
       "name": "@pi-harness/token-estimation",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/token-optimizer": {
       "name": "@pi-harness/token-optimizer",
-      "version": "0.9.15",
+      "version": "0.9.22",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/tui": {
       "name": "@pi-harness/tui",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
     "packages/types": {
       "name": "@pi-harness/types",
-      "version": "0.9.15",
+      "version": "0.9.22",
+    },
+    "packages/workflow-events": {
+      "name": "@pi/workflow-events",
+      "version": "0.9.22",
+    },
+    "packages/workspace-scanner": {
+      "name": "@pi/workspace-scanner",
+      "version": "0.9.22",
     },
     "packages/worktree": {
       "name": "@pi-harness/worktree",
-      "version": "0.9.15",
+      "version": "0.9.22",
     },
   },
   "packages": {
@@ -719,6 +766,8 @@
 
     "@pi/cli-plugin-sdk": ["@pi/cli-plugin-sdk@workspace:packages/cli-plugin-sdk"],
 
+    "@pi/clipboard": ["@pi/clipboard@workspace:packages/clipboard"],
+
     "@pi/code-generation": ["@pi/code-generation@workspace:packages/code-generation"],
 
     "@pi/code-review": ["@pi/code-review@workspace:packages/code-review"],
@@ -727,9 +776,17 @@
 
     "@pi/context-compiler": ["@pi/context-compiler@workspace:packages/context-compiler"],
 
+    "@pi/context-discovery": ["@pi/context-discovery@workspace:packages/context-discovery"],
+
+    "@pi/dependency-analyzer": ["@pi/dependency-analyzer@workspace:packages/dependency-analyzer"],
+
     "@pi/django-plugin": ["@pi/django-plugin@workspace:packages/django-plugin"],
 
     "@pi/evaluation-runner": ["@pi/evaluation-runner@workspace:packages/evaluation-runner"],
+
+    "@pi/event-bus": ["@pi/event-bus@workspace:packages/event-bus"],
+
+    "@pi/event-store": ["@pi/event-store@workspace:packages/event-store"],
 
     "@pi/feedback-collector": ["@pi/feedback-collector@workspace:packages/feedback-collector"],
 
@@ -743,6 +800,8 @@
 
     "@pi/health-monitor": ["@pi/health-monitor@workspace:packages/health-monitor"],
 
+    "@pi/intent-analyzer": ["@pi/intent-analyzer@workspace:packages/intent-analyzer"],
+
     "@pi/laravel-plugin": ["@pi/laravel-plugin@workspace:packages/laravel-plugin"],
 
     "@pi/mcp-adapter": ["@pi/mcp-adapter@workspace:packages/mcp-adapter"],
@@ -752,6 +811,8 @@
     "@pi/privilege-broker": ["@pi/privilege-broker@workspace:packages/privilege-broker"],
 
     "@pi/project-analyzer": ["@pi/project-analyzer@workspace:packages/project-analyzer"],
+
+    "@pi/projection-engine": ["@pi/projection-engine@workspace:packages/projection-engine"],
 
     "@pi/prompt-compiler": ["@pi/prompt-compiler@workspace:packages/prompt-compiler"],
 
@@ -769,9 +830,19 @@
 
     "@pi/session": ["@pi/session@workspace:packages/session"],
 
+    "@pi/session-api": ["@pi/session-api@workspace:packages/session-api"],
+
+    "@pi/session-export": ["@pi/session-export@workspace:packages/session-export"],
+
     "@pi/sprint-planner": ["@pi/sprint-planner@workspace:packages/sprint-planner"],
 
+    "@pi/subscription-engine": ["@pi/subscription-engine@workspace:packages/subscription-engine"],
+
     "@pi/test-data-generator": ["@pi/test-data-generator@workspace:packages/test-data-generator"],
+
+    "@pi/workflow-events": ["@pi/workflow-events@workspace:packages/workflow-events"],
+
+    "@pi/workspace-scanner": ["@pi/workspace-scanner@workspace:packages/workspace-scanner"],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, ""],
 
@@ -1303,17 +1374,15 @@
 
     "path-type": ["path-type@3.0.0", "", { "dependencies": { "pify": "^3.0.0" } }, ""],
 
-    "pi-harness-runtime": ["pi-harness-runtime@0.3.2-beta.1", "", { "peerDependencies": { "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*", "typebox": "*" } }, "sha512-KYEFLRwWJ2klMzeUdHrHCYi9SLiMUO3Ai5LzGZkcg61/i/DwkZGSdKWzZFxY5J5XCPFfYvVUA14sVaE+dxDHMw=="],
-
     "picocolors": ["picocolors@1.1.1", "", {}, ""],
 
     "picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 
     "pify": ["pify@2.3.0", "", {}, ""],
 
-    "playwright": ["playwright@1.61.1", "", { "dependencies": { "playwright-core": "1.61.1" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": "cli.js" }, ""],
+    "playwright": ["playwright@1.62.0", "", { "dependencies": { "playwright-core": "1.62.0" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-Z14dG305dgaLu6foB1TXQagFiW8JfSUIUaUuPaKQ6NtBPKF1P/qXcqfh6c6K/icPqdy37JmjbiBXf6JNg6Sylw=="],
 
-    "playwright-core": ["playwright-core@1.61.1", "", { "bin": "cli.js" }, ""],
+    "playwright-core": ["playwright-core@1.62.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-nsNRyq0r2zsG8AcRHWknc9QRA5XCueC7gWMrs+Gx2tlZn9hcl8zudfh00lhJPY1DE7NmZ6bDsT9g2yey8mXljA=="],
 
     "pretty-ms": ["pretty-ms@9.3.0", "", { "dependencies": { "parse-ms": "^4.0.0" } }, "sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ=="],
 

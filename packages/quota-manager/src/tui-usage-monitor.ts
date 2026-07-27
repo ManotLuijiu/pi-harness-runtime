@@ -102,18 +102,8 @@ export class TUIUsageMonitor extends EventEmitter {
 	 * Process a TUI message and extract quota signals
 	 */
 	processMessage(message: string): TUIUsageSignal | null {
-		// DEBUG: Log incoming message
-		console.log(
-			"[DEBUG TUIUsageMonitor.processMessage] Message (first 300 chars):",
-			message.substring(0, 300),
-		);
-
 		// Try to identify provider
 		const provider = this.detectProvider(message);
-		console.log(
-			"[DEBUG TUIUsageMonitor.processMessage] Detected provider:",
-			provider,
-		);
 
 		if (!provider) {
 			return null;
@@ -136,7 +126,6 @@ export class TUIUsageMonitor extends EventEmitter {
 
 		// Debug log
 		if (this.debug) {
-			console.log(`[TUIUsageMonitor] Detected ${provider}:`, signal);
 		}
 
 		return signal;
@@ -151,20 +140,10 @@ export class TUIUsageMonitor extends EventEmitter {
 		for (const [provider, patterns] of Object.entries(PROVIDER_PATTERNS)) {
 			for (const pattern of patterns) {
 				if (pattern.test(message)) {
-					console.log(
-						"[DEBUG detectProvider] Matched provider:",
-						provider,
-						"with pattern:",
-						pattern.toString(),
-					);
 					return provider as "openai" | "glm" | "anthropic" | "openrouter";
 				}
 			}
 		}
-		console.log(
-			"[DEBUG detectProvider] No provider matched for message (first 100 chars):",
-			message.substring(0, 100),
-		);
 		return null;
 	}
 
