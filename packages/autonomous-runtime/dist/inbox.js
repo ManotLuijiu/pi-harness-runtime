@@ -6,23 +6,23 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, } from "node:fs";
 import { getInboxDir, getTasksPath } from "./types.js";
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 export class InboxError extends Error {
     constructor(msg) {
         super(`[InboxError] ${msg}`);
         this.name = "InboxError";
     }
 }
-// ─── TaskInbox ────────────────────────────────────────────────────────────────
+// --- TaskInbox ----------------------------------------------------------------
 /**
  * Manages the append-only task inbox at `~/.pi/harness/inbox/tasks.jsonl`.
  *
  * Storage layout:
  * ```
  * ~/.pi/harness/inbox/
- * ├── tasks.jsonl   # append-only log (one JSON line per task)
- * ├── claimed/      # active leases (one JSON file per task)
- * └── BACKLOG.md   # human-friendly authoring surface (optional)
+ * +-- tasks.jsonl   # append-only log (one JSON line per task)
+ * +-- claimed/      # active leases (one JSON file per task)
+ * +-- BACKLOG.md   # human-friendly authoring surface (optional)
  * ```
  *
  * Operations are:
@@ -46,7 +46,7 @@ export class TaskInbox {
             mkdirSync(this.inboxDir, { recursive: true });
         }
     }
-    // ─── append ──────────────────────────────────────────────────────────────
+    // --- append --------------------------------------------------------------
     /**
      * Append a new task to tasks.jsonl.
      * The task is validated before writing. Duplicate ids are rejected.
@@ -64,7 +64,7 @@ export class TaskInbox {
         appendFileSync(this.tasksPath, line, "utf8");
         this._cache = null; // invalidate
     }
-    // ─── list ─────────────────────────────────────────────────────────────────
+    // --- list -----------------------------------------------------------------
     /**
      * Read all tasks from tasks.jsonl.
      * Results are sorted by priority ASC then createdAt ASC (oldest first).
@@ -106,13 +106,13 @@ export class TaskInbox {
         });
         return filtered;
     }
-    // ─── get ─────────────────────────────────────────────────────────────────
+    // --- get -----------------------------------------------------------------
     /** Retrieve a single task by id, or null if not found. */
     get(id) {
         const tasks = this.list();
         return tasks.find((t) => t.id === id) ?? null;
     }
-    // ─── transition ──────────────────────────────────────────────────────────
+    // --- transition ----------------------------------------------------------
     /**
      * Update a task's status in-place inside tasks.jsonl.
      *
@@ -159,7 +159,7 @@ export class TaskInbox {
         this._cache = null;
         return updated;
     }
-    // ─── markDone / markFailed ───────────────────────────────────────────────
+    // --- markDone / markFailed -----------------------------------------------
     /** Convenience: mark a task as completed with a result. */
     complete(taskId, result) {
         return this.transition(taskId, "completed", { result }, {
@@ -179,7 +179,7 @@ export class TaskInbox {
             payload: { reason, attempts },
         });
     }
-    // ─── reindex ─────────────────────────────────────────────────────────────
+    // --- reindex -------------------------------------------------------------
     /** Rewrite tasks.jsonl from the given task list. */
     _rewriteAll(tasks) {
         const tmp = `${this.tasksPath}.tmp`;
@@ -198,7 +198,7 @@ export class TaskInbox {
         this._rewriteAll(tasks);
         this._cache = null;
     }
-    // ─── count ───────────────────────────────────────────────────────────────
+    // --- count ---------------------------------------------------------------
     /** Return counts of tasks grouped by status. */
     stats() {
         const tasks = this.list();

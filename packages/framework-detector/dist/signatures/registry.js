@@ -3,7 +3,7 @@
  *
  * Registry of framework detection signatures.
  */
-// ─── Default Signatures ────────────────────────────────────────────────────
+// --- Default Signatures ----------------------------------------------------
 /**
  * Get all default framework signatures
  */
@@ -39,7 +39,7 @@ export function getDefaultSignatures() {
         getFrappeSpaSignature(),
     ];
 }
-// ─── React ──────────────────────────────────────────────────────────────
+// --- React --------------------------------------------------------------
 function getReactSignature() {
     return {
         id: "react",
@@ -61,7 +61,7 @@ function getReactSignature() {
         tags: ["javascript", "ui", "component"],
     };
 }
-// ─── Vue ───────────────────────────────────────────────────────────────
+// --- Vue ---------------------------------------------------------------
 function getVueSignature() {
     return {
         id: "vue",
@@ -87,7 +87,7 @@ function getVueSignature() {
         tags: ["javascript", "ui", "component"],
     };
 }
-// ─── Angular ───────────────────────────────────────────────────────────
+// --- Angular -----------------------------------------------------------
 function getAngularSignature() {
     return {
         id: "angular",
@@ -112,7 +112,7 @@ function getAngularSignature() {
         tags: ["typescript", "ui", "enterprise"],
     };
 }
-// ─── Next.js ───────────────────────────────────────────────────────────
+// --- Next.js -----------------------------------------------------------
 function getNextJsSignature() {
     return {
         id: "nextjs",
@@ -130,7 +130,7 @@ function getNextJsSignature() {
         tags: ["react", "ssr", "fullstack"],
     };
 }
-// ─── Nuxt ──────────────────────────────────────────────────────────────
+// --- Nuxt --------------------------------------------------------------
 function getNuxtSignature() {
     return {
         id: "nuxt",
@@ -146,7 +146,7 @@ function getNuxtSignature() {
         tags: ["vue", "ssr", "fullstack"],
     };
 }
-// ─── Svelte ───────────────────────────────────────────────────────────
+// --- Svelte -----------------------------------------------------------
 function getSvelteSignature() {
     return {
         id: "svelte",
@@ -161,7 +161,7 @@ function getSvelteSignature() {
         tags: ["javascript", "compiler"],
     };
 }
-// ─── Express ───────────────────────────────────────────────────────────
+// --- Express -----------------------------------------------------------
 function getExpressSignature() {
     return {
         id: "express",
@@ -182,7 +182,7 @@ function getExpressSignature() {
         tags: ["nodejs", "api", "backend"],
     };
 }
-// ─── Fastify ──────────────────────────────────────────────────────────
+// --- Fastify ----------------------------------------------------------
 function getFastifySignature() {
     return {
         id: "fastify",
@@ -201,7 +201,7 @@ function getFastifySignature() {
         tags: ["nodejs", "api", "high-performance"],
     };
 }
-// ─── NestJS ───────────────────────────────────────────────────────────
+// --- NestJS -----------------------------------------------------------
 function getNestJsSignature() {
     return {
         id: "nestjs",
@@ -226,7 +226,7 @@ function getNestJsSignature() {
         tags: ["nodejs", "api", "enterprise", "typescript"],
     };
 }
-// ─── Django ───────────────────────────────────────────────────────────
+// --- Django -----------------------------------------------------------
 function getDjangoSignature() {
     return {
         id: "django",
@@ -246,7 +246,7 @@ function getDjangoSignature() {
         tags: ["python", "fullstack", "orm"],
     };
 }
-// ─── Flask ─────────────────────────────────────────────────────────────
+// --- Flask -------------------------------------------------------------
 function getFlaskSignature() {
     return {
         id: "flask",
@@ -265,7 +265,7 @@ function getFlaskSignature() {
         tags: ["python", "api", "micro"],
     };
 }
-// ─── Spring Boot ──────────────────────────────────────────────────────
+// --- Spring Boot ------------------------------------------------------
 function getSpringBootSignature() {
     return {
         id: "spring-boot",
@@ -301,7 +301,7 @@ function getSpringBootSignature() {
         tags: ["java", "enterprise", "api"],
     };
 }
-// ─── FastAPI ──────────────────────────────────────────────────────────
+// --- FastAPI ----------------------------------------------------------
 function getFastApiSignature() {
     return {
         id: "fastapi",
@@ -320,7 +320,7 @@ function getFastApiSignature() {
         tags: ["python", "api", "modern"],
     };
 }
-// ─── Remix ────────────────────────────────────────────────────────────
+// --- Remix ------------------------------------------------------------
 function getRemixSignature() {
     return {
         id: "remix",
@@ -345,7 +345,7 @@ function getRemixSignature() {
         tags: ["react", "fullstack", "ssr"],
     };
 }
-// ─── Astro ───────────────────────────────────────────────────────────
+// --- Astro -----------------------------------------------------------
 function getAstroSignature() {
     return {
         id: "astro",
@@ -364,7 +364,7 @@ function getAstroSignature() {
         tags: ["static", "content", " Islands"],
     };
 }
-// ─── Electron ────────────────────────────────────────────────────────
+// --- Electron --------------------------------------------------------
 function getElectronSignature() {
     return {
         id: "electron",
@@ -379,7 +379,7 @@ function getElectronSignature() {
         tags: ["desktop", "chromium", "cross-platform"],
     };
 }
-// ─── Tauri ───────────────────────────────────────────────────────────
+// --- Tauri -----------------------------------------------------------
 function getTauriSignature() {
     return {
         id: "tauri",
@@ -404,7 +404,7 @@ function getTauriSignature() {
         tags: ["desktop", "rust", "lightweight"],
     };
 }
-// ─── React Native ────────────────────────────────────────────────────
+// --- React Native ----------------------------------------------------
 function getReactNativeSignature() {
     return {
         id: "react-native",
@@ -425,7 +425,7 @@ function getReactNativeSignature() {
         tags: ["mobile", "native", "javascript"],
     };
 }
-// ─── Flutter ──────────────────────────────────────────────────────────
+// --- Flutter ----------------------------------------------------------
 function getFlutterSignature() {
     return {
         id: "flutter",
@@ -439,7 +439,7 @@ function getFlutterSignature() {
         tags: ["mobile", "dart", "native"],
     };
 }
-// ─── Frappe ───────────────────────────────────────────────────────────
+// --- Frappe -----------------------------------------------------------
 function getFrappeSignature() {
     return {
         id: "frappe",
@@ -460,7 +460,7 @@ function getFrappeSignature() {
         tags: ["python", "fullstack", "bench"],
     };
 }
-// ─── ERPNext ──────────────────────────────────────────────────────────
+// --- ERPNext ----------------------------------------------------------
 function getErpNextSignature() {
     return {
         id: "erpnext",
@@ -475,7 +475,7 @@ function getErpNextSignature() {
         tags: ["erp", "business", "python"],
     };
 }
-// ─── Frappe SPA ───────────────────────────────────────────────────────
+// --- Frappe SPA -------------------------------------------------------
 function getFrappeSpaSignature() {
     return {
         id: "frappe-spa",
@@ -501,7 +501,7 @@ function getFrappeSpaSignature() {
         tags: ["javascript", "spa", "frappe"],
     };
 }
-// ─── Signature Registry Class ───────────────────────────────────────────
+// --- Signature Registry Class -------------------------------------------
 export class SignatureRegistry {
     signatures = new Map();
     categoryIndex = new Map();

@@ -3,15 +3,15 @@
  *
  * A comprehensive SDK for building, testing, and registering provider adapters.
  */
-// ─── Builder ────────────────────────────────────────────────────────────────
+// --- Builder ----------------------------------------------------------------
 export { AdapterBuilder, BuiltAdapter, createProviderBuilder, } from "./builder.js";
-// ─── Registry ────────────────────────────────────────────────────────────────
+// --- Registry ----------------------------------------------------------------
 export { AdapterRegistry, createAdapterRegistry, } from "./registry.js";
-// ─── Tester ─────────────────────────────────────────────────────────────────
+// --- Tester -----------------------------------------------------------------
 export { AdapterTester, assertTestResults, createAdapterTester, } from "./tester.js";
-// ─── Errors ─────────────────────────────────────────────────────────────────
+// --- Errors -----------------------------------------------------------------
 export { AdapterError, AdapterNotFoundError, AdapterAlreadyRegisteredError, AdapterInvocationError, ModelNotSupportedError, AdapterStateError, CompatibilityError, TestFailureError, BuilderValidationError, LifecycleError, } from "./errors.js";
-// ─── Constants ───────────────────────────────────────────────────────────────
+// --- Constants ---------------------------------------------------------------
 /**
  * SDK version
  */

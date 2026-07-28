@@ -12,9 +12,9 @@
  *   jobId: "job-001",
  * });
  */
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 export { SDK_VERSION } from "./types.js";
-// ─── Main API ─────────────────────────────────────────────────────────
+// --- Main API ---------------------------------------------------------
 export { compileTasks } from "./compiler.js";
 export { TaskCompilerError, TaskCompilerErrorCode } from "./types.js";
 //# sourceMappingURL=index.js.map

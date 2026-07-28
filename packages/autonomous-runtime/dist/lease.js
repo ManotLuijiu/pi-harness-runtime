@@ -7,9 +7,9 @@
  * Filesystem layout:
  * ```
  * ~/.pi/harness/inbox/
- * ├── tasks.jsonl        # task records
- * └── claimed/
- *     └── <task-id>.lease.json   # one lease file per claimed task
+ * +-- tasks.jsonl        # task records
+ * +-- claimed/
+ *     +-- <task-id>.lease.json   # one lease file per claimed task
  * ```
  *
  * Safety properties:
@@ -20,14 +20,14 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, writeSync, } from "node:fs";
 import { join } from "node:path";
 import { getLeasesDir } from "./types.js";
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 export class LeaseError extends Error {
     constructor(msg) {
         super(`[LeaseError] ${msg}`);
         this.name = "LeaseError";
     }
 }
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 /** Default lease duration before heartbeat extension is required. */
 export const DEFAULT_LEASE_TTL_MS = 30_000; // 30 s
 /** Heartbeat interval sent by the worker. */
@@ -50,7 +50,7 @@ export class LeaseManager {
             mkdirSync(this.leasesDir, { recursive: true });
         }
     }
-    // ─── claim ───────────────────────────────────────────────────────────────
+    // --- claim ---------------------------------------------------------------
     /**
      * Atomically claim a task for a worker.
      *
@@ -111,7 +111,7 @@ export class LeaseManager {
             throw err;
         }
     }
-    // ─── heartbeat ────────────────────────────────────────────────────────────
+    // --- heartbeat ------------------------------------------------------------
     /**
      * Extend a lease's expiry time.
      * Only the worker that holds the lease can extend it.
@@ -133,7 +133,7 @@ export class LeaseManager {
         this._writeLease(updated);
         return updated;
     }
-    // ─── release ─────────────────────────────────────────────────────────────
+    // --- release -------------------------------------------------------------
     /**
      * Explicitly release a lease (task completed or failed without retry).
      */
@@ -146,7 +146,7 @@ export class LeaseManager {
         }
         this._removeLease(taskId);
     }
-    // ─── get ─────────────────────────────────────────────────────────────────
+    // --- get -----------------------------------------------------------------
     /** Read a lease by taskId. Returns null if not found. */
     get(taskId) {
         const path = this._leasePath(taskId);
@@ -159,12 +159,12 @@ export class LeaseManager {
             return null;
         }
     }
-    // ─── isExpired ────────────────────────────────────────────────────────────
+    // --- isExpired ------------------------------------------------------------
     /** Check if a lease has expired (expiresAt is in the past). */
     isExpired(lease) {
         return new Date(lease.expiresAt).getTime() < Date.now();
     }
-    // ─── reap ────────────────────────────────────────────────────────────────
+    // --- reap ----------------------------------------------------------------
     /**
      * Scan all leases and return the ones that have expired.
      * Does NOT remove them — call reapAndRelease() to remove atomically.
@@ -214,7 +214,7 @@ export class LeaseManager {
         }
         return released;
     }
-    // ─── recoverOrphanLeases ─────────────────────────────────────────────────
+    // --- recoverOrphanLeases -------------------------------------------------
     /**
      * On worker startup, release any leases held by dead workers.
      * A lease is orphaned if its worker has not re-claimed it since startup.
@@ -225,7 +225,7 @@ export class LeaseManager {
     recoverOnStartup() {
         return this.reapAndRelease();
     }
-    // ─── listActive ───────────────────────────────────────────────────────────
+    // --- listActive -----------------------------------------------------------
     /** Return all active (non-expired) leases. */
     listActive() {
         if (!existsSync(this.leasesDir))
@@ -254,7 +254,7 @@ export class LeaseManager {
         }
         return active;
     }
-    // ─── internals ───────────────────────────────────────────────────────────
+    // --- internals -----------------------------------------------------------
     _leasePath(taskId) {
         return join(this.leasesDir, `${taskId}.lease.json`);
     }

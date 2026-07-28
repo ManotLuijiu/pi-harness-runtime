@@ -3,10 +3,10 @@
  *
  * Health check registration and monitoring.
  */
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_SERVICE_NAME = "harness-runtime";
 const DEFAULT_VERSION = "1.0.0";
-// ─── Health Monitor Class ─────────────────────────────────────────────────
+// --- Health Monitor Class -------------------------------------------------
 export class HealthMonitor {
     checks = new Map();
     version;
@@ -162,7 +162,7 @@ export class HealthMonitor {
         return this.checks.get(name);
     }
 }
-// ─── Built-in Health Checks ────────────────────────────────────────────────
+// --- Built-in Health Checks ------------------------------------------------
 /**
  * Create a basic connectivity health check
  */
@@ -251,7 +251,7 @@ export function createDiskSpaceHealthCheck(_name, _minFreeMB = 100) {
         };
     };
 }
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 /**
  * Create a health monitor with the given service name
  */

@@ -17,7 +17,7 @@ export function buildGraph(tasks) {
     for (const task of tasks) {
         taskMap.set(task.id, task);
     }
-    // ─── Compute dependents ────────────────────────────────────────────
+    // --- Compute dependents --------------------------------------------
     const dependents = new Map();
     for (const task of tasks) {
         dependents.set(task.id, []);
@@ -29,14 +29,14 @@ export function buildGraph(tasks) {
                 list.push(task.id);
         }
     }
-    // ─── Find roots and terminals ─────────────────────────────────────
+    // --- Find roots and terminals -------------------------------------
     const roots = tasks
         .filter((t) => t.dependencies.length === 0)
         .map((t) => t.id);
     const terminals = tasks
         .filter((t) => (dependents.get(t.id)?.length ?? 0) === 0)
         .map((t) => t.id);
-    // ─── Deterministic topological sort ────────────────────────────────
+    // --- Deterministic topological sort --------------------------------
     const order = topologicalSort([...tasks], taskMap);
     return {
         jobId: tasks[0]?.jobId ?? "",
@@ -46,7 +46,7 @@ export function buildGraph(tasks) {
         topologicalOrder: order,
     };
 }
-// ─── Kahn's topological sort with deterministic tiebreaking ─────────────────
+// --- Kahn's topological sort with deterministic tiebreaking -----------------
 function topologicalSort(tasks, taskMap) {
     const result = [];
     // in-degree for each task
@@ -103,7 +103,7 @@ function topologicalSort(tasks, taskMap) {
     }
     return result;
 }
-// ─── Dependency depth helper ───────────────────────────────────────────────
+// --- Dependency depth helper -----------------------------------------------
 function countDepth(taskId, taskMap) {
     const task = taskMap.get(taskId);
     if (!task || task.dependencies.length === 0)
@@ -116,7 +116,7 @@ function countDepth(taskId, taskMap) {
     }
     return max + 1;
 }
-// ─── Dependency map (for use by topologicalSort) ───────────────────────────
+// --- Dependency map (for use by topologicalSort) ---------------------------
 const dependents = new Map();
 export { dependents };
 //# sourceMappingURL=graph.js.map

@@ -18,24 +18,24 @@ export async function compileRequirement(raw, deps) {
         ...deps,
     };
     const clock = deps?.clock ?? (() => new Date());
-    // ─── Pre-flight validation ────────────────────────────────────────────────
+    // --- Pre-flight validation ------------------------------------------------
     if (!raw.text.trim() && !raw.title?.trim()) {
         throw new RequirementCompileError(RequirementCompileErrorCodes.EMPTY_REQUIREMENT, `Requirement ${raw.id} has no text or title.`, { requirementId: raw.id });
     }
-    // ─── Step 1: Extract statements ─────────────────────────────────────────
+    // --- Step 1: Extract statements -----------------------------------------
     const extractor = deps?.extractor ?? { extract: extractStatements };
     const extractionResult = extractor.extract(raw);
-    // ─── Step 2: Classify statements ──────────────────────────────────────
+    // --- Step 2: Classify statements --------------------------------------
     const classifier = deps?.classifier ?? { classify: classifyStatements };
     const classification = classifier.classify(extractionResult.statements, config);
-    // ─── Step 3: Build goals ─────────────────────────────────────────────────
+    // --- Step 3: Build goals -------------------------------------------------
     const goals = classification.goals.map((stmt, i) => ({
         id: `goal-${i + 1}`,
         description: stmt.originalText,
         sourceRefs: [stmt.sourceRef],
         priority: undefined,
     }));
-    // ─── Step 4: Build constraints ────────────────────────────────────────────
+    // --- Step 4: Build constraints --------------------------------------------
     const constraints = classification.constraints.map((stmt, i) => ({
         id: `constraint-${i + 1}`,
         description: stmt.originalText,
@@ -43,7 +43,7 @@ export async function compileRequirement(raw, deps) {
         sourceRefs: [stmt.sourceRef],
         blocking: true,
     }));
-    // ─── Step 5: Build preferences ───────────────────────────────────────────
+    // --- Step 5: Build preferences -------------------------------------------
     const preferenceConstraints = classification.preferences.map((stmt, i) => ({
         id: `pref-constraint-${i + 1}`,
         description: stmt.originalText,
@@ -51,12 +51,12 @@ export async function compileRequirement(raw, deps) {
         sourceRefs: [stmt.sourceRef],
         blocking: false,
     }));
-    // ─── Step 6: Detect ambiguities ───────────────────────────────────────────
+    // --- Step 6: Detect ambiguities -------------------------------------------
     const ambiguityDetector = deps?.ambiguityDetector ?? {
         detect: detectAmbiguities,
     };
     const ambiguities = ambiguityDetector.detect(classification, config);
-    // ─── Step 7: Normalize acceptance criteria ────────────────────────────────
+    // --- Step 7: Normalize acceptance criteria --------------------------------
     const acceptanceNormalizer = deps?.acceptanceNormalizer ?? {
         normalize: normalizeAcceptanceCriteria,
     };
@@ -74,17 +74,17 @@ export async function compileRequirement(raw, deps) {
             automatable: false,
         }));
     }
-    // ─── Step 8: Detect risks ─────────────────────────────────────────────────
+    // --- Step 8: Detect risks -------------------------------------------------
     const riskDetector = deps?.riskDetector ?? { detect: detectRisks };
     const riskTags = riskDetector.detect(classification);
-    // ─── Step 9: Extract terminology ──────────────────────────────────────────
+    // --- Step 9: Extract terminology ------------------------------------------
     const terminology = classification.terminologyMentions.map((stmt) => ({
         term: stmt.originalText,
         definition: stmt.normalizedText,
         language: /[ก-๙]/.test(stmt.originalText) ? "th" : "en",
         sourceRef: stmt.sourceRef,
     }));
-    // ─── Step 10: Identify actors ──────────────────────────────────────────────
+    // --- Step 10: Identify actors ----------------------------------------------
     const actors = [];
     const actorNames = new Set();
     // Scan all meaningful statements for actor mentions
@@ -143,7 +143,7 @@ export async function compileRequirement(raw, deps) {
             }
         }
     }
-    // ─── Step 11: Identify non-goals ──────────────────────────────────────────
+    // --- Step 11: Identify non-goals ------------------------------------------
     const nonGoals = [];
     for (const stmt of classification.constraints) {
         // Explicit "will not" or "should not" statements in non-goal context
@@ -152,7 +152,7 @@ export async function compileRequirement(raw, deps) {
             nonGoals.push(stmt.originalText);
         }
     }
-    // ─── Step 12: Build workflows ─────────────────────────────────────────────
+    // --- Step 12: Build workflows ---------------------------------------------
     const workflows = [];
     // Group consecutive statements into workflows heuristically
     const goalStatements = [
@@ -170,7 +170,7 @@ export async function compileRequirement(raw, deps) {
             sourceRefs: goalStatements.flatMap((s) => [s.sourceRef]),
         });
     }
-    // ─── Step 13: Determine status ────────────────────────────────────────────
+    // --- Step 13: Determine status --------------------------------------------
     let status = "ready";
     const blockingAmbiguities = ambiguities.filter((a) => a.blocking);
     if (blockingAmbiguities.length > 0 &&
@@ -196,13 +196,13 @@ export async function compileRequirement(raw, deps) {
         (!raw.text.trim() || isVague)) {
         throw new RequirementCompileError(RequirementCompileErrorCodes.EMPTY_REQUIREMENT, `Requirement ${raw.id} contains no identifiable goals or constraints.`, { requirementId: raw.id });
     }
-    // ─── Step 14: Build source references ────────────────────────────────────
+    // --- Step 14: Build source references ------------------------------------
     const sourceRefs = extractionResult.statements.map((s) => s.sourceRef);
-    // ─── Step 15: Assemble problem statement ─────────────────────────────────
+    // --- Step 15: Assemble problem statement ---------------------------------
     const problemStatement = goals.length > 0
         ? goals.map((g) => g.description).join("; ")
         : (raw.title ?? raw.text.slice(0, 200));
-    // ─── Step 16: Build final compiled requirement ────────────────────────────
+    // --- Step 16: Build final compiled requirement ----------------------------
     const compiled = {
         id: raw.id,
         title: raw.title ?? problemStatement.slice(0, 80),

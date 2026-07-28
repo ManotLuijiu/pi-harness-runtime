@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { containsSecret, calculateConfidence, } from "./types.js";
-// ─── Pattern Extraction ────────────────────────────────────────────────────────
+// --- Pattern Extraction --------------------------------------------------------
 function extractProviderSuccessPatterns(metrics) {
     const patterns = [];
     // Group by task type
@@ -94,7 +94,7 @@ function extractFailurePatterns(events) {
     }
     return patterns;
 }
-// ─── Experience Creation ──────────────────────────────────────────────────────
+// --- Experience Creation ------------------------------------------------------
 function createExperience(pattern, scope, humanFeedback) {
     // Calculate confidence
     const factors = {
@@ -147,7 +147,7 @@ function generateRecommendation(pattern) {
             return pattern.description;
     }
 }
-// ─── Secret Filtering ─────────────────────────────────────────────────────────
+// --- Secret Filtering ---------------------------------------------------------
 function filterSecrets(data) {
     const filtered = {};
     for (const [key, value] of Object.entries(data)) {
@@ -166,7 +166,7 @@ function filterSecrets(data) {
     }
     return filtered;
 }
-// ─── Main Engine ─────────────────────────────────────────────────────────────
+// --- Main Engine -------------------------------------------------------------
 export class LearningEngine {
     framework;
     repository;
@@ -288,7 +288,7 @@ ${experience.pattern}
 `;
     }
 }
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 export function createLearningEngine(options) {
     return new LearningEngine(options);
 }

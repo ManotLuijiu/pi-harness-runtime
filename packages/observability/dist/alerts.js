@@ -4,7 +4,7 @@
  * Alert rule evaluation and alerting.
  */
 import { Logger } from "./logger.js";
-// ─── Alert Engine Class ─────────────────────────────────────────────────
+// --- Alert Engine Class -------------------------------------------------
 export class AlertEngine {
     rules = new Map();
     activeAlerts = new Map();
@@ -287,7 +287,7 @@ export class AlertEngine {
         };
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 /**
  * Create an alert engine
  */

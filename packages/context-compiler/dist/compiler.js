@@ -188,7 +188,7 @@ function buildSourceGraph(items) {
     });
     return edges;
 }
-// ─── OKF Integration ────────────────────────────────────────────────────────
+// --- OKF Integration --------------------------------------------------------
 /**
  * Enrich context candidates with OKF concepts from ~/.pi/okf/.
  *

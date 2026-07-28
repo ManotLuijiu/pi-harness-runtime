@@ -8,9 +8,9 @@ export declare class InboxError extends Error {
  * Storage layout:
  * ```
  * ~/.pi/harness/inbox/
- * ├── tasks.jsonl   # append-only log (one JSON line per task)
- * ├── claimed/      # active leases (one JSON file per task)
- * └── BACKLOG.md   # human-friendly authoring surface (optional)
+ * +-- tasks.jsonl   # append-only log (one JSON line per task)
+ * +-- claimed/      # active leases (one JSON file per task)
+ * +-- BACKLOG.md   # human-friendly authoring surface (optional)
  * ```
  *
  * Operations are:

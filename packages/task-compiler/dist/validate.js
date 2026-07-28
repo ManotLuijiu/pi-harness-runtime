@@ -124,7 +124,7 @@ export function assertEveryCriterionAssigned(graph, criterionIds) {
         throw new TaskCompilerError(TaskCompilerErrorCode.UNSATISFIED_CRITERION, `Acceptance criteria not assigned to any task: ${unassigned.join(", ")}`, { unassignedCriteria: unassigned });
     }
 }
-// ─── File overlap detection ──────────────────────────────────────────
+// --- File overlap detection ------------------------------------------
 function findFileOverlap(a, b) {
     const conflicts = [];
     for (const patternA of a.include) {
@@ -146,7 +146,7 @@ function patternSubsumes(parent, child) {
     const p = parent.replace(/\/\*\*$/, "");
     return child.startsWith(`${p}/`) || child.startsWith(p);
 }
-// ─── Dependency helpers ────────────────────────────────────────────────
+// --- Dependency helpers ------------------------------------------------
 function getAllDependencies(taskId, graph) {
     const taskMap = new Map(graph.tasks.map((t) => [t.id, t]));
     const visited = new Set();

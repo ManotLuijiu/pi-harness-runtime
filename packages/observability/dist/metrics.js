@@ -3,14 +3,14 @@
  *
  * Metrics collection with Prometheus-compatible format.
  */
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     serviceName: "unknown",
     defaultLabels: {},
     exportInterval: 60000,
     prefix: "",
 };
-// ─── Timer Helper ─────────────────────────────────────────────────────────
+// --- Timer Helper ---------------------------------------------------------
 export class Timer {
     startTime;
     constructor() {
@@ -29,7 +29,7 @@ export class Timer {
         this.startTime = Date.now();
     }
 }
-// ─── Metrics Collector ────────────────────────────────────────────────────
+// --- Metrics Collector ----------------------------------------------------
 export class Metrics {
     config;
     counters = new Map();
@@ -64,7 +64,7 @@ export class Metrics {
     defaultBuckets() {
         return [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
     }
-    // ─── Counter Methods ──────────────────────────────────────────────────
+    // --- Counter Methods --------------------------------------------------
     /**
      * Register a counter metric
      */
@@ -104,7 +104,7 @@ export class Metrics {
         const key = this.labelKey(labels);
         return this.counters.get(fullName)?.get(key) ?? 0;
     }
-    // ─── Gauge Methods ──────────────────────────────────────────────────
+    // --- Gauge Methods --------------------------------------------------
     /**
      * Register a gauge metric
      */
@@ -147,7 +147,7 @@ export class Metrics {
         const gauge = this.gauges.get(fullName);
         gauge.set(key, (gauge.get(key) ?? 0) - 1);
     }
-    // ─── Histogram Methods ───────────────────────────────────────────────
+    // --- Histogram Methods -----------------------------------------------
     /**
      * Register a histogram metric
      */
@@ -192,7 +192,7 @@ export class Metrics {
             }
         }
     }
-    // ─── Summary Methods ─────────────────────────────────────────────────
+    // --- Summary Methods -------------------------------------------------
     /**
      * Register a summary metric
      */
@@ -215,7 +215,7 @@ export class Metrics {
             count: current.count + 1,
         });
     }
-    // ─── Timing Helpers ─────────────────────────────────────────────────
+    // --- Timing Helpers -------------------------------------------------
     /**
      * Start a timer
      */
@@ -255,7 +255,7 @@ export class Metrics {
             this.observeDuration(name, timer, labels);
         }
     }
-    // ─── Export Methods ──────────────────────────────────────────────────
+    // --- Export Methods --------------------------------------------------
     /**
      * Export metrics in Prometheus format
      */
@@ -340,7 +340,7 @@ export class Metrics {
         this.summaries.clear();
     }
 }
-// ─── Built-in Metrics ────────────────────────────────────────────────────────
+// --- Built-in Metrics --------------------------------------------------------
 /**
  * Create built-in runtime metrics
  */
@@ -363,7 +363,7 @@ export function createBuiltInMetrics(metrics) {
     metrics.registerGauge("harness_sessions_active", "Active sessions");
     metrics.registerCounter("harness_sessions_tokens_total", "Total session tokens");
 }
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 /**
  * Create a metrics collector with the given configuration
  */

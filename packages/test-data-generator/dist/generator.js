@@ -5,7 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { SimpleFaker } from "./faker-adapter.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     seed: Date.now(),
     locale: "en",
@@ -13,7 +13,7 @@ const DEFAULT_CONFIG = {
     maxRetries: 10,
     customGenerators: {},
 };
-// ─── Test Data Generator ─────────────────────────────────────────────────
+// --- Test Data Generator -------------------------------------------------
 export class TestDataGenerator {
     config;
     faker;
@@ -347,7 +347,7 @@ export class TestDataGenerator {
         this.sequences.clear();
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a test data generator
  */

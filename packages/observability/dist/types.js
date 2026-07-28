@@ -3,7 +3,7 @@
  *
  * Core types for logging, tracing, metrics, and health monitoring.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

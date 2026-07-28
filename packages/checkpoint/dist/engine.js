@@ -5,7 +5,7 @@
  */
 import { DiffCalculator } from "./differ.js";
 import { StorageManager } from "./storage.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     rootDir: "./checkpoints",
     compression: true,
@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
     parallelWrites: true,
     metadataIndex: true,
 };
-// ─── Checkpoint Engine ─────────────────────────────────────────────────────
+// --- Checkpoint Engine -----------------------------------------------------
 export class CheckpointEngine {
     config;
     storage;
@@ -401,7 +401,7 @@ export class CheckpointEngine {
         this.lastStates.delete(jobId);
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a checkpoint engine
  */

@@ -7,8 +7,8 @@ import { join } from "path";
 import {
 	createHerdrBus,
 	ensureHerdrWorkspace,
-	publishReviewCompleted,
-	publishReviewRequested,
+	publishReviewCompletedSimple,
+	publishReviewRequestedSimple,
 } from "../packages/event-bus/src/herdr-bus.js";
 
 const AGENT_ID = "review-agent";

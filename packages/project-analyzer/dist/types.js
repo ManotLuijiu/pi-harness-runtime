@@ -3,7 +3,7 @@
  *
  * Type definitions for project analysis output and plugin interface.
  */
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 export const SDK_VERSION = "1.0.0";
 export const DEFAULT_ANALYZER_CONFIG = {
     maxScanFiles: 10000,

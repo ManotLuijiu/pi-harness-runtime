@@ -23,7 +23,7 @@ export class PromptCompileError extends Error {
         this.details = details;
     }
 }
-// ─── Provider profiles ────────────────────────────────────────────────────
+// --- Provider profiles ----------------------------------------------------
 /**
  * Built-in provider profiles.
  */
@@ -77,7 +77,7 @@ export const PROVIDER_PROFILES = {
         continuationMarker: "<!-- CONTINUE -->",
     },
 };
-// ─── Section order ────────────────────────────────────────────────────────
+// --- Section order --------------------------------------------------------
 /**
  * Deterministic section ordering per RFC-0041.
  */
@@ -94,7 +94,7 @@ export const SECTION_ORDER = [
     "continuation_instructions",
     "supplemental",
 ];
-// ─── Compactable priority threshold ───────────────────────────────────────
+// --- Compactable priority threshold ---------------------------------------
 /**
  * Entries with priority >= this are eligible for compaction.
  * Priority 0 = critical (never compact).

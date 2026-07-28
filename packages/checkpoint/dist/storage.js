@@ -6,12 +6,12 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir, rename, stat, unlink, readdir, } from "node:fs/promises";
 import { dirname, join } from "node:path";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     compression: true,
     checksumAlgorithm: "sha256",
 };
-// ─── Storage Manager ──────────────────────────────────────────────────────
+// --- Storage Manager ------------------------------------------------------
 export class StorageManager {
     rootDir;
     compression;
@@ -355,7 +355,7 @@ export class StorageManager {
         }
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a storage manager
  */

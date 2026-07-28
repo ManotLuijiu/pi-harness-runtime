@@ -74,7 +74,9 @@ const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
 
 try {
 	if (!existsSync(DEBUG_LOG_DIR)) mkdirSync(DEBUG_LOG_DIR, { recursive: true });
-} catch { /* non-fatal */ }
+} catch {
+	/* non-fatal */
+}
 
 // Write harness runtime logs to file only (NOT to TUI stdout)
 function _debugLog(...args: unknown[]): void {
@@ -82,7 +84,9 @@ function _debugLog(...args: unknown[]): void {
 		const line =
 			new Date().toISOString() +
 			" " +
-			args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+			args
+				.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+				.join(" ");
 		appendFileSync(DEBUG_LOG_PATH, line + "\n");
 	} catch {
 		// non-fatal
@@ -342,7 +346,7 @@ export default function (pi: ExtensionAPI) {
 	// Live watcher — sanitises on every change in the drop folder.
 	const cookieWatcher = new CookieWatcher({
 		dropDir: cookieDropDir,
-		syncOptions: { cachePath: cookieCachePath },
+		syncOptions: { cachePath: cookieCachePath, providerHint: "minimax" },
 		onEvent: (event) => {
 			if (event.kind === "sync-error" || event.kind === "watcher-error") {
 				const msg = "message" in event ? event.message : "";
@@ -367,6 +371,9 @@ export default function (pi: ExtensionAPI) {
 	});
 	try {
 		cookieWatcher.start();
+		// Sync existing drop-folder cookies now (ignoreInitial: true means
+		// the watcher won't do this automatically on startup).
+		cookieWatcher.triggerNow();
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		if (msg.includes("ENOSPC")) {

@@ -3,7 +3,7 @@
  *
  * Core types for session management.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

@@ -6,7 +6,7 @@
  * These types are the canonical contracts. Do not re-define them in other packages.
  */
 import { env } from "node:process";
-// ─── Storage paths ────────────────────────────────────────────────────────────
+// --- Storage paths ------------------------------------------------------------
 const DEFAULT_ROOT = `${env["HOME"] ?? "."}/.pi/harness`;
 /** Returns the standard storage root for the runtime. */
 export function getRuntimeRoot() {

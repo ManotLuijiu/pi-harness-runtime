@@ -338,7 +338,7 @@ export interface CodeWrittenPayload {
 	loopId: string;
 	iteration: number;
 	files: string[];
-	summary: string;
+	summary?: string;
 }
 
 export interface ReviewTickPayload {

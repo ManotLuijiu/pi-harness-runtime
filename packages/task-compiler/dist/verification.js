@@ -14,7 +14,7 @@ export function assignVerification(tasks, requirement) {
         return { ...task, expectedOutputs: outputs };
     });
 }
-// ─── Output builders by task type ─────────────────────────────────────
+// --- Output builders by task type -------------------------------------
 function buildOutputs(task, requirement) {
     switch (task.type) {
         case "implementation": {
@@ -52,7 +52,7 @@ function buildOutputs(task, requirement) {
         }
     }
 }
-// ─── Type-specific output builders ───────────────────────────────────
+// --- Type-specific output builders -----------------------------------
 function buildImplementationOutputs(task, requirement) {
     const outputs = [];
     // Required: at least one file was modified

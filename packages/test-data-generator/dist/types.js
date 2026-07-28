@@ -3,7 +3,7 @@
  *
  * Core types for test data generation.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

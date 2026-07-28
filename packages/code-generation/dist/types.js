@@ -3,7 +3,7 @@
  *
  * Core types for code generation from templates.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

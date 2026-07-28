@@ -1,7 +1,7 @@
 /**
  * Frappe Plugin — Types (RFC-0061)
  */
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 export class FrappeWorkspaceError extends Error {
     code;
     constructor(message, code = "INVALID_WORKSPACE") {
