@@ -14,16 +14,16 @@ pi-harness-runtime is a local-first, provider-agnostic AI coding harness runtime
 
 ```
 Human Requirement
-  → /harness start <requirement>
-      → Master Planner (creates task graph)
-      → Loop Runtime (executes tasks)
-          → Provider Router (selects best model)
-          → BlackBoard (coordination)
-          → Checkpoint Manager (resumability)
-          → Quota Manager (avoid exhaustion)
-          → Scheduler (pause/resume)
-          → Repair Engine (auto-fix failures)
-      → /harness status (report)
+  -> /harness start <requirement>
+      -> Master Planner (creates task graph)
+      -> Loop Runtime (executes tasks)
+          -> Provider Router (selects best model)
+          -> BlackBoard (coordination)
+          -> Checkpoint Manager (resumability)
+          -> Quota Manager (avoid exhaustion)
+          -> Scheduler (pause/resume)
+          -> Repair Engine (auto-fix failures)
+      -> /harness status (report)
 ```
 
 ## Commands
@@ -61,7 +61,7 @@ Human Requirement
 
 ```bash
 harness-auth auth
-# → Opens Chrome browser, login once, profile auto-saves
+# -> Opens Chrome browser, login once, profile auto-saves
 # Or: bun packages/auth/src/run-minimax-auth.ts auth
 ```
 
@@ -69,17 +69,17 @@ harness-auth auth
 
 ```bash
 harness-auth scrape
-# → Silent scraping with saved profile
+# -> Silent scraping with saved profile
 # Or: bun packages/auth/src/run-minimax-auth.ts scrape
 ```
 
 ## Job State Machine
 
 ```
-created → planning → queued → running → testing → reviewing
-    ↓        ↓         ↓        ↓         ↓
+created -> planning -> queued -> running -> testing -> reviewing
+    v        v         v        v         v
 cancelled  blocked   waiting_human  repairing  ready_for_client
-                                        ↓            ↓
+                                        v            v
                                   paused_quota    archived
 ```
 

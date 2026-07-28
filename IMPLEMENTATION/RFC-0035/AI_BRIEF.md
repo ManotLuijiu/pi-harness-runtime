@@ -28,19 +28,19 @@ Implementation roadmap for RFCs 0031-0040 with phases, dependencies, and milesto
 ## Key Dependencies
 
 ```
-RFC-0031 (Adapter SDK) ──┬──► RFC-0036 (Code Review Engine)
-                          │
-RFC-0032 (Checkpoint) ◄──┤
-                          │
-RFC-0033 (Session) ◄─────┼──► RFC-0034 (Observability)
-                          │
-RFC-0034 (Observability) ◄┘
+RFC-0031 (Adapter SDK) --+--► RFC-0036 (Code Review Engine)
+                          |
+RFC-0032 (Checkpoint) ◄--+
+                          |
+RFC-0033 (Session) ◄-----+--► RFC-0034 (Observability)
+                          |
+RFC-0034 (Observability) ◄+
 
-RFC-0038 (Framework Detector) ──┬──► RFC-0039 (Test Data Generator)
-                                 │
-RFC-0037 (Code Generation) ◄─────┤
-                                 │
-RFC-0040 (Plugin SDK) ◄──────────┘
+RFC-0038 (Framework Detector) --+--► RFC-0039 (Test Data Generator)
+                                 |
+RFC-0037 (Code Generation) ◄-----+
+                                 |
+RFC-0040 (Plugin SDK) ◄----------+
 ```
 
 ## Success Metrics

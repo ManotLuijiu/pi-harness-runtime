@@ -12,19 +12,19 @@ Agents need a consistent way to convert informal requests into structured requir
 
 ```
 User Input (text, GitHub issue, PR description)
-        ↓
-┌─────────────────────┐
-│  RequirementParser  │  → Extracts title, description, tags, priority
-└─────────────────────┘
-        ↓
-┌─────────────────────┐
-│ RequirementClassifier│  → Labels type: feature, bug, chore, spike
-└─────────────────────┘
-        ↓
-┌─────────────────────┐
-│ EffortEstimator     │  → Tags effort: XS, S, M, L, XL (story points)
-└─────────────────────┘
-        ↓
+        v
++---------------------+
+|  RequirementParser  |  -> Extracts title, description, tags, priority
++---------------------+
+        v
++---------------------+
+| RequirementClassifier|  -> Labels type: feature, bug, chore, spike
++---------------------+
+        v
++---------------------+
+| EffortEstimator     |  -> Tags effort: XS, S, M, L, XL (story points)
++---------------------+
+        v
     Requirement[]
 ```
 

@@ -13,17 +13,17 @@ The Session Event Runtime transforms pi session JSONL files into a real-time com
 
 ```
 JSONL (immutable)
-  ↓
+  v
 Event Store
-  ↓
+  v
 Event Publisher
-  ↓
+  v
 Projection Engine
-  ↓
+  v
 Semantic Event Bus
-  ↓
+  v
 Agent Subscribers
-  ↓
+  v
 Workflow Automation
 ```
 
@@ -34,28 +34,28 @@ Workflow Automation
 Current AI systems:
 
 ```
-User → Agent → Response → Done
+User -> Agent -> Response -> Done
 ```
 
 This runtime:
 
 ```
 User
-  ↓
+  v
 Master Planner
-  ↓
+  v
 Sub Agent
-  ↓
+  v
 Session Event Runtime
-  ↓
+  v
 Semantic Event Projection
-  ↓
+  v
 Event Bus
-  ↓
+  v
 Subscribers
-  ↓
+  v
 Next Agent
-  ↓
+  v
 Continuous Workflow
 ```
 
@@ -559,10 +559,10 @@ Styled HTML page for sharing.
 
 ```
 ContextEngineering Pipeline
-  → SessionService.getLatestDecision()
-  → SessionService.getArchitectureHistory()
-  → SessionService.getRecentFailures()
-  → Build context from session state (NOT raw JSONL)
+  -> SessionService.getLatestDecision()
+  -> SessionService.getArchitectureHistory()
+  -> SessionService.getRecentFailures()
+  -> Build context from session state (NOT raw JSONL)
 ```
 
 ContextEngineering NEVER reads JSONL directly. It goes through `SessionService`.
@@ -573,11 +573,11 @@ ContextEngineering NEVER reads JSONL directly. It goes through `SessionService`.
 
 ```
 Autonomous Runtime
-  → EventStore.append() on every state change
-  → SemanticEventBuilder.buildFromSessionEvents()
-  → EventBus.publish("task.assigned", event)
-  → SubscriptionEngine.notify(agentId, event)
-  → Agent receives via subscription callback
+  -> EventStore.append() on every state change
+  -> SemanticEventBuilder.buildFromSessionEvents()
+  -> EventBus.publish("task.assigned", event)
+  -> SubscriptionEngine.notify(agentId, event)
+  -> Agent receives via subscription callback
 ```
 
 Autonomous Runtime publishes lifecycle events:

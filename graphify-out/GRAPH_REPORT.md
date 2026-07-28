@@ -177,15 +177,15 @@
 
 ## Surprising Connections (you probably didn't know these)
 - `hasBrowserProfileAutoFetchSource()` --calls--> `getLiveSessionPath()`  [INFERRED]
-  index.ts → packages/auth/src/minimax-browser-auth.ts
+  index.ts -> packages/auth/src/minimax-browser-auth.ts
 - `hasBrowserProfileAutoFetchSource()` --calls--> `getStatusPath()`  [INFERRED]
-  index.ts → packages/auth/src/minimax-browser-auth.ts
+  index.ts -> packages/auth/src/minimax-browser-auth.ts
 - `autoFetchQuotaFromBrowserProfile()` --calls--> `scrapeWithExistingProfile()`  [INFERRED]
-  index.ts → packages/auth/src/minimax-browser-auth.ts
+  index.ts -> packages/auth/src/minimax-browser-auth.ts
 - `renderStatus()` --calls--> `formatUsd()`  [INFERRED]
-  renderer.ts → cli.ts
+  renderer.ts -> cli.ts
 - `renderStatus()` --calls--> `computeLocalResetTime()`  [INFERRED]
-  renderer.ts → windows.ts
+  renderer.ts -> windows.ts
 
 ## Communities
 

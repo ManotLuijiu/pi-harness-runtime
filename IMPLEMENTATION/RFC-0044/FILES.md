@@ -2,12 +2,12 @@
 
 ```text
 packages/task-compiler/src/
-├── types.ts
-├── decompose.ts
-├── file-scope.ts
-├── verification.ts
-├── command-policy.ts
-├── graph.ts
-├── validate.ts
-└── compiler.ts
++-- types.ts
++-- decompose.ts
++-- file-scope.ts
++-- verification.ts
++-- command-policy.ts
++-- graph.ts
++-- validate.ts
++-- compiler.ts
 ```

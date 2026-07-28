@@ -18,7 +18,7 @@ Study Herdr's reusable `SKILL.md` distribution model and adapt the idea to `pi-h
 ### Current runtime state
 
 - `pi-harness-runtime` already exposes bundled skills via:
-  - `package.json` → `pi.skills = ["./skills"]`
+  - `package.json` -> `pi.skills = ["./skills"]`
 - Current bundled repo skill set is minimal:
   - `skills/harness-runtime/SKILL.md`
 - `packages/skill-registry` is currently an in-memory registry, not a filesystem `SKILL.md` loader.

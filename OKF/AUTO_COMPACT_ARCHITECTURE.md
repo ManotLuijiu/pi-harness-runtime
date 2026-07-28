@@ -19,38 +19,38 @@ pi-harness-runtime implements a **two-phase compact system**:
 
 ```
 LoopRuntime.executeTaskWithCompact()
-    │
-    ├─► CompactOrchestrator.invokeWithCompact()
-    │       │
-    │       ├─► estimateTokensWithBuffer()
-    │       │       └── Calculates token usage with buffer awareness
-    │       │
-    │       ├─► shouldProactiveCompact() 
-    │       │       └── Returns true if > 85% utilization
-    │       │
-    │       └─► runFullCompact()
-    │               │
-    │               ├─► summarizeViaForkedAgent()
-    │               │       └── LLM summarizes old messages (forked)
-    │               │
-    │               ├─► generateBoundary()
-    │               │       └── Creates compact marker message
-    │               │
-    │               └─► modifies messages[] in-place
-    │
-    └─► invoke() with compacted messages
+    |
+    +-► CompactOrchestrator.invokeWithCompact()
+    |       |
+    |       +-► estimateTokensWithBuffer()
+    |       |       +-- Calculates token usage with buffer awareness
+    |       |
+    |       +-► shouldProactiveCompact() 
+    |       |       +-- Returns true if > 85% utilization
+    |       |
+    |       +-► runFullCompact()
+    |               |
+    |               +-► summarizeViaForkedAgent()
+    |               |       +-- LLM summarizes old messages (forked)
+    |               |
+    |               +-► generateBoundary()
+    |               |       +-- Creates compact marker message
+    |               |
+    |               +-► modifies messages[] in-place
+    |
+    +-► invoke() with compacted messages
 ```
 
 ### Phase 2: Reactive Compact (On Error)
 
 ```
-invoke() ──► API returns error
-    │
-    ├─► isContextTooLongError() detects context-too-long
-    │
-    ├─► runFullCompact() summarizes recent messages
-    │
-    └─► retry invoke() with compacted messages
+invoke() --► API returns error
+    |
+    +-► isContextTooLongError() detects context-too-long
+    |
+    +-► runFullCompact() summarizes recent messages
+    |
+    +-► retry invoke() with compacted messages
 ```
 
 ## Key Components
@@ -102,11 +102,11 @@ Generates context-aware continue prompts:
 ```typescript
 // Boundary marker for message history
 generateBoundary({ summary, reason, messagesCompacted }) 
-// → "[Earlier conversation summarized]"
+// -> "[Earlier conversation summarized]"
 
 // Continue prompt for retry
 generateMinimal({ summary, recentMessages })
-// → "Continue from where you left off. Do not repeat work..."
+// -> "Continue from where you left off. Do not repeat work..."
 ```
 
 ### 5. LoopRuntime
@@ -152,47 +152,47 @@ if (consecutiveFailures >= MAX_CONSECUTIVE_COMPACT_FAILURES) {
 ## Continue Prompt Flow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    COMPACTION EVENT                      │
-└─────────────────────────────────────────────────────────┘
-                           │
++---------------------------------------------------------+
+|                    COMPACTION EVENT                      |
++---------------------------------------------------------+
+                           |
                            ▼
-┌─────────────────────────────────────────────────────────┐
-│ 1. Save partial artifacts (PartialRecovery)             │
-│    - Partial outputs from before compact                 │
-│    - Task state                                         │
-└─────────────────────────────────────────────────────────┘
-                           │
++---------------------------------------------------------+
+| 1. Save partial artifacts (PartialRecovery)             |
+|    - Partial outputs from before compact                 |
+|    - Task state                                         |
++---------------------------------------------------------+
+                           |
                            ▼
-┌─────────────────────────────────────────────────────────┐
-│ 2. Generate summary (ForkedSummarizer)                  │
-│    - LLM summarizes old messages                        │
-│    - Focus on work done, decisions, remaining work       │
-└─────────────────────────────────────────────────────────┘
-                           │
++---------------------------------------------------------+
+| 2. Generate summary (ForkedSummarizer)                  |
+|    - LLM summarizes old messages                        |
+|    - Focus on work done, decisions, remaining work       |
++---------------------------------------------------------+
+                           |
                            ▼
-┌─────────────────────────────────────────────────────────┐
-│ 3. Modify messages[] in-place                           │
-│    - Remove old messages                                │
-│    - Insert boundary marker                             │
-│    - Keep recent messages                               │
-└─────────────────────────────────────────────────────────┘
-                           │
++---------------------------------------------------------+
+| 3. Modify messages[] in-place                           |
+|    - Remove old messages                                |
+|    - Insert boundary marker                             |
+|    - Keep recent messages                               |
++---------------------------------------------------------+
+                           |
                            ▼
-┌─────────────────────────────────────────────────────────┐
-│ 4. Generate continue prompt                             │
-│    - "Continue from where you left off"                 │
-│    - Include summary of earlier work                    │
-│    - Include remaining work items                       │
-└─────────────────────────────────────────────────────────┘
-                           │
++---------------------------------------------------------+
+| 4. Generate continue prompt                             |
+|    - "Continue from where you left off"                 |
+|    - Include summary of earlier work                    |
+|    - Include remaining work items                       |
++---------------------------------------------------------+
+                           |
                            ▼
-┌─────────────────────────────────────────────────────────┐
-│ 5. Auto-retry invoke                                   │
-│    - Messages now fit in context window                │
-│    - Model receives continue prompt                     │
-│    - Work continues automatically                       │
-└─────────────────────────────────────────────────────────┘
++---------------------------------------------------------+
+| 5. Auto-retry invoke                                   |
+|    - Messages now fit in context window                |
+|    - Model receives continue prompt                     |
+|    - Work continues automatically                       |
++---------------------------------------------------------+
 ```
 
 ## Configuration

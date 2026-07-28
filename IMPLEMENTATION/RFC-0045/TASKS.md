@@ -19,13 +19,13 @@
 
 ```
 packages/project-analyzer/src/
-├── types.ts           ✅ Project profile types
-├── walker.ts          ✅ Bounded filesystem traversal
-├── signals.ts         ✅ Generic detection signals
-├── rule-discovery.ts ✅ Rule file discovery
-├── command-discovery.ts ✅ Command discovery
-├── cache.ts          ✅ Cache key and invalidation
-├── analyzer.ts       ✅ Main analyzer
-└── plugins/
-    └── index.ts      ✅ Plugin exports
++-- types.ts           ✅ Project profile types
++-- walker.ts          ✅ Bounded filesystem traversal
++-- signals.ts         ✅ Generic detection signals
++-- rule-discovery.ts ✅ Rule file discovery
++-- command-discovery.ts ✅ Command discovery
++-- cache.ts          ✅ Cache key and invalidation
++-- analyzer.ts       ✅ Main analyzer
++-- plugins/
+    +-- index.ts      ✅ Plugin exports
 ```
