@@ -22,17 +22,17 @@ It bridges temporary Shared Blackboard state and long-term project knowledge.
 
 ```text
 knowledge/
-├── index.md
-├── log.md
-├── runtime/
-│   ├── index.md
-│   ├── loop-runtime.md
-│   └── shared-blackboard.md
-├── providers/
-├── frameworks/
-├── failures/
-├── patterns/
-└── lessons/
++-- index.md
++-- log.md
++-- runtime/
+|   +-- index.md
+|   +-- loop-runtime.md
+|   +-- shared-blackboard.md
++-- providers/
++-- frameworks/
++-- failures/
++-- patterns/
++-- lessons/
 ```
 
 ## 4. Concept Model

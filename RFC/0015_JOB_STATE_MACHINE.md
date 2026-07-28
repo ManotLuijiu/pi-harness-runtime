@@ -10,9 +10,9 @@ Jobs (one-shot autonomous coding tasks) need a well-defined lifecycle so the har
 ## State Diagram
 
 ```
-created → planning → queued → running → testing → e2e_testing
-       → reviewing → repairing → paused_quota → waiting_human
-       → ready_for_client → archived
+created -> planning -> queued -> running -> testing -> e2e_testing
+       -> reviewing -> repairing -> paused_quota -> waiting_human
+       -> ready_for_client -> archived
 ```
 
 ## States

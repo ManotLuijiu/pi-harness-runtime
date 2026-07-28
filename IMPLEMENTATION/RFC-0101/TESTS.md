@@ -5,7 +5,7 @@
 ### Inbox
 
 - `inbox.append` writes one JSON line per call to `tasks.jsonl`.
-- `inbox.list` returns queued tasks in stable order (priority → createdAt).
+- `inbox.list` returns queued tasks in stable order (priority -> createdAt).
 - `inbox.transition` updates status atomically with history append.
 - `inbox.archive` moves completed records after the retention window.
 
@@ -77,9 +77,9 @@
 
 ### Privilege Broker
 
-- Request a registered capability → succeeds.
-- Request an unknown capability → fails with `BrokerDeniedError`.
-- Request a registered capability with mismatched args → fails.
+- Request a registered capability -> succeeds.
+- Request an unknown capability -> fails with `BrokerDeniedError`.
+- Request a registered capability with mismatched args -> fails.
 - Verify audit log contains one entry per call with the correct shape.
 
 ## Failure-Mode Tests

@@ -8,16 +8,16 @@ A Node.js CLI SDK for managing pi-harness plugins — install, list, update, rem
 
 ```
 packages/cli-plugin-sdk/
-├── src/
-│   ├── index.ts          # PluginCLI class + CLI entry
-│   ├── commands/         # Install, list, remove, invoke, update
-│   ├── registry.ts       # npm registry client
-│   ├── plugin-fs.ts      # Filesystem operations
-│   └── types.ts
-├── bin/
-│   └── pi-plugin.js      # CLI entry point
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts          # PluginCLI class + CLI entry
+|   +-- commands/         # Install, list, remove, invoke, update
+|   +-- registry.ts       # npm registry client
+|   +-- plugin-fs.ts      # Filesystem operations
+|   +-- types.ts
++-- bin/
+|   +-- pi-plugin.js      # CLI entry point
++-- package.json
++-- README.md
 ```
 
 ## CLI Commands

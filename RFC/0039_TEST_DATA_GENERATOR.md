@@ -14,19 +14,19 @@ We need automated test data generation for:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Test Data Generator                            │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Generator │  │   Faker      │  │   Exporter   │             │
-│  │   Engine    │  │   Adapters   │  │              │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Schema     │  │   Factory    │  │   Seed       │             │
-│  │   Validator  │  │   Registry   │  │   Manager    │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                    Test Data Generator                            |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Generator |  |   Faker      |  |   Exporter   |             |
+|  |   Engine    |  |   Adapters   |  |              |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Schema     |  |   Factory    |  |   Seed       |             |
+|  |   Validator  |  |   Registry   |  |   Manager    |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -324,52 +324,52 @@ const orders = relationHandler.generateWithRelations('order', 10);
 ## File Structure
 ```
 packages/test-data-generator/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── generator.ts               # TestDataGenerator class
-│   ├── schema/
-│   │   ├── validator.ts           # Schema validation
-│   │   └── parser.ts              # Schema parsing
-│   ├── faker/
-│   │   ├── faker-adapter.ts       # Faker.js integration
-│   │   ├── generators.ts          # Built-in generators
-│   │   └── custom.ts             # Custom generators
-│   ├── factories/
-│   │   ├── registry.ts            # FactoryRegistry
-│   │   └── builder.ts             # Factory builder
-│   ├── relations/
-│   │   ├── handler.ts             # RelationHandler
-│   │   └── integrity.ts           # Referential integrity
-│   ├── exporters/
-│   │   ├── json.ts
-│   │   ├── csv.ts
-│   │   ├── sql.ts
-│   │   ├── yaml.ts
-│   │   └── fixtures/              # Framework-specific fixtures
-│   │       ├── django.ts
-│   │       ├── laravel.ts
-│   │       └── factory-bot.ts
-│   ├── adapters/
-│   │   ├── index.ts               # Framework adapters
-│   │   ├── frappe.ts
-│   │   ├── nextjs.ts
-│   │   ├── django.ts
-│   │   └── laravel.ts
-│   ├── types.ts
-│   └── errors.ts
-├── schemas/
-│   ├── user.json
-│   ├── product.json
-│   ├── order.json
-│   └── common.json
-├── test/
-├── examples/
-│   ├── basic-generation.ts
-│   ├── factory-pattern.ts
-│   ├── relations.ts
-│   └── exporters.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- generator.ts               # TestDataGenerator class
+|   +-- schema/
+|   |   +-- validator.ts           # Schema validation
+|   |   +-- parser.ts              # Schema parsing
+|   +-- faker/
+|   |   +-- faker-adapter.ts       # Faker.js integration
+|   |   +-- generators.ts          # Built-in generators
+|   |   +-- custom.ts             # Custom generators
+|   +-- factories/
+|   |   +-- registry.ts            # FactoryRegistry
+|   |   +-- builder.ts             # Factory builder
+|   +-- relations/
+|   |   +-- handler.ts             # RelationHandler
+|   |   +-- integrity.ts           # Referential integrity
+|   +-- exporters/
+|   |   +-- json.ts
+|   |   +-- csv.ts
+|   |   +-- sql.ts
+|   |   +-- yaml.ts
+|   |   +-- fixtures/              # Framework-specific fixtures
+|   |       +-- django.ts
+|   |       +-- laravel.ts
+|   |       +-- factory-bot.ts
+|   +-- adapters/
+|   |   +-- index.ts               # Framework adapters
+|   |   +-- frappe.ts
+|   |   +-- nextjs.ts
+|   |   +-- django.ts
+|   |   +-- laravel.ts
+|   +-- types.ts
+|   +-- errors.ts
++-- schemas/
+|   +-- user.json
+|   +-- product.json
+|   +-- order.json
+|   +-- common.json
++-- test/
++-- examples/
+|   +-- basic-generation.ts
+|   +-- factory-pattern.ts
+|   +-- relations.ts
+|   +-- exporters.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

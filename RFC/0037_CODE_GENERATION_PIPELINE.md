@@ -17,19 +17,19 @@ We need automated code generation for:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   Code Generation Pipeline                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │  Template    │  │  Generator   │  │  Validator   │             │
-│  │  Manager     │  │  Engine      │  │  Pipeline    │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │  Rollback    │  │  Change      │  │  Diff        │             │
-│  │  Manager     │  │  Tracker     │  │  Generator   │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                   Code Generation Pipeline                        |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |  Template    |  |  Generator   |  |  Validator   |             |
+|  |  Manager     |  |  Engine      |  |  Pipeline    |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |  Rollback    |  |  Change      |  |  Diff        |             |
+|  |  Manager     |  |  Tracker     |  |  Generator   |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -325,38 +325,38 @@ class ChangeTracker {
 
 ```
 packages/code-generation/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── generator.ts                # CodeGenerator class
-│   ├── templates/
-│   │   ├── manager.ts              # Template manager
-│   │   ├── loader.ts               # Template loader
-│   │   └── registry.ts             # Template registry
-│   ├── validation/
-│   │   ├── pipeline.ts             # ValidationPipeline
-│   │   ├── rules/                  # Built-in rules
-│   │   └── validators/             # Built-in validators
-│   ├── rollback/
-│   │   ├── manager.ts              # RollbackManager
-│   │   └── snapshot.ts             # FileSnapshot logic
-│   ├── changes/
-│   │   └── tracker.ts              # ChangeTracker
-│   ├── engine/
-│   │   └── renderer.ts             # Template rendering (EJS)
-│   ├── types.ts
-│   └── errors.ts
-├── templates/
-│   ├── react-component/
-│   ├── nextjs-page/
-│   ├── frappe-doc-type/
-│   └── api-endpoint/
-├── test/
-├── examples/
-│   ├── basic-generation.ts
-│   ├── custom-template.ts
-│   └── validation-setup.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- generator.ts                # CodeGenerator class
+|   +-- templates/
+|   |   +-- manager.ts              # Template manager
+|   |   +-- loader.ts               # Template loader
+|   |   +-- registry.ts             # Template registry
+|   +-- validation/
+|   |   +-- pipeline.ts             # ValidationPipeline
+|   |   +-- rules/                  # Built-in rules
+|   |   +-- validators/             # Built-in validators
+|   +-- rollback/
+|   |   +-- manager.ts              # RollbackManager
+|   |   +-- snapshot.ts             # FileSnapshot logic
+|   +-- changes/
+|   |   +-- tracker.ts              # ChangeTracker
+|   +-- engine/
+|   |   +-- renderer.ts             # Template rendering (EJS)
+|   +-- types.ts
+|   +-- errors.ts
++-- templates/
+|   +-- react-component/
+|   +-- nextjs-page/
+|   +-- frappe-doc-type/
+|   +-- api-endpoint/
++-- test/
++-- examples/
+|   +-- basic-generation.ts
+|   +-- custom-template.ts
+|   +-- validation-setup.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

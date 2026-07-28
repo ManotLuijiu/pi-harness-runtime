@@ -117,7 +117,7 @@ All notable changes to this project will be documented in this file. See [standa
 ### Bug Fixes
 
 * publish missing runtime modules ([3fc7058](https://github.com/ManotLuijiu/pi-harness-runtime/commit/3fc70586d0cd10f4d38eab67e4cadaec20aaeb56))
-* **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
+* **release:** remove redundant Bump version step — was double-bumping version (0.7.1->0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
 ## [0.9.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.0) (2026-07-13)
 
@@ -127,7 +127,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Bug Fixes
 
-* **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
+* **release:** remove redundant Bump version step — was double-bumping version (0.7.1->0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
 ### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
 
@@ -158,11 +158,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Changed
 
-* **Project rename**: `pi-usage-status` → `pi-harness-runtime`
-  * npm package name: `pi-usage-status` → `pi-harness-runtime`
-  * Repository: `ManotLuijiu/pi-usage-status` → `ManotLuijiu/pi-harness-runtime`
-  * Bundled skill: `usage-status` → `harness-runtime` (file path `skills/usage-status/` → `skills/harness-runtime/`)
-  * Status bar key: `usage-status` → `harness-runtime`
+* **Project rename**: `pi-usage-status` -> `pi-harness-runtime`
+  * npm package name: `pi-usage-status` -> `pi-harness-runtime`
+  * Repository: `ManotLuijiu/pi-usage-status` -> `ManotLuijiu/pi-harness-runtime`
+  * Bundled skill: `usage-status` -> `harness-runtime` (file path `skills/usage-status/` -> `skills/harness-runtime/`)
+  * Status bar key: `usage-status` -> `harness-runtime`
   * **Data directory unchanged**: still `~/.pi/usage-status/` (preserves existing user data)
   * **Env var unchanged**: still `PI_USAGE_DIR` (preserves existing user configs)
   * **Extension symlink unchanged**: still `~/.pi/agent/extensions/pi-usage-status` (repointed to renamed project directory)

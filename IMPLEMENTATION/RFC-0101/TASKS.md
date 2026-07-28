@@ -17,7 +17,7 @@
 - [ ] Implement `Lease.claim(taskId, workerId)` — atomic, single-execution.
 - [ ] Implement `Lease.heartbeat(leaseId)` — extends `expiresAt`.
 - [ ] Implement `Lease.reap()` — releases expired leases back to `queued`.
-- [ ] Implement `Worker.loop()` — claim → execute → checkpoint → finalize.
+- [ ] Implement `Worker.loop()` — claim -> execute -> checkpoint -> finalize.
 - [ ] Implement `Worker.recoverOnStartup()` — reaps orphan leases.
 - [ ] Implement `Worker.emitHeartbeat()` — every 30 s.
 - [ ] Add `worker-registry.json` rotation.
@@ -50,11 +50,11 @@
 
 ## Phase 6 — Recovery
 
-- [ ] Wire `worker-crash → reaper → resume from last checkpoint`.
-- [ ] Wire `host-reboot → supervisor restart → worker startup recovery`.
-- [ ] Wire `quota-exhausted → waiting_quota → resume on reset`.
-- [ ] Wire `task-timeout → checkpoint preserved → reaped and resumed`.
-- [ ] Wire `filesystem-full → worker paused claims → operator alert`.
+- [ ] Wire `worker-crash -> reaper -> resume from last checkpoint`.
+- [ ] Wire `host-reboot -> supervisor restart -> worker startup recovery`.
+- [ ] Wire `quota-exhausted -> waiting_quota -> resume on reset`.
+- [ ] Wire `task-timeout -> checkpoint preserved -> reaped and resumed`.
+- [ ] Wire `filesystem-full -> worker paused claims -> operator alert`.
 
 ## Phase 7 — OKF Integration
 

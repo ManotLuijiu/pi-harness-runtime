@@ -17,19 +17,19 @@ Currently, code review is manual or limited to basic linting. We need:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Code Review Engine                           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Review     │  │   Linter     │  │   AI         │             │
-│  │   Runner     │  │   Adapter    │  │   Reviewer   │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Results    │  │   Report     │  │   History    │             │
-│  │   Aggregator │  │   Generator  │  │   Tracker    │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                      Code Review Engine                           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Review     |  |   Linter     |  |   AI         |             |
+|  |   Runner     |  |   Adapter    |  |   Reviewer   |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Results    |  |   Report     |  |   History    |             |
+|  |   Aggregator |  |   Generator  |  |   Tracker    |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -259,42 +259,42 @@ class ReviewReportGenerator {
 
 ```
 packages/code-review/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── engine.ts                   # CodeReviewEngine
-│   ├── dsl/
-│   │   ├── parser.ts              # Rules DSL parser
-│   │   └── validator.ts            # Config validation
-│   ├── linters/
-│   │   ├── base.ts                # LinterAdapter interface
-│   │   ├── eslint.ts
-│   │   ├── typescript.ts
-│   │   ├── prettier.ts
-│   │   └── registry.ts           # Linter registry
-│   ├── ai-reviewer/
-│   │   ├── index.ts               # AIReviewer
-│   │   └── providers/
-│   │       ├── openai.ts
-│   │       └── anthropic.ts
-│   ├── reports/
-│   │   ├── text.ts
-│   │   ├── html.ts
-│   │   └── markdown.ts
-│   ├── history/
-│   │   └── tracker.ts             # Review history
-│   ├── types.ts
-│   └── errors.ts
-├── test/
-├── examples/
-│   ├── basic-review.ts
-│   ├── custom-rules.ts
-│   └── ci-integration.ts
-├── rules/
-│   ├── typescript.json            # Default TS rules
-│   ├── security.json              # Security-focused rules
-│   └── best-practices.json
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- engine.ts                   # CodeReviewEngine
+|   +-- dsl/
+|   |   +-- parser.ts              # Rules DSL parser
+|   |   +-- validator.ts            # Config validation
+|   +-- linters/
+|   |   +-- base.ts                # LinterAdapter interface
+|   |   +-- eslint.ts
+|   |   +-- typescript.ts
+|   |   +-- prettier.ts
+|   |   +-- registry.ts           # Linter registry
+|   +-- ai-reviewer/
+|   |   +-- index.ts               # AIReviewer
+|   |   +-- providers/
+|   |       +-- openai.ts
+|   |       +-- anthropic.ts
+|   +-- reports/
+|   |   +-- text.ts
+|   |   +-- html.ts
+|   |   +-- markdown.ts
+|   +-- history/
+|   |   +-- tracker.ts             # Review history
+|   +-- types.ts
+|   +-- errors.ts
++-- test/
++-- examples/
+|   +-- basic-review.ts
+|   +-- custom-rules.ts
+|   +-- ci-integration.ts
++-- rules/
+|   +-- typescript.json            # Default TS rules
+|   +-- security.json              # Security-focused rules
+|   +-- best-practices.json
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

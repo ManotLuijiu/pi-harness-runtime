@@ -52,7 +52,7 @@
 | CommonJS require | `const x = require('./y')` | ['./y'] |
 | Python from-import | `from os import path` | ['os'] |
 | Python direct import | `import numpy` | ['numpy'] |
-| cycle detection | a→b→c→a | cycle = ['a','b','c'] |
+| cycle detection | a->b->c->a | cycle = ['a','b','c'] |
 | empty file | '' | [] |
 
 ## context-discovery

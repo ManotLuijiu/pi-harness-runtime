@@ -17,19 +17,19 @@ Currently, session state is managed ad-hoc within individual components. We need
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       Session Manager                             │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
-│  │   Session    │  │   History    │  │   Metrics    │             │
-│  │   Store      │  │   Manager    │  │   Collector  │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘             │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
-│  │   Session    │  │   Message    │  │   Context    │             │
-│  │   Policy     │  │   Index      │  │   Cache      │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘             │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                       Session Manager                             |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+             |
+|  |   Session    |  |   History    |  |   Metrics    |             |
+|  |   Store      |  |   Manager    |  |   Collector  |             |
+|  +--------------+  +--------------+  +--------------+             |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+             |
+|  |   Session    |  |   Message    |  |   Context    |             |
+|  |   Policy     |  |   Index      |  |   Cache      |             |
+|  +--------------+  +--------------+  +--------------+             |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -159,24 +159,24 @@ class SessionPolicyEngine {
 
 ```
 packages/session/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── manager.ts                  # SessionManager class
-│   ├── store.ts                    # Session persistence
-│   ├── history.ts                  # Message history management
-│   ├── policy.ts                   # Policy engine
-│   ├── metrics.ts                  # Metrics collection
-│   ├── types.ts                    # Session types
-│   └── errors.ts                   # Session errors
-├── test/
-│   ├── manager.test.ts
-│   ├── history.test.ts
-│   └── policy.test.ts
-├── examples/
-│   ├── basic-usage.ts
-│   └── policy-examples.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- manager.ts                  # SessionManager class
+|   +-- store.ts                    # Session persistence
+|   +-- history.ts                  # Message history management
+|   +-- policy.ts                   # Policy engine
+|   +-- metrics.ts                  # Metrics collection
+|   +-- types.ts                    # Session types
+|   +-- errors.ts                   # Session errors
++-- test/
+|   +-- manager.test.ts
+|   +-- history.test.ts
+|   +-- policy.test.ts
++-- examples/
+|   +-- basic-usage.ts
+|   +-- policy-examples.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples
@@ -235,13 +235,13 @@ console.log({
 ## Integration with Existing Components
 
 ```
-SessionManager ──────┬──────> CheckpointEngine (save/restore sessions)
-                    │
-                    ├──────> ContextWindowManager (token accounting)
-                    │
-                    ├──────> QuotaManager (cost tracking)
-                    │
-                    └──────> RuntimeApi (session CRUD endpoints)
+SessionManager ------+------> CheckpointEngine (save/restore sessions)
+                    |
+                    +------> ContextWindowManager (token accounting)
+                    |
+                    +------> QuotaManager (cost tracking)
+                    |
+                    +------> RuntimeApi (session CRUD endpoints)
 ```
 
 ## Acceptance Criteria

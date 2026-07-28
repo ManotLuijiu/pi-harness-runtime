@@ -30,10 +30,10 @@
 
 ## Recovery
 
-- Worker killed mid-task → recovered within `leaseTTL + grace` from the last checkpoint.
-- Host reboot → worker restarts and in-flight tasks recover automatically.
-- Filesystem full → worker pauses new claims without corrupting checkpoints.
-- Notification channel outage → events buffer; flush on reconnect; no event loss after the outage clears.
+- Worker killed mid-task -> recovered within `leaseTTL + grace` from the last checkpoint.
+- Host reboot -> worker restarts and in-flight tasks recover automatically.
+- Filesystem full -> worker pauses new claims without corrupting checkpoints.
+- Notification channel outage -> events buffer; flush on reconnect; no event loss after the outage clears.
 
 ## Integration
 

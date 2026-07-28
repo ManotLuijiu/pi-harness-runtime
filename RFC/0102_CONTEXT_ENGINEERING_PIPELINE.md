@@ -18,32 +18,32 @@ The Context Engineering Pipeline transforms user intent into an optimal LLM inpu
 Current AI coding tools:
 
 ```
-User Prompt → LLM → Answer
+User Prompt -> LLM -> Answer
 ```
 
 This runtime should:
 
 ```
 User Intent
-  ↓
+  v
 Intent Analyzer
-  ↓
+  v
 Workspace Scanner
-  ↓
+  v
 Context Discovery
-  ↓
+  v
 Knowledge Retrieval (OKF)
-  ↓
+  v
 Dependency Analysis
-  ↓
+  v
 Context Ranking
-  ↓
+  v
 Context Compression
-  ↓
+  v
 Prompt Compiler
-  ↓
+  v
 LLM
-  ↓
+  v
 Knowledge Engine (OKF)
 ```
 
@@ -411,8 +411,8 @@ Uses existing `generateCacheKey()` and `shouldInvalidate()` from `@pi/context-co
 
 1. Collect new patterns from LLM output
 2. Detect architecture decisions from assistant messages
-3. Classify failures → promote to OKF on classification
-4. On `TaskResult.kind === "deliverable"` → `OKF.promotePattern(task)`
+3. Classify failures -> promote to OKF on classification
+4. On `TaskResult.kind === "deliverable"` -> `OKF.promotePattern(task)`
 
 Uses existing OKF integration from `@pi/context-compiler`.
 
@@ -424,34 +424,34 @@ Uses existing OKF integration from `@pi/context-compiler`.
 
 ```
 loop-runtime.ts
-  → IntentAnalyzer.analyze(userInput)
-  → WorkspaceScanner.scan(worktree)
-  → ContextDiscovery.discover(task, intent, workspace)
-  → compileContext(candidates)     ← from @pi/context-compiler
-  → buildContextPackage()
-  → LLM call
-  → LearningLoop.update(taskResult)
+  -> IntentAnalyzer.analyze(userInput)
+  -> WorkspaceScanner.scan(worktree)
+  -> ContextDiscovery.discover(task, intent, workspace)
+  -> compileContext(candidates)     <-  from @pi/context-compiler
+  -> buildContextPackage()
+  -> LLM call
+  -> LearningLoop.update(taskResult)
 ```
 
 ### With OKF (packages/okf-kb/)
 
 ```
 ContextDiscovery
-  → loadOkfConcepts()           ← from @pi/context-compiler
-  → filter by intent.kind + file matches
+  -> loadOkfConcepts()           <-  from @pi/context-compiler
+  -> filter by intent.kind + file matches
 
 LearningLoop
-  → promotePattern(task)        ← future
-  → promoteLesson(task)        ← future
+  -> promotePattern(task)        <-  future
+  -> promoteLesson(task)        <-  future
 ```
 
 ### With Provider Router (packages/providers/)
 
 ```
 PromptCompiler
-  → estimateTokens()             ← from @pi/context-compiler
-  → buildContextPackage()
-  → providerRouter.buildPrompt(ctx, model)
+  -> estimateTokens()             <-  from @pi/context-compiler
+  -> buildContextPackage()
+  -> providerRouter.buildPrompt(ctx, model)
 ```
 
 ---

@@ -17,19 +17,19 @@ We need a plugin system to:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Plugin SDK Architecture                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Plugin     │  │   Plugin    │  │   Plugin    │             │
-│  │   Loader     │  │   Registry  │  │   Sandbox   │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Hooks     │  │   Extension │  │   Config    │             │
-│  │   System    │  │   Points    │  │   Schema    │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                      Plugin SDK Architecture                        |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Plugin     |  |   Plugin    |  |   Plugin    |             |
+|  |   Loader     |  |   Registry  |  |   Sandbox   |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Hooks     |  |   Extension |  |   Config    |             |
+|  |   System    |  |   Points    |  |   Schema    |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -283,46 +283,46 @@ export const pluginsConfig = {
 
 ```
 packages/framework-plugin-sdk/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── manager.ts                  # PluginManager class
-│   ├── loader.ts                   # PluginLoader
-│   ├── sandbox/
-│   │   ├── sandbox.ts             # PluginSandbox
-│   │   └── isolater.ts           # Code isolation
-│   ├── registry/
-│   │   ├── index.ts              # PluginRegistry
-│   │   ├── capability-registry.ts
-│   │   └── hook-registry.ts
-│   ├── hooks/
-│   │   ├── dispatcher.ts         # Hook dispatcher
-│   │   └── types.ts              # Hook definitions
-│   ├── config/
-│   │   ├── schema.ts             # Config validation
-│   │   └── loader.ts             # Config file loader
-│   ├── extensions/
-│   │   ├── framework.ts          # Framework extension
-│   │   ├── provider.ts           # Provider extension
-│   │   ├── generator.ts          # Generator extension
-│   │   ├── linter.ts             # Linter extension
-│   │   └── tool.ts               # Tool extension
-│   ├── types.ts
-│   ├── errors.ts
-│   └── utils.ts
-├── api/
-│   ├── plugin-api.ts             # Plugin API interface
-│   └── runtime-api.ts            # Runtime API for plugins
-├── builtin/
-│   ├── index.ts                  # Built-in plugins
-│   └── example-plugin/
-├── test/
-├── examples/
-│   ├── creating-a-plugin.md
-│   ├── provider-plugin.ts
-│   ├── framework-plugin.ts
-│   └── hooks-example.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- manager.ts                  # PluginManager class
+|   +-- loader.ts                   # PluginLoader
+|   +-- sandbox/
+|   |   +-- sandbox.ts             # PluginSandbox
+|   |   +-- isolater.ts           # Code isolation
+|   +-- registry/
+|   |   +-- index.ts              # PluginRegistry
+|   |   +-- capability-registry.ts
+|   |   +-- hook-registry.ts
+|   +-- hooks/
+|   |   +-- dispatcher.ts         # Hook dispatcher
+|   |   +-- types.ts              # Hook definitions
+|   +-- config/
+|   |   +-- schema.ts             # Config validation
+|   |   +-- loader.ts             # Config file loader
+|   +-- extensions/
+|   |   +-- framework.ts          # Framework extension
+|   |   +-- provider.ts           # Provider extension
+|   |   +-- generator.ts          # Generator extension
+|   |   +-- linter.ts             # Linter extension
+|   |   +-- tool.ts               # Tool extension
+|   +-- types.ts
+|   +-- errors.ts
+|   +-- utils.ts
++-- api/
+|   +-- plugin-api.ts             # Plugin API interface
+|   +-- runtime-api.ts            # Runtime API for plugins
++-- builtin/
+|   +-- index.ts                  # Built-in plugins
+|   +-- example-plugin/
++-- test/
++-- examples/
+|   +-- creating-a-plugin.md
+|   +-- provider-plugin.ts
+|   +-- framework-plugin.ts
+|   +-- hooks-example.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

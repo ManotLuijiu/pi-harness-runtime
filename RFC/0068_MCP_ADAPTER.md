@@ -8,15 +8,15 @@ Exposes the pi-harness runtime as a [Model Context Protocol](https://modelcontex
 
 ```
 packages/mcp-adapter/
-├── src/
-│   ├── server.ts           # MCP server (stdio transport)
-│   ├── tools.ts            # Tool definitions (4 core tools)
-│   ├── resources.ts        # Read-only resource handlers
-│   ├── prompts.ts          # Prompt templates
-│   ├── types.ts
-│   └── index.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- server.ts           # MCP server (stdio transport)
+|   +-- tools.ts            # Tool definitions (4 core tools)
+|   +-- resources.ts        # Read-only resource handlers
+|   +-- prompts.ts          # Prompt templates
+|   +-- types.ts
+|   +-- index.ts
++-- package.json
++-- README.md
 ```
 
 ## MCP Protocol Compliance

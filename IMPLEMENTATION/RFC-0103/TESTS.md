@@ -63,8 +63,8 @@
 | build TaskAssigned | SessionEvent type="task_assigned" | SemanticEvent.kind = "TaskAssigned" |
 | build TaskCompleted | SessionEvent type="task_completed" | SemanticEvent.kind = "TaskCompleted" |
 | build ReviewRequested | SessionEvent with "review" content | SemanticEvent.kind = "ReviewRequested" |
-| state machine idle→running | TaskStarted event | state.status = "running" |
-| state machine running→finished | WorkflowFinished event | state.status = "finished" |
+| state machine idle->running | TaskStarted event | state.status = "running" |
+| state machine running->finished | WorkflowFinished event | state.status = "finished" |
 | history records transitions | 3 transitions | history.length = 3 |
 
 ## subscription-engine

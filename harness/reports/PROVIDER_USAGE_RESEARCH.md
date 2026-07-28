@@ -79,18 +79,18 @@ MiniMax requires browser scraping because it doesn't expose usage via TUI.
 
 ```
 packages/
-├── quota-manager/
-│   ├── quota-manager.ts       # Core quota tracking
-│   ├── tui-usage-monitor.ts  # ✅ NEW - Unified TUI parser
-│   ├── index.ts               # ✅ NEW - Exports
-│   └── examples/
-│       └── tui-usage-integration.ts  # ✅ NEW - Example
-├── providers/
-│   ├── openai-usage.ts       # Legacy (can be removed)
-│   └── glm-usage.ts          # Legacy (can be removed)
++-- quota-manager/
+|   +-- quota-manager.ts       # Core quota tracking
+|   +-- tui-usage-monitor.ts  # ✅ NEW - Unified TUI parser
+|   +-- index.ts               # ✅ NEW - Exports
+|   +-- examples/
+|       +-- tui-usage-integration.ts  # ✅ NEW - Example
++-- providers/
+|   +-- openai-usage.ts       # Legacy (can be removed)
+|   +-- glm-usage.ts          # Legacy (can be removed)
 packages/
-└── types/src/
-    └── runtime-types.ts       # Updated QuotaSignal.source
++-- types/src/
+    +-- runtime-types.ts       # Updated QuotaSignal.source
 ```
 
 ---
