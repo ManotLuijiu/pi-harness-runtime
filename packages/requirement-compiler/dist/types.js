@@ -3,7 +3,7 @@
  *
  * Type definitions for raw and compiled requirements.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 export const SDK_VERSION = "1.0.0";
 export const DEFAULT_COMPILER_CONFIG = {
     projectLanguage: "en",
@@ -101,7 +101,7 @@ export const DEFAULT_COMPILER_CONFIG = {
         "ควร",
     ],
 };
-// ─── Compiler Errors ──────────────────────────────────────────────────────
+// --- Compiler Errors ------------------------------------------------------
 /**
  * Error codes for requirement compilation failures.
  * Use this enum-like object for programmatic error checking.

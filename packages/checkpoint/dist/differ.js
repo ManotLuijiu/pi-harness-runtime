@@ -4,7 +4,7 @@
  * Calculate state diffs for incremental checkpoints.
  */
 import { createHash } from "node:crypto";
-// ─── Diff Calculator ─────────────────────────────────────────────────────
+// --- Diff Calculator -----------------------------------------------------
 export class DiffCalculator {
     /**
      * Calculate diff between two states
@@ -187,7 +187,7 @@ export class DiffCalculator {
         };
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a diff calculator
  */

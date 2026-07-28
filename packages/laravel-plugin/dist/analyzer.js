@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 function isLaravelWorkspace(root) {
     if (existsSync(join(root, "artisan")))
         return true;
@@ -22,7 +22,7 @@ function isLaravelWorkspace(root) {
     }
     return false;
 }
-// ─── Version ────────────────────────────────────────────────────────────────
+// --- Version ----------------------------------------------------------------
 async function detectVersion(root) {
     const composerPath = join(root, "composer.json");
     if (!existsSync(composerPath))
@@ -48,7 +48,7 @@ async function detectVersion(root) {
         return undefined;
     }
 }
-// ─── Packages ────────────────────────────────────────────────────────────────
+// --- Packages ----------------------------------------------------------------
 async function detectPackages(root) {
     const composerPath = join(root, "composer.json");
     if (!existsSync(composerPath))
@@ -65,7 +65,7 @@ async function detectPackages(root) {
         return [];
     }
 }
-// ─── Auth Detection ────────────────────────────────────────────────────────
+// --- Auth Detection --------------------------------------------------------
 async function detectAuth(root) {
     const packages = await detectPackages(root);
     if (packages.includes("laravel/sanctum"))
@@ -95,7 +95,7 @@ async function detectAuth(root) {
     }
     return undefined;
 }
-// ─── Controllers ───────────────────────────────────────────────────────────
+// --- Controllers -----------------------------------------------------------
 async function findControllers(root) {
     const controllerDirs = [
         join(root, "app", "Http", "Controllers"),
@@ -132,7 +132,7 @@ async function findControllers(root) {
     }
     return controllers;
 }
-// ─── Models ────────────────────────────────────────────────────────────────
+// --- Models ----------------------------------------------------------------
 async function findModels(root) {
     const modelDirs = [join(root, "app", "Models"), join(root, "app", "Models")];
     const models = [];
@@ -155,7 +155,7 @@ async function findModels(root) {
     }
     return models;
 }
-// ─── Blade Views ───────────────────────────────────────────────────────────
+// --- Blade Views -----------------------------------------------------------
 async function findViews(root) {
     const viewDirs = [join(root, "resources", "views"), join(root, "views")];
     const views = [];
@@ -187,7 +187,7 @@ async function findViews(root) {
     }
     return views;
 }
-// ─── Artisan Commands ──────────────────────────────────────────────────────
+// --- Artisan Commands ------------------------------------------------------
 async function findCommands(root) {
     const commandDirs = [
         join(root, "app", "Console", "Commands"),
@@ -211,7 +211,7 @@ async function findCommands(root) {
     }
     return commands;
 }
-// ─── Migrations Count ─────────────────────────────────────────────────────
+// --- Migrations Count -----------------------------------------------------
 async function countMigrations(root) {
     const migrationDirs = [
         join(root, "database", "migrations"),
@@ -231,7 +231,7 @@ async function countMigrations(root) {
     }
     return count;
 }
-// ─── Env Variables ────────────────────────────────────────────────────────
+// --- Env Variables --------------------------------------------------------
 async function findEnvVars(root) {
     const envFiles = [join(root, ".env.example"), join(root, ".env")];
     const vars = [];
@@ -258,7 +258,7 @@ async function findEnvVars(root) {
     }
     return vars;
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 export async function analyzeLaravel(root) {
     if (!isLaravelWorkspace(root))
         return null;

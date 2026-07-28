@@ -152,7 +152,7 @@ export const GENERIC_SIGNALS = [
         metadata: { hasFastAPI: "true" },
     },
 ];
-// ─── Signal Scanner ───────────────────────────────────────────────────
+// --- Signal Scanner ---------------------------------------------------
 /**
  * Scan for detection signals in the filesystem.
  */
@@ -215,7 +215,7 @@ export function calculateSignalConfidence(signals, requiredSignals) {
     const maxPossibleWeight = requiredSignals * 1.0; // Assuming max weight of 1.0 per signal
     return Math.min(1, totalWeight / maxPossibleWeight);
 }
-// ─── Generic Framework Detector ──────────────────────────────────────
+// --- Generic Framework Detector --------------------------------------
 /**
  * Generic framework detector using signal-based detection.
  */
@@ -257,7 +257,7 @@ export class GenericFrameworkDetector {
         return results;
     }
 }
-// ─── Composite Plugin ──────────────────────────────────────────────────
+// --- Composite Plugin --------------------------------------------------
 /**
  * Create a composite plugin from generic signals and custom plugins.
  */

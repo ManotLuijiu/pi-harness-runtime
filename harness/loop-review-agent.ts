@@ -9,9 +9,16 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { ensureHerdrWorkspace, parseVerdict } from "../packages/event-bus/src/herdr-bus.js";
+import {
+	ensureHerdrWorkspace,
+	parseVerdict,
+} from "../packages/event-bus/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
-import type { LoopNextAction, LoopAgentReport, LoopVerdict } from "./loop-types.js";
+import type {
+	LoopNextAction,
+	LoopAgentReport,
+	LoopVerdict,
+} from "./loop-types.js";
 
 const AGENT_ID = "review-agent";
 const AGENT_TYPE = "review";
@@ -83,22 +90,28 @@ async function main(): Promise<void> {
 		// Decide next action based on verdict
 		if (verdict === "approved" || verdict === "blocked") {
 			// Early exit — go to report
-			blackboard.setNextAction(encodeNextAction({
-				taskId: "report",
-				agentType: "review",
-				iteration: 0,
-			}));
-			console.log(`[${AGENT_ID}] ${verdict.toUpperCase()} — nextAction: report`);
+			blackboard.setNextAction(
+				encodeNextAction({
+					taskId: "report",
+					agentType: "review",
+					iteration: 0,
+				}),
+			);
+			console.log(
+				`[${AGENT_ID}] ${verdict.toUpperCase()} — nextAction: report`,
+			);
 		} else {
 			// Changes requested — continue to next write
 			const nextWrite = getNextWriteTask(record, action.iteration);
 			if (nextWrite) {
-				blackboard.setNextAction(encodeNextAction({
-					taskId: nextWrite,
-					agentType: "code",
-					iteration: getWriteIteration(nextWrite),
-					prompt: action.prompt,
-				}));
+				blackboard.setNextAction(
+					encodeNextAction({
+						taskId: nextWrite,
+						agentType: "code",
+						iteration: getWriteIteration(nextWrite),
+						prompt: action.prompt,
+					}),
+				);
 				console.log(`[${AGENT_ID}] CHANGES — nextAction: code ${nextWrite}`);
 			} else {
 				blackboard.setNextAction({
@@ -127,7 +140,9 @@ async function doReview(
 	// Read code files
 	const codeBlocks = await Promise.all(
 		(action.codeFiles ?? []).map(async (file) => {
-			const content = existsSync(file) ? readFileSync(file, "utf-8").slice(0, 3000) : `[Not found: ${file}]`;
+			const content = existsSync(file)
+				? readFileSync(file, "utf-8").slice(0, 3000)
+				: `[Not found: ${file}]`;
 			return `## ${file}\n\n\`\`\`\n${content}\n\`\`\`\n`;
 		}),
 	);
@@ -159,7 +174,9 @@ async function pollVerdict(reviewFile: string): Promise<LoopVerdict> {
 		}
 		await sleep(3000);
 	}
-	console.log(`[${AGENT_ID}] Verdict timeout — defaulting to CHANGES_REQUESTED`);
+	console.log(
+		`[${AGENT_ID}] Verdict timeout — defaulting to CHANGES_REQUESTED`,
+	);
 	return "changes_requested";
 }
 
@@ -178,7 +195,9 @@ async function finishReport(
 async function findActiveLoop(rootDir: string): Promise<string | null> {
 	const { readdirSync } = await import("fs");
 	try {
-		const files = readdirSync(rootDir).filter((f) => f.startsWith("loop-") && f.endsWith(".config.json"));
+		const files = readdirSync(rootDir).filter(
+			(f) => f.startsWith("loop-") && f.endsWith(".config.json"),
+		);
 		if (files.length > 0) {
 			const config = JSON.parse(readFileSync(join(rootDir, files[0]), "utf-8"));
 			return config.loopId;
@@ -189,9 +208,15 @@ async function findActiveLoop(rootDir: string): Promise<string | null> {
 	return null;
 }
 
-function checkEarlyExit(record: { tasks: { nodes: Record<string, { status: string }> }; jobId: string }): string | null {
+function checkEarlyExit(record: {
+	tasks: { nodes: Record<string, { status: string }> };
+	jobId: string;
+}): string | null {
 	const reportNode = record.tasks.nodes["report"];
-	if (reportNode && (reportNode.status === "done" || reportNode.status === "blocked")) {
+	if (
+		reportNode &&
+		(reportNode.status === "done" || reportNode.status === "blocked")
+	) {
 		return reportNode.status === "done" ? "finished" : "blocked";
 	}
 	return null;
@@ -199,11 +224,15 @@ function checkEarlyExit(record: { tasks: { nodes: Record<string, { status: strin
 
 function updateTaskStatus(
 	blackboard: SharedBlackboard,
-	record: { tasks: { nodes: Record<string, { status: string; result?: string }> } },
+	record: {
+		tasks: { nodes: Record<string, { status: string; result?: string }> };
+	},
 	taskId: string,
 	verdict: LoopVerdict,
 ): void {
-	const node = record.tasks.nodes[taskId] as { status: string; result?: string } | undefined;
+	const node = record.tasks.nodes[taskId] as
+		| { status: string; result?: string }
+		| undefined;
 	if (node) {
 		node.status = verdict === "blocked" ? "blocked" : "done";
 		node.result = verdict;
@@ -239,11 +268,16 @@ function getNextWriteTask(
 	record: { tasks: { nodes: Record<string, { status: string }> } },
 	currentReviewIteration: number,
 ): string | null {
-	const writeCount = Object.keys(record.tasks.nodes).filter((id) => id.startsWith("write-")).length;
+	const writeCount = Object.keys(record.tasks.nodes).filter((id) =>
+		id.startsWith("write-"),
+	).length;
 	// After review N, next write is N+1
 	const nextWrite = currentReviewIteration + 1;
 	const taskId = `write-${nextWrite}`;
-	if (record.tasks.nodes[taskId] && record.tasks.nodes[taskId].status === "pending") {
+	if (
+		record.tasks.nodes[taskId] &&
+		record.tasks.nodes[taskId].status === "pending"
+	) {
 		return taskId;
 	}
 	return null;

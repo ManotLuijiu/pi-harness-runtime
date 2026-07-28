@@ -3,7 +3,7 @@
  *
  * Reconstructs prior runtime execution from persisted events and checkpoints.
  */
-// ─── Event Timeline Reconstruction ───────────────────────────────────────────
+// --- Event Timeline Reconstruction -------------------------------------------
 function reconstructTimeline(events, startSequence = 0) {
     return events.map((event, index) => ({
         sequence: startSequence + index,
@@ -12,7 +12,7 @@ function reconstructTimeline(events, startSequence = 0) {
         data: event.data || {},
     }));
 }
-// ─── State Reconstruction ─────────────────────────────────────────────────────
+// --- State Reconstruction -----------------------------------------------------
 function reconstructState(jobId, checkpoint, events, taskGraph) {
     // Apply events to checkpoint to get final state
     let currentTaskId = checkpoint?.currentTaskId;
@@ -43,8 +43,8 @@ function reconstructState(jobId, checkpoint, events, taskGraph) {
         timestamp: new Date().toISOString(),
     };
 }
-// ─── Divergence Detection ────────────────────────────────────────────────────
-// ─── Source Validation ────────────────────────────────────────────────────────
+// --- Divergence Detection ----------------------------------------------------
+// --- Source Validation --------------------------------------------------------
 function validateSources(sources) {
     const missing = [];
     if (!sources.checkpoint && !sources.events) {
@@ -52,7 +52,7 @@ function validateSources(sources) {
     }
     return { valid: missing.length === 0, missing };
 }
-// ─── Mode Handlers ────────────────────────────────────────────────────────────
+// --- Mode Handlers ------------------------------------------------------------
 async function handleInspect(sources, jobId, fromSequence, toSequence) {
     const events = sources.events || [];
     const filteredEvents = fromSequence !== undefined || toSequence !== undefined
@@ -102,7 +102,7 @@ async function handleReexecute(sources, jobId, allowExternalCalls) {
     });
     return result;
 }
-// ─── Main Engine ───────────────────────────────────────────────────────────────
+// --- Main Engine ---------------------------------------------------------------
 export class ExperienceReplay {
     eventListeners = [];
     /**
@@ -222,7 +222,7 @@ export class ExperienceReplay {
         }
     }
 }
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 export function createExperienceReplay() {
     return new ExperienceReplay();
 }

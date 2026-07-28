@@ -3,9 +3,9 @@
  *
  * Core types for task decomposition, DAG construction, and verification.
  */
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 export const SDK_VERSION = "1.0.0";
-// ─── Standard Engineering Flow ────────────────────────────────────────
+// --- Standard Engineering Flow ----------------------------------------
 export const STANDARD_FLOW = [
     "analysis",
     "design",
@@ -16,7 +16,7 @@ export const STANDARD_FLOW = [
     "repair",
     "documentation",
 ];
-// ─── Provider Hints ───────────────────────────────────────────────────
+// --- Provider Hints ---------------------------------------------------
 export const PROVIDER_HINTS = {
     analysis: ["codex", "gpt", "glm"],
     design: ["codex", "gpt", "glm"],
@@ -27,7 +27,7 @@ export const PROVIDER_HINTS = {
     repair: ["glm", "claude"],
     documentation: ["codex", "gpt"],
 };
-// ─── Default Command Policy ─────────────────────────────────────────────
+// --- Default Command Policy ---------------------------------------------
 export const PROHIBITED_BY_DEFAULT = [
     "git commit",
     "git push",
@@ -51,7 +51,7 @@ export const DEFAULT_TASK_COMPILER_CONFIG = {
     extraProhibitedCommands: [],
     clock: () => new Date(),
 };
-// ─── Compiler Errors ─────────────────────────────────────────────────────
+// --- Compiler Errors -----------------------------------------------------
 export var TaskCompilerErrorCode;
 (function (TaskCompilerErrorCode) {
     TaskCompilerErrorCode["CYCLIC_DEPENDENCY"] = "CYCLIC_DEPENDENCY";

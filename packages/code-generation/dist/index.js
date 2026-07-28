@@ -4,12 +4,12 @@
  * Generate code from templates with variable substitution, validation,
  * and automatic rollback capabilities.
  */
-// ─── Generator ──────────────────────────────────────────────────────────
+// --- Generator ----------------------------------------------------------
 export { createFaker } from "./faker.js";
 export { CodeGenerator, createCodeGenerator, } from "./generator.js";
-// ─── Templates ─────────────────────────────────────────────────────────
+// --- Templates ---------------------------------------------------------
 export { TemplateRegistry } from "./templates/registry.js";
 export { EjsRenderer } from "./templates/ejs-renderer.js";
-// ─── Types ────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------
 export { SDK_VERSION, } from "./types.js";
 //# sourceMappingURL=index.js.map

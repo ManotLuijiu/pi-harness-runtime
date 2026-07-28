@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 function isNextJsWorkspace(root) {
     return (existsSync(join(root, "next.config.js")) ||
         existsSync(join(root, "next.config.mjs")) ||
@@ -15,7 +15,7 @@ function isNextJsWorkspace(root) {
         existsSync(join(root, "app")) ||
         existsSync(join(root, "pages")));
 }
-// ─── Version Detection ───────────────────────────────────────────────────────
+// --- Version Detection -------------------------------------------------------
 async function detectVersion(root) {
     try {
         const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf-8"));
@@ -29,13 +29,13 @@ async function detectVersion(root) {
         return undefined;
     }
 }
-// ─── Router Detection ───────────────────────────────────────────────────────
+// --- Router Detection -------------------------------------------------------
 async function detectRouters(root) {
     const hasApp = existsSync(join(root, "app"));
     const hasPages = existsSync(join(root, "pages"));
     return { usingAppRouter: hasApp, usingPagesRouter: hasPages };
 }
-// ─── Config Files ────────────────────────────────────────────────────────────
+// --- Config Files ------------------------------------------------------------
 async function findConfigFiles(root) {
     const configFiles = [
         { name: "next.config.js", path: join(root, "next.config.js") },
@@ -50,7 +50,7 @@ async function findConfigFiles(root) {
     }
     return configs;
 }
-// ─── App Router Routes ─────────────────────────────────────────────────────
+// --- App Router Routes -----------------------------------------------------
 async function walkAppRouter(dir, base = "") {
     const routes = [];
     try {
@@ -98,7 +98,7 @@ async function walkAppRouter(dir, base = "") {
     }
     return routes;
 }
-// ─── Pages Router API Routes ─────────────────────────────────────────────────
+// --- Pages Router API Routes -------------------------------------------------
 async function walkApiRoutes(dir, base = "") {
     const routes = [];
     try {
@@ -123,7 +123,7 @@ async function walkApiRoutes(dir, base = "") {
     }
     return routes;
 }
-// ─── Middleware ─────────────────────────────────────────────────────────────
+// --- Middleware -------------------------------------------------------------
 async function findMiddleware(root) {
     const candidates = [
         join(root, "middleware.ts"),
@@ -137,7 +137,7 @@ async function findMiddleware(root) {
     }
     return undefined;
 }
-// ─── Environment Variables ─────────────────────────────────────────────────
+// --- Environment Variables -------------------------------------------------
 async function findEnvVars(root) {
     const candidates = [
         join(root, ".env.example"),
@@ -169,7 +169,7 @@ async function findEnvVars(root) {
     }
     return vars;
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 /**
  * Analyze a Next.js workspace (RFC-0062)
  */

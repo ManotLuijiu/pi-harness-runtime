@@ -3,7 +3,7 @@
  *
  * Core types for building provider adapters.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

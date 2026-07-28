@@ -48,7 +48,7 @@ export function buildSections(normalized, projectRules) {
     }
     return sections;
 }
-// ─── Section builders ───────────────────────────────────────────────────
+// --- Section builders ---------------------------------------------------
 function buildIdentitySection(req) {
     const lines = [
         "# Task Identity",

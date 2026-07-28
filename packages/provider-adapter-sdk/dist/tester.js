@@ -389,7 +389,7 @@ export function assertTestResults(report) {
         throw new TestFailureError(report.adapterId, "all", `Test failed:\n${messages.join("\n")}`);
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a new adapter tester
  */

@@ -122,7 +122,7 @@ export class BudgetTracker {
         return entry.resetAt;
     }
 }
-// ─── Policy Engine ─────────────────────────────────────────────────────────
+// --- Policy Engine ---------------------------------------------------------
 export class PolicyEngine {
     config;
     rateLimiter;
@@ -281,7 +281,7 @@ export class PolicyEngine {
         this.rateLimiter.clearExpired();
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a policy engine
  */

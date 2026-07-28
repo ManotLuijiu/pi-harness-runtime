@@ -4,7 +4,7 @@
  * A deterministic seeded pseudo-random data generator for tests.
  * Same seed always produces the same output.
  */
-// ─── Seeded RNG ─────────────────────────────────────────────────────────
+// --- Seeded RNG ---------------------------------------------------------
 /**
  * Mulberry32 — fast, seedable, good distribution.
  */
@@ -18,7 +18,7 @@ function mulberry32(initialSeed) {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
-// ─── Data pools ────────────────────────────────────────────────────────
+// --- Data pools --------------------------------------------------------
 const FIRST_NAMES = [
     "James",
     "Mary",
@@ -286,7 +286,7 @@ const WORDS = [
     "cluster",
     "shard",
 ];
-// ─── Implementation ──────────────────────────────────────────────────
+// --- Implementation --------------------------------------------------
 function pick(rng, arr) {
     return arr[Math.floor(rng() * arr.length)];
 }
@@ -299,7 +299,7 @@ function capitalize(s) {
 function sentenceCase(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
-// ─── Public API ─────────────────────────────────────────────────────
+// --- Public API -----------------------------------------------------
 /**
  * Create a seeded faker instance.
  * Same seed always produces identical output.

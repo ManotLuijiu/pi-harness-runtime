@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-// ─── Detection Helpers ──────────────────────────────────────────────────────
+// --- Detection Helpers ------------------------------------------------------
 function isFrappeWorkspace(root) {
     return (existsSync(join(root, "sites")) ||
         existsSync(join(root, "apps.txt")) ||
@@ -23,7 +23,7 @@ function findBenchPath(root) {
     }
     return undefined;
 }
-// ─── Apps Discovery ─────────────────────────────────────────────────────────
+// --- Apps Discovery ---------------------------------------------------------
 async function getAppsList(benchPath) {
     const appsTxt = join(benchPath, "apps.txt");
     if (existsSync(appsTxt)) {
@@ -50,7 +50,7 @@ async function getAppsList(benchPath) {
     }
     return [];
 }
-// ─── Hooks Parser ──────────────────────────────────────────────────────────
+// --- Hooks Parser ----------------------------------------------------------
 async function parseHooksFile(hooksPath) {
     if (!existsSync(hooksPath))
         return {};
@@ -84,7 +84,7 @@ async function parseHooksFile(hooksPath) {
         return {};
     }
 }
-// ─── DocType Scanner ───────────────────────────────────────────────────────
+// --- DocType Scanner -------------------------------------------------------
 async function countDocTypes(appPath, appName) {
     const moduleDir = join(appPath, appName, "doctype");
     if (!existsSync(moduleDir))
@@ -145,7 +145,7 @@ async function scanDocTypeFolder(appPath, appName, doctypeName) {
     }
     return { nFields, isSubmittable, singleDoc };
 }
-// ─── App Analysis ────────────────────────────────────────────────────────────
+// --- App Analysis ------------------------------------------------------------
 async function analyzeApp(benchPath, appName) {
     const appPath = join(benchPath, "apps", appName);
     const packageJson = await readFile(join(appPath, "package.json"), "utf-8").catch(() => "");
@@ -165,7 +165,7 @@ async function analyzeApp(benchPath, appName) {
     }
     return { isErpNext, hasSPA };
 }
-// ─── Sites Scanner ─────────────────────────────────────────────────────────
+// --- Sites Scanner ---------------------------------------------------------
 async function scanSites(sitesPath) {
     if (!existsSync(sitesPath))
         return [];
@@ -216,7 +216,7 @@ async function scanSites(sitesPath) {
     }
     return sites;
 }
-// ─── Custom Fields (FGD-based estimation) ──────────────────────────────────
+// --- Custom Fields (FGD-based estimation) ----------------------------------
 async function estimateCustomFields(benchPath) {
     let totalCustomFields = 0;
     let totalPropertySetters = 0;
@@ -268,7 +268,7 @@ async function estimateCustomFields(benchPath) {
         linkedTo: Array.from(linkedTo),
     };
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 /**
  * Analyze a Frappe workspace (RFC-0061)
  *

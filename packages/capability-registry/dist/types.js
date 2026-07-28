@@ -1,7 +1,7 @@
 /**
  * Capability Registry Types (RFC-0051)
  */
-// ─── Latency Ranking ─────────────────────────────────────────────────
+// --- Latency Ranking -------------------------------------------------
 export const LATENCY_RANK = {
     fast: 1,
     medium: 2,

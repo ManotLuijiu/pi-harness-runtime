@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { ContextWindowManager } from "./history.js";
 import { PolicyEngine } from "./policy.js";
 import { SessionStore } from "./store.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     rootDir: "./sessions",
     sessionTtlMs: 24 * 60 * 60 * 1000, // 24 hours
@@ -19,7 +19,7 @@ const DEFAULT_CONFIG = {
     autoCleanup: true,
     cleanupIntervalMs: 60 * 60 * 1000, // 1 hour
 };
-// ─── Session Manager ───────────────────────────────────────────────────────
+// --- Session Manager -------------------------------------------------------
 export class SessionManager {
     config;
     store;
@@ -360,7 +360,7 @@ export class SessionManager {
         await this.store.close();
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a session manager
  */
