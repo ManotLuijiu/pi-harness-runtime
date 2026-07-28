@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import type { Writable } from "node:stream";
 import type { LogEntry, LogLevel, LoggerConfig } from "./types.js";
 
-// ─── Level Order ────────────────────────────────────────────────────────────
+// --- Level Order ------------------------------------------------------------
 
 const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 	debug: 0,
@@ -20,7 +20,7 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 	fatal: 4,
 };
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<LoggerConfig> = {
 	level: "info",
@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: Required<LoggerConfig> = {
 	defaultMeta: {},
 };
 
-// ─── Colors for Pretty Output ───────────────────────────────────────────────
+// --- Colors for Pretty Output -----------------------------------------------
 
 const COLORS: Record<LogLevel, string> = {
 	debug: "\x1b[36m", // Cyan
@@ -45,7 +45,7 @@ const COLORS: Record<LogLevel, string> = {
 
 const RESET = "\x1b[0m";
 
-// ─── UUID Generator ─────────────────────────────────────────────────────────
+// --- UUID Generator ---------------------------------------------------------
 
 function generateId(): string {
 	return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -55,7 +55,7 @@ function generateId(): string {
 	});
 }
 
-// ─── Logger Class ───────────────────────────────────────────────────────────
+// --- Logger Class -----------------------------------------------------------
 
 export class Logger {
 	private readonly config: Required<LoggerConfig>;
@@ -356,7 +356,7 @@ export class Logger {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 
 /**
  * Create a logger with the given configuration
@@ -365,7 +365,7 @@ export function createLogger(config?: LoggerConfig): Logger {
 	return new Logger(config);
 }
 
-// ─── Default Logger ──────────────────────────────────────────────────────────
+// --- Default Logger ----------------------------------------------------------
 
 /**
  * Default logger instance

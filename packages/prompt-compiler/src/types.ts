@@ -7,7 +7,7 @@
 import type { CompiledRequirement } from "@pi-harness/requirement-compiler";
 import type { CompiledTask } from "@pi-harness/task-compiler";
 
-// ─── Provider target ──────────────────────────────────────────────────────
+// --- Provider target ------------------------------------------------------
 
 /**
  * Supported provider targets.
@@ -20,7 +20,7 @@ export type ProviderTarget =
 	| "anthropic"
 	| "gemini";
 
-// ─── Provider prompt profile ───────────────────────────────────────────────
+// --- Provider prompt profile -----------------------------------------------
 
 /**
  * Provider-specific formatting preferences.
@@ -34,7 +34,7 @@ export interface ProviderPromptProfile {
 	continuationMarker: string;
 }
 
-// ─── Prompt sections ──────────────────────────────────────────────────────
+// --- Prompt sections ------------------------------------------------------
 
 /**
  * A single section of the compiled prompt.
@@ -68,7 +68,7 @@ export interface SourceRef {
 	text: string;
 }
 
-// ─── Continuation ─────────────────────────────────────────────────────────
+// --- Continuation ---------------------------------------------------------
 
 /**
  * Context for resuming a prompt that hit output limits.
@@ -80,7 +80,7 @@ export interface ContinuationContext {
 	instruction: "continue_without_repeating";
 }
 
-// ─── Compiled context ────────────────────────────────────────────────────
+// --- Compiled context ----------------------------------------------------
 
 /**
  * Compiled context from the Context Compiler (RFC-0042).
@@ -106,7 +106,7 @@ function __contextEntryPriority(): void {
 	// 7+ = supplemental
 }
 
-// ─── Redaction ────────────────────────────────────────────────────────────
+// --- Redaction ------------------------------------------------------------
 
 /**
  * Redaction rule patterns.
@@ -117,7 +117,7 @@ export interface RedactionRule {
 	description: string;
 }
 
-// ─── Prompt package ──────────────────────────────────────────────────────
+// --- Prompt package ------------------------------------------------------
 
 /**
  * The output artifact of prompt compilation.
@@ -135,7 +135,7 @@ export interface PromptPackage {
 	createdAt: string;
 }
 
-// ─── Compile request ──────────────────────────────────────────────────────
+// --- Compile request ------------------------------------------------------
 
 /**
  * Input to the prompt compiler.
@@ -149,7 +149,7 @@ export interface PromptCompileRequest {
 	continuation?: ContinuationContext;
 }
 
-// ─── Error codes ─────────────────────────────────────────────────────────
+// --- Error codes ---------------------------------------------------------
 
 export type PromptCompileErrorCode =
 	| "INVALID_TASK"
@@ -178,7 +178,7 @@ export class PromptCompileError extends Error {
 	}
 }
 
-// ─── Provider profiles ────────────────────────────────────────────────────
+// --- Provider profiles ----------------------------------------------------
 
 /**
  * Built-in provider profiles.
@@ -235,7 +235,7 @@ export const PROVIDER_PROFILES: Record<ProviderTarget, ProviderPromptProfile> =
 		},
 	};
 
-// ─── Section order ────────────────────────────────────────────────────────
+// --- Section order --------------------------------------------------------
 
 /**
  * Deterministic section ordering per RFC-0041.
@@ -254,7 +254,7 @@ export const SECTION_ORDER: PromptSection["kind"][] = [
 	"supplemental",
 ];
 
-// ─── Compactable priority threshold ───────────────────────────────────────
+// --- Compactable priority threshold ---------------------------------------
 
 /**
  * Entries with priority >= this are eligible for compaction.

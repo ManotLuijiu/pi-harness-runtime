@@ -167,7 +167,7 @@ export function assertEveryCriterionAssigned(
 	}
 }
 
-// ─── File overlap detection ──────────────────────────────────────────
+// --- File overlap detection ------------------------------------------
 
 function findFileOverlap(
 	a: import("./types.js").FileOwnership,
@@ -195,7 +195,7 @@ function patternSubsumes(parent: string, child: string): boolean {
 	return child.startsWith(`${p}/`) || child.startsWith(p);
 }
 
-// ─── Dependency helpers ────────────────────────────────────────────────
+// --- Dependency helpers ------------------------------------------------
 
 function getAllDependencies(taskId: string, graph: TaskGraph): Set<string> {
 	const taskMap = new Map(graph.tasks.map((t) => [t.id, t]));

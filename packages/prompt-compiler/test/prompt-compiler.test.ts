@@ -32,7 +32,7 @@ import { PROVIDER_PROFILES } from "../src/types.js";
 import type { PromptCompileRequest } from "../src/types.js";
 import { validateSections, validateTokenBudget } from "../src/validate.js";
 
-// ─── Test fixtures ───────────────────────────────────────────────────────
+// --- Test fixtures -------------------------------------------------------
 
 function makeRequest(
 	overrides?: Partial<PromptCompileRequest>,
@@ -115,7 +115,7 @@ function makeDeps(overrides?: {
 	};
 }
 
-// ─── Test 1: Deterministic hash ──────────────────────────────────────
+// --- Test 1: Deterministic hash --------------------------------------
 
 describe("Deterministic hash", () => {
 	it("identical inputs produce identical prompt content and hash", async () => {
@@ -167,7 +167,7 @@ describe("Deterministic hash", () => {
 	});
 });
 
-// ─── Test 2: Required sections never removed ─────────────────────────────
+// --- Test 2: Required sections never removed -----------------------------
 
 describe("Required sections survive compaction", () => {
 	it("objective section is required and never compacted", async () => {
@@ -235,7 +235,7 @@ describe("Required sections survive compaction", () => {
 	});
 });
 
-// ─── Test 3: Provider formatting ───────────────────────────────────────
+// --- Test 3: Provider formatting ---------------------------------------
 
 describe("Provider formatting", () => {
 	it("anthropic uses XML formatting", async () => {
@@ -299,7 +299,7 @@ describe("Provider formatting", () => {
 	});
 });
 
-// ─── Test 4: Secret redaction ─────────────────────────────────────────
+// --- Test 4: Secret redaction -----------------------------------------
 
 describe("Secret redaction", () => {
 	it("API keys are redacted before persistence", async () => {
@@ -360,7 +360,7 @@ describe("Secret redaction", () => {
 	});
 });
 
-// ─── Test 5: Error codes ───────────────────────────────────────────────
+// --- Test 5: Error codes -----------------------------------------------
 
 describe("Error codes", () => {
 	it("INVALID_TASK when task ID is empty", async () => {
@@ -477,7 +477,7 @@ describe("Error codes", () => {
 	});
 });
 
-// ─── Test 6: Continuation without repetition ───────────────────────────
+// --- Test 6: Continuation without repetition ---------------------------
 
 describe("Continuation without repetition", () => {
 	it("completed items are marked as done, not repeated", async () => {
@@ -554,7 +554,7 @@ describe("Continuation without repetition", () => {
 	});
 });
 
-// ─── Test 7: Token budget ──────────────────────────────────────────────
+// --- Test 7: Token budget ----------------------------------------------
 
 describe("Token budget", () => {
 	it("estimateTokens returns 0 for empty string", () => {
@@ -623,7 +623,7 @@ describe("Token budget", () => {
 	});
 });
 
-// ─── Test 8: Deduplication ─────────────────────────────────────────────
+// --- Test 8: Deduplication ---------------------------------------------
 
 describe("Deduplication", () => {
 	it("normalizeForDeduplication strips markdown and lowercases", () => {
@@ -691,7 +691,7 @@ describe("Deduplication", () => {
 	});
 });
 
-// ─── Test 9: Metadata completeness ────────────────────────────────────
+// --- Test 9: Metadata completeness ------------------------------------
 
 describe("Metadata completeness", () => {
 	it("PromptPackage includes token estimate and source refs", async () => {
@@ -738,7 +738,7 @@ describe("Metadata completeness", () => {
 	});
 });
 
-// ─── Test 10: PromptCompileError ─────────────────────────────────────
+// --- Test 10: PromptCompileError -------------------------------------
 
 describe("PromptCompileError", () => {
 	it("has correct name, code, and message", () => {
@@ -761,7 +761,7 @@ describe("PromptCompileError", () => {
 	});
 });
 
-// ─── Test 11: normalizeRequest ────────────────────────────────────────
+// --- Test 11: normalizeRequest ----------------------------------------
 
 describe("normalizeRequest", () => {
 	it("trims strings", () => {

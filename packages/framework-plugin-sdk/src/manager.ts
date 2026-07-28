@@ -19,7 +19,7 @@ import type {
 } from "./types.js";
 import { PluginError, PluginErrorCode } from "./types.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<PluginManagerConfig> = {
 	pluginDir: "./plugins",
@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: Required<PluginManagerConfig> = {
 	logLevel: "warn",
 };
 
-// ─── Plugin Manager ───────────────────────────────────────────────────────
+// --- Plugin Manager -------------------------------------------------------
 
 export class PluginManager {
 	private readonly config: Required<PluginManagerConfig>;
@@ -513,7 +513,7 @@ export class PluginManager {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a plugin manager

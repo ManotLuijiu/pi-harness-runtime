@@ -11,7 +11,7 @@ import type {
 	TemplateSet,
 } from "../types.js";
 
-// ─── Template Registry ────────────────────────────────────────────────────
+// --- Template Registry ----------------------------------------------------
 
 export class TemplateRegistry {
 	private templates: Map<string, Template> = new Map();

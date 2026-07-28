@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_SCORING_WEIGHTS } from "./types.js";
 
-// ─── Evidence Collection ───────────────────────────────────────────────────────
+// --- Evidence Collection -------------------------------------------------------
 
 function collectEvidence(
 	outputs: TaskOutputArtifact[],
@@ -63,7 +63,7 @@ function collectEvidence(
 	return evidence;
 }
 
-// ─── Missing Output Detection ──────────────────────────────────────────────────
+// --- Missing Output Detection --------------------------------------------------
 
 function findMissingOutputs(
 	requiredArtifacts: string[],
@@ -91,7 +91,7 @@ function findMissingOutputs(
 	return findings;
 }
 
-// ─── Test Analysis ────────────────────────────────────────────────────────────
+// --- Test Analysis ------------------------------------------------------------
 
 function analyzeTests(testResults: TestResult[]): {
 	findings: EvaluationFinding[];
@@ -130,7 +130,7 @@ function analyzeTests(testResults: TestResult[]): {
 	return { findings, passedCount, totalCount, hasFailures };
 }
 
-// ─── Policy Analysis ──────────────────────────────────────────────────────────
+// --- Policy Analysis ----------------------------------------------------------
 
 function analyzePolicies(policyFindings: PolicyFinding[]): {
 	findings: EvaluationFinding[];
@@ -157,7 +157,7 @@ function analyzePolicies(policyFindings: PolicyFinding[]): {
 	return { findings, criticalFindings };
 }
 
-// ─── Acceptance Criteria Coverage ─────────────────────────────────────────────
+// --- Acceptance Criteria Coverage ---------------------------------------------
 
 function analyzeAcceptanceCoverage(
 	acceptanceCriteria: string[],
@@ -217,7 +217,7 @@ function analyzeAcceptanceCoverage(
 	return { findings, coverage, unmetCriteria };
 }
 
-// ─── Scoring ─────────────────────────────────────────────────────────────────
+// --- Scoring -----------------------------------------------------------------
 
 function calculateScore(
 	weights: ScoringWeights,
@@ -286,7 +286,7 @@ function calculateScore(
 	return { score: Math.round(totalScore), breakdown };
 }
 
-// ─── Failure Classification ───────────────────────────────────────────────────
+// --- Failure Classification ---------------------------------------------------
 
 function classifyFailure(
 	findings: EvaluationFinding[],
@@ -330,7 +330,7 @@ function classifyFailure(
 	return classes;
 }
 
-// ─── Main Engine ───────────────────────────────────────────────────────────────
+// --- Main Engine ---------------------------------------------------------------
 
 export class EvaluationEngine {
 	private weights: ScoringWeights;
@@ -479,7 +479,7 @@ export class EvaluationEngine {
 	}
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 
 export function createEvaluationEngine(
 	weights?: Partial<ScoringWeights>,

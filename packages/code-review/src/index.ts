@@ -5,17 +5,17 @@
  * and configurable reporting.
  */
 
-// ─── Engine ────────────────────────────────────────────────────────────
+// --- Engine ------------------------------------------------------------
 
 export { CodeReviewEngine, createCodeReviewEngine } from "./engine.js";
 
-// ─── Reporters ─────────────────────────────────────────────────────────
+// --- Reporters ---------------------------------------------------------
 
 export { TextReporter } from "./reports/text.js";
 export { HtmlReporter } from "./reports/html.js";
 export { MarkdownReporter } from "./reports/markdown.js";
 
-// ─── Types ────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------
 
 export {
 	SDK_VERSION,

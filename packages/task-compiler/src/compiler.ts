@@ -55,7 +55,7 @@ export async function compileTasks(
 	fullConfig.clock;
 	const jobId = input.jobId;
 
-	// ─── Step 1: Decompose requirement into candidates ─────────────────────────
+	// --- Step 1: Decompose requirement into candidates -------------------------
 
 	const candidates = decomposeRequirement(input);
 
@@ -67,25 +67,25 @@ export async function compileTasks(
 		);
 	}
 
-	// ─── Step 2: Assign file scope and ownership ─────────────────────────────
+	// --- Step 2: Assign file scope and ownership -----------------------------
 
 	const tasksWithScope = assignFileScope(candidates, input.project);
 
-	// ─── Step 3: Assign verification outputs ────────────────────────────────
+	// --- Step 3: Assign verification outputs --------------------------------
 
 	const tasksWithVerification = assignVerification(
 		tasksWithScope,
 		input.requirement,
 	);
 
-	// ─── Step 4: Apply command policy ───────────────────────────────────
+	// --- Step 4: Apply command policy -----------------------------------
 
 	const tasksWithPolicy = applyCommandPolicy(
 		tasksWithVerification,
 		input.project,
 	);
 
-	// ─── Step 5: Assign jobId, provider hints, and finalize ───────────────
+	// --- Step 5: Assign jobId, provider hints, and finalize ---------------
 
 	const finalizedTasks = tasksWithPolicy.map((task) => ({
 		...task,
@@ -93,11 +93,11 @@ export async function compileTasks(
 		preferredProvider: PROVIDER_HINTS[task.type]?.[0],
 	}));
 
-	// ─── Step 6: Build graph ─────────────────────────────────────────────
+	// --- Step 6: Build graph ---------------------------------------------
 
 	const graph = buildGraph(finalizedTasks);
 
-	// ─── Step 7: Validate ────────────────────────────────────────────────
+	// --- Step 7: Validate ------------------------------------------------
 
 	assertNoEmptyObjectives(graph);
 	assertNoCycles(graph);

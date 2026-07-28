@@ -256,7 +256,7 @@ export class AutoCompactEngine {
 		return existsSync(join(this.rootDir, "continue_prompt.md"));
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private ensureDir(): void {
 		if (!existsSync(this.rootDir)) {

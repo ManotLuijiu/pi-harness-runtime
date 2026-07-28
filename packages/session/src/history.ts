@@ -12,7 +12,7 @@ import type {
 	SessionContext,
 } from "./types.js";
 
-// ─── Message History ──────────────────────────────────────────────────────
+// --- Message History ------------------------------------------------------
 
 export class MessageHistory {
 	private messages: Message[] = [];
@@ -152,7 +152,7 @@ export class MessageHistory {
 	}
 }
 
-// ─── Message Search ────────────────────────────────────────────────────────
+// --- Message Search --------------------------------------------------------
 
 export class MessageSearch {
 	private index: Map<string, Message[]> = new Map();
@@ -269,7 +269,7 @@ export class MessageSearch {
 	}
 }
 
-// ─── Context Window Manager ────────────────────────────────────────────────
+// --- Context Window Manager ------------------------------------------------
 
 export class ContextWindowManager {
 	private readonly maxTokens: number;

@@ -4,14 +4,14 @@
  * Core types for logging, tracing, metrics, and health monitoring.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Log Types ───────────────────────────────────────────────────────────────
+// --- Log Types ---------------------------------------------------------------
 
 /**
  * Log severity levels
@@ -59,7 +59,7 @@ export interface LoggerConfig {
 	defaultMeta?: Record<string, unknown>;
 }
 
-// ─── Trace Types ────────────────────────────────────────────────────────────
+// --- Trace Types ------------------------------------------------------------
 
 /**
  * Span status
@@ -119,7 +119,7 @@ export interface TracerConfig {
 	logLevel?: LogLevel;
 }
 
-// ─── Metrics Types ──────────────────────────────────────────────────────────
+// --- Metrics Types ----------------------------------------------------------
 
 /**
  * Metric types
@@ -214,7 +214,7 @@ export interface PrometheusMetric {
 	}>;
 }
 
-// ─── Health Types ───────────────────────────────────────────────────────────
+// --- Health Types -----------------------------------------------------------
 
 /**
  * Health check result
@@ -251,7 +251,7 @@ export interface HealthReport {
 	timestamp: string;
 }
 
-// ─── Alert Types ────────────────────────────────────────────────────────────
+// --- Alert Types ------------------------------------------------------------
 
 /**
  * Alert condition types
@@ -374,7 +374,7 @@ export interface Alert {
 	metadata?: Record<string, unknown>;
 }
 
-// ─── Export Types ───────────────────────────────────────────────────────────
+// --- Export Types -----------------------------------------------------------
 
 /**
  * Exporter types

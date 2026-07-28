@@ -90,7 +90,7 @@ export interface ProviderSelection {
 	reason: string;
 }
 
-// ─── Task Graph (RFC-0016) ───────────────────────────────────────────
+// --- Task Graph (RFC-0016) -------------------------------------------
 
 export interface TaskNode {
 	id: string;
@@ -114,7 +114,7 @@ export interface TaskGraph {
 	topologicalOrder: string[]; // Cached topological sort
 }
 
-// ─── Blackboard (RFC-0011) ──────────────────────────────────────────
+// --- Blackboard (RFC-0011) ------------------------------------------
 
 export interface BlackboardRecord {
 	jobId: string;
@@ -170,7 +170,7 @@ export interface LockInfo {
 	expiresAt?: string;
 }
 
-// ─── Context Window Manager (RFC-0010) ──────────────────────────────
+// --- Context Window Manager (RFC-0010) ------------------------------
 
 export interface ContextWindowUpdate {
 	provider: string;
@@ -194,7 +194,7 @@ export interface ContextWindowConfig {
 	strategy: "truncate" | "summarize" | "split";
 }
 
-// ─── Quota Manager (RFC-0003) ────────────────────────────────────────
+// --- Quota Manager (RFC-0003) ----------------------------------------
 
 export interface QuotaSignal {
 	provider: string;
@@ -222,7 +222,7 @@ export interface QuotaState {
 	nextAvailableAt?: string;
 }
 
-// ─── Provider Adapter (RFC-0002) ─────────────────────────────────────
+// --- Provider Adapter (RFC-0002) -------------------------------------
 
 export interface ProviderConfig {
 	id: string;
@@ -278,7 +278,7 @@ export interface ProviderMessage {
 	content: string;
 }
 
-// ─── Agent Handoff (RFC-0012) ───────────────────────────────────────
+// --- Agent Handoff (RFC-0012) ---------------------------------------
 
 export interface HandoffContext {
 	jobId: string;
@@ -297,7 +297,7 @@ export interface HandoffEvent {
 	result?: string;
 }
 
-// ─── Project Detector (RFC-0014) ─────────────────────────────────────
+// --- Project Detector (RFC-0014) -------------------------------------
 
 export type ProjectType =
 	| "frappe_erpnext"
@@ -336,7 +336,7 @@ export type E2EStrategy =
 	| "laravel_dusk_flow"
 	| "generic_playwright_flow";
 
-// ─── E2E Test Engine (RFC-0013) ─────────────────────────────────────
+// --- E2E Test Engine (RFC-0013) -------------------------------------
 
 export interface E2EScenario {
 	id: string;
@@ -393,7 +393,7 @@ export interface E2EReport {
 	createdAt: string;
 }
 
-// ─── Repair Engine (RFC-0018) ─────────────────────────────────────────
+// --- Repair Engine (RFC-0018) -----------------------------------------
 
 export interface RepairTask {
 	id: string;
@@ -433,7 +433,7 @@ export interface RetryPolicy {
 	escalationAfter?: number;
 }
 
-// ─── Worktree (RFC-0005) ─────────────────────────────────────────────
+// --- Worktree (RFC-0005) ---------------------------------------------
 
 export interface WorktreeInfo {
 	name: string;
@@ -445,7 +445,7 @@ export interface WorktreeInfo {
 	status: "active" | "merged" | "abandoned";
 }
 
-// ─── Loop Runtime (RFC-0001) ─────────────────────────────────────────
+// --- Loop Runtime (RFC-0001) -----------------------------------------
 
 export interface LoopConfig {
 	jobId: string;
@@ -472,7 +472,7 @@ export interface LoopState {
 	lastCheckpoint?: RuntimeCheckpoint | null;
 }
 
-// ─── Compact Types (RFC-0028) ───────────────────────────────────────────────
+// --- Compact Types (RFC-0028) -----------------------------------------------
 
 /** Why a compact was triggered */
 export type CompactTriggerReason =

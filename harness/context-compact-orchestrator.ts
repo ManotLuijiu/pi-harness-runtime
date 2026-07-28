@@ -6,13 +6,13 @@
  *
  * Architecture:
  *   LoopRuntime.executeTask()
- *     └─> CompactOrchestrator.invokeWithCompact()
- *           ├─> beforeInvoke():
- *           │     1. Estimate token count with buffer awareness
- *           │     2. Check circuit breaker status
- *           │     3. Microcompact: prune old tool results if time-based
- *           │     4. If over autoCompactThreshold → Full compact via forked summarization
- *           └─> afterInvoke():
+ *     +-> CompactOrchestrator.invokeWithCompact()
+ *           +-> beforeInvoke():
+ *           |     1. Estimate token count with buffer awareness
+ *           |     2. Check circuit breaker status
+ *           |     3. Microcompact: prune old tool results if time-based
+ *           |     4. If over autoCompactThreshold → Full compact via forked summarization
+ *           +-> afterInvoke():
  *                 1. Update token stats
  *                 2. Handle reactive 413 (context too long)
  *                 3. Generate continue prompt
@@ -38,12 +38,12 @@ import {
 } from "./context-window-manager.js";
 import { continuePromptGenerator } from "./continue-prompt.js";
 
-// ─── Re-exports ────────────────────────────────────────────────────────────────
+// --- Re-exports ----------------------------------------------------------------
 
 /** Re-export CompactTriggerReason so harness/index.ts can re-export from here */
 export type { CompactTriggerReason } from "../packages/types/src/runtime-types.js";
 
-// ─── Callbacks ────────────────────────────────────────────────────────────────
+// --- Callbacks ----------------------------------------------------------------
 
 /** Callbacks provided by the harness to handle compact side-effects */
 export interface CompactOrchestratorCallbacks {
@@ -74,7 +74,7 @@ export interface CompactOrchestratorCallbacks {
 	) => Promise<{ summary: string; droppedCount: number }>;
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// --- Config -------------------------------------------------------------------
 
 export interface CompactOrchestratorConfig {
 	jobId: string;
@@ -96,7 +96,7 @@ export interface CompactOrchestratorConfig {
 	contextWindowSize?: number;
 }
 
-// ─── Orchestrator ─────────────────────────────────────────────────────────────
+// --- Orchestrator -------------------------------------------------------------
 
 /**
  * Compact Orchestrator
@@ -166,7 +166,7 @@ export class CompactOrchestrator {
 		const { messages, model, maxOutputTokens } = opts;
 		this.compactAttempts++;
 
-		// ── Estimate tokens with buffer awareness ─────────────────────────────
+		// -- Estimate tokens with buffer awareness -----------------------------
 		const estimate = this.contextWindow.estimateTokensWithBuffer({
 			messages,
 			tools: opts.tools,
@@ -175,7 +175,7 @@ export class CompactOrchestrator {
 			model: model ?? this.model,
 		});
 
-		// ── Circuit breaker check ─────────────────────────────────────────────
+		// -- Circuit breaker check ---------------------------------------------
 		if (this.contextWindow.shouldCircuitBreak()) {
 			return {
 				success: false,
@@ -183,7 +183,7 @@ export class CompactOrchestrator {
 			};
 		}
 
-		// ── Blocking: must compact before API call ───────────────────────────
+		// -- Blocking: must compact before API call ---------------------------
 		if (this.contextWindow.shouldBlockApiCall(estimate)) {
 			callbacks.onPreCompact?.("token_threshold");
 			const compact = await this.runFullCompact(
@@ -206,10 +206,10 @@ export class CompactOrchestrator {
 			this.contextWindow.recordCompactSuccess();
 		}
 
-		// ── Time-based microcompact ─────────────────────────────────────────
+		// -- Time-based microcompact -----------------------------------------
 		this.tryMicrocompact(messages);
 
-		// ── Proactive auto-compact at 85% ──────────────────────────────────
+		// -- Proactive auto-compact at 85% ----------------------------------
 		if (this.contextWindow.shouldProactiveCompact(estimate)) {
 			callbacks.onPreCompact?.("token_threshold");
 			const compact = await this.runFullCompact(
@@ -228,7 +228,7 @@ export class CompactOrchestrator {
 			}
 		}
 
-		// ── Make the LLM call ───────────────────────────────────────────────
+		// -- Make the LLM call -----------------------------------------------
 		const invoke = opts.invokeAgent ?? callbacks.invokeAgent;
 		if (!invoke) {
 			return {
@@ -242,7 +242,7 @@ export class CompactOrchestrator {
 		// Track tool results
 		this.trackToolResults(messages);
 
-		// ── Update stats ─────────────────────────────────────────────────────
+		// -- Update stats -----------------------------------------------------
 		if (result.usage) {
 			this.contextWindow.updateStats({
 				provider: this.provider,
@@ -252,7 +252,7 @@ export class CompactOrchestrator {
 			});
 		}
 
-		// ── Reactive compact on context-too-long error ─────────────────────
+		// -- Reactive compact on context-too-long error ---------------------
 		const isContextError = this.isContextTooLongError(result.error);
 
 		if (isContextError) {
@@ -326,7 +326,7 @@ export class CompactOrchestrator {
 			return { success: false, error: "Nothing to compact" };
 		}
 
-		// ── Generate summary ────────────────────────────────────────────────
+		// -- Generate summary ------------------------------------------------
 		let summary = "";
 		let droppedCount = oldMessages.length;
 
@@ -345,7 +345,7 @@ export class CompactOrchestrator {
 			summary = this.heuristicSummary(oldMessages, reason);
 		}
 
-		// ── Build compact boundary message ───────────────────────────────────
+		// -- Build compact boundary message -----------------------------------
 		const boundaryMsg: CompactableMessage = {
 			role: "system",
 			content: continuePromptGenerator.generateBoundary({
@@ -361,7 +361,7 @@ export class CompactOrchestrator {
 			},
 		};
 
-		// ── Preserve tool results from recent messages ───────────────────────
+		// -- Preserve tool results from recent messages -----------------------
 		const preservedRecent = recentMessages.map((msg) => {
 			if (msg.role !== "assistant" || !msg.toolResults) return msg;
 			return {
@@ -373,7 +373,7 @@ export class CompactOrchestrator {
 			};
 		});
 
-		// ── Rebuild message array ───────────────────────────────────────────
+		// -- Rebuild message array -------------------------------------------
 		messages.length = 0;
 		messages.push(boundaryMsg, ...preservedRecent);
 

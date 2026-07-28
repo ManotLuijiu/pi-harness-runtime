@@ -2,7 +2,7 @@
  * Skill Registry Types (RFC-0052)
  */
 
-// ─── Trigger Types ─────────────────────────────────────────────────────
+// --- Trigger Types -----------------------------------------------------
 
 export type TriggerType = "keyword" | "pattern" | "intent" | "tool_request";
 
@@ -12,7 +12,7 @@ export interface SkillTrigger {
 	confidence?: number;
 }
 
-// ─── Skill Types ──────────────────────────────────────────────────────
+// --- Skill Types ------------------------------------------------------
 
 export interface ToolCall {
 	name: string;
@@ -68,7 +68,7 @@ export interface Skill {
 	metadata: SkillMetadata;
 }
 
-// ─── Registry Types ────────────────────────────────────────────────────
+// --- Registry Types ----------------------------------------------------
 
 export interface SkillRegistry {
 	register(skill: Skill): void;
@@ -83,7 +83,7 @@ export interface SkillRegistry {
 	): Promise<SkillResult>;
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────
+// --- Event Types -----------------------------------------------------
 
 export type SkillRegistryEvent =
 	| { type: "skill.registered"; skillId: string; name: string }

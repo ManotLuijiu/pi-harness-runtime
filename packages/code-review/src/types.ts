@@ -4,14 +4,14 @@
  * Core types for automated code review.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Severity & Category ───────────────────────────────────────────────────
+// --- Severity & Category ---------------------------------------------------
 
 /**
  * Issue severity
@@ -42,7 +42,7 @@ export type FocusArea =
 	| "readability"
 	| "architecture";
 
-// ─── Issue Types ───────────────────────────────────────────────────────────
+// --- Issue Types -----------------------------------------------------------
 
 /**
  * Code issue
@@ -78,7 +78,7 @@ export interface IssueSummary {
 	byFile: Record<string, number>;
 }
 
-// ─── Review Types ──────────────────────────────────────────────────────────
+// --- Review Types ----------------------------------------------------------
 
 /**
  * File content for review
@@ -157,7 +157,7 @@ export interface ReviewConfig {
 	aiModel?: string;
 }
 
-// ─── Rule Types ────────────────────────────────────────────────────────────
+// --- Rule Types ------------------------------------------------------------
 
 /**
  * Review rule
@@ -189,7 +189,7 @@ export interface RuleSet {
 	tags?: string[];
 }
 
-// ─── AI Types ──────────────────────────────────────────────────────────────
+// --- AI Types --------------------------------------------------------------
 
 /**
  * AI provider configuration
@@ -240,7 +240,7 @@ export interface AIReviewResponse {
 	tokensUsed: number;
 }
 
-// ─── Report Types ──────────────────────────────────────────────────────────
+// --- Report Types ----------------------------------------------------------
 
 /**
  * Report format
@@ -262,7 +262,7 @@ export interface ReportOptions {
 	template?: string;
 }
 
-// ─── History Types ─────────────────────────────────────────────────────────
+// --- History Types ---------------------------------------------------------
 
 /**
  * Review history entry
@@ -276,7 +276,7 @@ export interface ReviewHistoryEntry {
 	projectPath: string;
 }
 
-// ─── Linter Types ──────────────────────────────────────────────────────────
+// --- Linter Types ----------------------------------------------------------
 
 /**
  * Linter result
@@ -300,7 +300,7 @@ export interface LinterConfig {
 	extensions?: string[];
 }
 
-// ─── Git Types ─────────────────────────────────────────────────────────────
+// --- Git Types -------------------------------------------------------------
 
 /**
  * Git diff

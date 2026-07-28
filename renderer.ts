@@ -59,16 +59,16 @@ function renderLeftLabel(pct: number): string {
 /** Render the full status block. */
 export function renderStatus(input: RenderInput): string {
 	const lines: string[] = [];
-	const divider = "─".repeat(64);
+	const divider = "-".repeat(64);
 
-	// ─── Header ──────────────────────────────────────────────────────────
+	// --- Header ----------------------------------------------------------
 	lines.push("Codex-style usage status for pi");
 	lines.push(divider);
 	lines.push(` Model:        ${input.model ?? "unknown"}`);
 	lines.push(` Directory:    ${input.cwd}`);
 	lines.push("");
 
-	// ─── Local tracking ─────────────────────────────────────────────────
+	// --- Local tracking -------------------------------------------------
 	lines.push(" ① LOCAL TRACKED (ground truth — we count this)");
 	lines.push(
 		`    This session:   ${formatUsd(input.local.lifetime.cost)} · ${formatTokens(input.local.lifetime.tokens)} tokens · ${input.local.lifetime.requests} requests`,
@@ -84,7 +84,7 @@ export function renderStatus(input: RenderInput): string {
 	);
 	lines.push("");
 
-	// ─── Provider mirror ─────────────────────────────────────────────────
+	// --- Provider mirror -------------------------------------------------
 	if (input.mirror) {
 		const fresh = input.mirrorStore.freshness(input.mirror, input.nowMs);
 		const freshnessLabel =
@@ -137,7 +137,7 @@ export function renderStatus(input: RenderInput): string {
 		lines.push("");
 	}
 
-	// ─── Local reset times (derived) ────────────────────────────────────
+	// --- Local reset times (derived) ------------------------------------
 	lines.push(" ③ LOCAL RESET TIMES (derived from your data)");
 	const local5hReset = computeLocalResetTime(input.local.five_h, FIVE_HOURS_MS);
 	const localWeekReset = computeLocalResetTime(
@@ -161,7 +161,7 @@ export function renderStatus(input: RenderInput): string {
 		lines.push(`    Local week reset:  no requests in last 7 days`);
 	}
 
-	// ─── Local-vs-mirror divergence ─────────────────────────────────────
+	// --- Local-vs-mirror divergence -------------------------------------
 	if (input.mirror?.h5_used_pct !== undefined) {
 		const localPct = input.localFiveHLimitTokens
 			? (input.local.five_h.tokens / input.localFiveHLimitTokens) * 100
@@ -173,7 +173,7 @@ export function renderStatus(input: RenderInput): string {
 		lines.push(`    Local-vs-mirror:  ${deltaStr}${warning}`);
 	}
 
-	// ─── Burn rate ──────────────────────────────────────────────────────
+	// --- Burn rate ------------------------------------------------------
 	if (
 		input.mirror?.weekly_used_pct !== undefined &&
 		input.mirror.weekly_resets_at

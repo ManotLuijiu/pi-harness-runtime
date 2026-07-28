@@ -15,7 +15,7 @@ import { dirname } from "node:path";
 import type { TaskRecord, TaskStatus, TaskEvent } from "./types.js";
 import { getInboxDir, getTasksPath } from "./types.js";
 
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 
 export class InboxError extends Error {
 	constructor(msg: string) {
@@ -24,7 +24,7 @@ export class InboxError extends Error {
 	}
 }
 
-// ─── TaskInbox ────────────────────────────────────────────────────────────────
+// --- TaskInbox ----------------------------------------------------------------
 
 /**
  * Manages the append-only task inbox at `~/.pi/harness/inbox/tasks.jsonl`.
@@ -32,9 +32,9 @@ export class InboxError extends Error {
  * Storage layout:
  * ```
  * ~/.pi/harness/inbox/
- * ├── tasks.jsonl   # append-only log (one JSON line per task)
- * ├── claimed/      # active leases (one JSON file per task)
- * └── BACKLOG.md   # human-friendly authoring surface (optional)
+ * +-- tasks.jsonl   # append-only log (one JSON line per task)
+ * +-- claimed/      # active leases (one JSON file per task)
+ * +-- BACKLOG.md   # human-friendly authoring surface (optional)
  * ```
  *
  * Operations are:
@@ -61,7 +61,7 @@ export class TaskInbox {
 		}
 	}
 
-	// ─── append ──────────────────────────────────────────────────────────────
+	// --- append --------------------------------------------------------------
 
 	/**
 	 * Append a new task to tasks.jsonl.
@@ -85,7 +85,7 @@ export class TaskInbox {
 		this._cache = null; // invalidate
 	}
 
-	// ─── list ─────────────────────────────────────────────────────────────────
+	// --- list -----------------------------------------------------------------
 
 	/**
 	 * Read all tasks from tasks.jsonl.
@@ -131,7 +131,7 @@ export class TaskInbox {
 		return filtered;
 	}
 
-	// ─── get ─────────────────────────────────────────────────────────────────
+	// --- get -----------------------------------------------------------------
 
 	/** Retrieve a single task by id, or null if not found. */
 	get(id: string): TaskRecord | null {
@@ -139,7 +139,7 @@ export class TaskInbox {
 		return tasks.find((t) => t.id === id) ?? null;
 	}
 
-	// ─── transition ──────────────────────────────────────────────────────────
+	// --- transition ----------------------------------------------------------
 
 	/**
 	 * Update a task's status in-place inside tasks.jsonl.
@@ -197,7 +197,7 @@ export class TaskInbox {
 		return updated;
 	}
 
-	// ─── markDone / markFailed ───────────────────────────────────────────────
+	// --- markDone / markFailed -----------------------------------------------
 
 	/** Convenience: mark a task as completed with a result. */
 	complete(taskId: string, result: TaskRecord["result"]): TaskRecord {
@@ -231,7 +231,7 @@ export class TaskInbox {
 		);
 	}
 
-	// ─── reindex ─────────────────────────────────────────────────────────────
+	// --- reindex -------------------------------------------------------------
 
 	/** Rewrite tasks.jsonl from the given task list. */
 	private _rewriteAll(tasks: TaskRecord[]): void {
@@ -252,7 +252,7 @@ export class TaskInbox {
 		this._cache = null;
 	}
 
-	// ─── count ───────────────────────────────────────────────────────────────
+	// --- count ---------------------------------------------------------------
 
 	/** Return counts of tasks grouped by status. */
 	stats(): Record<TaskStatus, number> {

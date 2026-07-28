@@ -4,11 +4,11 @@
  * Core types for task decomposition, DAG construction, and verification.
  */
 
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 
 export const SDK_VERSION = "1.0.0" as const;
 
-// ─── Task Types ────────────────────────────────────────────────────────
+// --- Task Types --------------------------------------------------------
 
 export type TaskType =
 	| "analysis"
@@ -22,7 +22,7 @@ export type TaskType =
 
 export type ComplexityEstimate = 1 | 2 | 3 | 5 | 8;
 
-// ─── Task Output ────────────────────────────────────────────────────────
+// --- Task Output --------------------------------------------------------
 
 export interface TaskOutput {
 	kind: "file" | "test_result" | "report" | "schema" | "diff" | "verification";
@@ -31,7 +31,7 @@ export interface TaskOutput {
 	required: boolean;
 }
 
-// ─── Compiled Task ─────────────────────────────────────────────────────
+// --- Compiled Task -----------------------------------------------------
 
 export interface CompiledTask {
 	id: string;
@@ -53,7 +53,7 @@ export interface CompiledTask {
 	priority?: number;
 }
 
-// ─── File Ownership ────────────────────────────────────────────────────
+// --- File Ownership ----------------------------------------------------
 
 export type FileOwnershipMode = "exclusive" | "shared_read";
 
@@ -64,7 +64,7 @@ export interface FileOwnership {
 	mode: FileOwnershipMode;
 }
 
-// ─── Task Graph ────────────────────────────────────────────────────────
+// --- Task Graph --------------------------------------------------------
 
 export interface TaskGraph {
 	jobId: string;
@@ -74,7 +74,7 @@ export interface TaskGraph {
 	topologicalOrder: string[];
 }
 
-// ─── Standard Engineering Flow ────────────────────────────────────────
+// --- Standard Engineering Flow ----------------------------------------
 
 export const STANDARD_FLOW: TaskType[] = [
 	"analysis",
@@ -87,7 +87,7 @@ export const STANDARD_FLOW: TaskType[] = [
 	"documentation",
 ];
 
-// ─── Provider Hints ───────────────────────────────────────────────────
+// --- Provider Hints ---------------------------------------------------
 
 export const PROVIDER_HINTS: Partial<Record<TaskType, string[]>> = {
 	analysis: ["codex", "gpt", "glm"],
@@ -100,7 +100,7 @@ export const PROVIDER_HINTS: Partial<Record<TaskType, string[]>> = {
 	documentation: ["codex", "gpt"],
 };
 
-// ─── Default Command Policy ─────────────────────────────────────────────
+// --- Default Command Policy ---------------------------------------------
 
 export const PROHIBITED_BY_DEFAULT: string[] = [
 	"git commit",
@@ -120,7 +120,7 @@ export const PROHIBITED_BY_DEFAULT: string[] = [
 	"TRUNCATE",
 ];
 
-// ─── Forward-declared types (from other workspace packages) ─────────────
+// --- Forward-declared types (from other workspace packages) -------------
 // In production these are imported from @pi-harness/requirement-compiler and @pi/project-analyzer.
 // Declaring them as interfaces here allows the type checker to resolve without building those packages first.
 
@@ -149,7 +149,7 @@ export interface ProjectProfile {
 	}>;
 }
 
-// ─── Compiler Input ────────────────────────────────────────────────────
+// --- Compiler Input ----------------------------------------------------
 
 export interface TaskCompileInput {
 	requirement: CompiledRequirement;
@@ -167,7 +167,7 @@ export interface DependencyInfo {
 	files: string[];
 }
 
-// ─── Candidate Task ───────────────────────────────────────────────────
+// --- Candidate Task ---------------------------------------------------
 
 export interface TaskCandidate {
 	id: string;
@@ -180,7 +180,7 @@ export interface TaskCandidate {
 	priority?: number;
 }
 
-// ─── Compiler Configuration ──────────────────────────────────────────────
+// --- Compiler Configuration ----------------------------------------------
 
 export interface TaskCompilerConfig {
 	insertE2E: boolean;
@@ -196,7 +196,7 @@ export const DEFAULT_TASK_COMPILER_CONFIG: TaskCompilerConfig = {
 	clock: () => new Date(),
 };
 
-// ─── Compiler Errors ─────────────────────────────────────────────────────
+// --- Compiler Errors -----------------------------------------------------
 
 export enum TaskCompilerErrorCode {
 	CYCLIC_DEPENDENCY = "CYCLIC_DEPENDENCY",

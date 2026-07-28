@@ -146,7 +146,7 @@ export class NotificationCenter {
 		return Array.from(this.adapters.keys());
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private createAdapter(
 		config: NotificationChannelConfig,

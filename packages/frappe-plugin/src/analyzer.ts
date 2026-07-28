@@ -10,7 +10,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { FrappeAnalysis } from "./types.js";
 
-// ─── Detection Helpers ──────────────────────────────────────────────────────
+// --- Detection Helpers ------------------------------------------------------
 
 function isFrappeWorkspace(root: string): boolean {
 	return (
@@ -31,7 +31,7 @@ function findBenchPath(root: string): string | undefined {
 	return undefined;
 }
 
-// ─── Apps Discovery ─────────────────────────────────────────────────────────
+// --- Apps Discovery ---------------------------------------------------------
 
 async function getAppsList(benchPath: string): Promise<string[]> {
 	const appsTxt = join(benchPath, "apps.txt");
@@ -58,7 +58,7 @@ async function getAppsList(benchPath: string): Promise<string[]> {
 	return [];
 }
 
-// ─── Hooks Parser ──────────────────────────────────────────────────────────
+// --- Hooks Parser ----------------------------------------------------------
 
 async function parseHooksFile(
 	hooksPath: string,
@@ -97,7 +97,7 @@ async function parseHooksFile(
 	}
 }
 
-// ─── DocType Scanner ───────────────────────────────────────────────────────
+// --- DocType Scanner -------------------------------------------------------
 
 async function countDocTypes(
 	appPath: string,
@@ -172,7 +172,7 @@ async function scanDocTypeFolder(
 	return { nFields, isSubmittable, singleDoc };
 }
 
-// ─── App Analysis ────────────────────────────────────────────────────────────
+// --- App Analysis ------------------------------------------------------------
 
 async function analyzeApp(
 	benchPath: string,
@@ -204,7 +204,7 @@ async function analyzeApp(
 	return { isErpNext, hasSPA };
 }
 
-// ─── Sites Scanner ─────────────────────────────────────────────────────────
+// --- Sites Scanner ---------------------------------------------------------
 
 async function scanSites(sitesPath: string): Promise<
 	{
@@ -274,7 +274,7 @@ async function scanSites(sitesPath: string): Promise<
 	return sites;
 }
 
-// ─── Custom Fields (FGD-based estimation) ──────────────────────────────────
+// --- Custom Fields (FGD-based estimation) ----------------------------------
 
 async function estimateCustomFields(
 	benchPath: string,
@@ -335,7 +335,7 @@ async function estimateCustomFields(
 	};
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 
 /**
  * Analyze a Frappe workspace (RFC-0061)

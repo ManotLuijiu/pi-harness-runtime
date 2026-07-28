@@ -9,7 +9,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { LaravelAnalysis } from "./types.js";
 
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 
 function isLaravelWorkspace(root: string): boolean {
 	if (existsSync(join(root, "artisan"))) return true;
@@ -27,7 +27,7 @@ function isLaravelWorkspace(root: string): boolean {
 	return false;
 }
 
-// ─── Version ────────────────────────────────────────────────────────────────
+// --- Version ----------------------------------------------------------------
 
 async function detectVersion(root: string): Promise<string | undefined> {
 	const composerPath = join(root, "composer.json");
@@ -54,7 +54,7 @@ async function detectVersion(root: string): Promise<string | undefined> {
 	}
 }
 
-// ─── Packages ────────────────────────────────────────────────────────────────
+// --- Packages ----------------------------------------------------------------
 
 async function detectPackages(root: string): Promise<string[]> {
 	const composerPath = join(root, "composer.json");
@@ -72,7 +72,7 @@ async function detectPackages(root: string): Promise<string[]> {
 	}
 }
 
-// ─── Auth Detection ────────────────────────────────────────────────────────
+// --- Auth Detection --------------------------------------------------------
 
 async function detectAuth(root: string): Promise<string | undefined> {
 	const packages = await detectPackages(root);
@@ -101,7 +101,7 @@ async function detectAuth(root: string): Promise<string | undefined> {
 	return undefined;
 }
 
-// ─── Controllers ───────────────────────────────────────────────────────────
+// --- Controllers -----------------------------------------------------------
 
 async function findControllers(root: string): Promise<string[]> {
 	const controllerDirs = [
@@ -145,7 +145,7 @@ async function findControllers(root: string): Promise<string[]> {
 	return controllers;
 }
 
-// ─── Models ────────────────────────────────────────────────────────────────
+// --- Models ----------------------------------------------------------------
 
 async function findModels(root: string): Promise<string[]> {
 	const modelDirs = [join(root, "app", "Models"), join(root, "app", "Models")];
@@ -169,7 +169,7 @@ async function findModels(root: string): Promise<string[]> {
 	return models;
 }
 
-// ─── Blade Views ───────────────────────────────────────────────────────────
+// --- Blade Views -----------------------------------------------------------
 
 async function findViews(root: string): Promise<string[]> {
 	const viewDirs = [join(root, "resources", "views"), join(root, "views")];
@@ -201,7 +201,7 @@ async function findViews(root: string): Promise<string[]> {
 	return views;
 }
 
-// ─── Artisan Commands ──────────────────────────────────────────────────────
+// --- Artisan Commands ------------------------------------------------------
 
 async function findCommands(root: string): Promise<string[]> {
 	const commandDirs = [
@@ -226,7 +226,7 @@ async function findCommands(root: string): Promise<string[]> {
 	return commands;
 }
 
-// ─── Migrations Count ─────────────────────────────────────────────────────
+// --- Migrations Count -----------------------------------------------------
 
 async function countMigrations(root: string): Promise<number> {
 	const migrationDirs = [
@@ -250,7 +250,7 @@ async function countMigrations(root: string): Promise<number> {
 	return count;
 }
 
-// ─── Env Variables ────────────────────────────────────────────────────────
+// --- Env Variables --------------------------------------------------------
 
 async function findEnvVars(root: string): Promise<string[]> {
 	const envFiles = [join(root, ".env.example"), join(root, ".env")];
@@ -279,7 +279,7 @@ async function findEnvVars(root: string): Promise<string[]> {
 	return vars;
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 
 export async function analyzeLaravel(
 	root: string,

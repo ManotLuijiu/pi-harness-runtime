@@ -17,7 +17,7 @@ import type {
 } from "./types.js";
 import { SimpleFaker } from "./faker-adapter.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<GeneratorConfig> = {
 	seed: Date.now(),
@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: Required<GeneratorConfig> = {
 	customGenerators: {},
 };
 
-// ─── Test Data Generator ─────────────────────────────────────────────────
+// --- Test Data Generator -------------------------------------------------
 
 export class TestDataGenerator {
 	private readonly config: Required<GeneratorConfig>;
@@ -449,7 +449,7 @@ export class TestDataGenerator {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a test data generator

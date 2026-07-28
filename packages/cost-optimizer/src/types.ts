@@ -5,7 +5,7 @@
 // Re-export Currency type
 export type Currency = "USD" | "THB";
 
-// ─── Cost Entry Types ─────────────────────────────────────────────────
+// --- Cost Entry Types -------------------------------------------------
 
 export interface CostEntry {
 	id: string;
@@ -20,7 +20,7 @@ export interface CostEntry {
 	timestamp: string;
 }
 
-// ─── Budget Types ─────────────────────────────────────────────────────
+// --- Budget Types -----------------------------------------------------
 
 export interface CostBudget {
 	daily?: number;
@@ -53,7 +53,7 @@ export interface CostPeriod {
 	type: "day" | "week" | "month" | "custom";
 }
 
-// ─── Optimization Types ────────────────────────────────────────────────
+// --- Optimization Types ------------------------------------------------
 
 export interface CostOptimizerConfig {
 	defaultBudget: CostBudget;
@@ -99,7 +99,7 @@ export interface OptimizedSelection {
 	tradeoffs: string[];
 }
 
-// ─── Optimizer Interface ─────────────────────────────────────────────
+// --- Optimizer Interface ---------------------------------------------
 
 export interface CostOptimizer {
 	trackCost(entry: Omit<CostEntry, "id" | "timestamp">): CostEntry;
@@ -118,7 +118,7 @@ export interface CostOptimizer {
 	): OptimizedSelection[];
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────
+// --- Event Types -----------------------------------------------------
 
 export type CostOptimizerEvent =
 	| { type: "cost.tracked"; entryId: string; cost: number; total: number }

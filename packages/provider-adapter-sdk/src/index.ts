@@ -4,7 +4,7 @@
  * A comprehensive SDK for building, testing, and registering provider adapters.
  */
 
-// ─── Builder ────────────────────────────────────────────────────────────────
+// --- Builder ----------------------------------------------------------------
 
 export {
 	AdapterBuilder,
@@ -12,7 +12,7 @@ export {
 	createProviderBuilder,
 } from "./builder.js";
 
-// ─── Registry ────────────────────────────────────────────────────────────────
+// --- Registry ----------------------------------------------------------------
 
 export {
 	AdapterRegistry,
@@ -20,7 +20,7 @@ export {
 	type RegistryConfig,
 } from "./registry.js";
 
-// ─── Tester ─────────────────────────────────────────────────────────────────
+// --- Tester -----------------------------------------------------------------
 
 export {
 	AdapterTester,
@@ -28,7 +28,7 @@ export {
 	createAdapterTester,
 } from "./tester.js";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------------
 
 export type {
 	// SDK Types
@@ -61,7 +61,7 @@ export type {
 	ProviderResponse,
 } from "./types.js";
 
-// ─── Errors ─────────────────────────────────────────────────────────────────
+// --- Errors -----------------------------------------------------------------
 
 export {
 	AdapterError,
@@ -76,7 +76,7 @@ export {
 	LifecycleError,
 } from "./errors.js";
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// --- Constants ---------------------------------------------------------------
 
 /**
  * SDK version

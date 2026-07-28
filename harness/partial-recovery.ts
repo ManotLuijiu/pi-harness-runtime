@@ -70,7 +70,7 @@ export class PartialRecovery {
 		this.loadExistingPartials();
 	}
 
-	// ─── Public API ───────────────────────────────────────────────────────────
+	// --- Public API -----------------------------------------------------------
 
 	/**
 	 * Save a partial response
@@ -285,7 +285,7 @@ export class PartialRecovery {
 		}
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private ensureDir(): void {
 		if (!existsSync(this.rootDir)) {
@@ -517,7 +517,7 @@ export class PartialRecovery {
 	}
 }
 
-// ─── Factory ────────────────────────────────────────────────────────────────
+// --- Factory ----------------------------------------------------------------
 
 /**
  * Create a PartialRecovery manager for a task

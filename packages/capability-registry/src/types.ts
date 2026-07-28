@@ -2,7 +2,7 @@
  * Capability Registry Types (RFC-0051)
  */
 
-// ─── Capability Types ─────────────────────────────────────────────────
+// --- Capability Types -------------------------------------------------
 
 export type Capability =
 	| "code_generation"
@@ -29,7 +29,7 @@ export interface CapabilityProfile {
 	maxOutputTokens: number;
 }
 
-// ─── Query Types ──────────────────────────────────────────────────────
+// --- Query Types ------------------------------------------------------
 
 export interface CapabilityQuery {
 	minScore?: number;
@@ -44,7 +44,7 @@ export interface ModelWithCapability {
 	profile: CapabilityProfile;
 }
 
-// ─── Registry Types ───────────────────────────────────────────────────
+// --- Registry Types ---------------------------------------------------
 
 export interface CapabilityRegistry {
 	register(
@@ -62,7 +62,7 @@ export interface CapabilityRegistry {
 	listModels(providerId: string): string[];
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────
+// --- Event Types -----------------------------------------------------
 
 export type CapabilityRegistryEvent =
 	| {
@@ -74,7 +74,7 @@ export type CapabilityRegistryEvent =
 	| { type: "capability.unregistered"; providerId: string; modelId: string }
 	| { type: "capability.queried"; capability: Capability; results: number };
 
-// ─── Latency Ranking ─────────────────────────────────────────────────
+// --- Latency Ranking -------------------------------------------------
 
 export const LATENCY_RANK: Record<Latency, number> = {
 	fast: 1,

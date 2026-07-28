@@ -26,7 +26,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 	const candidates: TaskCandidate[] = [];
 	let priority = 1;
 
-	// ─── Stage detection ────────────────────────────────────────────────
+	// --- Stage detection ------------------------------------------------
 
 	const needsAnalysis =
 		requirement.problemStatement.length > 200 || requirement.goals.length > 3;
@@ -37,7 +37,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		(r) => r.risk === "destructive_operation",
 	);
 
-	// ─── Analysis ──────────────────────────────────────────────────────
+	// --- Analysis ------------------------------------------------------
 
 	if (needsAnalysis) {
 		candidates.push({
@@ -52,7 +52,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── Design ────────────────────────────────────────────────────────
+	// --- Design --------------------------------------------------------
 
 	if (needsDesign) {
 		candidates.push({
@@ -67,7 +67,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── Implementation ────────────────────────────────────────────────
+	// --- Implementation ------------------------------------------------
 
 	for (let i = 0; i < requirement.goals.length; i++) {
 		const goal = requirement.goals[i];
@@ -103,7 +103,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── Unit tests ───────────────────────────────────────────────────
+	// --- Unit tests ---------------------------------------------------
 
 	if (hasTests) {
 		candidates.push({
@@ -118,7 +118,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── E2E tests ───────────────────────────────────────────────────
+	// --- E2E tests ---------------------------------------------------
 
 	if (hasBrowserWorkflow && input.insertE2E !== false) {
 		candidates.push({
@@ -137,7 +137,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── Review ────────────────────────────────────────────────────────
+	// --- Review --------------------------------------------------------
 
 	const reviewDeps: string[] = [];
 	if (hasTests) reviewDeps.push("test-0");
@@ -156,7 +156,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		priority: priority++,
 	});
 
-	// ─── Repair ────────────────────────────────────────────────────────
+	// --- Repair --------------------------------------------------------
 
 	if (needsRepair) {
 		candidates.push({
@@ -171,7 +171,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		});
 	}
 
-	// ─── Documentation ────────────────────────────────────────────────
+	// --- Documentation ------------------------------------------------
 
 	candidates.push({
 		id: "docs-0",
@@ -184,7 +184,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 		priority: priority++,
 	});
 
-	// ─── Enforce complexity threshold ─────────────────────────────────
+	// --- Enforce complexity threshold ---------------------------------
 
 	const result: TaskCandidate[] = [];
 	for (const c of candidates) {
@@ -198,7 +198,7 @@ export function decomposeRequirement(input: TaskCompileInput): TaskCandidate[] {
 	return result;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------
 
 function estimateComplexity(text: string): ComplexityEstimate {
 	const words = text.split(/\s+/).length;

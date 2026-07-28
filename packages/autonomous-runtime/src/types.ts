@@ -7,7 +7,7 @@
  */
 import { env } from "node:process";
 
-// ─── Capability model ──────────────────────────────────────────────────────────
+// --- Capability model ----------------------------------------------------------
 
 /** A named capability that the privilege broker may grant. */
 export type CapabilityName =
@@ -35,7 +35,7 @@ export type ApprovalClass =
 	| "human_approval_required" // must ask operator
 	| "forbidden"; // never grant, regardless of override
 
-// ─── Task lifecycle ───────────────────────────────────────────────────────────
+// --- Task lifecycle -----------------------------------------------------------
 
 export type TaskStatus =
 	| "queued"
@@ -68,7 +68,7 @@ export type TaskEvent = {
 	payload?: Record<string, unknown>;
 };
 
-// ─── Task record ─────────────────────────────────────────────────────────────
+// --- Task record -------------------------------------------------------------
 
 /** The primary durable record for a task. */
 export interface TaskRecord {
@@ -96,7 +96,7 @@ export interface TaskRecord {
 	history: TaskEvent[];
 }
 
-// ─── Leasing ──────────────────────────────────────────────────────────────────
+// --- Leasing ------------------------------------------------------------------
 
 /** A lease held by a worker on a specific task. */
 export interface TaskLease {
@@ -108,7 +108,7 @@ export interface TaskLease {
 	attempt: number; // which attempt this lease covers
 }
 
-// ─── Worker registry ──────────────────────────────────────────────────────────
+// --- Worker registry ----------------------------------------------------------
 
 /** Heartbeat emitted by a worker every 5 s to worker-registry.json. */
 export interface WorkerHeartbeat {
@@ -119,7 +119,7 @@ export interface WorkerHeartbeat {
 	inflightTaskIds: string[];
 }
 
-// ─── Privilege broker ─────────────────────────────────────────────────────────
+// --- Privilege broker ---------------------------------------------------------
 
 /** A resolved grant from the privilege broker. */
 export interface CapabilityGrant {
@@ -131,7 +131,7 @@ export interface CapabilityGrant {
 	timeoutMs: number;
 }
 
-// ─── Approval ─────────────────────────────────────────────────────────────────
+// --- Approval -----------------------------------------------------------------
 
 /** An in-flight human approval request. */
 export interface ApprovalRequest {
@@ -145,7 +145,7 @@ export interface ApprovalRequest {
 	expiresAt: string; // ISO-8601 — timeout threshold
 }
 
-// ─── Scheduler ───────────────────────────────────────────────────────────────
+// --- Scheduler ---------------------------------------------------------------
 
 /** A scheduled recurring task. */
 export interface ScheduledTask {
@@ -165,7 +165,7 @@ export type ScheduleSpec =
 	| { kind: "interval"; intervalMs: number }
 	| { kind: "once"; at: string };
 
-// ─── Notification ─────────────────────────────────────────────────────────────
+// --- Notification -------------------------------------------------------------
 
 export type RuntimeNotificationEvent =
 	| "task.claimed"
@@ -189,7 +189,7 @@ export interface NotificationEvent {
 	payload: Record<string, unknown>;
 }
 
-// ─── Checkpoint ───────────────────────────────────────────────────────────────
+// --- Checkpoint ---------------------------------------------------------------
 
 export interface Checkpoint {
 	taskId: string;
@@ -198,7 +198,7 @@ export interface Checkpoint {
 	savedAt: string; // ISO-8601
 }
 
-// ─── Execution context ────────────────────────────────────────────────────────
+// --- Execution context --------------------------------------------------------
 
 /** The context given to the loop runtime when executing a task. */
 export interface ExecutionContext {
@@ -212,7 +212,7 @@ export interface ExecutionContext {
 	okfBundles: string[]; // content hashes available to planner
 }
 
-// ─── Task result ─────────────────────────────────────────────────────────────
+// --- Task result -------------------------------------------------------------
 
 export interface TaskResult {
 	taskId: string;
@@ -227,7 +227,7 @@ export interface TaskResult {
 	modelUsage?: { inputTokens: number; outputTokens: number; provider: string };
 }
 
-// ─── Storage paths ────────────────────────────────────────────────────────────
+// --- Storage paths ------------------------------------------------------------
 
 const DEFAULT_ROOT = `${env["HOME"] ?? "."}/.pi/harness`;
 

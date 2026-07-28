@@ -4,14 +4,14 @@
  * Core types for code generation from templates.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Template Types ─────────────────────────────────────────────────────────
+// --- Template Types ---------------------------------------------------------
 
 /**
  * Template definition
@@ -58,7 +58,7 @@ export interface TemplateSet {
 	metadata?: Record<string, unknown>;
 }
 
-// ─── Generation Types ────────────────────────────────────────────────────────
+// --- Generation Types --------------------------------------------------------
 
 /**
  * Generation request
@@ -119,7 +119,7 @@ export interface GenerationWarning {
 	variable?: string;
 }
 
-// ─── Validation Types ───────────────────────────────────────────────────────
+// --- Validation Types -------------------------------------------------------
 
 /**
  * Validation rule
@@ -177,7 +177,7 @@ export interface ValidationIssue {
 	suggestion?: string;
 }
 
-// ─── Rollback Types ────────────────────────────────────────────────────────
+// --- Rollback Types --------------------------------------------------------
 
 /**
  * Snapshot of file state
@@ -221,7 +221,7 @@ export interface RollbackResult {
 	error?: string;
 }
 
-// ─── Change Tracking Types ─────────────────────────────────────────────────
+// --- Change Tracking Types -------------------------------------------------
 
 /**
  * Change set
@@ -254,7 +254,7 @@ export interface DiffChunk {
 	lineNumber?: number;
 }
 
-// ─── Template Registry Types ───────────────────────────────────────────────
+// --- Template Registry Types -----------------------------------------------
 
 /**
  * Registry entry
@@ -277,7 +277,7 @@ export interface RegistryQuery {
 	limit?: number;
 }
 
-// ─── Configuration Types ────────────────────────────────────────────────────
+// --- Configuration Types ----------------------------------------------------
 
 /**
  * Generator configuration
@@ -328,7 +328,7 @@ export interface VariableResolver {
 	priority?: number;
 }
 
-// ─── Output Types ──────────────────────────────────────────────────────────
+// --- Output Types ----------------------------------------------------------
 
 /**
  * Output format
@@ -346,7 +346,7 @@ export interface OutputConfig {
 	backup?: boolean;
 }
 
-// ─── Schema Types ─────────────────────────────────────────────────────────
+// --- Schema Types ---------------------------------------------------------
 
 /**
  * Schema field definition
