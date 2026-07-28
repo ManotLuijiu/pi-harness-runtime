@@ -555,7 +555,7 @@ MiniMax Quota Scraper Setup Instructions
 	}
 }
 
-// ─── Quota Manager Integration ───────────────────────────────────────────────
+// --- Quota Manager Integration -----------------------------------------------
 
 /**
  * Quota Manager that periodically fetches MiniMax quota data

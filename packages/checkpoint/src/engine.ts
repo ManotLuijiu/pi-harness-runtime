@@ -20,7 +20,7 @@ import type {
 import { DiffCalculator } from "./differ.js";
 import { StorageManager } from "./storage.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<CheckpointEngineConfig> = {
 	rootDir: "./checkpoints",
@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: Required<CheckpointEngineConfig> = {
 	metadataIndex: true,
 };
 
-// ─── Checkpoint Engine ─────────────────────────────────────────────────────
+// --- Checkpoint Engine -----------------------------------------------------
 
 export class CheckpointEngine {
 	private readonly config: Required<CheckpointEngineConfig>;
@@ -520,7 +520,7 @@ export class CheckpointEngine {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a checkpoint engine

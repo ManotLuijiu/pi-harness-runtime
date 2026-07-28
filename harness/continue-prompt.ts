@@ -7,7 +7,7 @@
 
 import type { CompactableMessage } from "../packages/types/src/runtime-types.js";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------------
 
 export interface ContinueContext {
 	/** Task identifier */
@@ -35,7 +35,7 @@ export interface MinimalContinueContext {
 	recentMessages: CompactableMessage[];
 }
 
-// ─── Continue Prompt Generator ───────────────────────────────────────────────
+// --- Continue Prompt Generator -----------------------------------------------
 
 export class ContinuePromptGenerator {
 	/**
@@ -237,6 +237,6 @@ export class ContinuePromptGenerator {
 	}
 }
 
-// ─── Singleton Instance ──────────────────────────────────────────────────────
+// --- Singleton Instance ------------------------------------------------------
 
 export const continuePromptGenerator = new ContinuePromptGenerator();

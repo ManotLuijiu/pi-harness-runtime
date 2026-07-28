@@ -4,11 +4,11 @@
  * Type definitions for raw and compiled requirements.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 export const SDK_VERSION = "1.0.0";
 
-// ─── Source Reference ─────────────────────────────────────────────────────
+// --- Source Reference -----------------------------------------------------
 
 /**
  * Reference to a source location in the original requirement.
@@ -26,7 +26,7 @@ export interface SourceReference {
 	text: string;
 }
 
-// ─── Attachment ────────────────────────────────────────────────────────────
+// --- Attachment ------------------------------------------------------------
 
 /**
  * Reference to an attached file (screenshot, document, etc.).
@@ -42,7 +42,7 @@ export interface AttachmentReference {
 	description?: string;
 }
 
-// ─── Raw Requirement (Input) ─────────────────────────────────────────────
+// --- Raw Requirement (Input) ---------------------------------------------
 
 /**
  * Raw requirement as submitted by a user or received from an API.
@@ -64,7 +64,7 @@ export interface RawRequirement {
 	submittedAt: string;
 }
 
-// ─── Statement Types ──────────────────────────────────────────────────────
+// --- Statement Types ------------------------------------------------------
 
 /**
  * Kinds of statements extracted from raw requirement text.
@@ -109,7 +109,7 @@ export interface ExtractedStatement {
 	userMarkedMandatory?: boolean;
 }
 
-// ─── Goals ────────────────────────────────────────────────────────────────
+// --- Goals ----------------------------------------------------------------
 
 /**
  * A goal extracted from the requirement.
@@ -125,7 +125,7 @@ export interface RequirementGoal {
 	priority?: "high" | "medium" | "low";
 }
 
-// ─── Constraints ──────────────────────────────────────────────────────────
+// --- Constraints ----------------------------------------------------------
 
 /**
  * A constraint that the solution must satisfy.
@@ -145,7 +145,7 @@ export interface RequirementConstraint {
 	blocking: boolean;
 }
 
-// ─── Actors ───────────────────────────────────────────────────────────────
+// --- Actors ---------------------------------------------------------------
 
 /**
  * An actor (user role, system, service) identified in the requirement.
@@ -161,7 +161,7 @@ export interface RequirementActor {
 	sourceRefs: SourceReference[];
 }
 
-// ─── Workflows ────────────────────────────────────────────────────────────
+// --- Workflows ------------------------------------------------------------
 
 /**
  * A workflow or use case described in the requirement.
@@ -183,7 +183,7 @@ export interface RequirementWorkflow {
 	sourceRefs: SourceReference[];
 }
 
-// ─── Acceptance Criteria ─────────────────────────────────────────────────
+// --- Acceptance Criteria -------------------------------------------------
 
 /**
  * Normalized acceptance criterion using Given/When/Then format.
@@ -205,7 +205,7 @@ export interface AcceptanceCriterion {
 	originalText?: string;
 }
 
-// ─── Ambiguities ──────────────────────────────────────────────────────────
+// --- Ambiguities ----------------------------------------------------------
 
 /**
  * An ambiguous area in the requirement that needs clarification.
@@ -231,7 +231,7 @@ export interface RequirementAmbiguity {
 		| "unknown";
 }
 
-// ─── Assumptions ─────────────────────────────────────────────────────────
+// --- Assumptions ---------------------------------------------------------
 
 /**
  * An assumption that was made to fill a gap.
@@ -247,7 +247,7 @@ export interface RequirementAssumption {
 	reversible: boolean;
 }
 
-// ─── Terminology ───────────────────────────────────────────────────────────
+// --- Terminology -----------------------------------------------------------
 
 /**
  * Domain terminology mapping.
@@ -263,7 +263,7 @@ export interface TerminologyEntry {
 	sourceRef?: SourceReference;
 }
 
-// ─── Risk Tags ────────────────────────────────────────────────────────────
+// --- Risk Tags ------------------------------------------------------------
 
 /**
  * Risk areas that require additional review.
@@ -289,7 +289,7 @@ export interface RiskTag {
 	description: string;
 }
 
-// ─── Compilation Status ───────────────────────────────────────────────────
+// --- Compilation Status ---------------------------------------------------
 
 /**
  * Status of a compiled requirement.
@@ -302,7 +302,7 @@ export type RequirementStatus =
 	/** Rejected (empty, impossible, or policy violation) */
 	| "rejected";
 
-// ─── Compiled Requirement (Output) ────────────────────────────────────────
+// --- Compiled Requirement (Output) ----------------------------------------
 
 /**
  * Fully compiled requirement with validated structure.
@@ -344,7 +344,7 @@ export interface CompiledRequirement {
 	compiledAt: string;
 }
 
-// ─── Extraction Result ────────────────────────────────────────────────────
+// --- Extraction Result ----------------------------------------------------
 
 /**
  * Result of statement extraction from raw text.
@@ -356,7 +356,7 @@ export interface ExtractionResult {
 	lines: string[];
 }
 
-// ─── Classification Result ─────────────────────────────────────────────────
+// --- Classification Result -------------------------------------------------
 
 /**
  * Result of statement classification.
@@ -384,7 +384,7 @@ export interface ClassificationResult {
 	unknown: ExtractedStatement[];
 }
 
-// ─── Compiler Configuration ────────────────────────────────────────────────
+// --- Compiler Configuration ------------------------------------------------
 
 /**
  * Configuration for the Requirement Compiler.
@@ -517,7 +517,7 @@ export const DEFAULT_COMPILER_CONFIG: RequirementCompilerConfig = {
 	],
 };
 
-// ─── Compiler Dependencies ─────────────────────────────────────────────────
+// --- Compiler Dependencies -------------------------------------------------
 
 /**
  * Dependencies injected into the compiler.
@@ -564,7 +564,7 @@ export interface AcceptanceNormalizer {
 	normalize(statements: ExtractedStatement[]): AcceptanceCriterion[];
 }
 
-// ─── Compiler Errors ──────────────────────────────────────────────────────
+// --- Compiler Errors ------------------------------------------------------
 
 /**
  * Error codes for requirement compilation failures.

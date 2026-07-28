@@ -4,14 +4,14 @@
  * Core types for session management.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Session Types ─────────────────────────────────────────────────────────
+// --- Session Types ---------------------------------------------------------
 
 /**
  * Session status
@@ -80,7 +80,7 @@ export interface ToolResult {
 	timestamp: string;
 }
 
-// ─── Token Usage ───────────────────────────────────────────────────────────
+// --- Token Usage -----------------------------------------------------------
 
 /**
  * Token usage tracking
@@ -96,7 +96,7 @@ export interface TokenUsage {
 	resetAt?: string;
 }
 
-// ─── Session Metrics ──────────────────────────────────────────────────────
+// --- Session Metrics ------------------------------------------------------
 
 /**
  * Session metrics
@@ -112,7 +112,7 @@ export interface SessionMetrics {
 	retryCount: number;
 }
 
-// ─── Policy Types ─────────────────────────────────────────────────────────
+// --- Policy Types ---------------------------------------------------------
 
 /**
  * Policy state
@@ -126,7 +126,7 @@ export interface PolicyState {
 	suspensionReason?: string;
 }
 
-// ─── Configuration ────────────────────────────────────────────────────────
+// --- Configuration --------------------------------------------------------
 
 /**
  * Session manager configuration
@@ -178,7 +178,7 @@ export interface SessionManagerConfig {
 	cleanupIntervalMs?: number;
 }
 
-// ─── Store Types ──────────────────────────────────────────────────────────
+// --- Store Types ----------------------------------------------------------
 
 /**
  * Session store configuration
@@ -190,7 +190,7 @@ export interface SessionStoreConfig {
 	maxSessions?: number;
 }
 
-// ─── Policy Engine Types ─────────────────────────────────────────────────
+// --- Policy Engine Types -------------------------------------------------
 
 /**
  * Policy engine configuration
@@ -222,7 +222,7 @@ export interface PolicyEngineConfig {
 	sessionBudget?: number;
 }
 
-// ─── Event Types ──────────────────────────────────────────────────────────
+// --- Event Types ----------------------------------------------------------
 
 /**
  * Session event type
@@ -248,7 +248,7 @@ export interface SessionEvent {
 	data?: Record<string, unknown>;
 }
 
-// ─── History Types ────────────────────────────────────────────────────────
+// --- History Types --------------------------------------------------------
 
 /**
  * Search filter for messages

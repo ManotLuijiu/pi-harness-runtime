@@ -9,7 +9,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DjangoAnalysis, DjangoApp, ConfigFile } from "./types.js";
 
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 
 function isDjangoWorkspace(root: string): boolean {
 	return (
@@ -21,7 +21,7 @@ function isDjangoWorkspace(root: string): boolean {
 	);
 }
 
-// ─── Version ────────────────────────────────────────────────────────────────
+// --- Version ----------------------------------------------------------------
 
 async function detectVersion(root: string): Promise<string | undefined> {
 	try {
@@ -48,7 +48,7 @@ async function detectVersion(root: string): Promise<string | undefined> {
 	return undefined;
 }
 
-// ─── Settings Parser ─────────────────────────────────────────────────────────
+// --- Settings Parser ---------------------------------------------------------
 
 async function parseSettings(root: string): Promise<{
 	installedApps: string[];
@@ -110,7 +110,7 @@ async function parseSettings(root: string): Promise<{
 	return { installedApps, middleware };
 }
 
-// ─── Django App Scanner ─────────────────────────────────────────────────────
+// --- Django App Scanner -----------------------------------------------------
 
 async function scanDjangoApps(root: string): Promise<DjangoApp[]> {
 	const apps: DjangoApp[] = [];
@@ -180,7 +180,7 @@ async function scanDjangoApps(root: string): Promise<DjangoApp[]> {
 	return apps;
 }
 
-// ─── Management Commands ────────────────────────────────────────────────────
+// --- Management Commands ----------------------------------------------------
 
 async function findManagementCommands(root: string): Promise<string[]> {
 	const commands: string[] = [];
@@ -219,7 +219,7 @@ async function findManagementCommands(root: string): Promise<string[]> {
 	return [...new Set(commands)];
 }
 
-// ─── Requirements ───────────────────────────────────────────────────────────
+// --- Requirements -----------------------------------------------------------
 
 async function parseRequirements(root: string): Promise<string[]> {
 	const reqPath = join(root, "requirements.txt");
@@ -237,7 +237,7 @@ async function parseRequirements(root: string): Promise<string[]> {
 	}
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 
 export async function analyzeDjango(
 	root: string,

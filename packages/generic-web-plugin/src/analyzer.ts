@@ -14,7 +14,7 @@ import type {
 	ApiEndpoint,
 } from "./types.js";
 
-// ─── Detection ────────────────────────────────────────────────────────────────
+// --- Detection ----------------------------------------------------------------
 
 /**
  * Detect if a directory is a generic web project
@@ -30,7 +30,7 @@ export async function detectWeb(root: string): Promise<boolean> {
 	return hasPackageJson && (hasNodeModules || hasSrc);
 }
 
-// ─── Framework Detection ────────────────────────────────────────────────────
+// --- Framework Detection ----------------------------------------------------
 
 async function detectFramework(root: string): Promise<WebFrameworkType> {
 	const pkgJson = await readFile(join(root, "package.json"), "utf-8").catch(
@@ -62,7 +62,7 @@ async function detectFramework(root: string): Promise<WebFrameworkType> {
 	return "static";
 }
 
-// ─── Route Scanning ─────────────────────────────────────────────────────────
+// --- Route Scanning ---------------------------------------------------------
 
 async function findRouteFiles(
 	root: string,
@@ -209,7 +209,7 @@ function deduplicateRoutes(routes: PageRoute[]): PageRoute[] {
 	return result;
 }
 
-// ─── API Endpoint Detection ──────────────────────────────────────────────────
+// --- API Endpoint Detection --------------------------------------------------
 
 async function findApiEndpoints(
 	root: string,
@@ -321,7 +321,7 @@ function extractHttpMethods(filePath: string): string[] {
 	}
 }
 
-// ─── Analysis ────────────────────────────────────────────────────────────────
+// --- Analysis ----------------------------------------------------------------
 
 /**
  * Deep analysis of a generic web project

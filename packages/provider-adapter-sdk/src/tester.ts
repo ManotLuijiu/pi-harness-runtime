@@ -470,7 +470,7 @@ export function assertTestResults(report: TestReport): void {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a new adapter tester

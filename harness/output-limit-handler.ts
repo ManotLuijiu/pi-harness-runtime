@@ -277,7 +277,7 @@ export class OutputLimitHandler {
 		return this.attempts >= this.maxAttempts;
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private ensureDir(): void {
 		if (!existsSync(this.rootDir)) {

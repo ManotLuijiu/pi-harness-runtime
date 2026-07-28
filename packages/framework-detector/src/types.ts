@@ -4,14 +4,14 @@
  * Core types for framework detection.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Framework Types ─────────────────────────────────────────────────────────
+// --- Framework Types ---------------------------------------------------------
 
 /**
  * Framework category
@@ -64,7 +64,7 @@ export type SignalType =
 	| "import"
 	| "content";
 
-// ─── Detection Types ────────────────────────────────────────────────────────
+// --- Detection Types --------------------------------------------------------
 
 /**
  * Detection result
@@ -145,7 +145,7 @@ export interface ProjectType {
 	indicators: string[];
 }
 
-// ─── Version Types ──────────────────────────────────────────────────────────
+// --- Version Types ----------------------------------------------------------
 
 /**
  * Version detection result
@@ -166,7 +166,7 @@ export interface VersionParser {
 	parse(versionString: string): VersionDetectionResult | null;
 }
 
-// ─── Scanner Types ──────────────────────────────────────────────────────────
+// --- Scanner Types ----------------------------------------------------------
 
 /**
  * Scan options
@@ -235,7 +235,7 @@ export interface ConfigFile {
 	type: string;
 }
 
-// ─── Watcher Types ──────────────────────────────────────────────────────────
+// --- Watcher Types ----------------------------------------------------------
 
 /**
  * Watch event
@@ -256,7 +256,7 @@ export interface WatcherOptions {
 	onFrameworkChange?: (result: ProjectAnalysis) => void;
 }
 
-// ─── Configuration Types ────────────────────────────────────────────────────
+// --- Configuration Types ----------------------------------------------------
 
 /**
  * Detector configuration

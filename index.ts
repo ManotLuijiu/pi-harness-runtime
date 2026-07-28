@@ -68,7 +68,7 @@ import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-// ─── Debug log → file instead of TUI ─────────────────────────────────
+// --- Debug log → file instead of TUI ---------------------------------
 const DEBUG_LOG_DIR = join(homedir(), ".pi", "harness-logs");
 const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
 
@@ -89,7 +89,7 @@ function _debugLog(...args: unknown[]): void {
 	}
 }
 
-// ─── Selective console override — harness DEBUG → file only ────────
+// --- Selective console override — harness DEBUG → file only --------
 // Real errors (no [DEBUG prefix) still print to TUI so you notice problems.
 const _origLog = console.log.bind(console);
 const _origError = console.error.bind(console);
@@ -108,7 +108,7 @@ console.error = (...args: unknown[]) => {
 	}
 };
 
-// ─── Harness Runtime State ────────────────────────────────────────────
+// --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
 
 interface HarnessSession {
@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
 
-	// ─── Auto-track every assistant message ──────────────────────────────
+	// --- Auto-track every assistant message ------------------------------
 	pi.on("message_end", async (event, ctx) => {
 		if (isOutputLimitResumePromptMessage(event.message)) {
 			pendingOutputLimitResumeAfterSettled = false;
@@ -274,7 +274,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// ─── Smart quota fetch for MiniMax status ────────────────────────
+	// --- Smart quota fetch for MiniMax status ------------------------
 	const MINIMAX_REFRESH_MIN_INTERVAL_MS = 15 * 60 * 1000;
 	const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
 	const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
@@ -282,12 +282,12 @@ export default function (pi: ExtensionAPI) {
 		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
 		: new MiniMaxQuotaScraper();
 
-	// ─── Smart quota fetch for OpenAI status ─────────────────────────
+	// --- Smart quota fetch for OpenAI status -------------------------
 	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 	const _openaiQuotaScraper = new OpenAIQuotaScraper();
 	let lastOpenAIQuotaFetchAt = 0;
 
-	// ─── Cookie sanitizer integration ────────────────────────────────────
+	// --- Cookie sanitizer integration ------------------------------------
 	// The drop folder is the user-facing, forgiving input. The canonical
 	// cache (`~/.config/minimax-cookies.txt`) is the runtime-owned,
 	// normalized output that `MiniMaxQuotaScraper` reads. Either being
@@ -310,7 +310,7 @@ export default function (pi: ExtensionAPI) {
 
 	const cookieQuotaAutoFetchAvailable = hasCookieSource();
 
-	// ─── TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) ──
+	// --- TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) --
 	// The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
 	// TUI / message stream and emits signals we write to per-provider mirror
 	// entries. For providers that don't expose a continuous usage API this is
@@ -692,7 +692,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	// ─── /usage — show full status ───────────────────────────────────────
+	// --- /usage — show full status ---------------------------------------
 	pi.registerCommand("usage", {
 		description: "Show Codex-style usage status (local + provider mirror)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -710,7 +710,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage refresh — force auto-fetch ────────────────────────────
+	// --- /usage refresh — force auto-fetch ----------------------------
 	pi.registerCommand("usage-refresh", {
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -735,14 +735,14 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage today — focused view ─────────────────────────────────────
+	// --- /usage today — focused view -------------------------------------
 	pi.registerCommand("usage-today", {
 		description: "Show today's usage + 5h window",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const local = aggregateWindows(tracker.all());
 			const lines = [
 				" Today's usage",
-				"─────────────────────────────────────",
+				"-------------------------------------",
 				` Model:       ${ctx.model?.id ?? "unknown"}`,
 				` Today:       ${local.today.tokens} tokens · ${local.today.requests} requests · $${local.today.cost.toFixed(4)}`,
 				` This 5h:     ${local.five_h.tokens} tokens · ${local.five_h.requests} requests · $${local.five_h.cost.toFixed(4)}`,
@@ -753,14 +753,14 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage week — focused view ──────────────────────────────────────
+	// --- /usage week — focused view --------------------------------------
 	pi.registerCommand("usage-week", {
 		description: "Show this week's usage + lifetime totals",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const local = aggregateWindows(tracker.all());
 			const lines = [
 				" This week's usage",
-				"─────────────────────────────────────",
+				"-------------------------------------",
 				` Model:       ${ctx.model?.id ?? "unknown"}`,
 				` This week:   ${local.weekly.tokens} tokens · ${local.weekly.requests} requests · $${local.weekly.cost.toFixed(4)}`,
 				` Lifetime:    ${local.lifetime.tokens} tokens · ${local.lifetime.requests} requests · $${local.lifetime.cost.toFixed(4)}`,
@@ -771,7 +771,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage reset — clear mirror ─────────────────────────────────────
+	// --- /usage reset — clear mirror -------------------------------------
 	pi.registerCommand("usage-reset", {
 		description: "Clear the provider mirror (force re-sync next time)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -811,7 +811,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness start — Start a new harness job ──────────────────────
+	// --- /harness start — Start a new harness job ----------------------
 	pi.registerCommand("harness-start", {
 		description: "Start a new harness job: /harness start <requirement>",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
@@ -883,7 +883,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness status — Show harness job status ─────────────────────
+	// --- /harness status — Show harness job status ---------------------
 	pi.registerCommand("harness-status", {
 		description: "Show current harness job status",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -904,22 +904,22 @@ export default function (pi: ExtensionAPI) {
 			const progress = currentSession.graph.getProgressSummary();
 			const lines = [
 				`Harness Job Status`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Job ID:     ${currentSession.jobId}`,
 				`Status:     ${summary.status}`,
 				`Terminal:   ${summary.isTerminal ? "Yes" : "No"}`,
 				`Can Resume: ${summary.canResume ? "Yes" : "No"}`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Tasks:      ${progress.done}/${progress.total} done, ${progress.running} running, ${progress.failed} failed`,
 				`Created:    ${currentSession.createdAt}`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Run /harness tasks for task list`,
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
 
-	// ─── /harness tasks — List all tasks ───────────────────────────────
+	// --- /harness tasks — List all tasks -------------------------------
 	pi.registerCommand("harness-tasks", {
 		description: "List all tasks in the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -942,7 +942,7 @@ export default function (pi: ExtensionAPI) {
 
 			const lines = [
 				`Tasks for Job ${currentSession.jobId}`,
-				`${"─".repeat(50)}`,
+				`${"-".repeat(50)}`,
 			];
 
 			for (const task of tasks) {
@@ -950,14 +950,14 @@ export default function (pi: ExtensionAPI) {
 				lines.push(`[${task.id}] ${status} ${task.title}`);
 			}
 
-			lines.push(`${"─".repeat(50)}`);
+			lines.push(`${"-".repeat(50)}`);
 			const ready = currentSession.graph.getReadyTasks();
 			lines.push(`${ready.length} tasks ready to execute.`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
 
-	// ─── /harness pause — Pause the harness job ───────────────────────
+	// --- /harness pause — Pause the harness job -----------------------
 	pi.registerCommand("harness-pause", {
 		description: "Pause the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -1013,7 +1013,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness resume — Resume the harness job ───────────────────────
+	// --- /harness resume — Resume the harness job -----------------------
 	pi.registerCommand("harness-resume", {
 		description: "Resume a paused harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -1049,7 +1049,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness cancel — Cancel the harness job ──────────────────────
+	// --- /harness cancel — Cancel the harness job ----------------------
 	pi.registerCommand("harness-cancel", {
 		description: "Cancel the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -1086,7 +1086,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── Footer status (persistent badge) ────────────────────────────────
+	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", (_event, ctx) => {
 		footerStatusCtx = ctx;
 		refreshFooterStatus(
@@ -1226,9 +1226,9 @@ export default function (pi: ExtensionAPI) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// ----------------------------------------------------------------------
 // Helper: refresh persistent footer status with one-line summary
-// ──────────────────────────────────────────────────────────────────────
+// ----------------------------------------------------------------------
 function refreshFooterStatus(
 	ctx: { ui: { setStatus: (key: string, value: string) => void } },
 	tracker: UsageTracker,

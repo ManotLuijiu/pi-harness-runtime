@@ -5,15 +5,15 @@
  * policy enforcement, and session persistence.
  */
 
-// ─── Manager ────────────────────────────────────────────────────────────
+// --- Manager ------------------------------------------------------------
 
 export { SessionManager, createSessionManager } from "./manager.js";
 
-// ─── Store ────────────────────────────────────────────────────────────
+// --- Store ------------------------------------------------------------
 
 export { SessionStore, createSessionStore } from "./store.js";
 
-// ─── History ─────────────────────────────────────────────────────────
+// --- History ---------------------------------------------------------
 
 export {
 	MessageHistory,
@@ -21,7 +21,7 @@ export {
 	ContextWindowManager,
 } from "./history.js";
 
-// ─── Policy ──────────────────────────────────────────────────────────
+// --- Policy ----------------------------------------------------------
 
 export {
 	PolicyEngine,
@@ -30,7 +30,7 @@ export {
 	createPolicyEngine,
 } from "./policy.js";
 
-// ─── Types ───────────────────────────────────────────────────────────
+// --- Types -----------------------------------------------------------
 
 export {
 	SDK_VERSION,

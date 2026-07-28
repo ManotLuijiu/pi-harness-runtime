@@ -545,7 +545,7 @@ export class PolicyEngine extends EventEmitter {
 		}
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private matchesPolicy(context: PolicyContext, policy: Policy): boolean {
 		const condition = policy.condition;

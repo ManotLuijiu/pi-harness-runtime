@@ -12,7 +12,7 @@ import type {
 } from "./types.js";
 import { createHash } from "node:crypto";
 
-// ─── Diff Calculator ─────────────────────────────────────────────────────
+// --- Diff Calculator -----------------------------------------------------
 
 export class DiffCalculator {
 	/**
@@ -271,7 +271,7 @@ export class DiffCalculator {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a diff calculator

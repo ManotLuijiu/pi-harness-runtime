@@ -5,7 +5,7 @@
  * Every selected item has a source reference; every omitted item has a reason.
  */
 
-// ─── Context candidate kinds ───────────────────────────────────────────
+// --- Context candidate kinds -------------------------------------------
 
 /**
  * Kinds of context that can be collected.
@@ -24,7 +24,7 @@ export type ContextKind =
  */
 export type ContextTrust = "authoritative" | "generated" | "unverified";
 
-// ─── Candidate ────────────────────────────────────────────────────────
+// --- Candidate --------------------------------------------------------
 
 /**
  * A raw context candidate from a source collector.
@@ -49,7 +49,7 @@ export interface ContextCandidate {
 	symbols?: string[];
 }
 
-// ─── Omission ─────────────────────────────────────────────────────────
+// --- Omission ---------------------------------------------------------
 
 /**
  * Reasons why a candidate was omitted.
@@ -76,7 +76,7 @@ export interface OmittedItem {
 	deniedBy?: string;
 }
 
-// ─── Compiled item ────────────────────────────────────────────────────
+// --- Compiled item ----------------------------------------------------
 
 /**
  * An item that made it into the final compiled context.
@@ -97,7 +97,7 @@ export interface CompiledContextItem {
 	symbols?: string[];
 }
 
-// ─── Source graph ─────────────────────────────────────────────────────
+// --- Source graph -----------------------------------------------------
 
 /**
  * An edge in the context source graph.
@@ -109,7 +109,7 @@ export interface ContextSourceEdge {
 	weight: number;
 }
 
-// ─── Compiled context ──────────────────────────────────────────────────
+// --- Compiled context --------------------------------------------------
 
 /**
  * The final compiled context output.
@@ -125,7 +125,7 @@ export interface CompiledContext {
 	mapping: Record<string, string>;
 }
 
-// ─── Scoring ─────────────────────────────────────────────────────────
+// --- Scoring ---------------------------------------------------------
 
 /**
  * Scoring weights for context candidates.
@@ -151,7 +151,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
 	duplicationPenalty: 8,
 };
 
-// ─── Policy ─────────────────────────────────────────────────────────
+// --- Policy ---------------------------------------------------------
 
 /**
  * Policy rules for context selection.
@@ -183,7 +183,7 @@ export const DEFAULT_POLICY: ContextPolicy = {
 	maxFileBytes: 200_000,
 };
 
-// ─── Compile request ────────────────────────────────────────────────
+// --- Compile request ------------------------------------------------
 
 /**
  * Input to the context compiler.
@@ -199,7 +199,7 @@ export interface ContextCompileRequest {
 	policy?: Partial<ContextPolicy>;
 }
 
-// ─── Invalidation ───────────────────────────────────────────────────
+// --- Invalidation ---------------------------------------------------
 
 /**
  * Reasons for context invalidation.
@@ -218,7 +218,7 @@ export interface ContextInvalidation {
 	details?: Record<string, unknown>;
 }
 
-// ─── Error codes ────────────────────────────────────────────────────
+// --- Error codes ----------------------------------------------------
 
 export type ContextCompileErrorCode =
 	| "MISSING_REQUIRED_SOURCE"

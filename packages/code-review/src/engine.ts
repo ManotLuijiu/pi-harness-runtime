@@ -20,7 +20,7 @@ import { TextReporter } from "./reports/text.js";
 import { HtmlReporter } from "./reports/html.js";
 import { MarkdownReporter } from "./reports/markdown.js";
 
-// ─── Default Rules ────────────────────────────────────────────────────────
+// --- Default Rules --------------------------------------------------------
 
 const DEFAULT_RULES: ReviewRule[] = [
 	// Security rules
@@ -131,7 +131,7 @@ const DEFAULT_RULES: ReviewRule[] = [
 	},
 ];
 
-// ─── Code Review Engine ────────────────────────────────────────────────────
+// --- Code Review Engine ----------------------------------------------------
 
 export class CodeReviewEngine {
 	private rules: ReviewRule[] = [];
@@ -398,7 +398,7 @@ export class CodeReviewEngine {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a code review engine

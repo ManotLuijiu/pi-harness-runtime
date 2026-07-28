@@ -5,7 +5,7 @@
  * distributed tracing, metrics collection, health monitoring, and alerting.
  */
 
-// ─── Logger ────────────────────────────────────────────────────────────────
+// --- Logger ----------------------------------------------------------------
 
 export { Logger, createLogger, defaultLogger } from "./logger.js";
 export type {
@@ -16,7 +16,7 @@ export type {
 	LogOutput,
 } from "./types.js";
 
-// ─── Tracer ────────────────────────────────────────────────────────────────
+// --- Tracer ----------------------------------------------------------------
 
 export { Tracer, createTracer, SpanHandle } from "./tracer.js";
 export type {
@@ -28,7 +28,7 @@ export type {
 	TracerConfig,
 } from "./types.js";
 
-// ─── Metrics ────────────────────────────────────────────────────────────────
+// --- Metrics ----------------------------------------------------------------
 
 export {
 	Metrics,
@@ -47,7 +47,7 @@ export type {
 	Summary,
 } from "./types.js";
 
-// ─── Health ────────────────────────────────────────────────────────────────
+// --- Health ----------------------------------------------------------------
 
 export {
 	HealthMonitor,
@@ -63,7 +63,7 @@ export type {
 	HealthResult,
 } from "./types.js";
 
-// ─── Alerts ────────────────────────────────────────────────────────────────
+// --- Alerts ----------------------------------------------------------------
 
 export { AlertEngine, createAlertEngine } from "./alerts.js";
 export type {
@@ -74,6 +74,6 @@ export type {
 	AlertSeverity,
 } from "./types.js";
 
-// ─── Re-exports ────────────────────────────────────────────────────────────
+// --- Re-exports ------------------------------------------------------------
 
 export { SDK_VERSION } from "./types.js";

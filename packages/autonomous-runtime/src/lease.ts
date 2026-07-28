@@ -7,9 +7,9 @@
  * Filesystem layout:
  * ```
  * ~/.pi/harness/inbox/
- * ├── tasks.jsonl        # task records
- * └── claimed/
- *     └── <task-id>.lease.json   # one lease file per claimed task
+ * +-- tasks.jsonl        # task records
+ * +-- claimed/
+ *     +-- <task-id>.lease.json   # one lease file per claimed task
  * ```
  *
  * Safety properties:
@@ -33,7 +33,7 @@ import { join } from "node:path";
 import type { TaskLease } from "./types.js";
 import { getLeasesDir } from "./types.js";
 
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 
 export class LeaseError extends Error {
 	constructor(msg: string) {
@@ -42,7 +42,7 @@ export class LeaseError extends Error {
 	}
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 /** Default lease duration before heartbeat extension is required. */
 export const DEFAULT_LEASE_TTL_MS = 30_000; // 30 s
@@ -53,7 +53,7 @@ export const HEARTBEAT_INTERVAL_MS = 5_000; // 5 s
 /** Default worker heartbeat interval extension. */
 export const HEARTBEAT_EXTENSION_MS = 30_000; // extend by 30 s
 
-// ─── LeaseManager ─────────────────────────────────────────────────────────────
+// --- LeaseManager -------------------------------------------------------------
 
 export interface LeaseOptions {
 	leasesDir?: string;
@@ -80,7 +80,7 @@ export class LeaseManager {
 		}
 	}
 
-	// ─── claim ───────────────────────────────────────────────────────────────
+	// --- claim ---------------------------------------------------------------
 
 	/**
 	 * Atomically claim a task for a worker.
@@ -143,7 +143,7 @@ export class LeaseManager {
 		}
 	}
 
-	// ─── heartbeat ────────────────────────────────────────────────────────────
+	// --- heartbeat ------------------------------------------------------------
 
 	/**
 	 * Extend a lease's expiry time.
@@ -170,7 +170,7 @@ export class LeaseManager {
 		return updated;
 	}
 
-	// ─── release ─────────────────────────────────────────────────────────────
+	// --- release -------------------------------------------------------------
 
 	/**
 	 * Explicitly release a lease (task completed or failed without retry).
@@ -186,7 +186,7 @@ export class LeaseManager {
 		this._removeLease(taskId);
 	}
 
-	// ─── get ─────────────────────────────────────────────────────────────────
+	// --- get -----------------------------------------------------------------
 
 	/** Read a lease by taskId. Returns null if not found. */
 	get(taskId: string): TaskLease | null {
@@ -199,14 +199,14 @@ export class LeaseManager {
 		}
 	}
 
-	// ─── isExpired ────────────────────────────────────────────────────────────
+	// --- isExpired ------------------------------------------------------------
 
 	/** Check if a lease has expired (expiresAt is in the past). */
 	isExpired(lease: TaskLease): boolean {
 		return new Date(lease.expiresAt).getTime() < Date.now();
 	}
 
-	// ─── reap ────────────────────────────────────────────────────────────────
+	// --- reap ----------------------------------------------------------------
 
 	/**
 	 * Scan all leases and return the ones that have expired.
@@ -256,7 +256,7 @@ export class LeaseManager {
 		return released;
 	}
 
-	// ─── recoverOrphanLeases ─────────────────────────────────────────────────
+	// --- recoverOrphanLeases -------------------------------------------------
 
 	/**
 	 * On worker startup, release any leases held by dead workers.
@@ -269,7 +269,7 @@ export class LeaseManager {
 		return this.reapAndRelease();
 	}
 
-	// ─── listActive ───────────────────────────────────────────────────────────
+	// --- listActive -----------------------------------------------------------
 
 	/** Return all active (non-expired) leases. */
 	listActive(): TaskLease[] {
@@ -298,7 +298,7 @@ export class LeaseManager {
 		return active;
 	}
 
-	// ─── internals ───────────────────────────────────────────────────────────
+	// --- internals -----------------------------------------------------------
 
 	private _leasePath(taskId: string): string {
 		return join(this.leasesDir, `${taskId}.lease.json`);

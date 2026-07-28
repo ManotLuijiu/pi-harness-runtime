@@ -419,7 +419,7 @@ export class PerformanceOptimizer {
 	}
 }
 
-// ─── Factory ───────────────────────────────────────────────────────────────
+// --- Factory ---------------------------------------------------------------
 
 export function createPerformanceOptimizer(
 	policy?: Partial<PerformancePolicy>,

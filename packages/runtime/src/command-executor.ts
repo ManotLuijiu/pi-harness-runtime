@@ -485,7 +485,7 @@ export class CommandExecutor extends EventEmitter {
 		return { ...this.policy };
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private waitForExit(_proc: ChildProcess): number | null {
 		// Note: This method is for synchronous execution.

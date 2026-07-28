@@ -9,14 +9,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-// ─── Module Imports ───────────────────────────────────────────────────────────
+// --- Module Imports -----------------------------------------------------------
 
 import { Logger, createLogger, defaultLogger } from "../src/logger.js";
 import { type Metrics, createMetrics } from "../src/metrics.js";
 import { HealthMonitor, createHealthMonitor } from "../src/health.js";
 import { type AlertEngine, createAlertEngine } from "../src/alerts.js";
 
-// ─── Shared Test State ────────────────────────────────────────────────────────
+// --- Shared Test State --------------------------------------------------------
 
 interface CaptureStdout {
 	stdout: string[];
@@ -25,7 +25,7 @@ interface CaptureStdout {
 
 let tempDir: string;
 
-// ─── Logger Test Helpers ─────────────────────────────────────────────────────
+// --- Logger Test Helpers -----------------------------------------------------
 
 /**
  * Create a logger that captures stdout/stderr output
@@ -70,7 +70,7 @@ async function captureLoggerOutput(
 	return capture;
 }
 
-// ─── Setup / Teardown ────────────────────────────────────────────────────────
+// --- Setup / Teardown --------------------------------------------------------
 
 beforeEach(async () => {
 	tempDir = await mkdtemp(join(tmpdir(), "obs-test-"));

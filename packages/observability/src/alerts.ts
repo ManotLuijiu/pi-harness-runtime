@@ -7,7 +7,7 @@
 import type { Alert, AlertAction, AlertCondition, AlertRule } from "./types.js";
 import { Logger } from "./logger.js";
 
-// ─── Alert Engine Class ─────────────────────────────────────────────────
+// --- Alert Engine Class -------------------------------------------------
 
 export class AlertEngine {
 	private readonly rules: Map<string, AlertRule> = new Map();
@@ -345,7 +345,7 @@ export class AlertEngine {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 
 /**
  * Create an alert engine

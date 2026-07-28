@@ -11,12 +11,12 @@ import type {
 	HealthResult,
 } from "./types.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_SERVICE_NAME = "harness-runtime";
 const DEFAULT_VERSION = "1.0.0";
 
-// ─── Health Monitor Class ─────────────────────────────────────────────────
+// --- Health Monitor Class -------------------------------------------------
 
 export class HealthMonitor {
 	private readonly checks: Map<string, HealthCheckRegistration> = new Map();
@@ -203,7 +203,7 @@ export class HealthMonitor {
 	}
 }
 
-// ─── Built-in Health Checks ────────────────────────────────────────────────
+// --- Built-in Health Checks ------------------------------------------------
 
 /**
  * Create a basic connectivity health check
@@ -312,7 +312,7 @@ export function createDiskSpaceHealthCheck(
 	};
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 
 /**
  * Create a health monitor with the given service name

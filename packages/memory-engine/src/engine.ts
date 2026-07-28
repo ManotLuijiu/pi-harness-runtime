@@ -22,7 +22,7 @@ import type {
 } from "./types.js";
 import { filterSecrets, AUTHORITY_PRIORITY, type Authority } from "./types.js";
 
-// ─── YAML Frontmatter Parsing ─────────────────────────────────────────────────
+// --- YAML Frontmatter Parsing -------------------------------------------------
 
 function parseFrontmatter(
 	content: string,
@@ -82,9 +82,9 @@ function serializeFrontmatter(data: OkfFrontmatter): string {
 	return lines.join("\n");
 }
 
-// ─── Concept Parsing ────────────────────────────────────────────────────────
+// --- Concept Parsing --------------------------------------------------------
 
-// ─── Link Extraction ─────────────────────────────────────────────────────────
+// --- Link Extraction ---------------------------------------------------------
 
 /**
  * Extract markdown links from content
@@ -106,7 +106,7 @@ export function extractLinks(markdown: string): OkfLink[] {
 	return links;
 }
 
-// ─── Validation ──────────────────────────────────────────────────────────────
+// --- Validation --------------------------------------------------------------
 
 export function validateConcept(
 	content: string,
@@ -155,7 +155,7 @@ export function validateConcept(
 	};
 }
 
-// ─── Index Generation ─────────────────────────────────────────────────────────
+// --- Index Generation ---------------------------------------------------------
 
 function generateIndex(concepts: OkfConcept[]): string {
 	const lines = [
@@ -208,7 +208,7 @@ function generateIndex(concepts: OkfConcept[]): string {
 	return lines.join("\n");
 }
 
-// ─── Search ──────────────────────────────────────────────────────────────────
+// --- Search ------------------------------------------------------------------
 
 function calculateRelevance(
 	concept: OkfConcept,
@@ -261,7 +261,7 @@ function calculateRelevance(
 	return score;
 }
 
-// ─── Main Engine ─────────────────────────────────────────────────────────────
+// --- Main Engine -------------------------------------------------------------
 
 export class MemoryEngine {
 	private bundle: KnowledgeBundle | null = null;
@@ -608,7 +608,7 @@ export class MemoryEngine {
 	}
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 
 export function createMemoryEngine(): MemoryEngine {
 	return new MemoryEngine();

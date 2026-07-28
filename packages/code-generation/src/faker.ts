@@ -5,7 +5,7 @@
  * Same seed always produces the same output.
  */
 
-// ─── Seeded RNG ─────────────────────────────────────────────────────────
+// --- Seeded RNG ---------------------------------------------------------
 
 /**
  * Mulberry32 — fast, seedable, good distribution.
@@ -21,7 +21,7 @@ function mulberry32(initialSeed: number): () => number {
 	};
 }
 
-// ─── Data pools ────────────────────────────────────────────────────────
+// --- Data pools --------------------------------------------------------
 
 const FIRST_NAMES = [
 	"James",
@@ -298,7 +298,7 @@ const WORDS = [
 	"shard",
 ];
 
-// ─── Faker interface ──────────────────────────────────────────────────
+// --- Faker interface --------------------------------------------------
 
 export interface Faker {
 	firstName(): string;
@@ -321,7 +321,7 @@ export interface Faker {
 	boolean(): boolean;
 }
 
-// ─── Implementation ──────────────────────────────────────────────────
+// --- Implementation --------------------------------------------------
 
 function pick<T>(rng: () => number, arr: T[]): T {
 	return arr[Math.floor(rng() * arr.length)] as T;
@@ -339,7 +339,7 @@ function sentenceCase(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// ─── Public API ─────────────────────────────────────────────────────
+// --- Public API -----------------------------------------------------
 
 /**
  * Create a seeded faker instance.

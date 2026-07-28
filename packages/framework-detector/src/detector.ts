@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 import { SignatureRegistry } from "./signatures/registry.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<DetectorConfig> = {
 	confidenceThreshold: 0.3,
@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: Required<DetectorConfig> = {
 	signatures: [],
 };
 
-// ─── Framework Detector ────────────────────────────────────────────────────
+// --- Framework Detector ----------------------------------------------------
 
 export class FrameworkDetector {
 	private readonly config: Required<DetectorConfig>;
@@ -574,7 +574,7 @@ export class FrameworkDetector {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a framework detector

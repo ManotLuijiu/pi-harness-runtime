@@ -34,7 +34,7 @@ export async function compileRequirement(
 
 	const clock = deps?.clock ?? (() => new Date());
 
-	// ─── Pre-flight validation ────────────────────────────────────────────────
+	// --- Pre-flight validation ------------------------------------------------
 
 	if (!raw.text.trim() && !raw.title?.trim()) {
 		throw new RequirementCompileError(
@@ -44,12 +44,12 @@ export async function compileRequirement(
 		);
 	}
 
-	// ─── Step 1: Extract statements ─────────────────────────────────────────
+	// --- Step 1: Extract statements -----------------------------------------
 
 	const extractor = deps?.extractor ?? { extract: extractStatements };
 	const extractionResult = extractor.extract(raw);
 
-	// ─── Step 2: Classify statements ──────────────────────────────────────
+	// --- Step 2: Classify statements --------------------------------------
 
 	const classifier = deps?.classifier ?? { classify: classifyStatements };
 	const classification: ClassificationResult = classifier.classify(
@@ -57,7 +57,7 @@ export async function compileRequirement(
 		config,
 	);
 
-	// ─── Step 3: Build goals ─────────────────────────────────────────────────
+	// --- Step 3: Build goals -------------------------------------------------
 
 	const goals = classification.goals.map((stmt, i) => ({
 		id: `goal-${i + 1}`,
@@ -66,7 +66,7 @@ export async function compileRequirement(
 		priority: undefined as "high" | "medium" | "low" | undefined,
 	}));
 
-	// ─── Step 4: Build constraints ────────────────────────────────────────────
+	// --- Step 4: Build constraints --------------------------------------------
 
 	const constraints = classification.constraints.map((stmt, i) => ({
 		id: `constraint-${i + 1}`,
@@ -76,7 +76,7 @@ export async function compileRequirement(
 		blocking: true,
 	}));
 
-	// ─── Step 5: Build preferences ───────────────────────────────────────────
+	// --- Step 5: Build preferences -------------------------------------------
 
 	const preferenceConstraints = classification.preferences.map((stmt, i) => ({
 		id: `pref-constraint-${i + 1}`,
@@ -86,14 +86,14 @@ export async function compileRequirement(
 		blocking: false,
 	}));
 
-	// ─── Step 6: Detect ambiguities ───────────────────────────────────────────
+	// --- Step 6: Detect ambiguities -------------------------------------------
 
 	const ambiguityDetector = deps?.ambiguityDetector ?? {
 		detect: detectAmbiguities,
 	};
 	const ambiguities = ambiguityDetector.detect(classification, config);
 
-	// ─── Step 7: Normalize acceptance criteria ────────────────────────────────
+	// --- Step 7: Normalize acceptance criteria --------------------------------
 
 	const acceptanceNormalizer = deps?.acceptanceNormalizer ?? {
 		normalize: normalizeAcceptanceCriteria,
@@ -116,12 +116,12 @@ export async function compileRequirement(
 		}));
 	}
 
-	// ─── Step 8: Detect risks ─────────────────────────────────────────────────
+	// --- Step 8: Detect risks -------------------------------------------------
 
 	const riskDetector = deps?.riskDetector ?? { detect: detectRisks };
 	const riskTags = riskDetector.detect(classification);
 
-	// ─── Step 9: Extract terminology ──────────────────────────────────────────
+	// --- Step 9: Extract terminology ------------------------------------------
 
 	const terminology = classification.terminologyMentions.map((stmt) => ({
 		term: stmt.originalText,
@@ -130,7 +130,7 @@ export async function compileRequirement(
 		sourceRef: stmt.sourceRef,
 	}));
 
-	// ─── Step 10: Identify actors ──────────────────────────────────────────────
+	// --- Step 10: Identify actors ----------------------------------------------
 
 	const actors: CompiledRequirement["actors"] = [];
 	const actorNames = new Set<string>();
@@ -208,7 +208,7 @@ export async function compileRequirement(
 		}
 	}
 
-	// ─── Step 11: Identify non-goals ──────────────────────────────────────────
+	// --- Step 11: Identify non-goals ------------------------------------------
 
 	const nonGoals: string[] = [];
 	for (const stmt of classification.constraints) {
@@ -221,7 +221,7 @@ export async function compileRequirement(
 		}
 	}
 
-	// ─── Step 12: Build workflows ─────────────────────────────────────────────
+	// --- Step 12: Build workflows ---------------------------------------------
 
 	const workflows: CompiledRequirement["workflows"] = [];
 	// Group consecutive statements into workflows heuristically
@@ -241,7 +241,7 @@ export async function compileRequirement(
 		});
 	}
 
-	// ─── Step 13: Determine status ────────────────────────────────────────────
+	// --- Step 13: Determine status --------------------------------------------
 
 	let status: CompiledRequirement["status"] = "ready";
 
@@ -287,18 +287,18 @@ export async function compileRequirement(
 		);
 	}
 
-	// ─── Step 14: Build source references ────────────────────────────────────
+	// --- Step 14: Build source references ------------------------------------
 
 	const sourceRefs = extractionResult.statements.map((s) => s.sourceRef);
 
-	// ─── Step 15: Assemble problem statement ─────────────────────────────────
+	// --- Step 15: Assemble problem statement ---------------------------------
 
 	const problemStatement =
 		goals.length > 0
 			? goals.map((g) => g.description).join("; ")
 			: (raw.title ?? raw.text.slice(0, 200));
 
-	// ─── Step 16: Build final compiled requirement ────────────────────────────
+	// --- Step 16: Build final compiled requirement ----------------------------
 
 	const compiled: CompiledRequirement = {
 		id: raw.id,

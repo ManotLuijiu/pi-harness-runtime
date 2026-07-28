@@ -4,7 +4,7 @@
  * Interfaces for replaying prior runtime execution.
  */
 
-// ─── Local Type Definitions ───────────────────────────────────────────────
+// --- Local Type Definitions -----------------------------------------------
 
 export interface RuntimeEvent {
 	ts: string;
@@ -40,7 +40,7 @@ export interface TaskGraph {
 	edges: Array<{ from: string; to: string }>;
 }
 
-// ─── Replay Types ─────────────────────────────────────────────────────────────
+// --- Replay Types -------------------------------------------------------------
 
 export type ReplayMode = "inspect" | "simulate" | "reexecute";
 
@@ -86,7 +86,7 @@ export interface ReplayResult {
 	replayedAt: string;
 }
 
-// ─── Replay Sources ───────────────────────────────────────────────────────────
+// --- Replay Sources -----------------------------------------------------------
 
 export interface ReplaySources {
 	checkpoint?: RuntimeCheckpoint;
@@ -103,7 +103,7 @@ export interface ReplaySources {
 	toSequence?: number;
 }
 
-// ─── Divergence Detection ─────────────────────────────────────────────────────
+// --- Divergence Detection -----------------------------------------------------
 
 export type DivergenceReason =
 	| "source_file_changed"
@@ -119,7 +119,7 @@ export interface DivergenceCheck {
 	severity: "info" | "warning" | "error";
 }
 
-// ─── Runtime Events ───────────────────────────────────────────────────────────
+// --- Runtime Events -----------------------------------------------------------
 
 export type ReplayRuntimeEvent =
 	| { type: "replay.started"; jobId: string; mode: ReplayMode }
