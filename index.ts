@@ -1165,6 +1165,13 @@ export default function (pi: ExtensionAPI) {
 		queueAutoResume("post-compact", "resume", "followUp");
 	});
 
+	// --- Periodic quota refresh every 15 minutes ---
+	// `maybeAutoFetchQuota` checks its own rate-limit (MINIMAX_REFRESH_MIN_INTERVAL_MS)
+	// so this is safe to call frequently.
+	setInterval(() => {
+		void maybeAutoFetchQuota(lastActiveProvider ?? null);
+	}, MINIMAX_REFRESH_MIN_INTERVAL_MS);
+
 	function queueAutoResume(
 		reason: string,
 		content: string,
