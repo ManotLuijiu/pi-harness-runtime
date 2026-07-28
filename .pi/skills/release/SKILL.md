@@ -1,13 +1,13 @@
 ---
 name: release
-description: Automated release workflow for pi-harness-runtime — git add, commit, push, bump version, and publish to npm via GitHub Actions.
+description: Automated release workflow for any project — git add, status, commit, push, bump version, and publish via GitHub Actions. Detects app type automatically.
 disable-model-invocation: true
-allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(npm *), Bash(cat *), Bash(ls *), Bash(jq *)
+allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(npm *), Bash(bench *), Bash(pip *), Bash(python *), Bash(cat *), Bash(ls *), Bash(jq *), Bash(pwd *), Bash(realpath *), Read, Edit
 ---
 
-# Release Workflow for pi-harness-runtime
+# Release Workflow — Universal
 
-Automated release workflow for the pi-harness-runtime Node.js monorepo.
+Automated release workflow that detects the current project type and applies the appropriate release process.
 
 ## Usage
 
@@ -22,67 +22,83 @@ Automated release workflow for the pi-harness-runtime Node.js monorepo.
 **Examples:**
 
 ```
-/release           # patch (0.9.22 → 0.9.23)
-/release minor     # minor (0.9.22 → 0.10.0)
-/release major     # major (0.9.22 → 1.0.0)
+/release           # patch (default)
+/release minor     # minor bump
+/release major     # major bump
 ```
 
 ## Complete Workflow
 
-### Step 1: Check git status
+### Step 1: Detect app type and check git status
 
 ```bash
+pwd
 git status
 git pull --rebase
 ```
 
-If there are uncommitted changes → must commit before releasing.
+Detect app type:
+- **pi-harness-runtime**: Node.js monorepo with `bun scripts/release-all.ts`
+- **Frappe app** (`frappe-bench/apps/{app}/`): Python app with `bench` commands
+- **Other**: Standard git tag + GitHub Actions
 
 ### Step 2: Stage and commit all changes
 
 ```bash
 git add --all
-git commit -m "{message}"
-git push origin develop
+git commit -m "{auto-generated message or user-provided}"
+git push origin {branch}
 ```
 
 ### Step 3: Bump version and create tag
 
+**For pi-harness-runtime:**
 ```bash
 bun scripts/release-all.ts --release-as {bump_type}
 ```
 
-- Defaults to `patch` if `bump_type` not specified
-- Updates root `package.json` and all workspace packages
-- Creates git tag (e.g., `v0.9.23`)
+**For Frappe apps:**
+```bash
+# Version stored in __init__.py or pyproject.toml
+# Edit version file, commit, tag
+```
 
-### Step 4: Push with tags (triggers GitHub Actions build + npm publish)
+### Step 4: Push with tags (triggers GitHub Actions)
 
 ```bash
-git push --follow-tags origin develop
+git push --follow-tags origin {branch}
 git status
 ```
 
 ### Step 5: Verify
 
 ```bash
-npm view pi-harness-runtime version
+# For npm packages
+npm view {package_name} version
+
+# For GitHub releases
 gh run list --workflow=release.yml --limit 3
 ```
 
-## GitHub Actions Build
+## App-Specific Details
 
-The `release.yml` workflow triggers automatically on tag push:
+### pi-harness-runtime (Node.js Monorepo)
 
-1. Checkout + install dependencies
-2. Build all packages (`bun run build`)
-3. Publish to npm via **GitHub Actions OIDC** (no token needed)
-4. Create GitHub Release
+- **Version script**: `bun scripts/release-all.ts`
+- **Default bump**: `patch` (0.9.22 → 0.9.23)
+- **Publishes**: Root `pi-harness-runtime` package to npm
+- **Workspace packages**: Bundled into root, not published separately
+- **NPM Trusted Publishing**: Uses GitHub Actions OIDC (no token needed)
+
+### Frappe Apps (Python)
+
+- **Version**: In `{app}/__init__.py` → `__version__`
+- **Build**: `bench build --app {app}` (if needed)
+- **CI/CD**: Check for `.github/workflows/release.yml` or use generic workflow
 
 ## Notes
 
-- **Only root package is published**: `pi-harness-runtime` (workspace packages are bundled)
-- **NPM Trusted Publishing**: Uses GitHub Actions OIDC — no long-lived npm token required
 - **Default bump**: Always `patch` unless user specifies `minor` or `major`
-- **AGENTS.md workflow**: git add --all → git commit → git push (step 4 of session completion)
-- **Version script**: `bun scripts/release-all.ts --release-as patch` (default if not specified)
+- **Always git status first**: Before committing, show current status
+- **GitHub Actions**: Push tags to trigger CI/CD builds
+- **Frappe bench apps**: Use `bench` commands for build/test/deploy
