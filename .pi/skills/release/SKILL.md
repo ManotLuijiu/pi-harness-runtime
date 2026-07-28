@@ -1,6 +1,6 @@
 ---
 name: release
-description: Universal release workflow — git add/commit/push, version bump, tag, publish. Supports Node.js monorepos, Frappe apps, Python packages.
+description: Universal release workflow - git add/commit/push, version bump, tag, publish. Supports Node.js monorepos, Frappe apps, Python packages.
 disable-model-invocation: true
 argument-hint: "[app_name] [bump_type]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(yarn *), Bash(pnpm *), Bash(npm *), Bash(npx *), Bash(bench *), Bash(python *), Bash(pip *), Bash(jq *), Bash(cat *), Bash(ls *), Bash(cd *), Bash(node *), Bash(uname *), Bash(find *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(awk *), Read, Edit, Write
@@ -8,7 +8,7 @@ allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(yarn *), Bash(pnpm *),
 
 # Universal Release Workflow
 
-Automated release: `git add` → `commit` → `push` → `version bump` → `tag` → `push tags` → `GitHub Actions publish`.
+Automated release: `git add` -> `commit` -> `push` -> `version bump` -> `tag` -> `push tags` -> `GitHub Actions publish`.
 
 ## Usage
 
@@ -18,8 +18,8 @@ Automated release: `git add` → `commit` → `push` → `version bump` → `tag
 
 **Parameters:**
 
-- `app_name` (optional): App/workspace to release — auto-detected from current directory if not provided.
-- `bump_type` (optional): Version bump — `patch` (default), `minor`, or `major`
+- `app_name` (optional): App/workspace to release - auto-detected from current directory if not provided.
+- `bump_type` (optional): Version bump - `patch` (default), `minor`, or `major`
 
 **Examples:**
 
@@ -37,9 +37,9 @@ The workflow automatically detects:
 | What | How |
 |------|-----|
 | App name | From directory (`apps/{name}/`) or repo root |
-| Project type | `scripts/release-all.ts` → Node monorepo; `__init__.py` → Frappe app; `pyproject.toml` → Python |
-| Package manager | `pnpm-lock.yaml`, `yarn.lock`, `npm` — checked in order |
-| Branch strategy | `develop` + `version-15/16` → cascade; `main` → standard Git Flow |
+| Project type | `scripts/release-all.ts` -> Node monorepo; `__init__.py` -> Frappe app; `pyproject.toml` -> Python |
+| Package manager | `pnpm-lock.yaml`, `yarn.lock`, `npm` - checked in order |
+| Branch strategy | `develop` + `version-15/16` -> cascade; `main` -> standard Git Flow |
 | Current version | `__init__.py` (Frappe) or `package.json` |
 
 ## Step-by-Step Workflow
@@ -63,13 +63,13 @@ pwd
 **Frappe app** (has `__init__.py`):
 
 - Updates `__init__.py` version + `frontend/package.json`
-- CI auto-merges `develop → version-15 → version-16`
+- CI auto-merges `develop -> version-15 -> version-16`
 - Frappe version constraint managed by CI (not manually)
 
 **Python package** (has `pyproject.toml`):
 
 - Uses `bump2version` or manual version edit
-- Standard Git Flow (develop → main)
+- Standard Git Flow (develop -> main)
 
 ### Step 3: Parse git status and commit pending changes
 
@@ -81,7 +81,7 @@ pwd
 
 If ANY exist, they must be committed before releasing.
 
-**Safe staging** — never blindly `git add --all`:
+**Safe staging** - never blindly `git add --all`:
 
 ```bash
 git add -A -- ':!.env*' ':!*.pem' ':!*.key' ':!credentials*'
@@ -148,7 +148,7 @@ If `--follow-tags` doesn't push the tag:
 git push origin v{new_version}
 ```
 
-### Step 6: GitHub Actions — wait and verify
+### Step 6: GitHub Actions - wait and verify
 
 **Node.js monorepo** (triggers `release.yml`):
 
@@ -159,7 +159,7 @@ gh run list --workflow=release.yml --limit 3
 **Frappe apps** (triggers `auto-merge.yml`):
 
 ```bash
-# For Thai Business Suite / inpac_pharma: develop → version-15 → version-16
+# For Thai Business Suite / inpac_pharma: develop -> version-15 -> version-16
 gh run list --workflow=auto-merge.yml --limit 2
 ```
 
@@ -187,11 +187,11 @@ git add --all && git commit -m "feat: description" && git push origin develop
 # 2. Bump version (defaults to patch)
 bun scripts/release-all.ts --release-as {bump_type}
 
-# 3. Push tags → GitHub Actions publishes to npm via OIDC
+# 3. Push tags -> GitHub Actions publishes to npm via OIDC
 git push --follow-tags origin develop
 ```
 
-Uses GitHub Actions OIDC — **no npm token needed**.
+Uses GitHub Actions OIDC - **no npm token needed**.
 
 ### Frappe apps (Thai Business Suite / inpac_pharma)
 
@@ -205,10 +205,10 @@ git push origin develop
 git tag -a v{x.y.z} -m "Release v{x.y.z}"
 git push origin develop --tags
 
-# 3. CI auto-merges: develop → version-15 → version-16
+# 3. CI auto-merges: develop -> version-15 -> version-16
 ```
 
-**Frappe version constraint** — CI overwrites `pyproject.toml` after merge:
+**Frappe version constraint** - CI overwrites `pyproject.toml` after merge:
 
 - `develop` branch: keeps `frappe = ">=16.0.0,<17.0.0"`
 - After merge to `version-15`: overwrites with `">=15.40.4,<16.0.0"`
@@ -222,7 +222,7 @@ git add -A -- ':!.env*' ':!*.pem' ':!*.key'
 git commit -m "feat: description"
 git push origin develop
 
-# 2. Merge develop → main (or auto-merge workflow)
+# 2. Merge develop -> main (or auto-merge workflow)
 git checkout main && git pull origin main && git merge develop --no-edit && git push origin main
 
 # 3. Create tag
@@ -244,12 +244,12 @@ git push && git push --tags
 
 ## Safety Features
 
-- **Git status parsing** — explicitly checks modified, staged, untracked files
-- **Safe staging** — excludes `.env*`, `*.pem`, `*.key`, `credentials*`
-- **Cross-platform** — detects macOS vs Linux for `sed -i`
-- **Package manager detection** — auto-detects pnpm/yarn/npm from lockfiles
-- **Version format validation** — semver enforcement
-- **Tag existence check** — avoids duplicate tags
+- **Git status parsing** - explicitly checks modified, staged, untracked files
+- **Safe staging** - excludes `.env*`, `*.pem`, `*.key`, `credentials*`
+- **Cross-platform** - detects macOS vs Linux for `sed -i`
+- **Package manager detection** - auto-detects pnpm/yarn/npm from lockfiles
+- **Version format validation** - semver enforcement
+- **Tag existence check** - avoids duplicate tags
 
 ## Conventional Commits
 
@@ -269,8 +269,8 @@ Release v{version} completed!
 
 App: {app_name}
 Type: {Node.js monorepo | Frappe app | Python package}
-Version: {old} → {new}
-Branch: {source} → {target}
+Version: {old} -> {new}
+Branch: {source} -> {target}
 Tag: v{version}
 Release: https://github.com/{owner}/{repo}/releases/tag/v{version}
 ```
