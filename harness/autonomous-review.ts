@@ -4,7 +4,12 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createHerdrBus, ensureHerdrWorkspace, publishReviewCompleted, publishReviewRequested } from "../packages/event-bus/src/herdr-bus.js";
+import {
+	createHerdrBus,
+	ensureHerdrWorkspace,
+	publishReviewCompleted,
+	publishReviewRequested,
+} from "../packages/event-bus/src/herdr-bus.js";
 
 const AGENT_ID = "review-agent";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
@@ -16,15 +21,20 @@ async function runReview(
 	codePayload: CodeWrittenPayload,
 ): Promise<void> {
 	const { taskId, files } = codePayload;
-	const reportFile = join(ensureHerdrWorkspace().reviews, `${taskId}-review.md`);
+	const reportFile = join(
+		ensureHerdrWorkspace().reviews,
+		`${taskId}-review.md`,
+	);
 	console.log(`[${AGENT_ID}] Reviewing task ${taskId}, ${files.length} files`);
 
 	try {
-		publishReviewRequested(bus, taskId, taskId);
+		publishReviewRequestedSimple(bus, taskId, taskId);
 
 		const fileBlocks = await Promise.all(
 			files.map(async (file) => {
-				const content = existsSync(file) ? readFileSync(file, "utf-8").slice(0, 5000) : `[Not found: ${file}]`;
+				const content = existsSync(file)
+					? readFileSync(file, "utf-8").slice(0, 5000)
+					: `[Not found: ${file}]`;
 				return `## ${file}\n\n\`\`\`\n${content}\n\`\`\`\n`;
 			}),
 		);
@@ -38,13 +48,13 @@ ${fileBlocks.join("\n")}
 `;
 		writeFileSync(reportFile, report);
 		console.log(`[${AGENT_ID}] Report: ${reportFile}`);
-		publishReviewCompleted(bus, taskId, reportFile, "changes_requested");
+		publishReviewCompletedSimple(bus, taskId, reportFile, "changes_requested");
 
 		// Wait for GPT tab to update
 		await waitForGptReview(reportFile);
 	} catch (err) {
 		console.error(`[${AGENT_ID}] Review failed:`, err);
-		publishReviewCompleted(bus, taskId, reportFile, "failed");
+		publishReviewCompletedSimple(bus, taskId, reportFile, "failed");
 	}
 }
 

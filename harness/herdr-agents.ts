@@ -3,7 +3,11 @@
  */
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import { createHerdrBus, getHerdrWorkspacePaths, ensureHerdrWorkspace } from "../packages/event-bus/src/herdr-bus.js";
+import {
+	createHerdrBus,
+	getHerdrWorkspacePaths,
+	ensureHerdrWorkspace,
+} from "../packages/event-bus/src/herdr-bus.js";
 
 async function startReviewAgent(): Promise<void> {
 	console.log("[herdr:review] Starting review agent...");
@@ -13,7 +17,9 @@ async function startReviewAgent(): Promise<void> {
 	bus.startPolling(async (payload) => {
 		if (payload.topic === "code.written") {
 			const data = payload.data as { taskId: string; files: string[] };
-			console.log(`[herdr:review] code.written: task=${data.taskId} files=${data.files.length}`);
+			console.log(
+				`[herdr:review] code.written: task=${data.taskId} files=${data.files.length}`,
+			);
 			for (const file of data.files ?? []) {
 				console.log(`[herdr:review] Reviewing: ${file}`);
 			}
@@ -30,8 +36,14 @@ async function startCodeAgent(): Promise<void> {
 	bus.subscribe("review.completed");
 	bus.startPolling(async (payload) => {
 		if (payload.topic === "review.completed") {
-			const data = payload.data as { taskId: string; reportFile: string; status: string };
-			console.log(`[herdr:code] Review done: task=${data.taskId} status=${data.status} report=${data.reportFile}`);
+			const data = payload.data as {
+				taskId: string;
+				reportFile: string;
+				status: string;
+			};
+			console.log(
+				`[herdr:code] Review done: task=${data.taskId} status=${data.status} report=${data.reportFile}`,
+			);
 		}
 	});
 	console.log(`[herdr:code] Workspace: ${bus.getWorkspace()}`);
@@ -43,10 +55,18 @@ function showStatus(): void {
 	console.log(`Workspace: ${paths.root}`);
 	const evPath = join(paths.root, "events.jsonl");
 	if (existsSync(evPath)) {
-		const lines = readFileSync(evPath, "utf-8").split("\n").filter(Boolean).slice(-10);
+		const lines = readFileSync(evPath, "utf-8")
+			.split("\n")
+			.filter(Boolean)
+			.slice(-10);
 		console.log("Recent events:");
 		for (const line of lines) {
-			try { const { topic, ts } = JSON.parse(line); console.log(`  ${ts} ${topic}`); } catch { /* skip */ }
+			try {
+				const { topic, ts } = JSON.parse(line);
+				console.log(`  ${ts} ${topic}`);
+			} catch {
+				/* skip */
+			}
 		}
 	}
 	if (existsSync(paths.subscriptions)) {
@@ -57,9 +77,15 @@ function showStatus(): void {
 
 const [command] = process.argv.slice(2);
 switch (command) {
-	case "review": startReviewAgent().catch(console.error); break;
-	case "code":   startCodeAgent().catch(console.error); break;
-	case "status": showStatus(); break;
+	case "review":
+		startReviewAgent().catch(console.error);
+		break;
+	case "code":
+		startCodeAgent().catch(console.error);
+		break;
+	case "status":
+		showStatus();
+		break;
 	default:
 		console.log("Usage: bun harness/herdr-agents.ts <review|code|status>");
 }
