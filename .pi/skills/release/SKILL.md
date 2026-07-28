@@ -33,6 +33,7 @@ Automated release workflow for the pi-harness-runtime Node.js monorepo.
 
 ```bash
 git status
+git pull --rebase
 ```
 
 If there are uncommitted changes → must commit before releasing.
@@ -41,11 +42,9 @@ If there are uncommitted changes → must commit before releasing.
 
 ```bash
 git add --all
-git commit -m "feat: add new feature"
+git commit -m "{message}"
 git push origin develop
 ```
-
-Wait for CI to pass, then continue.
 
 ### Step 3: Bump version and create tag
 
@@ -55,16 +54,23 @@ bun scripts/release-all.ts --release-as {bump_type}
 
 - Defaults to `patch` if `bump_type` not specified
 - Updates root `package.json` and all workspace packages
-- Amends the commit with workspace version changes
 - Creates git tag (e.g., `v0.9.23`)
 
-### Step 4: Push with tags
+### Step 4: Push with tags (triggers GitHub Actions build + npm publish)
 
 ```bash
 git push --follow-tags origin develop
+git status
 ```
 
-### Step 5: GitHub Actions builds and publishes
+### Step 5: Verify
+
+```bash
+npm view pi-harness-runtime version
+gh run list --workflow=release.yml --limit 3
+```
+
+## GitHub Actions Build
 
 The `release.yml` workflow triggers automatically on tag push:
 
@@ -72,13 +78,6 @@ The `release.yml` workflow triggers automatically on tag push:
 2. Build all packages (`bun run build`)
 3. Publish to npm via **GitHub Actions OIDC** (no token needed)
 4. Create GitHub Release
-
-### Step 6: Verify
-
-```bash
-npm view pi-harness-runtime version
-gh run list --workflow=release.yml --limit 3
-```
 
 ## Notes
 
