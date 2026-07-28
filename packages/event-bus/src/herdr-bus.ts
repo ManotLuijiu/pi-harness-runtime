@@ -317,7 +317,6 @@ export function ensureHerdrWorkspace(): HerdrWorkspace {
 	return paths;
 }
 
-
 export type LoopVerdict = "approved" | "changes_requested" | "blocked";
 
 export interface LoopConfig {
@@ -374,7 +373,10 @@ export interface LoopFinishedPayload {
 
 // ─── Loop Event Publishers ────────────────────────────────────────────────────
 
-export function publishLoopStarted(bus: HerdrEventBus, config: LoopConfig): string {
+export function publishLoopStarted(
+	bus: HerdrEventBus,
+	config: LoopConfig,
+): string {
 	return bus.publish("loop.started", config);
 }
 
@@ -384,7 +386,11 @@ export function publishCodeTick(
 	iteration: number,
 	prompt: string,
 ): string {
-	return bus.publish("code.tick", { loopId, iteration, prompt } satisfies CodeTickPayload);
+	return bus.publish("code.tick", {
+		loopId,
+		iteration,
+		prompt,
+	} satisfies CodeTickPayload);
 }
 
 export function publishCodeWritten(
@@ -394,7 +400,12 @@ export function publishCodeWritten(
 	files: string[],
 	summary?: string,
 ): string {
-	return bus.publish("code.written", { loopId, iteration, files, summary } satisfies CodeWrittenPayload);
+	return bus.publish("code.written", {
+		loopId,
+		iteration,
+		files,
+		summary,
+	} satisfies CodeWrittenPayload);
 }
 
 export function publishReviewTick(
@@ -403,7 +414,11 @@ export function publishReviewTick(
 	iteration: number,
 	codeFiles: string[],
 ): string {
-	return bus.publish("review.tick", { loopId, iteration, codeFiles } satisfies ReviewTickPayload);
+	return bus.publish("review.tick", {
+		loopId,
+		iteration,
+		codeFiles,
+	} satisfies ReviewTickPayload);
 }
 
 export function publishReviewCompleted(
@@ -429,7 +444,11 @@ export function publishLoopEarlyExit(
 	reason: LoopVerdict,
 	message: string,
 ): string {
-	return bus.publish("loop.early_exit", { loopId, reason, message } satisfies LoopEarlyExitPayload);
+	return bus.publish("loop.early_exit", {
+		loopId,
+		reason,
+		message,
+	} satisfies LoopEarlyExitPayload);
 }
 
 export function publishLoopFinished(
@@ -451,7 +470,10 @@ export function publishLoopFinished(
 
 const VERDICT_PATTERNS: Array<{ pattern: RegExp; verdict: LoopVerdict }> = [
 	{ pattern: /^##\s*Verdict:\s*APPROVED/im, verdict: "approved" },
-	{ pattern: /^##\s*Verdict:\s*CHANGES_REQUESTED/im, verdict: "changes_requested" },
+	{
+		pattern: /^##\s*Verdict:\s*CHANGES_REQUESTED/im,
+		verdict: "changes_requested",
+	},
 	{ pattern: /^##\s*Verdict:\s*CHANGES/i, verdict: "changes_requested" },
 	{ pattern: /^##\s*Verdict:\s*BLOCKED/im, verdict: "blocked" },
 	{ pattern: /^##\s*Verdict:\s*FAIL/im, verdict: "blocked" },
