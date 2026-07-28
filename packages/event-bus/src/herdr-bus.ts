@@ -317,9 +317,162 @@ export function ensureHerdrWorkspace(): HerdrWorkspace {
 	return paths;
 }
 
-// ─── Convenience Publishers ────────────────────────────────────────────────
+
+export type LoopVerdict = "approved" | "changes_requested" | "blocked";
+
+export interface LoopConfig {
+	loopId: string;
+	writeCount: number;
+	reviewCount: number;
+	prompt: string;
+	nextReviewAfter: number;
+	createdAt: string;
+}
+
+export interface CodeTickPayload {
+	loopId: string;
+	iteration: number;
+	prompt: string;
+}
+
+export interface CodeWrittenPayload {
+	loopId: string;
+	iteration: number;
+	files: string[];
+	summary: string;
+}
+
+export interface ReviewTickPayload {
+	loopId: string;
+	iteration: number;
+	codeFiles: string[];
+}
+
+export interface ReviewCompletedPayload {
+	loopId: string;
+	iteration: number;
+	verdict: LoopVerdict;
+	message: string;
+	reportFile: string;
+}
+
+export interface LoopEarlyExitPayload {
+	loopId: string;
+	reason: LoopVerdict;
+	message: string;
+}
+
+export interface LoopFinishedPayload {
+	loopId: string;
+	summary: string;
+	iterations: {
+		writes: number;
+		reviews: number;
+		finalVerdict: LoopVerdict;
+	};
+}
+
+// ─── Loop Event Publishers ────────────────────────────────────────────────────
+
+export function publishLoopStarted(bus: HerdrEventBus, config: LoopConfig): string {
+	return bus.publish("loop.started", config);
+}
+
+export function publishCodeTick(
+	bus: HerdrEventBus,
+	loopId: string,
+	iteration: number,
+	prompt: string,
+): string {
+	return bus.publish("code.tick", { loopId, iteration, prompt } satisfies CodeTickPayload);
+}
 
 export function publishCodeWritten(
+	bus: HerdrEventBus,
+	loopId: string,
+	iteration: number,
+	files: string[],
+	summary?: string,
+): string {
+	return bus.publish("code.written", { loopId, iteration, files, summary } satisfies CodeWrittenPayload);
+}
+
+export function publishReviewTick(
+	bus: HerdrEventBus,
+	loopId: string,
+	iteration: number,
+	codeFiles: string[],
+): string {
+	return bus.publish("review.tick", { loopId, iteration, codeFiles } satisfies ReviewTickPayload);
+}
+
+export function publishReviewCompleted(
+	bus: HerdrEventBus,
+	loopId: string,
+	iteration: number,
+	verdict: LoopVerdict,
+	message: string,
+	reportFile: string,
+): string {
+	return bus.publish("review.completed", {
+		loopId,
+		iteration,
+		verdict,
+		message,
+		reportFile,
+	} satisfies ReviewCompletedPayload);
+}
+
+export function publishLoopEarlyExit(
+	bus: HerdrEventBus,
+	loopId: string,
+	reason: LoopVerdict,
+	message: string,
+): string {
+	return bus.publish("loop.early_exit", { loopId, reason, message } satisfies LoopEarlyExitPayload);
+}
+
+export function publishLoopFinished(
+	bus: HerdrEventBus,
+	loopId: string,
+	summary: string,
+	writes: number,
+	reviews: number,
+	finalVerdict: LoopVerdict,
+): string {
+	return bus.publish("loop.finished", {
+		loopId,
+		summary,
+		iterations: { writes, reviews, finalVerdict },
+	} satisfies LoopFinishedPayload);
+}
+
+// ─── Verdict Parser ──────────────────────────────────────────────────────────
+
+const VERDICT_PATTERNS: Array<{ pattern: RegExp; verdict: LoopVerdict }> = [
+	{ pattern: /^##\s*Verdict:\s*APPROVED/im, verdict: "approved" },
+	{ pattern: /^##\s*Verdict:\s*CHANGES_REQUESTED/im, verdict: "changes_requested" },
+	{ pattern: /^##\s*Verdict:\s*CHANGES/i, verdict: "changes_requested" },
+	{ pattern: /^##\s*Verdict:\s*BLOCKED/im, verdict: "blocked" },
+	{ pattern: /^##\s*Verdict:\s*FAIL/im, verdict: "blocked" },
+];
+
+export function parseVerdict(content: string): LoopVerdict | null {
+	for (const { pattern, verdict } of VERDICT_PATTERNS) {
+		if (pattern.test(content)) return verdict;
+	}
+	return null;
+}
+
+export function parseVerdictMessage(content: string): string {
+	// Extract the paragraph after ## Verdict: X
+	const match = content.match(/^##\s*Verdict:\s*\w+\s*\n+(.+?)(?=^##|\n+$)/ms);
+	return match ? match[1].trim().slice(0, 500) : content.slice(0, 200);
+}
+
+// ─── Simple Convenience Publishers (non-loop) ──────────────────────────────
+
+export function publishCodeWrittenSimple(
 	bus: HerdrEventBus,
 	taskId: string,
 	files: string[],
@@ -332,26 +485,19 @@ export function publishCodeWritten(
 	});
 }
 
-export function publishReviewRequested(
+export function publishReviewRequestedSimple(
 	bus: HerdrEventBus,
 	taskId: string,
 	codeTaskId: string,
 ): string {
-	return bus.publish("review.requested", {
-		taskId,
-		codeTaskId,
-	});
+	return bus.publish("review.requested", { taskId, codeTaskId });
 }
 
-export function publishReviewCompleted(
+export function publishReviewCompletedSimple(
 	bus: HerdrEventBus,
 	taskId: string,
 	reportFile: string,
 	status: "approved" | "changes_requested" | "failed",
 ): string {
-	return bus.publish("review.completed", {
-		taskId,
-		reportFile,
-		status,
-	});
+	return bus.publish("review.completed", { taskId, reportFile, status });
 }
