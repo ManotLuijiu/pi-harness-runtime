@@ -1,167 +1,89 @@
 ---
 name: release
-description: Automated release workflow for pi-harness-runtime monorepo - bump version, update CHANGELOG, commit, push, and publish to NPM.
+description: Automated release workflow for pi-harness-runtime — git add, commit, push, bump version, and publish to npm via GitHub Actions.
 disable-model-invocation: true
-allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(npm *), Bash(cat *), Bash(ls *), Bash(jq *), Read, Edit
+allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(npm *), Bash(cat *), Bash(ls *), Bash(jq *)
 ---
 
 # Release Workflow for pi-harness-runtime
 
-Automated release workflow for the pi-harness-runtime Node.js monorepo with workspaces.
+Automated release workflow for the pi-harness-runtime Node.js monorepo.
 
 ## Usage
 
 ```
-release [bump_type]
+/release {bump_type}
 ```
 
 **Parameters:**
 
 - `bump_type` (optional): `patch` (default), `minor`, or `major`
 
-## Quick Start
+**Examples:**
 
-```bash
-# Standard release from develop branch
-/release
-
-# Minor bump
-/release minor
+```
+/release           # patch (0.9.22 → 0.9.23)
+/release minor     # minor (0.9.22 → 0.10.0)
+/release major     # major (0.9.22 → 1.0.0)
 ```
 
 ## Complete Workflow
 
-### Step 1: Check Current State
+### Step 1: Check git status
 
 ```bash
 git status
-git branch
-git log --oneline -3
 ```
 
-### Step 2: Detect Pending Changes
+If there are uncommitted changes → must commit before releasing.
 
-**IMPORTANT**: Check ALL of these conditions:
-
-1. **Modified files** (under "Changes not staged for commit")
-2. **Staged files** (under "Changes to be committed")
-3. **Untracked files** (under "Untracked files")
-
-If ANY exist, they must be committed before release.
-
-### Step 3: Commit Pending Changes
+### Step 2: Stage and commit all changes
 
 ```bash
-# Stage files safely (exclude sensitive files)
-git add -A -- ':!.env*' ':!*.pem' ':!*.key' ':!credentials*'
-
-# Commit with conventional format
+git add --all
 git commit -m "feat: add new feature"
-```
-
-### Step 4: Merge to Main (if on develop)
-
-```bash
-# Fetch and merge origin/main into develop
-git fetch origin main
-git merge origin/main -m "chore: merge main into develop"
-
-# Push to develop (triggers auto-merge workflow)
 git push origin develop
 ```
 
-### Step 5: Push to Main
+Wait for CI to pass, then continue.
+
+### Step 3: Bump version and create tag
 
 ```bash
-# Checkout main and merge develop
-git checkout main
-git pull origin main
-git merge develop --no-edit
-
-# Push main (triggers release workflow)
-git push origin main
+bun scripts/release-all.ts --release-as {bump_type}
 ```
 
-### Step 6: Tag and Release
+- Defaults to `patch` if `bump_type` not specified
+- Updates root `package.json` and all workspace packages
+- Amends the commit with workspace version changes
+- Creates git tag (e.g., `v0.9.23`)
+
+### Step 4: Push with tags
 
 ```bash
-# Create tag (use bump_type for version)
-VERSION="0.6.0-beta.1"  # example
-git tag v$VERSION
-git push origin v$VERSION
-
-# This triggers the Release workflow which:
-# 1. Builds all packages
-# 2. Runs tests
-# 3. Publishes to NPM
-# 4. Creates GitHub Release
+git push --follow-tags origin develop
 ```
 
-## NPM Publishing
+### Step 5: GitHub Actions builds and publishes
 
-The release workflow publishes these packages:
+The `release.yml` workflow triggers automatically on tag push:
 
-| Package | Name | Scope |
-|---------|------|-------|
-| Root | `pi-harness-runtime` | public |
-| Workspace | `@pi-harness/capability-registry` | public |
-| Workspace | `@pi-harness/model-registry` | public |
-| Workspace | `@pi-harness/skill-registry` | public |
-| Workspace | `@pi-harness/cost-optimizer` | public |
-| Workspace | `@pi-harness/provider-router` | public |
+1. Checkout + install dependencies
+2. Build all packages (`bun run build`)
+3. Publish to npm via **GitHub Actions OIDC** (no token needed)
+4. Create GitHub Release
 
-## Version Strategy
+### Step 6: Verify
 
-- **Beta releases**: `vX.Y.Z-beta.N` for development
-- **Stable releases**: `vX.Y.Z` for production
-- **Workspaces**: All packages share the same version
-- **Branch flow**: develop → main (release workflow triggers on tag)
-
-## Workflow Files
-
-- `.github/workflows/release.yml` - Publishes to NPM on tag push
-- `.github/workflows/auto-merge-develop.yml` - Merges develop → main automatically
-
-## Common Issues
-
-### Build fails
-
-- Check `bun run build` locally before pushing
-- Ensure all TypeScript compiles without errors
-
-### NPM publish fails
-
-- Verify `NPM_TOKEN` secret is set in GitHub Actions
-- Check package names match NPM organization scope
-
-### Auto-merge stuck
-
-- Check PR status at: `gh pr list --state open`
-- Resolve conflicts locally and push
-
-## Safety Features
-
-- **Safe staging**: Excludes `.env*`, `*.pem`, `*.key`, `credentials*`
-- **Version alignment**: All workspace packages share same version
-- **Auto-merge**: develop → main handled by CI
-- **Approval bypass**: Uses NPM_TOKEN with bypass-2FA scope
-
-## Summary Format
-
+```bash
+npm view pi-harness-runtime version
+gh run list --workflow=release.yml --limit 3
 ```
-Release v{version} completed successfully!
 
-Type: Node.js monorepo with workspaces
-Version: {old} -> {new}
-Tag: v{version}
-Release: https://github.com/{owner}/{repo}/releases/tag/v{version}
-NPM: https://www.npmjs.com/package/{package_name}
+## Notes
 
-Packages published:
-- pi-harness-runtime@{version}
-- @pi-harness/capability-registry@{version}
-- @pi-harness/model-registry@{version}
-- @pi-harness/skill-registry@{version}
-- @pi-harness/cost-optimizer@{version}
-- @pi-harness/provider-router@{version}
-```
+- **Only root package is published**: `pi-harness-runtime` (workspace packages are bundled)
+- **NPM Trusted Publishing**: Uses GitHub Actions OIDC — no long-lived npm token required
+- **Default bump**: Always `patch` unless user specifies `minor` or `major`
+- **AGENTS.md workflow**: git add --all → git commit → git push (step 4 of session completion)
+- **Version script**: `bun scripts/release-all.ts --release-as patch` (default if not specified)
