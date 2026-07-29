@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.10.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.24...v0.10.0) (2026-07-30)
+
+
+### Features
+
+* blackboard-coordinated loop controller with early exit ([f3cf3ea](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3cf3ea479170dd75b7e9a7c3515dde230bb0da7))
+* herdr inter-agent event bus for autonomous code review ([1490cdd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1490cddec80dac812065c3c681984524ad3194e1))
+* loop controller for write-review cycles with early exit ([95066ce](https://github.com/ManotLuijiu/pi-harness-runtime/commit/95066ce8cb58c55eaa14d69fd826b5aaff680c16))
+
+
+### Bug Fixes
+
+* **clipboard:** pass UTF-8 bytes directly to xclip via stdin, avoid pipeline corruption ([051ca18](https://github.com/ManotLuijiu/pi-harness-runtime/commit/051ca18fb1deb1169a8a4da16aa9314d2e6ec66d))
+* herdr-bus refactoring — rename publishers to *Simple variants ([d727591](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7275913a89deb56a6bcfdb912ea9d17e3a80ce1))
+* import LoopConfig from index.js, remove unused LoopNextAction import ([1100a4e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1100a4e87433e54416259dfdad41bc5e0def19b3))
+* periodic quota refresh every 15 minutes via setInterval ([f28e700](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f28e7004d089aeada1659f4d55a35461baba76fc))
+* replace all Unicode box-drawing characters with ASCII ([dd4223a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/dd4223abb0e25f746ee09ced05f6b3e40a10eb85))
+* replace Unicode dashes and arrows with ASCII equivalents ([e9027e6](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e9027e689c06fdc1ca2ac4a6365ed6a6a0a384fd))
+* trigger cookie sync on startup so pre-existing cookies aren't ignored ([2914299](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2914299b8caa02acbb06620c7cb8e4870acfa40e))
+
 ### [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
 
 
