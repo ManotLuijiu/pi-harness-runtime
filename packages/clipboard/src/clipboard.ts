@@ -11,18 +11,25 @@ export async function copy(
 	_options?: ClipboardOptions,
 ): Promise<void> {
 	try {
-		// Linux: prefer xclip, fall back to /dev/clipboard
-		const { execSync } = require("node:child_process");
-		try {
-			execSync(
-				`echo '${text.replace(/'/g, "'\"'\"'")}' | xclip -selection clipboard`,
-				{ stdio: "ignore" },
+		const { spawn } = require("node:child_process");
+		// Use stdin mode — bypasses shell so UTF-8 bytes pass through untouched.
+		// The `echo '...' | xclip` pipeline corrupts box-drawing characters (â¬).
+		await new Promise<void>((resolve, reject) => {
+			const proc = spawn("xclip", ["-selection", "clipboard", "-i"], {
+				stdio: ["pipe", "ignore", "pipe"],
+			});
+			proc.on("error", reject);
+			proc.on("close", (code: number) =>
+				code === 0 ? resolve() : reject(new Error(`xclip exit ${code}`)),
 			);
-		} catch {
-			writeFileSync("/dev/clipboard", text);
-		}
+			proc.stdin!.end(text, "utf8");
+		});
 	} catch {
-		// Silently fail if clipboard unavailable
+		try {
+			writeFileSync("/dev/clipboard", text);
+		} catch {
+			// Silently fail if clipboard unavailable
+		}
 	}
 }
 
