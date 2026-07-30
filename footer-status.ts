@@ -1,11 +1,16 @@
 import type { MirrorRecord, ProviderMirrorRecord } from "./mirror.ts";
-import { formatQuotaStatus } from "./harness/e2e/quota-status.js";
+
 import {
 	parseContextWindowStatusLine,
 	parseQuotaUsageStatusLine,
 	type ParsedContextWindowUsage,
 	type ParsedQuotaUsageData,
 } from "./status-parsers.ts";
+import { getProviderLabel } from "./packages/types/src/ai-providers.js";
+import {
+	providerHasContinuousScrape,
+	providerHasTUISignal,
+} from "./packages/providers/src/provider-id.js";
 
 export type ParsedFooterStatusValue =
 	| { kind: "quota"; value: ParsedQuotaUsageData }
@@ -39,46 +44,52 @@ export function parseFooterStatusValue(value: string): ParsedFooterStatusValue {
 	return { kind: "unknown", value: null };
 }
 
-/** Display name for a provider id. Used as the footer label. */
+/**
+ * Get display label for a provider id.
+ * Uses the canonical getProviderLabel() from packages/types/src/ai-providers.ts
+ * which handles all 9 known providers: minimax, openai, anthropic, glm,
+ * openrouter, openai-codex, deepseek, gemini, kimi.
+ */
 function providerDisplayName(provider: string | null | undefined): string {
 	if (!provider) return "Provider";
-	switch (provider) {
-		case "minimax":
-			return "MiniMax";
-		case "openai":
-			return "OpenAI";
-		case "openai-codex":
-			return "OpenAI Codex";
-		case "glm":
-			return "GLM";
-		case "anthropic":
-			return "Anthropic";
-		case "openrouter":
-			return "OpenRouter";
-		default:
-			return provider;
-	}
+	return getProviderLabel(provider);
 }
 
-/** Hint shown when the provider has no usage data yet. */
+/**
+ * Hint shown when the provider has no usage data yet.
+ * Covers all 9 known providers from KNOWN_AI_PROVIDERS.
+ */
 function missingDataHint(
 	provider: string | null | undefined,
 	hasCookieSource: boolean,
 ): string {
+	if (!provider) return "no usage source configured";
+
+	// MiniMax: needs cookies for continuous scrape
 	if (provider === "minimax") {
-		return "drop minimax cookies into ~/.pi-harness-runtime/cookies/";
+		return hasCookieSource
+			? "no data yet (updates after first scrape)"
+			: "drop minimax cookies into ~/.pi-harness-runtime/cookies/";
 	}
-	if (provider === "openai-codex") {
-		return "will update on first TUI limit signal";
-	}
-	if (
-		provider === "openai" ||
-		provider === "glm" ||
-		provider === "anthropic" ||
-		provider === "openrouter"
-	) {
+
+	// TUI signal providers: one-shot signal on limit hit
+	if (providerHasTUISignal(provider)) {
 		return "no signal yet (updates on first limit hit)";
 	}
+
+	// Providers without any tracking implementation yet
+	// deepseek, gemini, kimi, or any unknown provider
+	if (provider === "deepseek") {
+		return "deepseek usage tracking not yet implemented";
+	}
+	if (provider === "gemini") {
+		return "gemini usage tracking not yet implemented";
+	}
+	if (provider === "kimi") {
+		return "kimi usage tracking not yet implemented";
+	}
+
+	// Generic fallback for any other unknown provider
 	if (!hasCookieSource) return "no usage source configured";
 	return "no data yet";
 }
@@ -114,33 +125,62 @@ export function buildFooterStatusValue(
 	const provider = activeProvider ?? view?.provider ?? null;
 	const label = providerDisplayName(provider);
 
-	// Continuous data path: a fresh record has 5h or weekly percentages.
+	// TUI-signal exhaustion path: fires when limit is hit (one-shot signal).
+	// This takes priority over continuous data to show the most recent state.
 	if (
+		provider &&
+		view &&
+		view.exhausted &&
+		(view.limitType !== undefined ||
+			view.resets_at !== undefined ||
+			view.h5_resets_at !== undefined)
+	) {
+		const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
+		const limitType = view.limitType ?? "tokens";
+		return `${label}: limit hit (${limitType}), reset ${reset}`;
+	}
+
+	// Continuous data path: providers with continuous scrape (MiniMax has 5h+weekly, OpenAI has weekly-only)
+	if (
+		provider &&
+		providerHasContinuousScrape(provider) &&
 		view &&
 		freshness !== "expired" &&
 		(view.h5_used_pct !== undefined || view.weekly_used_pct !== undefined)
 	) {
-		const quotaStatus = formatQuotaStatus({
-			provider: (provider ?? "minimax") as "minimax",
-			h5UsedPct: view.h5_used_pct ?? 0,
-			h5ResetsAt: view.h5_resets_at,
-			weeklyUsedPct: view.weekly_used_pct ?? 0,
-			weeklyResetsAt: view.weekly_resets_at,
-			scrapedAt: view.synced_at,
-		});
+		const weeklyPct = view.weekly_used_pct ?? 0;
+		const weeklyLeft = Math.max(0, 100 - weeklyPct);
+		const weeklyResets = view.weekly_resets_at ?? "soon";
+
+		let statusLine: string;
+		if (view.h5_used_pct !== undefined) {
+			// MiniMax: has both 5h and weekly windows
+			const h5Pct = view.h5_used_pct;
+			const h5Left = Math.max(0, 100 - h5Pct);
+			statusLine = `5h: ${h5Left.toFixed(0)}% left · week: ${weeklyLeft.toFixed(0)}% left`;
+		} else {
+			// OpenAI: weekly-only (no 5h window)
+			statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
+		}
+
 		const freshnessSuffix =
 			freshness === "fresh" || freshness === "missing" ? "" : ` · ${freshness}`;
-		return `${label}: ${quotaStatus.extended}${freshnessSuffix}`;
+		return `${label}: ${statusLine}${freshnessSuffix}`;
 	}
 
-	// TUI-signal path: an exhausted record from a limit hit.
+	// TUI signal providers (OpenAI, Anthropic, GLM, OpenRouter):
+	// Show monitoring status when we have a record but haven't hit limits.
+	// These providers only emit data when a limit is hit.
 	if (
+		provider &&
+		providerHasTUISignal(provider) &&
 		view &&
-		view.exhausted &&
-		(view.limitType !== undefined || view.resets_at !== undefined)
+		freshness !== "expired"
 	) {
-		const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
-		return `${label}: limit hit (${view.limitType ?? "tokens"}), reset ${reset}`;
+		// If exhausted is not set, we're monitoring normally
+		if (!view.exhausted) {
+			return `${label}: monitoring (no limits hit)`;
+		}
 	}
 
 	// Discoverable hint when we have no data yet.

@@ -4,14 +4,14 @@
  * Core types for test data generation.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Field Types ─────────────────────────────────────────────────────────────
+// --- Field Types -------------------------------------------------------------
 
 /**
  * Field type for schema definition
@@ -149,7 +149,7 @@ export interface GeneratorContext {
 	faker: FakerAdapter;
 }
 
-// ─── Schema Types ─────────────────────────────────────────────────────────────
+// --- Schema Types -------------------------------------------------------------
 
 /**
  * Schema definition
@@ -190,7 +190,7 @@ export interface SchemaHooks {
 	) => Record<string, unknown>[];
 }
 
-// ─── Factory Types ─────────────────────────────────────────────────────────────
+// --- Factory Types -------------------------------------------------------------
 
 /**
  * Factory definition
@@ -224,7 +224,7 @@ export interface Association {
 	count?: number | { min: number; max: number };
 }
 
-// ─── Generation Types ──────────────────────────────────────────────────────────
+// --- Generation Types ----------------------------------------------------------
 
 /**
  * Generation request
@@ -267,7 +267,7 @@ export interface GenerationError {
 	value?: unknown;
 }
 
-// ─── Export Types ─────────────────────────────────────────────────────────────
+// --- Export Types -------------------------------------------------------------
 
 /**
  * Export format
@@ -303,7 +303,7 @@ export interface ExportResult {
 	size: number;
 }
 
-// ─── Faker Adapter Types ──────────────────────────────────────────────────────
+// --- Faker Adapter Types ------------------------------------------------------
 
 /**
  * Faker adapter interface
@@ -359,7 +359,7 @@ export interface DateOptions {
 	future?: boolean;
 }
 
-// ─── Configuration Types ──────────────────────────────────────────────────────
+// --- Configuration Types ------------------------------------------------------
 
 /**
  * Generator configuration
@@ -391,7 +391,7 @@ export interface GeneratorConfig {
 	customGenerators?: Record<string, CustomGenerator>;
 }
 
-// ─── Fixtures Types ──────────────────────────────────────────────────────────
+// --- Fixtures Types ----------------------------------------------------------
 
 /**
  * Fixture format

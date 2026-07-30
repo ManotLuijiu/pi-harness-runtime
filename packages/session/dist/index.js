@@ -4,14 +4,14 @@
  * Session management system with message history, token accounting,
  * policy enforcement, and session persistence.
  */
-// ─── Manager ────────────────────────────────────────────────────────────
+// --- Manager ------------------------------------------------------------
 export { SessionManager, createSessionManager } from "./manager.js";
-// ─── Store ────────────────────────────────────────────────────────────
+// --- Store ------------------------------------------------------------
 export { SessionStore, createSessionStore } from "./store.js";
-// ─── History ─────────────────────────────────────────────────────────
+// --- History ---------------------------------------------------------
 export { MessageHistory, MessageSearch, ContextWindowManager, } from "./history.js";
-// ─── Policy ──────────────────────────────────────────────────────────
+// --- Policy ----------------------------------------------------------
 export { PolicyEngine, RateLimiter, BudgetTracker, createPolicyEngine, } from "./policy.js";
-// ─── Types ───────────────────────────────────────────────────────────
+// --- Types -----------------------------------------------------------
 export { SDK_VERSION, } from "./types.js";
 //# sourceMappingURL=index.js.map

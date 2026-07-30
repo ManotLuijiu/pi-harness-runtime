@@ -3,7 +3,7 @@
  *
  * Interfaces for learning from runtime execution.
  */
-// ─── Secret Detection ─────────────────────────────────────────────────────────
+// --- Secret Detection ---------------------------------------------------------
 export const SECRET_PATTERNS = [
     /api[_-]?key/i,
     /password/i,

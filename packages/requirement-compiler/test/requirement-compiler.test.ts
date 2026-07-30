@@ -26,7 +26,7 @@ import {
 } from "../src/index.js";
 import type { RawRequirement, ExtractedStatement } from "../src/types.js";
 
-// ─── Test utilities ──────────────────────────────────────────────────────
+// --- Test utilities ------------------------------------------------------
 
 function makeRaw(
 	text: string,
@@ -47,7 +47,7 @@ async function compile(text: string, overrides?: Partial<RawRequirement>) {
 	return compileRequirement(makeRaw(text, overrides));
 }
 
-// ─── Test 1: Explicit requirement remains explicit ─────────────────────
+// --- Test 1: Explicit requirement remains explicit ---------------------
 
 describe("Explicit requirement remains explicit", () => {
 	it("goal statement becomes a goal", async () => {
@@ -71,7 +71,7 @@ describe("Explicit requirement remains explicit", () => {
 	});
 });
 
-// ─── Test 2: Preference is NOT promoted to mandatory ───────────────────
+// --- Test 2: Preference is NOT promoted to mandatory -------------------
 
 describe("Preference is not promoted to mandatory", () => {
 	it("preference becomes non-blocking constraint", async () => {
@@ -95,7 +95,7 @@ describe("Preference is not promoted to mandatory", () => {
 	});
 });
 
-// ─── Test 3: Contradictory statements create ambiguity ─────────────────
+// --- Test 3: Contradictory statements create ambiguity -----------------
 
 describe("Contradictory statements create ambiguity", () => {
 	it("opposing must/must not creates contradiction ambiguity", async () => {
@@ -159,7 +159,7 @@ describe("Contradictory statements create ambiguity", () => {
 	});
 });
 
-// ─── Test 4: Acceptance criteria normalize to Given/When/Then ───────────
+// --- Test 4: Acceptance criteria normalize to Given/When/Then -----------
 
 describe("Acceptance criteria normalize to Given/When/Then", () => {
 	it("Given/When/Then statement parses correctly", () => {
@@ -236,7 +236,7 @@ describe("Acceptance criteria normalize to Given/When/Then", () => {
 	});
 });
 
-// ─── Test 5: Thai terminology preserved in glossary ────────────────────
+// --- Test 5: Thai terminology preserved in glossary --------------------
 
 describe("Thai terminology remains in glossary", () => {
 	it("Thai term is preserved in terminology", async () => {
@@ -267,7 +267,7 @@ describe("Thai terminology remains in glossary", () => {
 	});
 });
 
-// ─── Test 6: Financial requirement receives risk tag ──────────────────
+// --- Test 6: Financial requirement receives risk tag ------------------
 
 describe("Financial requirement receives risk tag", () => {
 	it("payment keyword triggers financial risk", async () => {
@@ -300,7 +300,7 @@ describe("Financial requirement receives risk tag", () => {
 	});
 });
 
-// ─── Test 7: Empty requirement is rejected ───────────────────────────
+// --- Test 7: Empty requirement is rejected ---------------------------
 
 describe("Empty requirement is rejected", () => {
 	it("rejects empty text requirement", async () => {
@@ -345,7 +345,7 @@ describe("Empty requirement is rejected", () => {
 	});
 });
 
-// ─── Test 8: Source references remain traceable ─────────────────────────
+// --- Test 8: Source references remain traceable -------------------------
 
 describe("Source references remain traceable", () => {
 	it("every goal has a source reference", async () => {
@@ -408,7 +408,7 @@ describe("Source references remain traceable", () => {
 	});
 });
 
-// ─── Extractor tests ─────────────────────────────────────────────────────
+// --- Extractor tests -----------------------------------------------------
 
 describe("Statement extraction", () => {
 	it("extracts numbered list items", () => {
@@ -433,7 +433,7 @@ describe("Statement extraction", () => {
 	});
 });
 
-// ─── Classifier tests ───────────────────────────────────────────────────
+// --- Classifier tests ---------------------------------------------------
 
 describe("Statement classification", () => {
 	it("classifies must statements as explicit_behavior", () => {
@@ -492,7 +492,7 @@ describe("Statement classification", () => {
 	});
 });
 
-// ─── Risk detection tests ────────────────────────────────────────────────
+// --- Risk detection tests ------------------------------------------------
 
 describe("Risk detection", () => {
 	it("detects destructive operation risk", async () => {
@@ -527,7 +527,7 @@ describe("Risk detection", () => {
 	});
 });
 
-// ─── Ambiguity detection tests ───────────────────────────────────────────
+// --- Ambiguity detection tests -------------------------------------------
 
 describe("Ambiguity detection", () => {
 	it("detects vague terms", () => {
@@ -646,7 +646,7 @@ describe("Ambiguity detection", () => {
 	});
 });
 
-// ─── Workflow tests ──────────────────────────────────────────────────────
+// --- Workflow tests ------------------------------------------------------
 
 describe("Workflow extraction", () => {
 	it("groups multiple goals into a workflow", async () => {
@@ -661,7 +661,7 @@ describe("Workflow extraction", () => {
 	});
 });
 
-// ─── Actor extraction tests ─────────────────────────────────────────────
+// --- Actor extraction tests ---------------------------------------------
 
 describe("Actor extraction", () => {
 	it("extracts actors from statements", async () => {
@@ -677,7 +677,7 @@ describe("Actor extraction", () => {
 	});
 });
 
-// ─── Error handling tests ──────────────────────────────────────────────
+// --- Error handling tests ----------------------------------------------
 
 describe("Error handling", () => {
 	it("RequirementCompileError has correct properties", () => {
@@ -712,7 +712,7 @@ describe("Error handling", () => {
 	});
 });
 
-// ─── Multilingual tests ─────────────────────────────────────────────────
+// --- Multilingual tests -------------------------------------------------
 
 describe("Multilingual handling", () => {
 	it("preserves Thai business terms", async () => {

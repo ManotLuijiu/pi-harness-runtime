@@ -73,7 +73,7 @@ export class HarnessNotificationEvents {
 		return this.center.listChannels();
 	}
 
-	// ─── Event Emitters ────────────────────────────────────────────────
+	// --- Event Emitters ------------------------------------------------
 
 	/**
 	 * Emit JobStarted event
@@ -173,7 +173,7 @@ export class HarnessNotificationEvents {
 		await this.emit("Error", { error });
 	}
 
-	// ─── State Machine Event Listeners ─────────────────────────────────
+	// --- State Machine Event Listeners ---------------------------------
 
 	/**
 	 * Wire up with JobStateMachine to emit events on transitions
@@ -207,7 +207,7 @@ export class HarnessNotificationEvents {
 		}
 	}
 
-	// ─── Private Methods ───────────────────────────────────────────────
+	// --- Private Methods -----------------------------------------------
 
 	private async emit(
 		event: NotificationEvent,

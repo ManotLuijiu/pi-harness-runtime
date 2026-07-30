@@ -4,7 +4,7 @@
 
 import type { FrameworkInfo } from "../../framework-detector/src/types.js";
 
-// ─── Analysis Result ──────────────────────────────────────────────────────────
+// --- Analysis Result ----------------------------------------------------------
 
 export interface FrappeAnalysis {
 	framework: FrameworkInfo;
@@ -19,7 +19,7 @@ export interface FrappeAnalysis {
 	hasSPA: boolean;
 }
 
-// ─── Site ─────────────────────────────────────────────────────────────────────
+// --- Site ---------------------------------------------------------------------
 
 export interface FrappeSite {
 	name: string;
@@ -30,7 +30,7 @@ export interface FrappeSite {
 	hasSiteConfig: boolean;
 }
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+// --- App ---------------------------------------------------------------------
 
 export interface FrappeApp {
 	name: string;
@@ -43,7 +43,7 @@ export interface FrappeApp {
 	hasPublicFiles: boolean;
 }
 
-// ─── DocType ──────────────────────────────────────────────────────────────────
+// --- DocType ------------------------------------------------------------------
 
 export interface FrappeDocTypeSummary {
 	name: string;
@@ -54,14 +54,14 @@ export interface FrappeDocTypeSummary {
 	nFields: number;
 }
 
-// ─── Hooks ────────────────────────────────────────────────────────────────────
+// --- Hooks --------------------------------------------------------------------
 
 export interface FrappeHooksSummary {
 	appName: string;
 	hooks: Record<string, string[]>;
 }
 
-// ─── Custom Fields ────────────────────────────────────────────────────────────
+// --- Custom Fields ------------------------------------------------------------
 
 export interface FrappeCustomFieldSummary {
 	totalCustomFields: number;
@@ -69,7 +69,7 @@ export interface FrappeCustomFieldSummary {
 	linkedTo: string[];
 }
 
-// ─── Workspace ────────────────────────────────────────────────────────────────
+// --- Workspace ----------------------------------------------------------------
 
 export interface FrappeWorkspaceSummary {
 	benchPath: string;
@@ -96,7 +96,7 @@ export interface SiteInfo {
 	hasSiteConfig: boolean;
 }
 
-// ─── Hooks File ───────────────────────────────────────────────────────────────
+// --- Hooks File ---------------------------------------------------------------
 
 export interface HooksFile {
 	appName: string;
@@ -104,7 +104,7 @@ export interface HooksFile {
 	version?: string;
 }
 
-// ─── Plugin Config ────────────────────────────────────────────────────────────
+// --- Plugin Config ------------------------------------------------------------
 
 export interface FrappePluginConfig {
 	/** Custom paths to include in analysis */
@@ -115,7 +115,7 @@ export interface FrappePluginConfig {
 	includeWorkspace?: boolean;
 }
 
-// ─── Errors ───────────────────────────────────────────────────────────────────
+// --- Errors -------------------------------------------------------------------
 
 export class FrappeWorkspaceError extends Error {
 	readonly code:

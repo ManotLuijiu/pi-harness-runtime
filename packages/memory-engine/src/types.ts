@@ -4,7 +4,7 @@
  * Interfaces for OKF-based knowledge management.
  */
 
-// ─── OKF Concept Types ─────────────────────────────────────────────────────────
+// --- OKF Concept Types ---------------------------------------------------------
 
 export interface OkfLink {
 	href: string;
@@ -34,7 +34,7 @@ export interface OkfFrontmatter {
 	[key: string]: unknown;
 }
 
-// ─── Bundle Types ─────────────────────────────────────────────────────────────
+// --- Bundle Types -------------------------------------------------------------
 
 export interface KnowledgeBundle {
 	path: string;
@@ -51,7 +51,7 @@ export interface KnowledgeDirectory {
 	subdirectories: KnowledgeDirectory[];
 }
 
-// ─── Validation Types ──────────────────────────────────────────────────────────
+// --- Validation Types ----------------------------------------------------------
 
 export interface ValidationError {
 	path: string;
@@ -66,7 +66,7 @@ export interface ValidationResult {
 	warnings: ValidationError[];
 }
 
-// ─── Search Types ─────────────────────────────────────────────────────────────
+// --- Search Types -------------------------------------------------------------
 
 export interface KnowledgeQuery {
 	text?: string;
@@ -84,7 +84,7 @@ export interface KnowledgeResult {
 	matchedOn: ("title" | "tags" | "type" | "body" | "authority")[];
 }
 
-// ─── Write Types ──────────────────────────────────────────────────────────────
+// --- Write Types --------------------------------------------------------------
 
 export interface WriteConceptRequest {
 	type: string;
@@ -96,7 +96,7 @@ export interface WriteConceptRequest {
 	links?: OkfLink[];
 }
 
-// ─── Index Types ─────────────────────────────────────────────────────────────
+// --- Index Types -------------------------------------------------------------
 
 export interface KnowledgeIndex {
 	concepts: Array<{
@@ -109,7 +109,7 @@ export interface KnowledgeIndex {
 	lastUpdated: string;
 }
 
-// ─── Reserved Files ───────────────────────────────────────────────────────────
+// --- Reserved Files -----------------------------------------------------------
 
 export const RESERVED_FILES = ["index.md", "log.md"];
 
@@ -117,7 +117,7 @@ export function isReservedFile(filename: string): boolean {
 	return RESERVED_FILES.includes(filename);
 }
 
-// ─── Secret Detection ─────────────────────────────────────────────────────────
+// --- Secret Detection ---------------------------------------------------------
 
 export const SECRET_PATTERNS = [
 	/api[_-]?key/i,
@@ -148,7 +148,7 @@ export function filterSecrets(content: string): string {
 	);
 }
 
-// ─── Authority Types ─────────────────────────────────────────────────────────
+// --- Authority Types ---------------------------------------------------------
 
 export type Authority = "approved" | "generated" | "unverified";
 

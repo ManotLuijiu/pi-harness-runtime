@@ -19,7 +19,7 @@ import { ContextWindowManager } from "./history.js";
 import { PolicyEngine } from "./policy.js";
 import { SessionStore } from "./store.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<SessionManagerConfig> = {
 	rootDir: "./sessions",
@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: Required<SessionManagerConfig> = {
 	cleanupIntervalMs: 60 * 60 * 1000, // 1 hour
 };
 
-// ─── Session Manager ───────────────────────────────────────────────────────
+// --- Session Manager -------------------------------------------------------
 
 export class SessionManager {
 	private readonly config: Required<SessionManagerConfig>;
@@ -469,7 +469,7 @@ export class SessionManager {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a session manager

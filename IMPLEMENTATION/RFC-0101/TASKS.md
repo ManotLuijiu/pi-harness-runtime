@@ -4,18 +4,20 @@
 
 ## Phase 1 — Foundations
 
-- [ ] Read RFC-0101 and confirm scope.
-- [ ] Define `TaskRecord`, `TaskLease`, `TaskEvent`, `CapabilityName`, `ApprovalClass`, `TaskStatus` types in `packages/autonomous-runtime/src/types.ts`.
-- [ ] Define JSON schemas for inbox and lease files.
-- [ ] Implement `TaskInbox.append`, `TaskInbox.list`, `TaskInbox.transition` against `tasks.jsonl`.
-- [ ] Implement atomic claim via `write-tmp + rename` to `claimed/<task>.lease.json`.
+- [x] Read RFC-0101 and confirm scope.
+- [x] Define `TaskRecord`, `TaskLease`, `TaskEvent`, `CapabilityName`, `ApprovalClass`, `TaskStatus` types in `packages/autonomous-runtime/src/types.ts`.
+- [x] Define JSON schemas for inbox and lease files (as JSDoc comments in types.ts).
+- [x] Implement `TaskInbox.append`, `TaskInbox.list`, `TaskInbox.transition` against `tasks.jsonl`.
+- [x] Implement atomic claim via `open(O_EXCL) + rename` to `claimed/<task>.lease.json`.
+  - **Fix applied:** `rename(2)` atomically overwrites — switched to `open(O_CREAT|O_EXCL)` + `rename` so second worker gets `EEXIST`.
+  - **Tests:** 23/23 pass including race condition test.
 
 ## Phase 2 — Lease and Worker
 
 - [ ] Implement `Lease.claim(taskId, workerId)` — atomic, single-execution.
 - [ ] Implement `Lease.heartbeat(leaseId)` — extends `expiresAt`.
 - [ ] Implement `Lease.reap()` — releases expired leases back to `queued`.
-- [ ] Implement `Worker.loop()` — claim → execute → checkpoint → finalize.
+- [ ] Implement `Worker.loop()` — claim -> execute -> checkpoint -> finalize.
 - [ ] Implement `Worker.recoverOnStartup()` — reaps orphan leases.
 - [ ] Implement `Worker.emitHeartbeat()` — every 30 s.
 - [ ] Add `worker-registry.json` rotation.
@@ -48,11 +50,11 @@
 
 ## Phase 6 — Recovery
 
-- [ ] Wire `worker-crash → reaper → resume from last checkpoint`.
-- [ ] Wire `host-reboot → supervisor restart → worker startup recovery`.
-- [ ] Wire `quota-exhausted → waiting_quota → resume on reset`.
-- [ ] Wire `task-timeout → checkpoint preserved → reaped and resumed`.
-- [ ] Wire `filesystem-full → worker paused claims → operator alert`.
+- [ ] Wire `worker-crash -> reaper -> resume from last checkpoint`.
+- [ ] Wire `host-reboot -> supervisor restart -> worker startup recovery`.
+- [ ] Wire `quota-exhausted -> waiting_quota -> resume on reset`.
+- [ ] Wire `task-timeout -> checkpoint preserved -> reaped and resumed`.
+- [ ] Wire `filesystem-full -> worker paused claims -> operator alert`.
 
 ## Phase 7 — OKF Integration
 

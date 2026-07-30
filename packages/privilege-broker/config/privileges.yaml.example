@@ -1,0 +1,172 @@
+# Privilege Registry — RFC-0101 §7
+#
+# Copy this file to `privileges.yaml` and review it before starting the worker.
+# The worker will reject unknown capabilities and refuse to start if this file
+# is missing or invalid.
+#
+# IMPORTANT: Only add entries that have been reviewed and approved by the operator.
+# The broker uses these argv templates literally — no shell interpolation.
+# Each argv element is passed directly to execve(2).
+
+version: "1.0"
+updatedAt: "2026-07-23T00:00:00Z"
+
+entries:
+  # ── Git ────────────────────────────────────────────────────────────────────
+
+  - name: "git.commit"
+    description: "Commit staged changes to a git repository"
+    argv:
+      - "git"
+      - "commit"
+      - "-m"
+      - "{message}"
+    envWhitelist:
+      - "GIT_AUTHOR_NAME"
+      - "GIT_AUTHOR_EMAIL"
+      - "GIT_COMMITTER_NAME"
+      - "GIT_COMMITTER_EMAIL"
+      - "GIT_DIR"
+    user: "frappe"
+    timeoutMs: 30_000
+    production: false # requires operator review before enabling
+
+  - name: "git.push"
+    description: "Push commits to a remote git repository"
+    argv:
+      - "git"
+      - "push"
+      - "--quiet"
+      - "origin"
+      - "{branch}"
+    envWhitelist:
+      - "GIT_DIR"
+      - "GIT_SSH_COMMAND"
+    user: "frappe"
+    timeoutMs: 60_000
+    production: false
+
+  - name: "git.pull"
+    description: "Pull changes from a remote git repository"
+    argv:
+      - "git"
+      - "pull"
+      - "--quiet"
+      - "origin"
+      - "{branch}"
+    envWhitelist:
+      - "GIT_DIR"
+      - "GIT_SSH_COMMAND"
+    user: "frappe"
+    timeoutMs: 120_000
+    production: false
+
+  # ── Bench commands ──────────────────────────────────────────────────────────
+
+  - name: "bench.build"
+    description: "Build a Frappe/ERPNext app via bench"
+    argv:
+      - "bench"
+      - "--site"
+      - "{site}"
+      - "build"
+      - "--app"
+      - "{app}"
+    envWhitelist:
+      - "FRAPPE_SITE"
+    user: "frappe"
+    timeoutMs: 300_000
+    production: false
+
+  - name: "bench.migrate"
+    description: "Run database migrations via bench"
+    argv:
+      - "bench"
+      - "--site"
+      - "{site}"
+      - "migrate"
+    envWhitelist:
+      - "FRAPPE_SITE"
+    user: "frappe"
+    timeoutMs: 600_000
+    production: false
+
+  - name: "bench.restart"
+    description: "Restart the Frappe/ERPNext web workers"
+    argv:
+      - "bench"
+      - "restart"
+    user: "frappe"
+    timeoutMs: 30_000
+    production: false
+
+  # ── System ─────────────────────────────────────────────────────────────────
+
+  - name: "system.restart"
+    description: "Restart the pi-harness runtime service via systemctl"
+    argv:
+      - "systemctl"
+      - "restart"
+      - "pi-harness-runtime"
+    user: "root"
+    timeoutMs: 60_000
+    production: false
+
+  - name: "system.logs"
+    description: "Read recent systemd journal logs for the pi-harness runtime"
+    argv:
+      - "journalctl"
+      - "--no-pager"
+      - "-n"
+      - "100"
+      - "-u"
+      - "pi-harness-runtime"
+    user: "frappe"
+    timeoutMs: 15_000
+    production: true
+
+  # ── OKF ───────────────────────────────────────────────────────────────────
+
+  - name: "okf.promote-pattern"
+    description: "Promote a task result as a reusable pattern in the OKF"
+    argv:
+      - "okf"
+      - "promote"
+      - "pattern"
+      - "--path"
+      - "{path}"
+      - "--hash"
+      - "{contentHash}"
+    user: "frappe"
+    timeoutMs: 30_000
+    production: false
+
+  - name: "okf.promote-lesson"
+    description: "Promote a classified failure as a lesson in the OKF"
+    argv:
+      - "okf"
+      - "promote"
+      - "lesson"
+      - "--path"
+      - "{path}"
+      - "--category"
+      - "{category}"
+    user: "frappe"
+    timeoutMs: 30_000
+    production: false
+
+  # ── Notify ────────────────────────────────────────────────────────────────
+
+  - name: "notify.send"
+    description: "Send a notification via the notification runtime (RFC-0022)"
+    argv:
+      - "notify-send"
+      - "--title"
+      - "{title}"
+      - "--body"
+      - "{body}"
+      - "--urgency"
+      - "{urgency}"
+    user: "frappe"
+    timeoutMs: 10_000
+    production: true

@@ -12,7 +12,7 @@ import type {
 	InvokeResult,
 } from "../packages/types/src/runtime-types.js";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------------
 
 export interface SummarizerConfig {
 	/** Model to use for summarization */
@@ -43,7 +43,7 @@ export interface InvokeOptions {
 	systemPrompt?: string;
 }
 
-// ─── Default System Prompt ───────────────────────────────────────────────────
+// --- Default System Prompt ---------------------------------------------------
 
 const DEFAULT_SUMMARY_SYSTEM = `You are a conversation summarizer. Your task is to create concise, accurate summaries that preserve essential context for continuing a conversation.
 
@@ -70,7 +70,7 @@ const DECISIONS_FOCUS = `Focus specifically on:
 4. What constraints or requirements influenced the decisions?
 5. Any lessons learned or trade-offs considered?`;
 
-// ─── Forked Summarizer ──────────────────────────────────────────────────────
+// --- Forked Summarizer ------------------------------------------------------
 
 export class ForkedSummarizer {
 	private readonly config: SummarizerConfig;
@@ -283,7 +283,7 @@ Do not include verbatim tool results — summarize their outcomes instead.`;
 	}
 }
 
-// ─── Convenience Factory ────────────────────────────────────────────────────
+// --- Convenience Factory ----------------------------------------------------
 
 /**
  * Create a ForkedSummarizer with default config

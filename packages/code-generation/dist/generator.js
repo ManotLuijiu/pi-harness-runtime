@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { EjsRenderer } from "./templates/ejs-renderer.js";
 import { TemplateRegistry } from "./templates/registry.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     outputDir: "./generated",
     dryRun: false,
@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
     variableResolvers: [],
     validationRules: [],
 };
-// ─── Code Generator ───────────────────────────────────────────────────────
+// --- Code Generator -------------------------------------------------------
 export class CodeGenerator {
     config;
     registry;
@@ -324,7 +324,7 @@ export class CodeGenerator {
         return createHash("sha256").update(content).digest("hex");
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a code generator
  */

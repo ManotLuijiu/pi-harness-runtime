@@ -49,54 +49,54 @@ RFC-0101 fixes these gaps with a strictly-scoped, capability-based, recoverable 
 ## High-Level Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          User / Operator Dashboard                            │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                      │ HTTP / CLI
++------------------------------------------------------------------------------+
+|                          User / Operator Dashboard                            |
++------------------------------------------------------------------------------+
+                                      | HTTP / CLI
                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Master Planner (RFC-0017)                          │
-│  requirement ──▶ TaskGraph ──▶ Promotion to Task Inbox                        │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                      │
++------------------------------------------------------------------------------+
+|                            Master Planner (RFC-0017)                          |
+|  requirement --> TaskGraph --> Promotion to Task Inbox                        |
++------------------------------------------------------------------------------+
+                                      |
                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          Task Inbox (structured queue)                        │
-│  queued/ claimed/ running/ waiting_approval/ waiting_quota/ retrying/         │
-│  completed/ failed/ dead_letter                                                │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                      │
++------------------------------------------------------------------------------+
+|                          Task Inbox (structured queue)                        |
+|  queued/ claimed/ running/ waiting_approval/ waiting_quota/ retrying/         |
+|  completed/ failed/ dead_letter                                                |
++------------------------------------------------------------------------------+
+                                      |
                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          Background Worker (long-lived)                       │
-│  claim ──▶ execute ──▶ checkpoint ──▶ evaluate ──▶ complete|repair|escalate  │
-└──────────────────────────────────────────────────────────────────────────────┘
-       │           │            │             │            │
++------------------------------------------------------------------------------+
+|                          Background Worker (long-lived)                       |
+|  claim --> execute --> checkpoint --> evaluate --> complete|repair|escalate  |
++------------------------------------------------------------------------------+
+       |           |            |             |            |
        ▼           ▼            ▼             ▼            ▼
-┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌────────────┐
-│ Task     │ │ Loop     │ │ Checkpoint   │ │ Repair   │ │ Notification│
-│ Lease    │ │ Runtime  │ │ Manager      │ │ Engine   │ │ Center      │
-│          │ │ RFC-0001 │ │ RFC-0006     │ │ RFC-0018 │ │ RFC-0022    │
-└──────────┘ └──────────┘ └──────────────┘ └──────────┘ └────────────┘
-                                     │
++----------+ +----------+ +--------------+ +----------+ +------------+
+| Task     | | Loop     | | Checkpoint   | | Repair   | | Notification|
+| Lease    | | Runtime  | | Manager      | | Engine   | | Center      |
+|          | | RFC-0001 | | RFC-0006     | | RFC-0018 | | RFC-0022    |
++----------+ +----------+ +--------------+ +----------+ +------------+
+                                     |
                                      ▼
-                          ┌──────────────────────────┐
-                          │   Privilege Broker       │
-                          │   (capability-gated)     │
-                          └──────────────────────────┘
-                                     │
+                          +--------------------------+
+                          |   Privilege Broker       |
+                          |   (capability-gated)     |
+                          +--------------------------+
+                                     |
                                      ▼
-                          ┌──────────────────────────┐
-                          │   Scheduler Adapter      │
-                          │   systemd / launchd /    │
-                          │   cron / internal        │
-                          └──────────────────────────┘
-                                     │
+                          +--------------------------+
+                          |   Scheduler Adapter      |
+                          |   systemd / launchd /    |
+                          |   cron / internal        |
+                          +--------------------------+
+                                     |
                                      ▼
-                          ┌──────────────────────────┐
-                          │   OKF Knowledge Engine   │
-                          │   (lessons + patterns)   │
-                          └──────────────────────────┘
+                          +--------------------------+
+                          |   OKF Knowledge Engine   |
+                          |   (lessons + patterns)   |
+                          +--------------------------+
 ```
 
 The worker does not require an interactive chat session. It can run under `systemd` (Linux), `launchd` (macOS), inside a Docker container, or as a plain process supervised by an init script.
@@ -139,20 +139,20 @@ The inbox is a structured, append-only store. **Markdown backlog files are not t
 
 ```
 ~/.pi/harness/
-├── inbox/
-│   ├── tasks.jsonl              # append-only durable store
-│   ├── claimed/                 # active leases (json file per task)
-│   │   └── <task-id>.lease.json
-│   ├── completed/               # archived after retention window
-│   │   └── <task-id>.json
-│   ├── failed/
-│   │   └── <task-id>.json
-│   └── dead-letter/
-│       └── <task-id>.json
-├── schedules/
-│   └── schedules.json           # Scheduler table
-├── inbox.lock                   # flock file for inter-process safety
-└── inbox.md                     # human-readable view (generated)
++-- inbox/
+|   +-- tasks.jsonl              # append-only durable store
+|   +-- claimed/                 # active leases (json file per task)
+|   |   +-- <task-id>.lease.json
+|   +-- completed/               # archived after retention window
+|   |   +-- <task-id>.json
+|   +-- failed/
+|   |   +-- <task-id>.json
+|   +-- dead-letter/
+|       +-- <task-id>.json
++-- schedules/
+|   +-- schedules.json           # Scheduler table
++-- inbox.lock                   # flock file for inter-process safety
++-- inbox.md                     # human-readable view (generated)
 ```
 
 ### Task Record
@@ -218,26 +218,26 @@ The worker is a single-purpose process. It runs forever, restarting after a cras
 
 ```
 STARTUP
-  └─▶ Recover orphan leases (see §4)
-  └─▶ Reload active schedules from schedules.json
-  └─▶ Register worker identity in worker-registry.json
+  +-> Recover orphan leases (see §4)
+  +-> Reload active schedules from schedules.json
+  +-> Register worker identity in worker-registry.json
 
 RUNNING (steady state)
-  └─▶ Loop:
+  +-> Loop:
         1. Refresh quota snapshot (RFC-0003)
         2. Drain approval queue (RFC-0028)
         3. Acquire next ready task (oldest-first by priority then createdAt)
         4. Begin lease (§4)
         5. Execute in Loop Runtime (RFC-0001)
         6. Stream progress events
-        7. On exit → finalize lease, classify outcome
+        7. On exit -> finalize lease, classify outcome
         8. Notify (RFC-0022)
 
 SHUTDOWN (SIGTERM)
-  └─▶ Finish in-flight task or release lease cleanly
-  └─▶ Persist last-known checkpoint
-  └─▶ Deregister from worker-registry
-  └─▶ Exit 0
+  +-> Finish in-flight task or release lease cleanly
+  +-> Persist last-known checkpoint
+  +-> Deregister from worker-registry
+  +-> Exit 0
 ```
 
 ### Heartbeat and Liveness
@@ -412,21 +412,21 @@ RFC-0101 explicitly **rejects**:
 
 ```
 Worker
-  └─▶ requestCapability("service.restart_your_app")
-        │
+  +-> requestCapability("service.restart_your_app")
+        |
         ▼
-  Policy Engine (RFC-0028) ── Approval Class ──▶ grant | reject | escalate
-        │
+  Policy Engine (RFC-0028) -- Approval Class --> grant | reject | escalate
+        |
         ▼ (on grant)
   Broker
-  └─▶ lookup("service.restart_your_app")
-        │
+  +-> lookup("service.restart_your_app")
+        |
         ▼
   execve({ "/usr/bin/systemctl", "restart", "your-app.service" })   // exact argv
-        │
+        |
         ▼
   Audit Log (append-only JSONL)
-  └─▶ record(capability, argv, exitCode, ts, workerId)
+  +-> record(capability, argv, exitCode, ts, workerId)
 ```
 
 ### Capability Names (initial set)
@@ -549,17 +549,17 @@ type ApprovalClass =
 
 ```
 Task needs capability X
-  └─▶ policy.class(X) = human_approval_required
-        │
+  +-> policy.class(X) = human_approval_required
+        |
         ▼
-  Task status → waiting_approval
+  Task status -> waiting_approval
   ApprovalRequest published (RFC-0018 + RFC-0022)
-        │
-        ├─▶ approved by human → resume task, status → running
-        │
-        └─▶ denied by human → task status → failed (reason: "approval denied")
-        │
-        └─▶ timeout (configurable, default 24h) → task → failed (reason: "approval timeout")
+        |
+        +-> approved by human -> resume task, status -> running
+        |
+        +-> denied by human -> task status -> failed (reason: "approval denied")
+        |
+        +-> timeout (configurable, default 24h) -> task -> failed (reason: "approval timeout")
 ```
 
 Approvals are signed via the operator's existing SSH key and recorded in the audit log.
@@ -603,7 +603,7 @@ The runtime must recover gracefully from:
 | Quota exhausted (RFC-0003) | Task transitions to `waiting_quota`; resumes after reset. No retry storm. |
 | Provider outage | Task waits in `waiting_quota` with jittered backoff; resumes when provider is healthy. |
 | Task timeout (>30 min wall clock) | Checkpoint is preserved; task reaped and resumed from last checkpoint. |
-| Network loss during checkout | Git shallow + retried; if persistent → task fails with reason. |
+| Network loss during checkout | Git shallow + retried; if persistent -> task fails with reason. |
 | Filesystem full | Tasks enter `waiting_disk`; broker refuses privileged writes; operator alerted. |
 | Privilege broker denied | Task fails immediately with `reason: "broker denied: <capability>"`. |
 | Approval denied | Task transitions to `failed (reason: "approval denied")`. |
@@ -621,7 +621,7 @@ The OKF Knowledge Engine is the runtime's durable long-term memory.
 |---|---|
 | Task completed successfully | A "pattern" bundle: inputs, approach, outputs, evidence pointers. |
 | Task failed (after retries) | A "lesson" bundle: failure class, root cause, remediation. |
-| Repair engine produced a fix | A "remediation" bundle: search → edit → verify trail. |
+| Repair engine produced a fix | A "remediation" bundle: search -> edit -> verify trail. |
 | New capability added | A "registry change" bundle: capability name, command, rationale. |
 
 ### Promotion Rules
@@ -630,17 +630,17 @@ The OKF Knowledge Engine is the runtime's durable long-term memory.
 2. A lesson is promoted only if the failure was classified (not a transient network blip).
 3. All promotions include a content hash and source pointers — never raw secrets.
 
-### Failure → Lesson Lifecycle
+### Failure -> Lesson Lifecycle
 
 ```
 Task fails
-  └─▶ Repair Engine classifies (RFC-0018)
-        │
-        ├─▶ transient → task retried (no OKF entry)
-        │
-        ├─▶ classified → lesson bundle written to OKF
-        │
-        └─▶ operator override → OKF entry marked "operator-fixed"
+  +-> Repair Engine classifies (RFC-0018)
+        |
+        +-> transient -> task retried (no OKF entry)
+        |
+        +-> classified -> lesson bundle written to OKF
+        |
+        +-> operator override -> OKF entry marked "operator-fixed"
 ```
 
 The Master's Planner (RFC-0017) reads OKF bundles during decomposition so successful patterns are reused and classified failures are avoided.
@@ -650,32 +650,32 @@ The Master's Planner (RFC-0017) reads OKF bundles during decomposition so succes
 ## 13. Task State Machine
 
 ```
-                       ┌─────────┐
-                       │ queued  │
-                       └────┬────┘
-                            │ claim
+                       +---------+
+                       | queued  |
+                       +----+----+
+                            | claim
                             ▼
-                       ┌─────────┐
-        ┌───────────── │ claimed │ ─────────────┐
-        │              └────┬────┘              │
-   lease expired            │ begin             │ declined
-        │                   ▼                   │
-        │              ┌─────────┐              ▼
-        │              │ running │         ┌─────────┐
-        │              └────┬────┘         │ failed  │
-        │     ┌─────┬───────┼───────┬────┐  └────┬────┘
-        │     │     │       │       │    │       │
-        │     ▼     ▼       ▼       ▼    ▼       ▼
-        │  ┌──────┐ ┌────┐ ┌──────┐ ┌────┐ ┌──────┐
-        │  │wait  │ │wait│ │retry │ │ done│ │dead  │
-        │  │approv│ │quot│ │      │ │    │ │letter│
-        │  └──┬───┘ └──┬─┘ └──┬───┘ └────┘ └──────┘
-        │     │        │      │
-        │     ▼        ▼      │ attempts < maxAttempts
-        │  (human    (quota   │ → back to running
-        │   resume)  reset)   │
-        │     │        │      │
-        └─────┴────────┴──────┘
+                       +---------+
+        +------------- | claimed | -------------+
+        |              +----+----+              |
+   lease expired            | begin             | declined
+        |                   ▼                   |
+        |              +---------+              ▼
+        |              | running |         +---------+
+        |              +----+----+         | failed  |
+        |     +-----+-------+-------+----+  +----+----+
+        |     |     |       |       |    |       |
+        |     ▼     ▼       ▼       ▼    ▼       ▼
+        |  +------+ +----+ +------+ +----+ +------+
+        |  |wait  | |wait| |retry | | done| |dead  |
+        |  |approv| |quot| |      | |    | |letter|
+        |  +--+---+ +--+-+ +--+---+ +----+ +------+
+        |     |        |      |
+        |     ▼        ▼      | attempts < maxAttempts
+        |  (human    (quota   | -> back to running
+        |   resume)  reset)   |
+        |     |        |      |
+        +-----+--------+------+
 ```
 
 ### Transitions
@@ -806,54 +806,54 @@ export interface TaskResult {
 
 ```
 packages/
-├── autonomous-runtime/             # the worker + inbox + lease
-│   ├── src/
-│   │   ├── inbox.ts
-│   │   ├── lease.ts
-│   │   ├── worker.ts
-│   │   ├── recovery.ts
-│   │   ├── supervisor.ts           # systemd/launchd unit templates
-│   │   └── types.ts
-│   └── test/
-│
-├── privilege-broker/               # capability registry + executor
-│   ├── src/
-│   │   ├── registry.ts
-│   │   ├── executor.ts
-│   │   └── audit.ts
-│   ├── config/privileges.yaml      # versioned, reviewed
-│   └── test/
-│
-├── scheduler-adapter/              # cron/systemd/launchd/internal
-│   ├── src/
-│   │   ├── interface.ts
-│   │   ├── systemd.ts
-│   │   ├── launchd.ts
-│   │   ├── cron.ts
-│   │   └── internal.ts
-│   └── test/
-│
-├── policy-engine/                  # RFC-0028 — promotes approval decisions
-│   └── (existing)
-│
-├── notification-runtime/           # RFC-0022 — channel adapters
-│   └── (existing)
-│
-└── okf-kb/                         # OKF integration (lesson/pattern promotion)
-    └── (existing)
++-- autonomous-runtime/             # the worker + inbox + lease
+|   +-- src/
+|   |   +-- inbox.ts
+|   |   +-- lease.ts
+|   |   +-- worker.ts
+|   |   +-- recovery.ts
+|   |   +-- supervisor.ts           # systemd/launchd unit templates
+|   |   +-- types.ts
+|   +-- test/
+|
++-- privilege-broker/               # capability registry + executor
+|   +-- src/
+|   |   +-- registry.ts
+|   |   +-- executor.ts
+|   |   +-- audit.ts
+|   +-- config/privileges.yaml      # versioned, reviewed
+|   +-- test/
+|
++-- scheduler-adapter/              # cron/systemd/launchd/internal
+|   +-- src/
+|   |   +-- interface.ts
+|   |   +-- systemd.ts
+|   |   +-- launchd.ts
+|   |   +-- cron.ts
+|   |   +-- internal.ts
+|   +-- test/
+|
++-- policy-engine/                  # RFC-0028 — promotes approval decisions
+|   +-- (existing)
+|
++-- notification-runtime/           # RFC-0022 — channel adapters
+|   +-- (existing)
+|
++-- okf-kb/                         # OKF integration (lesson/pattern promotion)
+    +-- (existing)
 ```
 
 Drop-in unit templates installed by the runtime's installer:
 
 ```
 packages/autonomous-runtime/units/
-├── systemd/
-│   ├── pi-runtime.service
-│   └── pi-runtime.timer.example
-├── launchd/
-│   └── ai.moocoding.runtime.plist
-└── cron/
-    └── pi-runtime.cron.example
++-- systemd/
+|   +-- pi-runtime.service
+|   +-- pi-runtime.timer.example
++-- launchd/
+|   +-- ai.moocoding.runtime.plist
++-- cron/
+    +-- pi-runtime.cron.example
 ```
 
 ---
@@ -890,7 +890,7 @@ Twenty realistic failure modes, each with its recovery strategy:
 8. **Operator deletes checkpoint mid-run.** Task fails; user is told "checkpoint missing — starting over."
 9. **Out-of-date schedule triggers old task template version.** Scheduler is versioned; old templates continue to fire until explicitly deleted.
 10. **Privilege registry file corrupted.** Worker refuses to start; operator gets a clear "registry invalid" error pointing at the schema validator.
-11. **Untrusted input in capability arguments.** Argv templates use whitelist; unknown arg → broker reject → task fails safely.
+11. **Untrusted input in capability arguments.** Argv templates use whitelist; unknown arg -> broker reject -> task fails safely.
 12. **Approval request lost in transit.** Operator sees no notification; task expires after 24 h; broker logs the lost request.
 13. **Worker writes to audit log but disk is read-only.** Worker switches to "degraded mode" (read-only); operator alerted; jobs paused.
 14. **Recursive task creation (subagent spawns parent).** DAG-level cycle detection in RFC-0016 prevents new edges; runtime rejects parent IDs already in the active graph.
@@ -909,100 +909,100 @@ Twenty realistic failure modes, each with its recovery strategy:
 
 ```
 User           Planner         Inbox          Worker          Loop Runtime
- │ ──chat──▶     │               │               │               │
- │               │ decompose     │               │               │
- │               │ ──────Task──▶ │               │               │
- │               │               │ append        │               │
- │               │               │ tasks.jsonl   │               │
- │               │ ◀────ok───── │               │               │
- │ ◀─ ack ──     │               │               │               │
- │               │               │   claim       │               │
- │               │               │ ◀──────────── │               │
- │               │               │               │ execute       │
- │               │               │               │ ────────▶     │
- │               │               │               │   progress    │
- │               │               │               │ ◀──────────── │
- │               │               │               │ ───done──▶    │
- │               │               │  result       │               │
- │               │               │ ◀──────────── │               │
- │               │               │               │ notify        │
- │               │               │               │ ─────▶RFC-0022│
+ | --chat-->     |               |               |               |
+ |               | decompose     |               |               |
+ |               | ------Task--> |               |               |
+ |               |               | append        |               |
+ |               |               | tasks.jsonl   |               |
+ |               | ◀----ok----- |               |               |
+ | ◀- ack --     |               |               |               |
+ |               |               |   claim       |               |
+ |               |               | ◀------------ |               |
+ |               |               |               | execute       |
+ |               |               |               | -------->     |
+ |               |               |               |   progress    |
+ |               |               |               | ◀------------ |
+ |               |               |               | ---done-->    |
+ |               |               |  result       |               |
+ |               |               | ◀------------ |               |
+ |               |               |               | notify        |
+ |               |               |               | ----->RFC-0022|
 ```
 
 ### B. Worker Crash + Lease Reaper
 
 ```
 Worker-A         Inbox          Reaper         Worker-B
-  │ claim        │              │               │
-  │ ─────▶       │              │               │
-  │   (lease)    │              │               │
-  │ execute ● KILLED             │               │
-  ▼              ▼              │               │
-  heartbeat stops                │ scan          │
-  ▼              ▼              │ ◀─── claimed/  │
-                                 │ expire? yes   │
-                                 │ release ─▶    │
-                                 │ tasks.jsonl   │
-                                 │               │ claim
-                                 │               │ ◀────▶
-                                 │               │ resume from last
-                                 │               │        checkpoint
+  | claim        |              |               |
+  | ----->       |              |               |
+  |   (lease)    |              |               |
+  | execute o KILLED             |               |
+  ▼              ▼              |               |
+  heartbeat stops                | scan          |
+  ▼              ▼              | ◀--- claimed/  |
+                                 | expire? yes   |
+                                 | release ->    |
+                                 | tasks.jsonl   |
+                                 |               | claim
+                                 |               | ◀---->
+                                 |               | resume from last
+                                 |               |        checkpoint
 ```
 
 ### C. Approval Flow
 
 ```
 Task             Policy         Broker          Approval Center        Operator
- │ capability    │              │                │                       │
- │ request ─▶    │              │                │                       │
- │               │ class =      │                │                       │
- │               │ human_needed │                │                       │
- │ ◀─ waiting   │              │                │                       │
- │ ──────────────── publish approval request ────▶│                       │
- │                │              │                │                       │
- │                │              │                │ ──notify────────────▶ │
- │                │              │                │                       │
- │                │              │                │ ◀──── approve ───── │
- │                │              │                │                       │
- │ ◀────────── approval granted ──────────────── │                       │
- │ resume ─▶     │              │                │                       │
- │               │ ─────broker.execute()────────▶│                       │
- │               │              │                │                       │
- │               │              │ audit.log      │                       │
+ | capability    |              |                |                       |
+ | request ->    |              |                |                       |
+ |               | class =      |                |                       |
+ |               | human_needed |                |                       |
+ | ◀- waiting   |              |                |                       |
+ | ---------------- publish approval request ---->|                       |
+ |                |              |                |                       |
+ |                |              |                | --notify------------> |
+ |                |              |                |                       |
+ |                |              |                | ◀---- approve ----- |
+ |                |              |                |                       |
+ | ◀---------- approval granted ---------------- |                       |
+ | resume ->     |              |                |                       |
+ |               | -----broker.execute()-------->|                       |
+ |               |              |                |                       |
+ |               |              | audit.log      |                       |
 ```
 
 ### D. Recurring Task
 
 ```
 Scheduler         Inbox           Worker          Loop Runtime
- │ tick (cron)    │               │               │
- │ template id    │               │               │
- │ materialise    │               │               │
- │ TaskRecord     │               │               │
- │ ───────────▶   │               │               │
- │  (tasks.jsonl) │               │               │
- │                │               │ claim         │
- │                │ ─────────────▶│               │
- │                │               │ execute       │
- │                │               │ ────────────▶ │
- │                │               │   result      │
- │                │ ◀────────────│               │
- │                │               │               │
- │ next-tick fires next materialise               │
+ | tick (cron)    |               |               |
+ | template id    |               |               |
+ | materialise    |               |               |
+ | TaskRecord     |               |               |
+ | ----------->   |               |               |
+ |  (tasks.jsonl) |               |               |
+ |                |               | claim         |
+ |                | ------------->|               |
+ |                |               | execute       |
+ |                |               | ------------> |
+ |                |               |   result      |
+ |                | ◀------------|               |
+ |                |               |               |
+ | next-tick fires next materialise               |
 ```
 
 ### E. Notification Fan-Out
 
 ```
 Worker         Event Bus        Telegram    LINE    Email    Webhook
- │ task.done    │                 │          │        │        │
- │ ────────▶   │                 │          │        │        │
- │             │ fan-out          │          │        │        │
- │             │ ────────────▶   │          │        │        │
- │             │ ──────────────────────▶    │        │        │
- │             │ ───────────────────────────▶         │        │
- │             │ ───────────────────────────────────▶          │
- │             │ (any failure: buffer + retry)               │
+ | task.done    |                 |          |        |        |
+ | -------->   |                 |          |        |        |
+ |             | fan-out          |          |        |        |
+ |             | ------------>   |          |        |        |
+ |             | ---------------------->    |        |        |
+ |             | --------------------------->         |        |
+ |             | ----------------------------------->          |
+ |             | (any failure: buffer + retry)               |
 ```
 
 ---

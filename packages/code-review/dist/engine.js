@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { TextReporter } from "./reports/text.js";
 import { HtmlReporter } from "./reports/html.js";
 import { MarkdownReporter } from "./reports/markdown.js";
-// ─── Default Rules ────────────────────────────────────────────────────────
+// --- Default Rules --------------------------------------------------------
 const DEFAULT_RULES = [
     // Security rules
     {
@@ -113,7 +113,7 @@ const DEFAULT_RULES = [
         suggestion: "Create a tracked issue for this task",
     },
 ];
-// ─── Code Review Engine ────────────────────────────────────────────────────
+// --- Code Review Engine ----------------------------------------------------
 export class CodeReviewEngine {
     rules = [];
     ruleSets = new Map();
@@ -328,7 +328,7 @@ export class CodeReviewEngine {
         }
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a code review engine
  */

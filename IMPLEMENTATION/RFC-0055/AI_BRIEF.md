@@ -1,6 +1,6 @@
 # AI Brief — TUI (RFC-0055)
 
-**Status:** ⚠️ Stub
+**Status:** !️ Stub
 
 ## Implemented
 

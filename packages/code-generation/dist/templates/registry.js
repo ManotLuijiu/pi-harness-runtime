@@ -3,7 +3,7 @@
  *
  * Registry for managing templates.
  */
-// ─── Template Registry ────────────────────────────────────────────────────
+// --- Template Registry ----------------------------------------------------
 export class TemplateRegistry {
     templates = new Map();
     sets = new Map();

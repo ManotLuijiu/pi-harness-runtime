@@ -4,7 +4,7 @@
  * Interfaces for learning from runtime execution.
  */
 
-// ─── Runtime Event (local definition) ─────────────────────────────────────────
+// --- Runtime Event (local definition) -----------------------------------------
 
 export interface RuntimeEvent {
 	ts: string;
@@ -14,7 +14,7 @@ export interface RuntimeEvent {
 	data?: Record<string, unknown>;
 }
 
-// ─── Input Types ─────────────────────────────────────────────────────────────
+// --- Input Types -------------------------------------------------------------
 
 export interface ProviderExecutionMetric {
 	providerId: string;
@@ -55,7 +55,7 @@ export interface LearningRequest {
 	humanFeedback?: HumanFeedback[];
 }
 
-// ─── Learned Experience ───────────────────────────────────────────────────────
+// --- Learned Experience -------------------------------------------------------
 
 export type ExperienceScope =
 	| "global"
@@ -92,7 +92,7 @@ export interface LearningResult {
 	extractedAt: string;
 }
 
-// ─── Patterns ───────────────────────────────────────────────────────────────
+// --- Patterns ---------------------------------------------------------------
 
 export type PatternType =
 	| "provider_success"
@@ -111,7 +111,7 @@ export interface ExtractedPattern {
 	failureIndicators: string[];
 }
 
-// ─── Secret Detection ─────────────────────────────────────────────────────────
+// --- Secret Detection ---------------------------------------------------------
 
 export const SECRET_PATTERNS = [
 	/api[_-]?key/i,
@@ -146,7 +146,7 @@ export function redactSecrets(
 	return redacted;
 }
 
-// ─── Confidence Calculation ────────────────────────────────────────────────────
+// --- Confidence Calculation ----------------------------------------------------
 
 export interface ConfidenceFactors {
 	occurrenceCount: number;

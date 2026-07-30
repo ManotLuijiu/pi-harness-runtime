@@ -18,7 +18,7 @@ import type {
 	TaskGraph,
 } from "./types.js";
 
-// ─── Event Timeline Reconstruction ───────────────────────────────────────────
+// --- Event Timeline Reconstruction -------------------------------------------
 
 function reconstructTimeline(
 	events: RuntimeEvent[],
@@ -32,7 +32,7 @@ function reconstructTimeline(
 	}));
 }
 
-// ─── State Reconstruction ─────────────────────────────────────────────────────
+// --- State Reconstruction -----------------------------------------------------
 
 function reconstructState(
 	jobId: string,
@@ -72,9 +72,9 @@ function reconstructState(
 	};
 }
 
-// ─── Divergence Detection ────────────────────────────────────────────────────
+// --- Divergence Detection ----------------------------------------------------
 
-// ─── Source Validation ────────────────────────────────────────────────────────
+// --- Source Validation --------------------------------------------------------
 
 function validateSources(sources: ReplaySources): {
 	valid: boolean;
@@ -89,7 +89,7 @@ function validateSources(sources: ReplaySources): {
 	return { valid: missing.length === 0, missing };
 }
 
-// ─── Mode Handlers ────────────────────────────────────────────────────────────
+// --- Mode Handlers ------------------------------------------------------------
 
 async function handleInspect(
 	sources: ReplaySources,
@@ -190,7 +190,7 @@ async function handleReexecute(
 	return result;
 }
 
-// ─── Main Engine ───────────────────────────────────────────────────────────────
+// --- Main Engine ---------------------------------------------------------------
 
 export class ExperienceReplay {
 	private eventListeners: Array<(event: ReplayRuntimeEvent) => void> = [];
@@ -341,7 +341,7 @@ export class ExperienceReplay {
 	}
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 
 export function createExperienceReplay(): ExperienceReplay {
 	return new ExperienceReplay();

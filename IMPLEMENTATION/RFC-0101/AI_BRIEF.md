@@ -48,7 +48,7 @@ Implement the Autonomous Operations Runtime subsystem of `pi-harness-runtime` so
 | RFC-0006 Checkpoint Manager | Task-level checkpoint storage |
 | RFC-0011 Shared Blackboard | Operator-visible progress events |
 | RFC-0017 Master Planner | Task generation |
-| RFC-0018 Repair Engine | Failure → repair task generation |
+| RFC-0018 Repair Engine | Failure -> repair task generation |
 | RFC-0022 Notification Center | Channel adapters |
 | RFC-0028 Policy Engine | Approval class resolution |
 
@@ -66,7 +66,7 @@ Subagent-implemented:
 
 - Unit: inbox append/read, lease atomic claim, heartbeat extension, broker execution, policy class resolution.
 - Integration: parallel-worker claim races, lease reaper recovery, broker denial paths, scheduler materialisation for each adapter.
-- Failure-mode: killed worker, full disk, quota reset, expired approval, repeated failures → dead letter.
+- Failure-mode: killed worker, full disk, quota reset, expired approval, repeated failures -> dead letter.
 - Security: capability enumeration refuses unknown names; argv-tampering rejected; audit log rotation works.
 
 ## Risks

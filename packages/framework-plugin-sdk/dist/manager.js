@@ -4,7 +4,7 @@
  * Main plugin management system.
  */
 import { PluginError, PluginErrorCode } from "./types.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     pluginDir: "./plugins",
     autoLoad: false,
@@ -20,7 +20,7 @@ const DEFAULT_CONFIG = {
     hooks: true,
     logLevel: "warn",
 };
-// ─── Plugin Manager ───────────────────────────────────────────────────────
+// --- Plugin Manager -------------------------------------------------------
 export class PluginManager {
     config;
     plugins = new Map();
@@ -374,7 +374,7 @@ export class PluginManager {
         }
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a plugin manager
  */

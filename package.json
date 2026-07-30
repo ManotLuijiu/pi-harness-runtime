@@ -1,10 +1,11 @@
 {
   "name": "pi-harness-runtime",
-  "version": "0.9.14",
+  "version": "0.10.0",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies",
     "release": "bun scripts/release-all.ts",
     "release:patch": "bun scripts/release-all.ts --release-as patch",
     "release:minor": "bun scripts/release-all.ts --release-as minor",
@@ -79,14 +80,14 @@
     "@types/node": "^26.1.0",
     "@types/ws": "^8.18.1",
     "husky": "^9.1.7",
-    "playwright": "^1.61.1",
+    "playwright": "^1.62.0",
     "standard-version": "^9.5.0"
   },
   "workspaces": [
     "packages/*"
   ],
   "dependencies": {
-    "deepagents": "^1.10.5",
-    "pi-harness-runtime": "^0.3.2-beta.1"
+    "chokidar": "^5.0.0",
+    "deepagents": "^1.10.5"
   }
 }

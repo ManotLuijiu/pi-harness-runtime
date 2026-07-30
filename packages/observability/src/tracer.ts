@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { Logger } from "./logger.js";
 
-// ─── Span Handle ─────────────────────────────────────────────────────────────
+// --- Span Handle -------------------------------------------------------------
 
 export class SpanHandle {
 	private readonly tracer: Tracer;
@@ -85,7 +85,7 @@ export class SpanHandle {
 	}
 }
 
-// ─── Tracer Class ────────────────────────────────────────────────────────────
+// --- Tracer Class ------------------------------------------------------------
 
 export class Tracer {
 	private readonly config: TracerConfig;
@@ -326,7 +326,7 @@ export class Tracer {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 
 /**
  * Create a tracer with the given configuration

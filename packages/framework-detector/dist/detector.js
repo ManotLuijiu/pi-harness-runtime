@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { SignatureRegistry } from "./signatures/registry.js";
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     confidenceThreshold: 0.3,
     detectVersions: true,
@@ -17,7 +17,7 @@ const DEFAULT_CONFIG = {
     timeoutMs: 30000, // 30 seconds
     signatures: [],
 };
-// ─── Framework Detector ────────────────────────────────────────────────────
+// --- Framework Detector ----------------------------------------------------
 export class FrameworkDetector {
     config;
     registry;
@@ -463,7 +463,7 @@ export class FrameworkDetector {
         return this.registry;
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a framework detector
  */

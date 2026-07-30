@@ -7,7 +7,7 @@
 
 import type { RuntimeTask } from "./runtime-types.js";
 
-// ─── Agent Worker Types ───────────────────────────────────────────────
+// --- Agent Worker Types -----------------------------------------------
 
 export type AgentStatus =
 	| "idle"
@@ -95,7 +95,7 @@ export interface HealthStatus {
 	error?: string;
 }
 
-// ─── Agent Worker Events ──────────────────────────────────────────────
+// --- Agent Worker Events ----------------------------------------------
 
 export interface AgentWorkerEvents {
 	/** Fired when task progress is made */
@@ -118,7 +118,7 @@ export interface TaskProgress {
 	timestamp: string;
 }
 
-// ─── Agent Worker Interface ───────────────────────────────────────────
+// --- Agent Worker Interface -------------------------------------------
 
 export interface AgentWorker {
 	/** Unique identifier */
@@ -184,7 +184,7 @@ export interface AgentWorker {
 	getSupportedModels(): string[];
 }
 
-// ─── DeepAgents Specific Types ───────────────────────────────────────
+// --- DeepAgents Specific Types ---------------------------------------
 
 export interface DeepAgentsConfig extends AgentWorkerConfig {
 	provider: "deepagents";
@@ -220,7 +220,7 @@ export interface DeepAgentsResult extends TaskResult {
 	};
 }
 
-// ─── Factory Function ─────────────────────────────────────────────────
+// --- Factory Function -------------------------------------------------
 
 export type AgentWorkerFactory = (config: AgentWorkerConfig) => AgentWorker;
 

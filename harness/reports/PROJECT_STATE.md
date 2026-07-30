@@ -22,58 +22,58 @@ Pi Harness Runtime is a local-first, provider-agnostic AI coding harness for pi.
 
 ```
 pi-harness-runtime/
-├── index.ts                    # Main CLI extension entry point
-├── cli.ts                      # CLI commands
-├── mirror.ts                   # Provider mirror store
-├── renderer.ts                 # Status rendering
-├── tracker.ts                  # Usage tracking
-├── sync-form.ts                # Manual sync form
-├── windows.ts                  # Windows aggregation
-├── harness/                    # Core harness modules
-│   ├── agent-handoff.ts       # Agent handoff protocol
-│   ├── auto-compact.ts         # RFC-0019: Auto Compact
-│   ├── blackboard.ts           # Shared blackboard
-│   ├── context-window-manager.ts
-│   ├── job-state-machine.ts    # Job state machine
-│   ├── loop-runtime.ts         # RFC-0001: Main loop
-│   ├── master-planner.ts       # Task planning
-│   ├── notification-events.ts   # RFC-0022: Notification events
-│   ├── output-limit-handler.ts # RFC-0020: Output limit
-│   ├── partial-recovery.ts     # RFC-0021: Partial recovery
-│   ├── repair-engine.ts        # Repair/retry logic
-│   ├── task-graph.ts           # Task dependency graph
-│   ├── e2e/                    # E2E test engine
-│   └── project-detector/       # Project type detection
-├── packages/
-│   ├── auth/                   # Authentication
-│   ├── checkpoint/             # Checkpoint manager
-│   ├── notification/           # RFC-0022: Notification center
-│   │   ├── notification-center.ts
-│   │   ├── types.ts
-│   │   ├── base-adapter.ts
-│   │   └── adapters/
-│   │       ├── telegram-adapter.ts
-│   │       ├── ntfy-adapter.ts
-│   │       ├── email-adapter.ts
-│   │       └── webhook-adapter.ts
-│   ├── provider-router/         # Provider routing
-│   ├── providers/              # Provider adapters
-│   ├── quota-manager/         # Quota tracking
-│   ├── runtime/               # Runtime components (NEW)
-│   ├── scheduler/             # Job scheduling
-│   ├── shared-context/        # Shared context
-│   ├── tui/                   # Terminal UI
-│   ├── types/                 # Type definitions
-│   └── worktree/              # Git worktree management
-├── RFC/                       # RFC documents (0028 total)
-├── IMPLEMENTATION/             # Implementation tracking
-│   └── RFC-XXXX/              # Per-RFC implementation tracking
-│       ├── AI_BRIEF.md
-│       ├── TASKS.md
-│       └── ACCEPTANCE_CRITERIA.md
-├── schemas/                   # JSON schemas
-├── profiles/                  # Provider profiles
-└── test/                     # Tests
++-- index.ts                    # Main CLI extension entry point
++-- cli.ts                      # CLI commands
++-- mirror.ts                   # Provider mirror store
++-- renderer.ts                 # Status rendering
++-- tracker.ts                  # Usage tracking
++-- sync-form.ts                # Manual sync form
++-- windows.ts                  # Windows aggregation
++-- harness/                    # Core harness modules
+|   +-- agent-handoff.ts       # Agent handoff protocol
+|   +-- auto-compact.ts         # RFC-0019: Auto Compact
+|   +-- blackboard.ts           # Shared blackboard
+|   +-- context-window-manager.ts
+|   +-- job-state-machine.ts    # Job state machine
+|   +-- loop-runtime.ts         # RFC-0001: Main loop
+|   +-- master-planner.ts       # Task planning
+|   +-- notification-events.ts   # RFC-0022: Notification events
+|   +-- output-limit-handler.ts # RFC-0020: Output limit
+|   +-- partial-recovery.ts     # RFC-0021: Partial recovery
+|   +-- repair-engine.ts        # Repair/retry logic
+|   +-- task-graph.ts           # Task dependency graph
+|   +-- e2e/                    # E2E test engine
+|   +-- project-detector/       # Project type detection
++-- packages/
+|   +-- auth/                   # Authentication
+|   +-- checkpoint/             # Checkpoint manager
+|   +-- notification/           # RFC-0022: Notification center
+|   |   +-- notification-center.ts
+|   |   +-- types.ts
+|   |   +-- base-adapter.ts
+|   |   +-- adapters/
+|   |       +-- telegram-adapter.ts
+|   |       +-- ntfy-adapter.ts
+|   |       +-- email-adapter.ts
+|   |       +-- webhook-adapter.ts
+|   +-- provider-router/         # Provider routing
+|   +-- providers/              # Provider adapters
+|   +-- quota-manager/         # Quota tracking
+|   +-- runtime/               # Runtime components (NEW)
+|   +-- scheduler/             # Job scheduling
+|   +-- shared-context/        # Shared context
+|   +-- tui/                   # Terminal UI
+|   +-- types/                 # Type definitions
+|   +-- worktree/              # Git worktree management
++-- RFC/                       # RFC documents (0028 total)
++-- IMPLEMENTATION/             # Implementation tracking
+|   +-- RFC-XXXX/              # Per-RFC implementation tracking
+|       +-- AI_BRIEF.md
+|       +-- TASKS.md
+|       +-- ACCEPTANCE_CRITERIA.md
++-- schemas/                   # JSON schemas
++-- profiles/                  # Provider profiles
++-- test/                     # Tests
 ```
 
 ---

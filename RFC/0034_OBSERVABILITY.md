@@ -18,20 +18,20 @@ Currently, observability is minimal with scattered logging. We need:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Observability System                         │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Logger     │  │   Tracer     │  │   Metrics    │             │
-│  │   (Structured│  │   (OpenTelemetry│  │   (Prometheus│           │
-│  │    Logging)  │  │    Compatible)│  │    Format)  │           │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Health     │  │   Alerts     │  │   Exporters  │             │
-│  │   Monitor     │  │   Engine     │  │   (Prom/OTLP)│           │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                      Observability System                         |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Logger     |  |   Tracer     |  |   Metrics    |             |
+|  |   (Structured|  |   (OpenTelemetry|  |   (Prometheus|           |
+|  |    Logging)  |  |    Compatible)|  |    Format)  |           |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Health     |  |   Alerts     |  |   Exporters  |             |
+|  |   Monitor     |  |   Engine     |  |   (Prom/OTLP)|           |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -276,23 +276,23 @@ class AlertEngine {
 
 ```
 packages/observability/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── logger.ts                  # Structured logger
-│   ├── tracer.ts                  # Distributed tracer
-│   ├── metrics.ts                 # Metrics collector
-│   ├── health.ts                  # Health monitor
-│   ├── alerts.ts                  # Alerting engine
-│   ├── exporters/
-│   │   ├── prometheus.ts          # Prometheus exporter
-│   │   └── otlp.ts                # OTLP exporter
-│   ├── middleware.ts              # Express/HTTP middleware
-│   ├── types.ts                   # Types
-│   └── errors.ts
-├── test/
-├── examples/
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- logger.ts                  # Structured logger
+|   +-- tracer.ts                  # Distributed tracer
+|   +-- metrics.ts                 # Metrics collector
+|   +-- health.ts                  # Health monitor
+|   +-- alerts.ts                  # Alerting engine
+|   +-- exporters/
+|   |   +-- prometheus.ts          # Prometheus exporter
+|   |   +-- otlp.ts                # OTLP exporter
+|   +-- middleware.ts              # Express/HTTP middleware
+|   +-- types.ts                   # Types
+|   +-- errors.ts
++-- test/
++-- examples/
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples
@@ -386,16 +386,16 @@ app.get('/health/readiness', async (req, res) => {
 ## Integration
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Harness   │────▶│ Observability │────▶│  Prometheus │
-│   Runtime   │     │   Package     │     │   Server    │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │
++-------------+     +--------------+     +-------------+
+|   Harness   |---->| Observability |---->|  Prometheus |
+|   Runtime   |     |   Package     |     |   Server    |
++-------------+     +--------------+     +-------------+
+                           |
                            ▼
-                    ┌──────────────┐
-                    │   Grafana    │
-                    │  Dashboard   │
-                    └──────────────┘
+                    +--------------+
+                    |   Grafana    |
+                    |  Dashboard   |
+                    +--------------+
 ```
 
 ## Acceptance Criteria

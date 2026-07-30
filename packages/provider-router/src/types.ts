@@ -8,7 +8,7 @@ import type { Capability } from "../../capability-registry/src/types.ts";
 // Re-export Latency from here for convenience
 export type Latency = "fast" | "medium" | "slow";
 
-// ─── Routing Types ─────────────────────────────────────────────────────
+// --- Routing Types -----------------------------------------------------
 
 export type RoutingStrategy =
 	| "cheapest"
@@ -80,7 +80,7 @@ export interface RoutingDecision {
 	confidence: number;
 }
 
-// ─── Router Interface ──────────────────────────────────────────────────
+// --- Router Interface --------------------------------------------------
 
 export interface ProviderRouter {
 	selectProvider(
@@ -99,7 +99,7 @@ export interface ProviderRouter {
 	setRoutingPolicy(policy: RoutingPolicy): void;
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────
+// --- Event Types -----------------------------------------------------
 
 export type ProviderRouterEvent =
 	| {
@@ -121,7 +121,7 @@ export type ProviderRouterEvent =
 			fallbackProvider: string;
 	  };
 
-// ─── Latency Ranking ─────────────────────────────────────────────────
+// --- Latency Ranking -------------------------------------------------
 
 export const LATENCY_RANK: Record<Latency, number> = {
 	fast: 1,

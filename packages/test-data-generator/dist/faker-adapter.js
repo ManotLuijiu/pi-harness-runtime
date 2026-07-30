@@ -3,7 +3,7 @@
  *
  * Simple faker implementation for data generation.
  */
-// ─── Seeded Random ─────────────────────────────────────────────────────────
+// --- Seeded Random ---------------------------------------------------------
 class SeededRandom {
     seed;
     constructor(seed) {
@@ -28,7 +28,7 @@ class SeededRandom {
         return result;
     }
 }
-// ─── Data Samples ─────────────────────────────────────────────────────────
+// --- Data Samples ---------------------------------------------------------
 const FIRST_NAMES = [
     "James",
     "Mary",
@@ -203,7 +203,7 @@ const LOREM_WORDS = [
     "veniam",
 ];
 const TLDs = ["com", "net", "org", "io", "co", "dev", "app"];
-// ─── Faker Adapter ─────────────────────────────────────────────────────────
+// --- Faker Adapter ---------------------------------------------------------
 export class SimpleFaker {
     random;
     constructor(seed, _locale = "en") {
@@ -570,7 +570,7 @@ export class SimpleFaker {
         this.random = new SeededRandom(seed);
     }
 }
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 /**
  * Create a faker adapter
  */

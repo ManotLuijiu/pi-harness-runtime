@@ -6,7 +6,7 @@
 import { createWriteStream } from "node:fs";
 import { mkdir, rename as renameAsync } from "node:fs/promises";
 import { dirname } from "node:path";
-// ─── Level Order ────────────────────────────────────────────────────────────
+// --- Level Order ------------------------------------------------------------
 const LOG_LEVEL_ORDER = {
     debug: 0,
     info: 1,
@@ -14,7 +14,7 @@ const LOG_LEVEL_ORDER = {
     error: 3,
     fatal: 4,
 };
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 const DEFAULT_CONFIG = {
     level: "info",
     format: "json",
@@ -25,7 +25,7 @@ const DEFAULT_CONFIG = {
     correlationIdHeader: "x-correlation-id",
     defaultMeta: {},
 };
-// ─── Colors for Pretty Output ───────────────────────────────────────────────
+// --- Colors for Pretty Output -----------------------------------------------
 const COLORS = {
     debug: "\x1b[36m", // Cyan
     info: "\x1b[32m", // Green
@@ -34,7 +34,7 @@ const COLORS = {
     fatal: "\x1b[35m", // Magenta
 };
 const RESET = "\x1b[0m";
-// ─── UUID Generator ─────────────────────────────────────────────────────────
+// --- UUID Generator ---------------------------------------------------------
 function generateId() {
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
@@ -42,7 +42,7 @@ function generateId() {
         return v.toString(16);
     });
 }
-// ─── Logger Class ───────────────────────────────────────────────────────────
+// --- Logger Class -----------------------------------------------------------
 export class Logger {
     config;
     streams;
@@ -302,14 +302,14 @@ export class Logger {
         }
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 /**
  * Create a logger with the given configuration
  */
 export function createLogger(config) {
     return new Logger(config);
 }
-// ─── Default Logger ──────────────────────────────────────────────────────────
+// --- Default Logger ----------------------------------------------------------
 /**
  * Default logger instance
  */

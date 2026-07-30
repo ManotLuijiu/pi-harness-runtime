@@ -67,7 +67,9 @@ function getDocComment(lines, index) {
     for (let j = Math.max(0, index - 5); j < index; j++) {
         const prev = lines[j].trim();
         if (prev.startsWith("/**") || prev.startsWith("///")) {
-            const endIdx = lines.slice(j + 1, index).findIndex((l) => l.includes("*/"));
+            const endIdx = lines
+                .slice(j + 1, index)
+                .findIndex((l) => l.includes("*/"));
             if (endIdx >= 0) {
                 const doc = lines.slice(j, j + endIdx + 2).join("\n");
                 return doc.replace(/\/\*\*|\*\/|[\s*]/g, "").trim();
@@ -80,7 +82,9 @@ function summarizeSymbols(symbols) {
     const counts = {};
     for (const s of symbols)
         counts[s.kind] = (counts[s.kind] ?? 0) + 1;
-    return Object.entries(counts).map(([k, v]) => `${v} ${k}(s)`).join(", ");
+    return Object.entries(counts)
+        .map(([k, v]) => `${v} ${k}(s)`)
+        .join(", ");
 }
 function formatSymbol(s) {
     const sig = s.signature ? `${s.name}${s.signature}` : s.name;
@@ -104,12 +108,18 @@ export function generateDocs(sources, projectSignals) {
         {
             heading: "Functions",
             level: 2,
-            content: allSymbols.filter((s) => s.kind === "function").map(formatSymbol).join("\n") || "No functions found.",
+            content: allSymbols
+                .filter((s) => s.kind === "function")
+                .map(formatSymbol)
+                .join("\n") || "No functions found.",
         },
         {
             heading: "Types & Interfaces",
             level: 2,
-            content: allSymbols.filter((s) => s.kind === "type" || s.kind === "interface").map(formatSymbol).join("\n") || "No types found.",
+            content: allSymbols
+                .filter((s) => s.kind === "type" || s.kind === "interface")
+                .map(formatSymbol)
+                .join("\n") || "No types found.",
         },
     ];
     return {

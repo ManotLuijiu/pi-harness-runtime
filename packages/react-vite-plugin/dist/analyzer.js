@@ -6,14 +6,14 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 function isReactViteWorkspace(root) {
     return (existsSync(join(root, "vite.config.ts")) ||
         existsSync(join(root, "vite.config.js")) ||
         existsSync(join(root, "vite.config.mjs")) ||
         (existsSync(join(root, "package.json")) && existsSync(join(root, "src"))));
 }
-// ─── Version & Dependencies ─────────────────────────────────────────────────
+// --- Version & Dependencies -------------------------------------------------
 async function detectVersionAndDeps(root) {
     try {
         const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf-8"));
@@ -47,7 +47,7 @@ async function detectVersionAndDeps(root) {
         return { plugins: [], hasRouter: false };
     }
 }
-// ─── Config Files ────────────────────────────────────────────────────────────
+// --- Config Files ------------------------------------------------------------
 async function findConfigFiles(root) {
     const candidates = [
         join(root, "vite.config.ts"),
@@ -64,7 +64,7 @@ async function findConfigFiles(root) {
     }
     return configs;
 }
-// ─── Alias Parsing ───────────────────────────────────────────────────────────
+// --- Alias Parsing -----------------------------------------------------------
 async function parseAliases(root) {
     const aliases = {};
     // Parse vite.config.ts/js for path aliases
@@ -124,7 +124,7 @@ async function parseAliases(root) {
     }
     return aliases;
 }
-// ─── Component Scanner ───────────────────────────────────────────────────────
+// --- Component Scanner -------------------------------------------------------
 async function walkComponents(dir, exts = [".tsx", ".jsx", ".ts", ".js"]) {
     const components = [];
     try {
@@ -149,7 +149,7 @@ async function walkComponents(dir, exts = [".tsx", ".jsx", ".ts", ".js"]) {
     }
     return components;
 }
-// ─── Pages Scanner ───────────────────────────────────────────────────────────
+// --- Pages Scanner -----------------------------------------------------------
 async function findPages(root) {
     for (const d of [
         join(root, "src", "pages"),
@@ -163,7 +163,7 @@ async function findPages(root) {
     }
     return [];
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 export async function analyzeReactVite(root) {
     if (!isReactViteWorkspace(root))
         return null;

@@ -13,7 +13,7 @@ import type {
 	DetectionResult,
 } from "./types.js";
 
-// ─── Signal Definitions ────────────────────────────────────────────────
+// --- Signal Definitions ------------------------------------------------
 
 export interface SignalDefinition {
 	/** Signal identifier */
@@ -185,7 +185,7 @@ export const GENERIC_SIGNALS: SignalDefinition[] = [
 	},
 ];
 
-// ─── Signal Scanner ───────────────────────────────────────────────────
+// --- Signal Scanner ---------------------------------------------------
 
 /**
  * Scan for detection signals in the filesystem.
@@ -264,7 +264,7 @@ export function calculateSignalConfidence(
 	return Math.min(1, totalWeight / maxPossibleWeight);
 }
 
-// ─── Generic Framework Detector ──────────────────────────────────────
+// --- Generic Framework Detector --------------------------------------
 
 /**
  * Generic framework detector using signal-based detection.
@@ -318,7 +318,7 @@ export class GenericFrameworkDetector {
 	}
 }
 
-// ─── Composite Plugin ──────────────────────────────────────────────────
+// --- Composite Plugin --------------------------------------------------
 
 /**
  * Create a composite plugin from generic signals and custom plugins.

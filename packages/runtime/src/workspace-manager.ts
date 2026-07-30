@@ -492,7 +492,7 @@ export class WorkspaceManager extends EventEmitter {
 		return { exists, size, isAccessible };
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private ensureRootDir(): void {
 		if (!existsSync(this.rootDir)) {

@@ -66,4 +66,12 @@ _Add a brief overview of your project architecture_
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+### Git Workflow
+
+After running `git status`, **ALWAYS** run `git add --all` before asking about committing. Never assume changes are staged.
+
+```bash
+git status  # inspect changes
+git add --all  # stage everything
+git commit    # then proceed
+```

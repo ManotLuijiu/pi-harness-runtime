@@ -58,17 +58,20 @@ export function scheduleAutoResume(
 
 	const resetEpoch = record.h5_resets_at_epoch;
 	const now = Date.now();
-	const delayMs = Math.max(resetEpoch - now - RESUME_BUFFER_MS, MIN_RESUME_DELAY_MS);
+	const delayMs = Math.max(
+		resetEpoch - now - RESUME_BUFFER_MS,
+		MIN_RESUME_DELAY_MS,
+	);
 	const resumeAt = now + delayMs;
 	const resumeAtIso = new Date(resumeAt).toISOString();
 
 	// Persist to checkpoint so resumeAt survives worker restart
 	machine.setResumeTime(resumeAtIso);
 
-	console.log(
-		`[auto-quota-resume] ${provider} 5h quota exhausted.` +
-			` Auto-resume scheduled at ${resumeAtIso} (in ${Math.round(delayMs / 1000)}s)`,
-	);
+	// console.log(
+	// 	`[auto-quota-resume] ${provider} 5h quota exhausted.` +
+	// 		` Auto-resume scheduled at ${resumeAtIso} (in ${Math.round(delayMs / 1000)}s)`,
+	// );
 
 	const timeout = setTimeout(async () => {
 		activeTimers.delete(jobId);
@@ -84,10 +87,10 @@ export function scheduleAutoResume(
 		if (updated?.h5_resets_at_epoch) {
 			const stillExhausted = Date.now() < updated.h5_resets_at_epoch;
 			if (stillExhausted) {
-				console.log(
-					`[auto-quota-resume] ${provider} still exhausted at scheduled time.` +
-						` Re-scheduling...`,
-				);
+				// console.log(
+				// 	`[auto-quota-resume] ${provider} still exhausted at scheduled time.` +
+				// 			` Re-scheduling...`,
+				// );
 				scheduleAutoResume(provider, machine, mirrorStore);
 				return;
 			}
@@ -95,9 +98,9 @@ export function scheduleAutoResume(
 
 		const result = await machine.transition("running");
 		if (result.success) {
-			console.log(
-				`[auto-quota-resume] Job ${jobId} auto-resumed after ${provider} 5h quota reset.`,
-			);
+			// console.log(
+			// 	`[auto-quota-resume] Job ${jobId} auto-resumed after ${provider} 5h quota reset.`,
+			// );
 		} else {
 			console.error(
 				`[auto-quota-resume] Auto-resume failed for ${jobId}: ${result.error}`,

@@ -1,167 +1,345 @@
 ---
 name: release
-description: Automated release workflow for pi-harness-runtime monorepo - bump version, update CHANGELOG, commit, push, and publish to NPM.
+description: Universal release workflow - git add/commit/push, version bump, tag, publish. Supports Node.js monorepos, Frappe apps, Python packages.
 disable-model-invocation: true
-allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(npm *), Bash(cat *), Bash(ls *), Bash(jq *), Read, Edit
+argument-hint: "[app_name] [major|minor|patch]"
+allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(yarn *), Bash(pnpm *), Bash(npm *), Bash(npx *), Bash(bench *), Bash(python *), Bash(pip *), Bash(jq *), Bash(cat *), Bash(ls *), Bash(cd *), Bash(node *), Bash(uname *), Bash(find *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(awk *), Bash(commitlint *), Read, Edit, Write
 ---
 
-# Release Workflow for pi-harness-runtime
+# Universal Release Workflow
 
-Automated release workflow for the pi-harness-runtime Node.js monorepo with workspaces.
+Automated release: `git add` -> `commit` -> `push` -> `version bump` -> `tag` -> `push tags` -> `GitHub Actions publish`.
 
 ## Usage
 
 ```
-release [bump_type]
+/release [{app_name}] [{bump_type}]
 ```
 
 **Parameters:**
 
-- `bump_type` (optional): `patch` (default), `minor`, or `major`
+- `app_name` (optional): App/workspace to release - auto-detected from current directory if not provided.
+- `bump_type` (optional): Auto-detected from commits if not provided.
 
-## Quick Start
+**Examples:**
 
-```bash
-# Standard release from develop branch
-/release
-
-# Minor bump
-/release minor
+```
+/release                       # auto-detect bump type from commits
+/release m_capital            # auto-detect bump type
+/release thai_business_suite minor  # explicit minor
+/release pi-harness-runtime major   # explicit major
 ```
 
-## Complete Workflow
+## Auto-Detection
 
-### Step 1: Check Current State
+The workflow automatically detects:
+
+| What | How |
+|------|-----|
+| App name | From directory (`apps/{name}/`) or repo root |
+| Project type | `scripts/release-all.ts` -> Node monorepo; `__init__.py` -> Frappe app; `pyproject.toml` -> Python |
+| Package manager | `pnpm-lock.yaml`, `yarn.lock`, `npm` - checked in order |
+| Branch strategy | `develop` + `version-15/16` -> cascade; `main` -> standard Git Flow |
+| Current version | `__init__.py` (Frappe) or `package.json` |
+| **Bump type** | Analyzed from commits since last tag (default: `patch`) |
+
+## Auto-Detecting Bump Type
+
+**If `bump_type` is NOT provided**, analyze commits since last release:
+
+```bash
+# Get commits since last tag
+COMMITS=$(git log --oneline $(git describe --tags --abbrev=0)..HEAD 2>/dev/null || git log --oneline -20)
+
+echo "$COMMITS" | grep -qE "^[^:]+: .*BREAKING CHANGE:" && echo "MAJOR (breaking change)"
+echo "$COMMITS" | grep -qE "^[^:]+: .*!:" && echo "MAJOR (breaking change)"
+echo "$COMMITS" | grep -qE "^[^:]+: feat(:|\s)" && echo "MINOR (new feature)"
+echo "$COMMITS" | grep -qE "^[^:]+: fix(:|\s)" && echo "PATCH (bug fix)"
+```
+
+**Decision tree:**
+
+```
+Any BREAKING CHANGE in commits?
+  ├─ YES → MAJOR
+  └─ NO
+       Any feat: (new feature)?
+          ├─ YES → MINOR
+          └─ NO → PATCH
+```
+
+**Examples:**
+
+```bash
+# Auto-detect bump type
+LAST_TAG=$(git describe --tags --abbrev=0)
+COMMITS=$(git log --oneline ${LAST_TAG}..HEAD)
+
+if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+  BUMP="major"
+elif echo "$COMMITS" | grep -qE "feat(:|\s)"; then
+  BUMP="minor"
+else
+  BUMP="patch"
+fi
+
+echo "Detected bump type: $BUMP"
+```
+
+## Step-by-Step Workflow
+
+### Step 1: Check current state
 
 ```bash
 git status
 git branch
-git log --oneline -3
+pwd
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "no-tags")
+COMMITS=$(git log --oneline ${LAST_TAG}..HEAD 2>/dev/null || git log --oneline -20)
+echo "=== Commits since ${LAST_TAG} ==="
+echo "$COMMITS"
 ```
 
-### Step 2: Detect Pending Changes
-
-**IMPORTANT**: Check ALL of these conditions:
-
-1. **Modified files** (under "Changes not staged for commit")
-2. **Staged files** (under "Changes to be committed")
-3. **Untracked files** (under "Untracked files")
-
-If ANY exist, they must be committed before release.
-
-### Step 3: Commit Pending Changes
+### Step 2: Auto-detect bump type (if not provided)
 
 ```bash
-# Stage files safely (exclude sensitive files)
+# If bump_type not provided, analyze commits
+if [ -z "$BUMP" ]; then
+  if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+    BUMP="major"
+    echo "→ Detected: MAJOR (breaking change)"
+  elif echo "$COMMITS" | grep -qE "feat(:|\s)"; then
+    BUMP="minor"
+    echo "→ Detected: MINOR (new feature)"
+  else
+    BUMP="patch"
+    echo "→ Detected: PATCH (fix/chore)"
+  fi
+fi
+```
+
+### Step 3: Detect project type
+
+**Node.js monorepo** (has `scripts/release-all.ts`):
+
+- Uses `bun scripts/release-all.ts --release-as ${BUMP}`
+- GitHub Actions OIDC publishes to npm
+- Single root package published (`pi-harness-runtime`)
+
+**Frappe app** (has `__init__.py`):
+
+- Updates `__init__.py` version + `frontend/package.json`
+- CI auto-merges `develop -> version-15 -> version-16`
+- Frappe version constraint managed by CI (not manually)
+
+**Python package** (has `pyproject.toml`):
+
+- Uses `bump2version` or manual version edit
+- Standard Git Flow (develop -> main)
+
+### Step 3: Parse git status and commit pending changes
+
+**IMPORTANT**: Always check git status for:
+
+1. Modified files
+2. Staged files
+3. Untracked files
+
+If ANY exist, they must be committed before releasing.
+
+**Safe staging** - never blindly `git add --all`:
+
+```bash
 git add -A -- ':!.env*' ':!*.pem' ':!*.key' ':!credentials*'
-
-# Commit with conventional format
-git commit -m "feat: add new feature"
 ```
 
-### Step 4: Merge to Main (if on develop)
+**Conventional commit messages**:
+
+| Prefix | Use for |
+|--------|---------|
+| `feat:` | New features |
+| `fix:` | Bug fixes |
+| `chore:` | Maintenance, deps, config |
+| `ci:` | CI/CD changes |
+| `docs:` | Documentation |
+
+### Step 4: Version bump
+
+**Node.js monorepo** (pi-harness-runtime pattern):
 
 ```bash
-# Fetch and merge origin/main into develop
-git fetch origin main
-git merge origin/main -m "chore: merge main into develop"
+echo "Bumping ${APP_NAME} as ${BUMP}..."
+bun scripts/release-all.ts --release-as ${BUMP}
+```
 
-# Push to develop (triggers auto-merge workflow)
+**Frappe app** (if `standard-version` configured):
+
+```bash
+yarn release:${BUMP}  # or pnpm/npm
+```
+
+**Frappe app** (manual fallback):
+
+```bash
+# Detect OS for cross-platform sed
+OS=$(uname -s)  # "Darwin" = macOS, "Linux" = Ubuntu
+
+NEW_VERSION="x.y.z"
+
+# Update __init__.py
+if [ "$OS" = "Darwin" ]; then
+  sed -i '' "s/__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" {app}/__init__.py
+else
+  sed -i "s/__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" {app}/__init__.py
+fi
+
+# Update frontend/package.json if exists
+if [ -f frontend/package.json ]; then
+  # (same sed pattern)
+fi
+
+# Amend commit with version changes
+git add -A -- ':!.env*' ':!*.pem' ':!*.key'
+git commit --amend --no-edit
+```
+
+### Step 5: Push with tags
+
+```bash
+git push origin $(git rev-parse --abbrev-ref HEAD) --follow-tags
+```
+
+If `--follow-tags` doesn't push the tag:
+
+```bash
+git push origin v{new_version}
+```
+
+### Step 6: GitHub Actions - wait and verify
+
+**Node.js monorepo** (triggers `release.yml`):
+
+```bash
+gh run list --workflow=release.yml --limit 3
+```
+
+**Frappe apps** (triggers `auto-merge.yml`):
+
+```bash
+# For Thai Business Suite / inpac_pharma: develop -> version-15 -> version-16
+gh run list --workflow=auto-merge.yml --limit 2
+```
+
+### Step 7: Verify release
+
+```bash
+# npm packages
+npm view {package_name} version
+
+# Python packages
+pip show {package_name}
+
+# GitHub release
+gh run list --workflow=release.yml --limit 3
+```
+
+## App-Specific Patterns
+
+### pi-harness-runtime (Node.js monorepo)
+
+```bash
+# 1. Commit all changes
+git add --all && git commit -m "feat: description" && git push origin develop
+
+# 2. Bump version (defaults to patch)
+bun scripts/release-all.ts --release-as ${BUMP}
+
+# 3. Push tags -> GitHub Actions publishes to npm via OIDC
+git push --follow-tags origin develop
+```
+
+Uses GitHub Actions OIDC - **no npm token needed**.
+
+### Frappe apps (Thai Business Suite / inpac_pharma)
+
+```bash
+# 1. Commit
+git add -A -- ':!.env*' ':!*.pem' ':!*.key' ':!credentials*'
+git commit -m "feat: description"
 git push origin develop
+
+# 2. Create version tag
+git tag -a v{x.y.z} -m "Release v{x.y.z}"
+git push origin develop --tags
+
+# 3. CI auto-merges: develop -> version-15 -> version-16
 ```
 
-### Step 5: Push to Main
+**Frappe version constraint** - CI overwrites `pyproject.toml` after merge:
+
+- `develop` branch: keeps `frappe = ">=16.0.0,<17.0.0"`
+- After merge to `version-15`: overwrites with `">=15.40.4,<16.0.0"`
+- After merge to `version-16`: overwrites with `">=16.0.0,<17.0.0"`
+
+### Frappe apps (Standard Git Flow)
 
 ```bash
-# Checkout main and merge develop
-git checkout main
-git pull origin main
-git merge develop --no-edit
+# 1. Commit + push to develop
+git add -A -- ':!.env*' ':!*.pem' ':!*.key'
+git commit -m "feat: description"
+git push origin develop
 
-# Push main (triggers release workflow)
-git push origin main
+# 2. Merge develop -> main (or auto-merge workflow)
+git checkout main && git pull origin main && git merge develop --no-edit && git push origin main
+
+# 3. Create tag
+git tag v{x.y.z} && git push origin v{x.y.z}
 ```
 
-### Step 6: Tag and Release
+### Python packages
 
 ```bash
-# Create tag (use bump_type for version)
-VERSION="0.6.0-beta.1"  # example
-git tag v$VERSION
-git push origin v$VERSION
+# 1. Commit
+git add -A && git commit -m "feat: description" && git push
 
-# This triggers the Release workflow which:
-# 1. Builds all packages
-# 2. Runs tests
-# 3. Publishes to NPM
-# 4. Creates GitHub Release
+# 2. Bump version
+bump2version {bump_type}
+
+# 3. Push
+git push && git push --tags
 ```
-
-## NPM Publishing
-
-The release workflow publishes these packages:
-
-| Package | Name | Scope |
-|---------|------|-------|
-| Root | `pi-harness-runtime` | public |
-| Workspace | `@pi-harness/capability-registry` | public |
-| Workspace | `@pi-harness/model-registry` | public |
-| Workspace | `@pi-harness/skill-registry` | public |
-| Workspace | `@pi-harness/cost-optimizer` | public |
-| Workspace | `@pi-harness/provider-router` | public |
-
-## Version Strategy
-
-- **Beta releases**: `vX.Y.Z-beta.N` for development
-- **Stable releases**: `vX.Y.Z` for production
-- **Workspaces**: All packages share the same version
-- **Branch flow**: develop → main (release workflow triggers on tag)
-
-## Workflow Files
-
-- `.github/workflows/release.yml` - Publishes to NPM on tag push
-- `.github/workflows/auto-merge-develop.yml` - Merges develop → main automatically
-
-## Common Issues
-
-### Build fails
-
-- Check `bun run build` locally before pushing
-- Ensure all TypeScript compiles without errors
-
-### NPM publish fails
-
-- Verify `NPM_TOKEN` secret is set in GitHub Actions
-- Check package names match NPM organization scope
-
-### Auto-merge stuck
-
-- Check PR status at: `gh pr list --state open`
-- Resolve conflicts locally and push
 
 ## Safety Features
 
-- **Safe staging**: Excludes `.env*`, `*.pem`, `*.key`, `credentials*`
-- **Version alignment**: All workspace packages share same version
-- **Auto-merge**: develop → main handled by CI
-- **Approval bypass**: Uses NPM_TOKEN with bypass-2FA scope
+- **Git status parsing** - explicitly checks modified, staged, untracked files
+- **Safe staging** - excludes `.env*`, `*.pem`, `*.key`, `credentials*`
+- **Cross-platform** - detects macOS vs Linux for `sed -i`
+- **Package manager detection** - auto-detects pnpm/yarn/npm from lockfiles
+- **Version format validation** - semver enforcement
+- **Tag existence check** - avoids duplicate tags
+- **Auto-detect bump type** - analyzes commits (feat=minor, fix=patch, BREAKING=major)
+
+## Conventional Commits
+
+| Prefix | CHANGELOG Section |
+|--------|-------------------|
+| `feat:` | Features |
+| `fix:` | Bug Fixes |
+| `docs:` | Documentation |
+| `chore:` | Maintenance |
+| `ci:` | CI/CD |
+| `refactor:` | Refactoring |
 
 ## Summary Format
 
 ```
-Release v{version} completed successfully!
+Release v{version} ({bump_type}) completed!
 
-Type: Node.js monorepo with workspaces
+App: {app_name}
+Type: {Node.js monorepo | Frappe app | Python package}
 Version: {old} -> {new}
+Bump: {major | minor | patch} (auto-detected from commits)
+Branch: {source} -> {target}
 Tag: v{version}
 Release: https://github.com/{owner}/{repo}/releases/tag/v{version}
-NPM: https://www.npmjs.com/package/{package_name}
-
-Packages published:
-- pi-harness-runtime@{version}
-- @pi-harness/capability-registry@{version}
-- @pi-harness/model-registry@{version}
-- @pi-harness/skill-registry@{version}
-- @pi-harness/cost-optimizer@{version}
-- @pi-harness/provider-router@{version}
 ```

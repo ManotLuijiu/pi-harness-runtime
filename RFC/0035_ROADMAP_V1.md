@@ -8,7 +8,7 @@ A structured roadmap for implementing RFCs 0031-0040, including dependencies, pr
 
 ```
 Phase 1: Foundation          Phase 2: Core Systems         Phase 3: Advanced Features
-─────────────────           ────────────────────           ─────────────────────────
+-----------------           --------------------           -------------------------
 • RFC-0031: Adapter SDK     • RFC-0032: Checkpoint Engine  • RFC-0036: Code Review Engine
 • RFC-0034: Observability   • RFC-0033: Session Manager     • RFC-0037: Code Generation Pipeline
                            • RFC-0034: Observability        • RFC-0038: Framework Detector
@@ -19,19 +19,19 @@ Phase 1: Foundation          Phase 2: Core Systems         Phase 3: Advanced Fea
 ## Implementation Order & Dependencies
 
 ```
-RFC-0031 (Adapter SDK) ──┬──► RFC-0036 (Code Review Engine)
-                          │
-RFC-0032 (Checkpoint) ◄──┤
-                          │
-RFC-0033 (Session) ◄─────┼──► RFC-0034 (Observability)
-                          │
-RFC-0034 (Observability) ◄┘
+RFC-0031 (Adapter SDK) --+--► RFC-0036 (Code Review Engine)
+                          |
+RFC-0032 (Checkpoint) ◄--+
+                          |
+RFC-0033 (Session) ◄-----+--► RFC-0034 (Observability)
+                          |
+RFC-0034 (Observability) ◄+
 
-RFC-0038 (Framework Detector) ──┬──► RFC-0039 (Test Data Generator)
-                                 │
-RFC-0037 (Code Generation) ◄─────┤
-                                 │
-RFC-0040 (Plugin SDK) ◄──────────┘
+RFC-0038 (Framework Detector) --+--► RFC-0039 (Test Data Generator)
+                                 |
+RFC-0037 (Code Generation) ◄-----+
+                                 |
+RFC-0040 (Plugin SDK) ◄----------+
 ```
 
 ## Detailed Timeline
@@ -239,41 +239,41 @@ RFC-0040 (Plugin SDK) ◄──────────┘
 
 ```
 packages/
-├── provider-adapter-sdk/           # RFC-0031
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── observability/                   # RFC-0034
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── checkpoint/                      # RFC-0032 (enhanced)
-│   ├── src/
-│   └── package.json
-├── session/                         # RFC-0033
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── code-review/                     # RFC-0036
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── code-generation/                 # RFC-0037
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── framework-detector/              # RFC-0038
-│   ├── src/
-│   ├── test/
-│   └── package.json
-├── test-data-generator/             # RFC-0039
-│   ├── src/
-│   ├── test/
-│   └── package.json
-└── framework-plugin-sdk/            # RFC-0040
-    ├── src/
-    ├── test/
-    └── package.json
++-- provider-adapter-sdk/           # RFC-0031
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- observability/                   # RFC-0034
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- checkpoint/                      # RFC-0032 (enhanced)
+|   +-- src/
+|   +-- package.json
++-- session/                         # RFC-0033
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- code-review/                     # RFC-0036
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- code-generation/                 # RFC-0037
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- framework-detector/              # RFC-0038
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- test-data-generator/             # RFC-0039
+|   +-- src/
+|   +-- test/
+|   +-- package.json
++-- framework-plugin-sdk/            # RFC-0040
+    +-- src/
+    +-- test/
+    +-- package.json
 ```
 
 ## Implementation Checklist

@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { Logger } from "./logger.js";
-// ─── Span Handle ─────────────────────────────────────────────────────────────
+// --- Span Handle -------------------------------------------------------------
 export class SpanHandle {
     tracer;
     span;
@@ -65,7 +65,7 @@ export class SpanHandle {
         return this.span;
     }
 }
-// ─── Tracer Class ────────────────────────────────────────────────────────────
+// --- Tracer Class ------------------------------------------------------------
 export class Tracer {
     config;
     logger;
@@ -251,7 +251,7 @@ export class Tracer {
         });
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 /**
  * Create a tracer with the given configuration
  */

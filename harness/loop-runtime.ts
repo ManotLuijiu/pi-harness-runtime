@@ -46,12 +46,12 @@ import {
 	createForkedSummarizer,
 } from "./forked-summarizer.js";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 const DEFAULT_MAX_COMPACT_RETRIES = 3;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
-// ─── Lifecycle Callbacks ────────────────────────────────────────────────────
+// --- Lifecycle Callbacks ----------------------------------------------------
 
 export interface LoopCallbacks {
 	/** Fetch next task from queue */
@@ -97,7 +97,7 @@ export interface LoopCallbacks {
 	onCompaction?: (result: CompactResult) => void;
 }
 
-// ─── Loop Result ───────────────────────────────────────────────────────────
+// --- Loop Result -----------------------------------------------------------
 
 export interface LoopResult {
 	success: boolean;
@@ -109,7 +109,7 @@ export interface LoopResult {
 	totalCompactions?: number;
 }
 
-// ─── Loop Runtime ───────────────────────────────────────────────────────────
+// --- Loop Runtime -----------------------------------------------------------
 
 export class LoopRuntime {
 	private readonly config: Required<LoopConfig>;
@@ -221,12 +221,12 @@ export class LoopRuntime {
 		}
 	}
 
-	// ─── Public API ─────────────────────────────────────────────────────────
+	// --- Public API ---------------------------------------------------------
 
 	async run(): Promise<LoopResult> {
 		this.running = true;
 
-		// ─── Auto-resume from quota pause ──────────────────────────────────
+		// --- Auto-resume from quota pause ----------------------------------
 		const checkpoint = await this.callbacks.onGetCheckpoint?.();
 		if (checkpoint?.status === "paused_quota" && checkpoint.resumeAt) {
 			const resumeMs = new Date(checkpoint.resumeAt).getTime();
@@ -244,7 +244,11 @@ export class LoopRuntime {
 					await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
 					// Re-check mirror — quota may have reset early
 					const fresh = await this.callbacks.onCheckMirror?.("minimax");
-					if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
+					if (
+						fresh &&
+						fresh.h5_used_pct !== undefined &&
+						fresh.h5_used_pct < 100
+					) {
 						break; // quota reset early, resume now
 					}
 				}
@@ -344,7 +348,7 @@ export class LoopRuntime {
 		return this.sessionMemory;
 	}
 
-	// ─── Task Execution with Compact ───────────────────────────────────────
+	// --- Task Execution with Compact ---------------------------------------
 
 	private async executeTaskWithCompact(task: RuntimeTask): Promise<void> {
 		// 1. Pick model
@@ -686,7 +690,7 @@ export class LoopRuntime {
 		return parts.join("\n");
 	}
 
-	// ─── Quota Handling ────────────────────────────────────────────────────
+	// --- Quota Handling ----------------------------------------------------
 
 	private async handleQuotaPause(): Promise<void> {
 		this.paused = true;
@@ -700,20 +704,20 @@ export class LoopRuntime {
 		if (epoch) {
 			const resumeAt = new Date(epoch).toISOString();
 			await this.jobState.setResumeTime(resumeAt);
-			console.log(
-				`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
-			);
+			// console.log(
+			// 	`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
+			// );
 		} else {
-			console.log(
-				"[LoopRuntime] Paused for quota but no reset time known yet.",
-			);
+			// console.log(
+			// 	"[LoopRuntime] Paused for quota but no reset time known yet.",
+			// );
 		}
 
 		await this.callbacks.onQuotaEvent?.("paused");
 		await this.saveCheckpoint();
 	}
 
-	// ─── Persistence ────────────────────────────────────────────────────────
+	// --- Persistence --------------------------------------------------------
 
 	private async saveCheckpoint(): Promise<void> {
 		const now = new Date().toISOString();
@@ -732,7 +736,7 @@ export class LoopRuntime {
 		await this.callbacks.onCheckpoint?.(checkpoint);
 	}
 
-	// ─── Resume from Checkpoint ────────────────────────────────────────────
+	// --- Resume from Checkpoint --------------------------------------------
 
 	async resumeFromCheckpoint(
 		checkpoint: RuntimeCheckpoint,

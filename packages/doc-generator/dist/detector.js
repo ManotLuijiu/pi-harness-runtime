@@ -61,8 +61,14 @@ const E2E_STRATEGIES = {
 /** Detect project type from a list of file paths. */
 export function detectProjectType(filePaths) {
     const scores = {
-        frappe_erpnext: 0, frappe_spa: 0, nextjs: 0, react_vite: 0,
-        django: 0, laravel: 0, generic_web: 0, unknown: 0,
+        frappe_erpnext: 0,
+        frappe_spa: 0,
+        nextjs: 0,
+        react_vite: 0,
+        django: 0,
+        laravel: 0,
+        generic_web: 0,
+        unknown: 0,
     };
     const signals = [];
     for (const filePath of filePaths) {

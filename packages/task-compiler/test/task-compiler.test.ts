@@ -22,7 +22,7 @@ import type {
 } from "../src/types.js";
 import { TaskCompilerError, TaskCompilerErrorCode } from "../src/types.js";
 
-// ─── Test utilities ─────────────────────────────────────────────────────
+// --- Test utilities -----------------------------------------------------
 
 function makeRequirement(
 	text: string,
@@ -60,7 +60,7 @@ async function compile(text: string, project?: ProjectProfile) {
 	});
 }
 
-// ─── Test 1: Standard engineering flow ─────────────────────────────────
+// --- Test 1: Standard engineering flow ---------------------------------
 
 describe("Standard engineering flow", () => {
 	it("produces analysis → implementation → test → review pipeline", async () => {
@@ -105,7 +105,7 @@ describe("Standard engineering flow", () => {
 	});
 });
 
-// ─── Test 2: Cycle detection ────────────────────────────────────────────
+// --- Test 2: Cycle detection --------------------------------------------
 
 describe("Cyclic dependencies fail", () => {
 	it("throws CYCLIC_DEPENDENCY when cycle detected", async () => {
@@ -240,7 +240,7 @@ describe("Cyclic dependencies fail", () => {
 	});
 });
 
-// ─── Test 3: File ownership overlap ─────────────────────────────────────
+// --- Test 3: File ownership overlap -------------------------------------
 
 describe("File ownership overlap", () => {
 	it("parallel exclusive tasks on same files throw error", async () => {
@@ -349,7 +349,7 @@ describe("File ownership overlap", () => {
 	});
 });
 
-// ─── Test 4: Acceptance criterion mapping ───────────────────────────────
+// --- Test 4: Acceptance criterion mapping -------------------------------
 
 describe("Acceptance criterion mapping", () => {
 	it("every acceptance criterion is assigned to at least one task", async () => {
@@ -400,7 +400,7 @@ describe("Acceptance criterion mapping", () => {
 	});
 });
 
-// ─── Test 5: Command policy ───────────────────────────────────────────
+// --- Test 5: Command policy -------------------------------------------
 
 describe("Build/migrate/commit restrictions", () => {
 	it("git commit is prohibited by default", async () => {
@@ -443,7 +443,7 @@ describe("Build/migrate/commit restrictions", () => {
 	});
 });
 
-// ─── Test 6: E2E insertion ─────────────────────────────────────────
+// --- Test 6: E2E insertion -----------------------------------------
 
 describe("E2E task insertion", () => {
 	it("E2E task is NOT inserted for non-browser workflows", async () => {
@@ -490,7 +490,7 @@ describe("E2E task insertion", () => {
 	});
 });
 
-// ─── Test 7: Advisory provider hints ─────────────────────────────────
+// --- Test 7: Advisory provider hints ---------------------------------
 
 describe("Provider preference is advisory", () => {
 	it("implementation tasks have preferred provider hint", async () => {
@@ -537,7 +537,7 @@ describe("Provider preference is advisory", () => {
 	});
 });
 
-// ─── Test 8: Deterministic topology ─────────────────────────────────
+// --- Test 8: Deterministic topology ---------------------------------
 
 describe("Graph ordering is deterministic", () => {
 	it("same input produces same topological order across multiple calls", async () => {
@@ -611,7 +611,7 @@ describe("Graph ordering is deterministic", () => {
 	});
 });
 
-// ─── Additional tests: Error cases ──────────────────────────────────────
+// --- Additional tests: Error cases --------------------------------------
 
 describe("TaskCompilerError", () => {
 	it("TaskCompilerError has correct properties", () => {

@@ -3,10 +3,10 @@
  *
  * Generate realistic test data with schema definitions, fixtures, and multiple export formats.
  */
-// ─── Generator ──────────────────────────────────────────────────────────
+// --- Generator ----------------------------------------------------------
 export { TestDataGenerator, createTestDataGenerator, } from "./generator.js";
-// ─── Faker ─────────────────────────────────────────────────────────────
+// --- Faker -------------------------------------------------------------
 export { SimpleFaker, createFaker } from "./faker-adapter.js";
-// ─── Types ────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------
 export { SDK_VERSION, } from "./types.js";
 //# sourceMappingURL=index.js.map

@@ -23,7 +23,7 @@ import {
 	type ConfidenceFactors,
 } from "./types.js";
 
-// ─── Pattern Extraction ────────────────────────────────────────────────────────
+// --- Pattern Extraction --------------------------------------------------------
 
 function extractProviderSuccessPatterns(
 	metrics: ProviderExecutionMetric[],
@@ -138,7 +138,7 @@ function extractFailurePatterns(
 	return patterns;
 }
 
-// ─── Experience Creation ──────────────────────────────────────────────────────
+// --- Experience Creation ------------------------------------------------------
 
 function createExperience(
 	pattern: ExtractedPattern,
@@ -202,7 +202,7 @@ function generateRecommendation(pattern: ExtractedPattern): string {
 	}
 }
 
-// ─── Secret Filtering ─────────────────────────────────────────────────────────
+// --- Secret Filtering ---------------------------------------------------------
 
 function filterSecrets(data: Record<string, unknown>): Record<string, unknown> {
 	const filtered: Record<string, unknown> = {};
@@ -225,7 +225,7 @@ function filterSecrets(data: Record<string, unknown>): Record<string, unknown> {
 	return filtered;
 }
 
-// ─── Main Engine ─────────────────────────────────────────────────────────────
+// --- Main Engine -------------------------------------------------------------
 
 export class LearningEngine {
 	private framework?: string;
@@ -381,7 +381,7 @@ ${experience.pattern}
 	}
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 
 export function createLearningEngine(options?: {
 	framework?: string;

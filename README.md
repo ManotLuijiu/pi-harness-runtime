@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
-> ⚠️ **Beta Notice — Not Production Ready ⚠️**
+> !️ **Beta Notice — Not Production Ready !️**
 > This project is in active development. Core features work.
 
 **Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
@@ -54,10 +54,10 @@ Requires Pi v0.37.3+.
 /harness start Build a REST API with JWT authentication
 
 # Runtime creates task graph:
-# task-001: Analyze requirements → ready
-# task-002: Implement API → depends on task-001
-# task-003: Write tests → depends on task-002
-# task-004: Code review → depends on task-003
+# task-001: Analyze requirements -> ready
+# task-002: Implement API -> depends on task-001
+# task-003: Write tests -> depends on task-002
+# task-004: Code review -> depends on task-003
 
 /harness status
 # Job: job-123, Status: running
@@ -74,48 +74,48 @@ Requires Pi v0.37.3+.
 # When all tasks complete:
 /harness status
 # Job: job-123, Status: ready_for_client
-# Tasks: 4/4 done ✓
+# Tasks: 4/4 done [x]
 ```
 
 ## Architecture
 
 ```
 pi-harness-runtime/
-├── index.ts                    # Extension entry point
-├── footer-status.ts            # Footer bar renderer (local vs. mirror mode)
-├── mirror.ts                   # Per-provider quota mirror (mirror.json)
-├── harness/
-│   ├── job-state-machine.ts   # 14-state lifecycle machine
-│   ├── task-graph.ts           # DAG-based task management
-│   ├── master-planner.ts       # Requirement → task graph
-│   ├── loop-runtime.ts         # Core execution loop
-│   ├── repair-engine.ts        # Auto-fix failures
-│   ├── blackboard.ts           # Agent coordination
-│   ├── context-window-manager.ts # Context tracking
-│   ├── agent-handoff.ts        # Clean agent transitions
-│   ├── e2e/
-│   │   ├── minimax-quota-scraper.ts  # Playwright MiniMax scraper
-│   │   └── playwright-runner.ts       # Browser automation
-│   └── project-detector/
-│       └── detector.ts         # Auto-detect project type
-├── packages/
-│   ├── cookie-sanitizer/       # Live cookie-file sync via chokidar
-│   ├── providers/              # MiniMax, OpenAI, Codex adapters
-│   ├── quota-manager/          # Quota signal collection
-│   ├── auth/                   # MiniMax browser auth
-│   └── worktree/              # Git worktree per task
-└── skills/
-    └── harness-runtime/
-        └── SKILL.md           # Skill documentation
++-- index.ts                    # Extension entry point
++-- footer-status.ts            # Footer bar renderer (local vs. mirror mode)
++-- mirror.ts                   # Per-provider quota mirror (mirror.json)
++-- harness/
+|   +-- job-state-machine.ts   # 14-state lifecycle machine
+|   +-- task-graph.ts           # DAG-based task management
+|   +-- master-planner.ts       # Requirement -> task graph
+|   +-- loop-runtime.ts         # Core execution loop
+|   +-- repair-engine.ts        # Auto-fix failures
+|   +-- blackboard.ts           # Agent coordination
+|   +-- context-window-manager.ts # Context tracking
+|   +-- agent-handoff.ts        # Clean agent transitions
+|   +-- e2e/
+|   |   +-- minimax-quota-scraper.ts  # Playwright MiniMax scraper
+|   |   +-- playwright-runner.ts       # Browser automation
+|   +-- project-detector/
+|       +-- detector.ts         # Auto-detect project type
++-- packages/
+|   +-- cookie-sanitizer/       # Live cookie-file sync via chokidar
+|   +-- providers/              # MiniMax, OpenAI, Codex adapters
+|   +-- quota-manager/          # Quota signal collection
+|   +-- auth/                   # MiniMax browser auth
+|   +-- worktree/              # Git worktree per task
++-- skills/
+    +-- harness-runtime/
+        +-- SKILL.md           # Skill documentation
 ```
 
 ## Job State Machine
 
 ```
-created → planning → queued → running → testing → reviewing
-    ↓        ↓         ↓        ↓         ↓
+created -> planning -> queued -> running -> testing -> reviewing
+    v        v         v        v         v
 cancelled  blocked   waiting_human  repairing  ready_for_client
-                                        ↓            ↓
+                                        v            v
                                   paused_quota    archived
 ```
 
@@ -136,18 +136,18 @@ All data stored locally in `~/.pi/`:
 
 ```
 ~/.pi/
-├── usage-status/         # /usage data
-│   ├── usage.jsonl
-│   └── mirror.json        # per-provider quota mirror
-├── harness/            # /harness data
-│   └── jobs/
-│       └── <job-id>/
-│           ├── checkpoint.json
-│           ├── events.jsonl
-│           ├── task-graph.json
-│           ├── blackboard/
-│           └── repair-tasks.jsonl
-└── okf/               # (optional) Your custom OKF knowledge
++-- usage-status/         # /usage data
+|   +-- usage.jsonl
+|   +-- mirror.json        # per-provider quota mirror
++-- harness/            # /harness data
+|   +-- jobs/
+|       +-- <job-id>/
+|           +-- checkpoint.json
+|           +-- events.jsonl
+|           +-- task-graph.json
+|           +-- blackboard/
+|           +-- repair-tasks.jsonl
++-- okf/               # (optional) Your custom OKF knowledge
 ```
 
 ## Custom OKF Knowledge (Optional)
@@ -156,9 +156,9 @@ Create `~/.pi/okf/` to add your custom knowledge that the runtime reads during c
 
 ```
 ~/.pi/okf/
-├── <skill-name>.md      # Your custom skill/procedure
-├── <domain>.md          # Domain-specific knowledge
-└── <project>.md        # Project-specific rules
++-- <skill-name>.md      # Your custom skill/procedure
++-- <domain>.md          # Domain-specific knowledge
++-- <project>.md        # Project-specific rules
 ```
 
 The runtime automatically detects and reads these files. If the folder doesn't exist, compilation proceeds without them.
@@ -221,7 +221,7 @@ MiniMax:  cookies not found — drop any cookie file into
 
 The runtime watches `~/.pi-harness-runtime/cookies/` for cookie files. Drop any cookie export there — it syncs within ~1 second:
 
-1. **Install EditThisCookie** Chrome extension → export from `platform.minimax.io`
+1. **Install EditThisCookie** Chrome extension -> export from `platform.minimax.io`
 2. **Create the drop folder:**
 
    ```bash

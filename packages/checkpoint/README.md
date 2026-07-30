@@ -189,12 +189,12 @@ Checkpoints are stored as JSON files:
 
 ```
 checkpoints/
-└── jobs/
-    └── job-123/
-        ├── index.json              # Checkpoint index
-        ├── checkpoint-1.json      # Full checkpoint
-        ├── checkpoint-2.delta.json # Incremental checkpoint
-        └── checkpoint-3.json      # Full checkpoint
++-- jobs/
+    +-- job-123/
+        +-- index.json              # Checkpoint index
+        +-- checkpoint-1.json      # Full checkpoint
+        +-- checkpoint-2.delta.json # Incremental checkpoint
+        +-- checkpoint-3.json      # Full checkpoint
 ```
 
 ## Performance

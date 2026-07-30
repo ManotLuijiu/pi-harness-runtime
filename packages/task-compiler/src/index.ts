@@ -13,15 +13,15 @@
  * });
  */
 
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 
 export { SDK_VERSION } from "./types.js";
 
-// ─── Main API ─────────────────────────────────────────────────────────
+// --- Main API ---------------------------------------------------------
 
 export { compileTasks } from "./compiler.js";
 
-// ─── Exported types (for consumers) ────────────────────────────────────
+// --- Exported types (for consumers) ------------------------------------
 
 export type {
 	CompiledTask,
