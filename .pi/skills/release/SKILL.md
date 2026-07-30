@@ -2,8 +2,8 @@
 name: release
 description: Universal release workflow - git add/commit/push, version bump, tag, publish. Supports Node.js monorepos, Frappe apps, Python packages.
 disable-model-invocation: true
-argument-hint: "[app_name] [bump_type]"
-allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(yarn *), Bash(pnpm *), Bash(npm *), Bash(npx *), Bash(bench *), Bash(python *), Bash(pip *), Bash(jq *), Bash(cat *), Bash(ls *), Bash(cd *), Bash(node *), Bash(uname *), Bash(find *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(awk *), Read, Edit, Write
+argument-hint: "[app_name] [major|minor|patch]"
+allowed-tools: Bash(git *), Bash(gh *), Bash(bun *), Bash(yarn *), Bash(pnpm *), Bash(npm *), Bash(npx *), Bash(bench *), Bash(python *), Bash(pip *), Bash(jq *), Bash(cat *), Bash(ls *), Bash(cd *), Bash(node *), Bash(uname *), Bash(find *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(awk *), Bash(commitlint *), Read, Edit, Write
 ---
 
 # Universal Release Workflow
@@ -19,15 +19,15 @@ Automated release: `git add` -> `commit` -> `push` -> `version bump` -> `tag` ->
 **Parameters:**
 
 - `app_name` (optional): App/workspace to release - auto-detected from current directory if not provided.
-- `bump_type` (optional): Version bump - `patch` (default), `minor`, or `major`
+- `bump_type` (optional): Auto-detected from commits if not provided.
 
 **Examples:**
 
 ```
-/release                       # patch release (current dir, auto-detect)
-/release m_capital            # patch release
-/release thai_business_suite minor  # minor release
-/release pi-harness-runtime major   # major release
+/release                       # auto-detect bump type from commits
+/release m_capital            # auto-detect bump type
+/release thai_business_suite minor  # explicit minor
+/release pi-harness-runtime major   # explicit major
 ```
 
 ## Auto-Detection
@@ -41,6 +41,50 @@ The workflow automatically detects:
 | Package manager | `pnpm-lock.yaml`, `yarn.lock`, `npm` - checked in order |
 | Branch strategy | `develop` + `version-15/16` -> cascade; `main` -> standard Git Flow |
 | Current version | `__init__.py` (Frappe) or `package.json` |
+| **Bump type** | Analyzed from commits since last tag (default: `patch`) |
+
+## Auto-Detecting Bump Type
+
+**If `bump_type` is NOT provided**, analyze commits since last release:
+
+```bash
+# Get commits since last tag
+COMMITS=$(git log --oneline $(git describe --tags --abbrev=0)..HEAD 2>/dev/null || git log --oneline -20)
+
+echo "$COMMITS" | grep -qE "^[^:]+: .*BREAKING CHANGE:" && echo "MAJOR (breaking change)"
+echo "$COMMITS" | grep -qE "^[^:]+: .*!:" && echo "MAJOR (breaking change)"
+echo "$COMMITS" | grep -qE "^[^:]+: feat(:|\s)" && echo "MINOR (new feature)"
+echo "$COMMITS" | grep -qE "^[^:]+: fix(:|\s)" && echo "PATCH (bug fix)"
+```
+
+**Decision tree:**
+
+```
+Any BREAKING CHANGE in commits?
+  ├─ YES → MAJOR
+  └─ NO
+       Any feat: (new feature)?
+          ├─ YES → MINOR
+          └─ NO → PATCH
+```
+
+**Examples:**
+
+```bash
+# Auto-detect bump type
+LAST_TAG=$(git describe --tags --abbrev=0)
+COMMITS=$(git log --oneline ${LAST_TAG}..HEAD)
+
+if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+  BUMP="major"
+elif echo "$COMMITS" | grep -qE "feat(:|\s)"; then
+  BUMP="minor"
+else
+  BUMP="patch"
+fi
+
+echo "Detected bump type: $BUMP"
+```
 
 ## Step-by-Step Workflow
 
@@ -50,13 +94,35 @@ The workflow automatically detects:
 git status
 git branch
 pwd
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "no-tags")
+COMMITS=$(git log --oneline ${LAST_TAG}..HEAD 2>/dev/null || git log --oneline -20)
+echo "=== Commits since ${LAST_TAG} ==="
+echo "$COMMITS"
 ```
 
-### Step 2: Detect project type
+### Step 2: Auto-detect bump type (if not provided)
+
+```bash
+# If bump_type not provided, analyze commits
+if [ -z "$BUMP" ]; then
+  if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+    BUMP="major"
+    echo "→ Detected: MAJOR (breaking change)"
+  elif echo "$COMMITS" | grep -qE "feat(:|\s)"; then
+    BUMP="minor"
+    echo "→ Detected: MINOR (new feature)"
+  else
+    BUMP="patch"
+    echo "→ Detected: PATCH (fix/chore)"
+  fi
+fi
+```
+
+### Step 3: Detect project type
 
 **Node.js monorepo** (has `scripts/release-all.ts`):
 
-- Uses `bun scripts/release-all.ts --release-as {bump}`
+- Uses `bun scripts/release-all.ts --release-as ${BUMP}`
 - GitHub Actions OIDC publishes to npm
 - Single root package published (`pi-harness-runtime`)
 
@@ -102,13 +168,14 @@ git add -A -- ':!.env*' ':!*.pem' ':!*.key' ':!credentials*'
 **Node.js monorepo** (pi-harness-runtime pattern):
 
 ```bash
-bun scripts/release-all.ts --release-as {bump_type}
+echo "Bumping ${APP_NAME} as ${BUMP}..."
+bun scripts/release-all.ts --release-as ${BUMP}
 ```
 
 **Frappe app** (if `standard-version` configured):
 
 ```bash
-yarn release:{bump_type}  # or pnpm/npm
+yarn release:${BUMP}  # or pnpm/npm
 ```
 
 **Frappe app** (manual fallback):
@@ -185,7 +252,7 @@ gh run list --workflow=release.yml --limit 3
 git add --all && git commit -m "feat: description" && git push origin develop
 
 # 2. Bump version (defaults to patch)
-bun scripts/release-all.ts --release-as {bump_type}
+bun scripts/release-all.ts --release-as ${BUMP}
 
 # 3. Push tags -> GitHub Actions publishes to npm via OIDC
 git push --follow-tags origin develop
@@ -250,6 +317,7 @@ git push && git push --tags
 - **Package manager detection** - auto-detects pnpm/yarn/npm from lockfiles
 - **Version format validation** - semver enforcement
 - **Tag existence check** - avoids duplicate tags
+- **Auto-detect bump type** - analyzes commits (feat=minor, fix=patch, BREAKING=major)
 
 ## Conventional Commits
 
@@ -265,11 +333,12 @@ git push && git push --tags
 ## Summary Format
 
 ```
-Release v{version} completed!
+Release v{version} ({bump_type}) completed!
 
 App: {app_name}
 Type: {Node.js monorepo | Frappe app | Python package}
 Version: {old} -> {new}
+Bump: {major | minor | patch} (auto-detected from commits)
 Branch: {source} -> {target}
 Tag: v{version}
 Release: https://github.com/{owner}/{repo}/releases/tag/v{version}
