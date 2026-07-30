@@ -13,6 +13,7 @@
  * Runs directly from Bun.
  */
 
+import { Key } from "@earendil-works/pi-tui";
 import type {
 	CompactOptions,
 	ExtensionAPI,
@@ -39,6 +40,8 @@ import {
 } from "./packages/quota-manager/src/tui-usage-monitor.ts";
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
+import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
+import { registerCopySyncShortcut } from "./packages/clipboard/src/copy-sync.js";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
@@ -817,6 +820,12 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// --- /github-login — Connect GitHub Gist for clipboard sync ------------
+	registerGithubLoginCommand(pi);
+
+	// --- Ctrl+Shift+C — Copy to clipboard + sync to Gist ------------
+	registerCopySyncShortcut(pi, Key);
 
 	// --- /harness start — Start a new harness job ----------------------
 	pi.registerCommand("harness-start", {
