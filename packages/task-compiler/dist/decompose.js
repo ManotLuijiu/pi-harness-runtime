@@ -15,13 +15,13 @@ export function decomposeRequirement(input) {
     const { requirement, project, maxComplexity = 5 } = input;
     const candidates = [];
     let priority = 1;
-    // ─── Stage detection ────────────────────────────────────────────────
+    // --- Stage detection ------------------------------------------------
     const needsAnalysis = requirement.problemStatement.length > 200 || requirement.goals.length > 3;
     const needsDesign = requirement.problemStatement.length > 100;
     const hasTests = requirement.acceptanceCriteria.length > 0;
     const hasBrowserWorkflow = detectBrowserWorkflow(project);
     const needsRepair = requirement.riskTags.some((r) => r.risk === "destructive_operation");
-    // ─── Analysis ──────────────────────────────────────────────────────
+    // --- Analysis ------------------------------------------------------
     if (needsAnalysis) {
         candidates.push({
             id: "analysis-0",
@@ -34,7 +34,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── Design ────────────────────────────────────────────────────────
+    // --- Design --------------------------------------------------------
     if (needsDesign) {
         candidates.push({
             id: "design-0",
@@ -47,7 +47,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── Implementation ────────────────────────────────────────────────
+    // --- Implementation ------------------------------------------------
     for (let i = 0; i < requirement.goals.length; i++) {
         const goal = requirement.goals[i];
         const implDeps = [];
@@ -81,7 +81,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── Unit tests ───────────────────────────────────────────────────
+    // --- Unit tests ---------------------------------------------------
     if (hasTests) {
         candidates.push({
             id: "test-0",
@@ -94,7 +94,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── E2E tests ───────────────────────────────────────────────────
+    // --- E2E tests ---------------------------------------------------
     if (hasBrowserWorkflow && input.insertE2E !== false) {
         candidates.push({
             id: "e2e-0",
@@ -111,7 +111,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── Review ────────────────────────────────────────────────────────
+    // --- Review --------------------------------------------------------
     const reviewDeps = [];
     if (hasTests)
         reviewDeps.push("test-0");
@@ -129,7 +129,7 @@ export function decomposeRequirement(input) {
         estimatedComplexity: 2,
         priority: priority++,
     });
-    // ─── Repair ────────────────────────────────────────────────────────
+    // --- Repair --------------------------------------------------------
     if (needsRepair) {
         candidates.push({
             id: "repair-0",
@@ -142,7 +142,7 @@ export function decomposeRequirement(input) {
             priority: priority++,
         });
     }
-    // ─── Documentation ────────────────────────────────────────────────
+    // --- Documentation ------------------------------------------------
     candidates.push({
         id: "docs-0",
         title: `Document: ${truncate(requirement.title, 40)}`,
@@ -153,7 +153,7 @@ export function decomposeRequirement(input) {
         estimatedComplexity: 2,
         priority: priority++,
     });
-    // ─── Enforce complexity threshold ─────────────────────────────────
+    // --- Enforce complexity threshold ---------------------------------
     const result = [];
     for (const c of candidates) {
         if (c.estimatedComplexity > maxComplexity) {
@@ -165,7 +165,7 @@ export function decomposeRequirement(input) {
     }
     return result;
 }
-// ─── Helpers ────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------
 function estimateComplexity(text) {
     const words = text.split(/\s+/).length;
     if (words < 20)

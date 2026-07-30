@@ -6,7 +6,7 @@
 
 import type { FakerAdapter, DateOptions } from "./types.js";
 
-// ─── Seeded Random ─────────────────────────────────────────────────────────
+// --- Seeded Random ---------------------------------------------------------
 
 class SeededRandom {
 	private seed: number;
@@ -38,7 +38,7 @@ class SeededRandom {
 	}
 }
 
-// ─── Data Samples ─────────────────────────────────────────────────────────
+// --- Data Samples ---------------------------------------------------------
 
 const FIRST_NAMES = [
 	"James",
@@ -225,7 +225,7 @@ const LOREM_WORDS = [
 
 const TLDs = ["com", "net", "org", "io", "co", "dev", "app"];
 
-// ─── Faker Adapter ─────────────────────────────────────────────────────────
+// --- Faker Adapter ---------------------------------------------------------
 
 export class SimpleFaker implements FakerAdapter {
 	private random: SeededRandom;
@@ -647,7 +647,7 @@ export class SimpleFaker implements FakerAdapter {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a faker adapter

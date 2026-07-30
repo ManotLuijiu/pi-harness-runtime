@@ -17,19 +17,19 @@ The harness runtime needs to adapt its behavior based on the detected framework.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Framework Detector                             │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Signal    │  │   Scoring    │  │   Detection  │             │
-│  │   Scanner   │  │   Engine     │  │   Resolver   │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   File      │  │   Package    │  │   Config     │             │
-│  │   Analyzer  │  │   Resolver   │  │   Parser     │             │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                     Framework Detector                             |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Signal    |  |   Scoring    |  |   Detection  |             |
+|  |   Scanner   |  |   Engine     |  |   Resolver   |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   File      |  |   Package    |  |   Config     |             |
+|  |   Analyzer  |  |   Resolver   |  |   Parser     |             |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -322,40 +322,40 @@ async detectFrappeVersion(): Promise<FrameworkVersion | null> {
 
 ```
 packages/framework-detector/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── detector.ts               # FrameworkDetector class
-│   ├── signatures/
-│   │   ├── registry.ts           # FrameworkSignature registry
-│   │   ├── patterns.ts           # Detection patterns
-│   │   ├── weights.ts            # Weight calculation
-│   │   └── validation.ts         # Pattern validation
-│   ├── scanners/
-│   │   ├── file-scanner.ts       # File system scanning
-│   │   ├── package-scanner.ts    # Package analysis
-│   │   └── config-scanner.ts     # Config file parsing
-│   ├── version-detector/
-│   │   ├── index.ts              # VersionDetector class
-│   │   ├── frappe.ts
-│   │   ├── nextjs.ts
-│   │   ├── django.ts
-│   │   └── ...
-│   ├── cache/
-│   │   └── detector-cache.ts     # Detection caching
-│   ├── watcher/
-│   │   └── file-watcher.ts       # Real-time detection
-│   ├── types.ts
-│   └── errors.ts
-├── signatures/
-│   ├── frameworks.json            # Framework signatures
-│   └── patterns.json             # Detection patterns
-├── test/
-├── examples/
-│   ├── basic-detection.ts
-│   ├── real-time-watching.ts
-│   └── multi-framework.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- detector.ts               # FrameworkDetector class
+|   +-- signatures/
+|   |   +-- registry.ts           # FrameworkSignature registry
+|   |   +-- patterns.ts           # Detection patterns
+|   |   +-- weights.ts            # Weight calculation
+|   |   +-- validation.ts         # Pattern validation
+|   +-- scanners/
+|   |   +-- file-scanner.ts       # File system scanning
+|   |   +-- package-scanner.ts    # Package analysis
+|   |   +-- config-scanner.ts     # Config file parsing
+|   +-- version-detector/
+|   |   +-- index.ts              # VersionDetector class
+|   |   +-- frappe.ts
+|   |   +-- nextjs.ts
+|   |   +-- django.ts
+|   |   +-- ...
+|   +-- cache/
+|   |   +-- detector-cache.ts     # Detection caching
+|   +-- watcher/
+|   |   +-- file-watcher.ts       # Real-time detection
+|   +-- types.ts
+|   +-- errors.ts
++-- signatures/
+|   +-- frameworks.json            # Framework signatures
+|   +-- patterns.json             # Detection patterns
++-- test/
++-- examples/
+|   +-- basic-detection.ts
+|   +-- real-time-watching.ts
+|   +-- multi-framework.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

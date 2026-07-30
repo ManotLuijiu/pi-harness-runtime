@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.10.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.24...v0.10.0) (2026-07-30)
+
+
+### Features
+
+* blackboard-coordinated loop controller with early exit ([f3cf3ea](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3cf3ea479170dd75b7e9a7c3515dde230bb0da7))
+* herdr inter-agent event bus for autonomous code review ([1490cdd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1490cddec80dac812065c3c681984524ad3194e1))
+* loop controller for write-review cycles with early exit ([95066ce](https://github.com/ManotLuijiu/pi-harness-runtime/commit/95066ce8cb58c55eaa14d69fd826b5aaff680c16))
+
+
+### Bug Fixes
+
+* **clipboard:** pass UTF-8 bytes directly to xclip via stdin, avoid pipeline corruption ([051ca18](https://github.com/ManotLuijiu/pi-harness-runtime/commit/051ca18fb1deb1169a8a4da16aa9314d2e6ec66d))
+* herdr-bus refactoring — rename publishers to *Simple variants ([d727591](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7275913a89deb56a6bcfdb912ea9d17e3a80ce1))
+* import LoopConfig from index.js, remove unused LoopNextAction import ([1100a4e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1100a4e87433e54416259dfdad41bc5e0def19b3))
+* periodic quota refresh every 15 minutes via setInterval ([f28e700](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f28e7004d089aeada1659f4d55a35461baba76fc))
+* replace all Unicode box-drawing characters with ASCII ([dd4223a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/dd4223abb0e25f746ee09ced05f6b3e40a10eb85))
+* replace Unicode dashes and arrows with ASCII equivalents ([e9027e6](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e9027e689c06fdc1ca2ac4a6365ed6a6a0a384fd))
+* trigger cookie sync on startup so pre-existing cookies aren't ignored ([2914299](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2914299b8caa02acbb06620c7cb8e4870acfa40e))
+
+### [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci:** explicitly list test files to exclude cookie auth tests in release workflow ([1c96002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1c9600232282a1ef9323300fbd763c962aff49f6))
+* **ci:** skip browser auth tests in release workflow ([6117ed5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6117ed5af11357c6f12d11f4cd8d3441de519043))
+* **ci:** skip tests in release workflow ([8357ecd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8357ecd0b7d9c0c6ef81680902ca731da59a37c4))
+* **e2e:** add OpenAIUsageResponse type to fix rate_limit TS error ([2ed0891](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2ed08911410ec07815d828028db1a6c9eaf2df2c))
+* **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
+
+### [0.9.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.24) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci:** skip browser auth tests in release workflow ([6117ed5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6117ed5af11357c6f12d11f4cd8d3441de519043))
+* **e2e:** add OpenAIUsageResponse type to fix rate_limit TS error ([2ed0891](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2ed08911410ec07815d828028db1a6c9eaf2df2c))
+* **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
+
+### [0.9.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.23) (2026-07-27)
+
+### [0.9.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.22) (2026-07-27)
+
 ### [0.9.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.11) (2026-07-23)
 
 ### Bug Fixes
@@ -93,7 +137,7 @@ All notable changes to this project will be documented in this file. See [standa
 ### Bug Fixes
 
 * publish missing runtime modules ([3fc7058](https://github.com/ManotLuijiu/pi-harness-runtime/commit/3fc70586d0cd10f4d38eab67e4cadaec20aaeb56))
-* **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
+* **release:** remove redundant Bump version step — was double-bumping version (0.7.1->0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
 ## [0.9.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.0) (2026-07-13)
 
@@ -103,7 +147,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Bug Fixes
 
-* **release:** remove redundant Bump version step — was double-bumping version (0.7.1→0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
+* **release:** remove redundant Bump version step — was double-bumping version (0.7.1->0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
 ### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
 
@@ -134,11 +178,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Changed
 
-* **Project rename**: `pi-usage-status` → `pi-harness-runtime`
-  * npm package name: `pi-usage-status` → `pi-harness-runtime`
-  * Repository: `ManotLuijiu/pi-usage-status` → `ManotLuijiu/pi-harness-runtime`
-  * Bundled skill: `usage-status` → `harness-runtime` (file path `skills/usage-status/` → `skills/harness-runtime/`)
-  * Status bar key: `usage-status` → `harness-runtime`
+* **Project rename**: `pi-usage-status` -> `pi-harness-runtime`
+  * npm package name: `pi-usage-status` -> `pi-harness-runtime`
+  * Repository: `ManotLuijiu/pi-usage-status` -> `ManotLuijiu/pi-harness-runtime`
+  * Bundled skill: `usage-status` -> `harness-runtime` (file path `skills/usage-status/` -> `skills/harness-runtime/`)
+  * Status bar key: `usage-status` -> `harness-runtime`
   * **Data directory unchanged**: still `~/.pi/usage-status/` (preserves existing user data)
   * **Env var unchanged**: still `PI_USAGE_DIR` (preserves existing user configs)
   * **Extension symlink unchanged**: still `~/.pi/agent/extensions/pi-usage-status` (repointed to renamed project directory)

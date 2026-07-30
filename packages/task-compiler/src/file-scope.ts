@@ -62,7 +62,7 @@ export function assignFileScope(
 	});
 }
 
-// ─── File inference by task type ───────────────────────────────────────
+// --- File inference by task type ---------------------------------------
 
 function inferFiles(
 	candidate: TaskCandidate,
@@ -120,7 +120,7 @@ function inferFiles(
 	}
 }
 
-// ─── Extract file mentions from objective text ──────────────────────────
+// --- Extract file mentions from objective text --------------------------
 
 function extractFileMentions(text: string): string[] {
 	// Match common file/directory patterns in natural language:
@@ -135,7 +135,7 @@ function extractFileMentions(text: string): string[] {
 	return [...new Set(matches)];
 }
 
-// ─── Ownership mode ────────────────────────────────────────────────────
+// --- Ownership mode ----------------------------------------------------
 
 function getOwnershipMode(type: TaskType): FileOwnershipMode {
 	// Parallel tasks with "exclusive" mode cannot modify the same files
@@ -155,7 +155,7 @@ function getOwnershipMode(type: TaskType): FileOwnershipMode {
 	}
 }
 
-// ─── Exclusions ────────────────────────────────────────────────────────
+// --- Exclusions --------------------------------------------------------
 
 function getExclusions(_type: TaskType, project: ProjectProfile): string[] {
 	const exclusions: string[] = [
@@ -179,7 +179,7 @@ function getExclusions(_type: TaskType, project: ProjectProfile): string[] {
 	return exclusions;
 }
 
-// ─── Capability inference ───────────────────────────────────────────────
+// --- Capability inference -----------------------------------------------
 
 function inferCapabilities(type: TaskType): string[] {
 	const caps: Record<TaskType, string[]> = {
@@ -195,7 +195,7 @@ function inferCapabilities(type: TaskType): string[] {
 	return caps[type] ?? ["code"];
 }
 
-// ─── Extension detection ─────────────────────────────────────────────────
+// --- Extension detection -------------------------------------------------
 
 function detectSourceExtensions(project: ProjectProfile): string[] {
 	const frameworks = project.frameworks ?? [];

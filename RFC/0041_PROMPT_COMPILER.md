@@ -47,10 +47,10 @@ The generated package is persisted under:
 
 ```text
 ~/.pi/harness/jobs/<job-id>/prompts/<task-id>/<attempt>/
-├── prompt.md
-├── prompt.json
-├── sources.json
-└── metadata.json
++-- prompt.md
++-- prompt.json
++-- sources.json
++-- metadata.json
 ```
 
 ## 3. Compilation pipeline

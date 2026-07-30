@@ -10,7 +10,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { NextJsAnalysis, AppRoute, ConfigFile } from "./types.js";
 
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 
 function isNextJsWorkspace(root: string): boolean {
 	return (
@@ -22,7 +22,7 @@ function isNextJsWorkspace(root: string): boolean {
 	);
 }
 
-// ─── Version Detection ───────────────────────────────────────────────────────
+// --- Version Detection -------------------------------------------------------
 
 async function detectVersion(root: string): Promise<string | undefined> {
 	try {
@@ -37,7 +37,7 @@ async function detectVersion(root: string): Promise<string | undefined> {
 	}
 }
 
-// ─── Router Detection ───────────────────────────────────────────────────────
+// --- Router Detection -------------------------------------------------------
 
 async function detectRouters(root: string): Promise<{
 	usingAppRouter: boolean;
@@ -48,7 +48,7 @@ async function detectRouters(root: string): Promise<{
 	return { usingAppRouter: hasApp, usingPagesRouter: hasPages };
 }
 
-// ─── Config Files ────────────────────────────────────────────────────────────
+// --- Config Files ------------------------------------------------------------
 
 async function findConfigFiles(root: string): Promise<ConfigFile[]> {
 	const configFiles = [
@@ -65,7 +65,7 @@ async function findConfigFiles(root: string): Promise<ConfigFile[]> {
 	return configs;
 }
 
-// ─── App Router Routes ─────────────────────────────────────────────────────
+// --- App Router Routes -----------------------------------------------------
 
 async function walkAppRouter(
 	dir: string,
@@ -117,7 +117,7 @@ async function walkAppRouter(
 	return routes;
 }
 
-// ─── Pages Router API Routes ─────────────────────────────────────────────────
+// --- Pages Router API Routes -------------------------------------------------
 
 async function walkApiRoutes(
 	dir: string,
@@ -144,7 +144,7 @@ async function walkApiRoutes(
 	return routes;
 }
 
-// ─── Middleware ─────────────────────────────────────────────────────────────
+// --- Middleware -------------------------------------------------------------
 
 async function findMiddleware(root: string): Promise<string | undefined> {
 	const candidates = [
@@ -159,7 +159,7 @@ async function findMiddleware(root: string): Promise<string | undefined> {
 	return undefined;
 }
 
-// ─── Environment Variables ─────────────────────────────────────────────────
+// --- Environment Variables -------------------------------------------------
 
 async function findEnvVars(root: string): Promise<string[]> {
 	const candidates = [
@@ -192,7 +192,7 @@ async function findEnvVars(root: string): Promise<string[]> {
 	return vars;
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 
 /**
  * Analyze a Next.js workspace (RFC-0062)

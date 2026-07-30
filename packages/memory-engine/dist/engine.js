@@ -8,7 +8,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { RESERVED_FILES } from "./types.js";
 import { filterSecrets, AUTHORITY_PRIORITY } from "./types.js";
-// ─── YAML Frontmatter Parsing ─────────────────────────────────────────────────
+// --- YAML Frontmatter Parsing -------------------------------------------------
 function parseFrontmatter(content) {
     const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     if (!match) {
@@ -62,8 +62,8 @@ function serializeFrontmatter(data) {
     }
     return lines.join("\n");
 }
-// ─── Concept Parsing ────────────────────────────────────────────────────────
-// ─── Link Extraction ─────────────────────────────────────────────────────────
+// --- Concept Parsing --------------------------------------------------------
+// --- Link Extraction ---------------------------------------------------------
 /**
  * Extract markdown links from content
  * Used for link validation and concept parsing
@@ -81,7 +81,7 @@ export function extractLinks(markdown) {
     }
     return links;
 }
-// ─── Validation ──────────────────────────────────────────────────────────────
+// --- Validation --------------------------------------------------------------
 export function validateConcept(content, path) {
     const errors = [];
     const warnings = [];
@@ -120,7 +120,7 @@ export function validateConcept(content, path) {
         warnings,
     };
 }
-// ─── Index Generation ─────────────────────────────────────────────────────────
+// --- Index Generation ---------------------------------------------------------
 function generateIndex(concepts) {
     const lines = [
         "# Knowledge Index",
@@ -166,7 +166,7 @@ function generateIndex(concepts) {
     }
     return lines.join("\n");
 }
-// ─── Search ──────────────────────────────────────────────────────────────────
+// --- Search ------------------------------------------------------------------
 function calculateRelevance(concept, query) {
     let score = 0;
     const matchedOn = [];
@@ -204,7 +204,7 @@ function calculateRelevance(concept, query) {
     }
     return score;
 }
-// ─── Main Engine ─────────────────────────────────────────────────────────────
+// --- Main Engine -------------------------------------------------------------
 export class MemoryEngine {
     bundle = null;
     ensureBundle() {
@@ -501,7 +501,7 @@ export class MemoryEngine {
         return lines.join("\n");
     }
 }
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 export function createMemoryEngine() {
     return new MemoryEngine();
 }

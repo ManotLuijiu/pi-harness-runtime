@@ -54,7 +54,7 @@ These depend on core systems above. Implement after core is stable.
 | `autonomous-documentation` | 0097 | Auto-generate/update docs |
 | `autonomous-knowledge-management` | 0098 | Maintain knowledge graph |
 | `runtime-evolution-engine` | 0099 | Self-improve from outcomes |
-| `self-developing-runtime` | 0100 | Closed loop: build → test → learn → improve |
+| `self-developing-runtime` | 0100 | Closed loop: build -> test -> learn -> improve |
 
 ---
 
@@ -86,7 +86,7 @@ These depend on core systems above. Implement after core is stable.
 
 ---
 
-## ⚠️ Key Conventions
+## !️ Key Conventions
 
 - All packages: `src/` + `test/` + `dist/`, TypeScript, `bun test`
 - Export types from `src/index.ts`

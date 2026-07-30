@@ -9,7 +9,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReactViteAnalysis, ConfigFile } from "./types.js";
 
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 
 function isReactViteWorkspace(root: string): boolean {
 	return (
@@ -20,7 +20,7 @@ function isReactViteWorkspace(root: string): boolean {
 	);
 }
 
-// ─── Version & Dependencies ─────────────────────────────────────────────────
+// --- Version & Dependencies -------------------------------------------------
 
 async function detectVersionAndDeps(
 	root: string,
@@ -62,7 +62,7 @@ async function detectVersionAndDeps(
 	}
 }
 
-// ─── Config Files ────────────────────────────────────────────────────────────
+// --- Config Files ------------------------------------------------------------
 
 async function findConfigFiles(root: string): Promise<ConfigFile[]> {
 	const candidates = [
@@ -81,7 +81,7 @@ async function findConfigFiles(root: string): Promise<ConfigFile[]> {
 	return configs;
 }
 
-// ─── Alias Parsing ───────────────────────────────────────────────────────────
+// --- Alias Parsing -----------------------------------------------------------
 
 async function parseAliases(root: string): Promise<Record<string, string>> {
 	const aliases: Record<string, string> = {};
@@ -149,7 +149,7 @@ async function parseAliases(root: string): Promise<Record<string, string>> {
 	return aliases;
 }
 
-// ─── Component Scanner ───────────────────────────────────────────────────────
+// --- Component Scanner -------------------------------------------------------
 
 async function walkComponents(
 	dir: string,
@@ -176,7 +176,7 @@ async function walkComponents(
 	return components;
 }
 
-// ─── Pages Scanner ───────────────────────────────────────────────────────────
+// --- Pages Scanner -----------------------------------------------------------
 
 async function findPages(root: string): Promise<string[]> {
 	for (const d of [
@@ -192,7 +192,7 @@ async function findPages(root: string): Promise<string[]> {
 	return [];
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 
 export async function analyzeReactVite(
 	root: string,

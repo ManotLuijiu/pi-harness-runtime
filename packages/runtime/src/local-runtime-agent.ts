@@ -231,7 +231,7 @@ export class LocalRuntimeAgent extends EventEmitter {
 		return Array.from(this.authSessions.values());
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private async handleRequest(
 		req: import("node:http").IncomingMessage,

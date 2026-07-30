@@ -16,21 +16,21 @@ The current adapter system is ad-hoc with adapters defined in `packages/provider
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Provider Adapter SDK                     │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Builder   │  │  Registry   │  │   Tester    │         │
-│  │   Class     │  │   Manager   │  │  Utilities  │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│                    Adapter Interface                        │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ MiniMax     │  │  OpenAI     │  │  Claude     │         │
-│  │ Adapter     │  │  Adapter    │  │  Adapter    │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                    Provider Adapter SDK                     |
++-------------------------------------------------------------+
+|  +-------------+  +-------------+  +-------------+         |
+|  |   Builder   |  |  Registry   |  |   Tester    |         |
+|  |   Class     |  |   Manager   |  |  Utilities  |         |
+|  +-------------+  +-------------+  +-------------+         |
++-------------------------------------------------------------+
+|                    Adapter Interface                        |
++-------------------------------------------------------------+
+|  +-------------+  +-------------+  +-------------+         |
+|  | MiniMax     |  |  OpenAI     |  |  Claude     |         |
+|  | Adapter     |  |  Adapter    |  |  Adapter    |         |
+|  +-------------+  +-------------+  +-------------+         |
++-------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -95,23 +95,23 @@ interface AdapterVersion {
 
 ```
 packages/provider-adapter-sdk/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── builder.ts                  # AdapterBuilder class
-│   ├── registry.ts                 # AdapterRegistry with lifecycle
-│   ├── tester.ts                   # AdapterTester utilities
-│   ├── types.ts                    # SDK-specific types
-│   ├── compatibility.ts             # Version checks
-│   └── errors.ts                   # SDK-specific errors
-├── test/
-│   ├── builder.test.ts
-│   ├── registry.test.ts
-│   └── tester.test.ts
-├── examples/
-│   ├── custom-provider.ts          # Example custom adapter
-│   └── testing-adapter.ts          # Example testing setup
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- builder.ts                  # AdapterBuilder class
+|   +-- registry.ts                 # AdapterRegistry with lifecycle
+|   +-- tester.ts                   # AdapterTester utilities
+|   +-- types.ts                    # SDK-specific types
+|   +-- compatibility.ts             # Version checks
+|   +-- errors.ts                   # SDK-specific errors
++-- test/
+|   +-- builder.test.ts
+|   +-- registry.test.ts
+|   +-- tester.test.ts
++-- examples/
+|   +-- custom-provider.ts          # Example custom adapter
+|   +-- testing-adapter.ts          # Example testing setup
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

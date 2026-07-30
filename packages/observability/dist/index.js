@@ -4,16 +4,16 @@
  * A comprehensive observability system with structured logging,
  * distributed tracing, metrics collection, health monitoring, and alerting.
  */
-// ─── Logger ────────────────────────────────────────────────────────────────
+// --- Logger ----------------------------------------------------------------
 export { Logger, createLogger, defaultLogger } from "./logger.js";
-// ─── Tracer ────────────────────────────────────────────────────────────────
+// --- Tracer ----------------------------------------------------------------
 export { Tracer, createTracer, SpanHandle } from "./tracer.js";
-// ─── Metrics ────────────────────────────────────────────────────────────────
+// --- Metrics ----------------------------------------------------------------
 export { Metrics, createMetrics, createBuiltInMetrics, Timer, } from "./metrics.js";
-// ─── Health ────────────────────────────────────────────────────────────────
+// --- Health ----------------------------------------------------------------
 export { HealthMonitor, createHealthMonitor, createConnectivityHealthCheck, createMemoryHealthCheck, createDiskSpaceHealthCheck, } from "./health.js";
-// ─── Alerts ────────────────────────────────────────────────────────────────
+// --- Alerts ----------------------------------------------------------------
 export { AlertEngine, createAlertEngine } from "./alerts.js";
-// ─── Re-exports ────────────────────────────────────────────────────────────
+// --- Re-exports ------------------------------------------------------------
 export { SDK_VERSION } from "./types.js";
 //# sourceMappingURL=index.js.map

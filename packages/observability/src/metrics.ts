@@ -6,7 +6,7 @@
 
 import type { HistogramBucket, Labels, MetricsConfig } from "./types.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<MetricsConfig> = {
 	serviceName: "unknown",
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: Required<MetricsConfig> = {
 	prefix: "",
 };
 
-// ─── Timer Helper ─────────────────────────────────────────────────────────
+// --- Timer Helper ---------------------------------------------------------
 
 export class Timer {
 	private startTime: number;
@@ -39,7 +39,7 @@ export class Timer {
 	}
 }
 
-// ─── Metrics Collector ────────────────────────────────────────────────────
+// --- Metrics Collector ----------------------------------------------------
 
 export class Metrics {
 	private readonly config: Required<MetricsConfig>;
@@ -84,7 +84,7 @@ export class Metrics {
 		return [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 	}
 
-	// ─── Counter Methods ──────────────────────────────────────────────────
+	// --- Counter Methods --------------------------------------------------
 
 	/**
 	 * Register a counter metric
@@ -133,7 +133,7 @@ export class Metrics {
 		return this.counters.get(fullName)?.get(key) ?? 0;
 	}
 
-	// ─── Gauge Methods ──────────────────────────────────────────────────
+	// --- Gauge Methods --------------------------------------------------
 
 	/**
 	 * Register a gauge metric
@@ -187,7 +187,7 @@ export class Metrics {
 		gauge.set(key, (gauge.get(key) ?? 0) - 1);
 	}
 
-	// ─── Histogram Methods ───────────────────────────────────────────────
+	// --- Histogram Methods -----------------------------------------------
 
 	/**
 	 * Register a histogram metric
@@ -245,7 +245,7 @@ export class Metrics {
 		}
 	}
 
-	// ─── Summary Methods ─────────────────────────────────────────────────
+	// --- Summary Methods -------------------------------------------------
 
 	/**
 	 * Register a summary metric
@@ -273,7 +273,7 @@ export class Metrics {
 		});
 	}
 
-	// ─── Timing Helpers ─────────────────────────────────────────────────
+	// --- Timing Helpers -------------------------------------------------
 
 	/**
 	 * Start a timer
@@ -320,7 +320,7 @@ export class Metrics {
 		}
 	}
 
-	// ─── Export Methods ──────────────────────────────────────────────────
+	// --- Export Methods --------------------------------------------------
 
 	/**
 	 * Export metrics in Prometheus format
@@ -423,7 +423,7 @@ export class Metrics {
 	}
 }
 
-// ─── Built-in Metrics ────────────────────────────────────────────────────────
+// --- Built-in Metrics --------------------------------------------------------
 
 /**
  * Create built-in runtime metrics
@@ -465,7 +465,7 @@ export function createBuiltInMetrics(metrics: Metrics): void {
 	);
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────────
+// --- Factory Function --------------------------------------------------------
 
 /**
  * Create a metrics collector with the given configuration

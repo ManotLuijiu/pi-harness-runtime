@@ -22,7 +22,7 @@ import {
 	roughMessagesTokens,
 } from "../packages/token-estimation/src/index.ts";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 /** Proactive compact triggers at this many tokens before limit */
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
@@ -36,7 +36,7 @@ export const BLOCKING_THRESHOLD_BUFFER_TOKENS = 20_000;
 /** Maximum consecutive compact failures before circuit breaker */
 export const MAX_CONSECUTIVE_COMPACT_FAILURES = 3;
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------------
 
 export interface CompactThresholds {
 	/** Trigger proactive compact at this utilization (0.85) */
@@ -60,7 +60,7 @@ export interface TokenEstimate {
 	shouldBlock: boolean;
 }
 
-// ─── Context Window Manager ─────────────────────────────────────────────────
+// --- Context Window Manager -------------------------------------------------
 
 export class ContextWindowManager {
 	private stats: Map<string, ContextWindowStats> = new Map();
@@ -95,7 +95,7 @@ export class ContextWindowManager {
 		}
 	}
 
-	// ─── Public API ───────────────────────────────────────────────────────────
+	// --- Public API -----------------------------------------------------------
 
 	/**
 	 * Update context window stats after a request
@@ -399,7 +399,7 @@ export class ContextWindowManager {
 	}
 }
 
-// ─── Microcompact Helpers ───────────────────────────────────────────────────
+// --- Microcompact Helpers ---------------------------------------------------
 
 /**
  * Microcompact: prune old tool results based on time gap.

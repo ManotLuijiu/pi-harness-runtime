@@ -4,14 +4,14 @@
  * Core types for the enhanced checkpoint system.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Task Types ─────────────────────────────────────────────────────────
+// --- Task Types ---------------------------------------------------------
 
 /**
  * Task status
@@ -31,7 +31,7 @@ export interface RuntimeTask {
 	acceptanceCriteria?: string[];
 }
 
-// ─── Job Types ──────────────────────────────────────────────────────────
+// --- Job Types ----------------------------------------------------------
 
 /**
  * Job status
@@ -45,7 +45,7 @@ export type JobStatus =
 	| "cancelled"
 	| "archived";
 
-// ─── State Types ─────────────────────────────────────────────────────────
+// --- State Types ---------------------------------------------------------
 
 /**
  * Runtime state to be checkpointed
@@ -65,7 +65,7 @@ export interface RuntimeState {
 	metadata?: Record<string, unknown>;
 }
 
-// ─── Checkpoint Types ────────────────────────────────────────────────────
+// --- Checkpoint Types ----------------------------------------------------
 
 /**
  * Checkpoint type
@@ -162,7 +162,7 @@ export interface IncrementalCheckpoint {
 	metadata: CheckpointMetadata;
 }
 
-// ─── Recovery Types ──────────────────────────────────────────────────────
+// --- Recovery Types ------------------------------------------------------
 
 /**
  * Recovery strategy
@@ -206,7 +206,7 @@ export interface PruneResult {
 	errors?: string[];
 }
 
-// ─── Storage Types ───────────────────────────────────────────────────────
+// --- Storage Types -------------------------------------------------------
 
 /**
  * Checkpoint file stored on disk
@@ -244,7 +244,7 @@ export interface CheckpointIndex {
 	lastUpdated: string;
 }
 
-// ─── Configuration ────────────────────────────────────────────────────────
+// --- Configuration --------------------------------------------------------
 
 /**
  * Checkpoint engine configuration
@@ -291,7 +291,7 @@ export interface CheckpointEngineConfig {
 	metadataIndex?: boolean;
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────────
+// --- Event Types ---------------------------------------------------------
 
 /**
  * Checkpoint event
@@ -313,7 +313,7 @@ export interface EventLogEntry {
 	correlationId?: string;
 }
 
-// ─── Legacy Types ────────────────────────────────────────────────────────
+// --- Legacy Types --------------------------------------------------------
 
 /**
  * Legacy checkpoint format

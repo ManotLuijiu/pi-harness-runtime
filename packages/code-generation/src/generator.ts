@@ -22,7 +22,7 @@ import type {
 	VariableResolver,
 } from "./types.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG: Required<GeneratorConfig> = {
 	outputDir: "./generated",
@@ -44,7 +44,7 @@ interface GeneratorConfig {
 	validationRules?: ValidationRule[];
 }
 
-// ─── Code Generator ───────────────────────────────────────────────────────
+// --- Code Generator -------------------------------------------------------
 
 export class CodeGenerator {
 	private readonly config: Required<GeneratorConfig>;
@@ -405,13 +405,13 @@ export class CodeGenerator {
 	}
 }
 
-// ─── Template Renderer Interface ───────────────────────────────────────────
+// --- Template Renderer Interface -------------------------------------------
 
 export interface TemplateRenderer {
 	render(template: string, variables: Record<string, unknown>): Promise<string>;
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a code generator

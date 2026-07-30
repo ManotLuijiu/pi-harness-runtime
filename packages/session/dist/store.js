@@ -5,7 +5,7 @@
  */
 import { readdir, readFile, writeFile, mkdir, rename, unlink, } from "node:fs/promises";
 import { dirname, join } from "node:path";
-// ─── Session Store ────────────────────────────────────────────────────────
+// --- Session Store --------------------------------------------------------
 export class SessionStore {
     rootDir;
     autoSave;
@@ -264,7 +264,7 @@ export class SessionStore {
         await this.saveIndex();
     }
 }
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 /**
  * Create a session store
  */

@@ -4,21 +4,21 @@
  * Intelligent framework detection system with confidence scoring.
  */
 
-// ─── Detector ──────────────────────────────────────────────────────────
+// --- Detector ----------------------------------------------------------
 
 export {
 	FrameworkDetector,
 	createFrameworkDetector,
 } from "./detector.js";
 
-// ─── Signatures ────────────────────────────────────────────────────────
+// --- Signatures --------------------------------------------------------
 
 export {
 	SignatureRegistry,
 	getDefaultSignatures,
 } from "./signatures/registry.js";
 
-// ─── Types ───────────────────────────────────────────────────────────
+// --- Types -----------------------------------------------------------
 
 export {
 	SDK_VERSION,

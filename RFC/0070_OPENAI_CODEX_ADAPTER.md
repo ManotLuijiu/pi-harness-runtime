@@ -8,14 +8,14 @@ Integrates OpenAI's [Codex](https://openai.com/index/introducing-codex/) models 
 
 ```
 packages/codex-adapter/
-├── src/
-│   ├── provider.ts        # CodexProvider (implements ProviderExtension)
-│   ├── tools.ts           # Codex tool definitions (read, write, execute, browse)
-│   ├── executor.ts        # Code execution sandbox
-│   ├── types.ts
-│   └── index.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- provider.ts        # CodexProvider (implements ProviderExtension)
+|   +-- tools.ts           # Codex tool definitions (read, write, execute, browse)
+|   +-- executor.ts        # Code execution sandbox
+|   +-- types.ts
+|   +-- index.ts
++-- package.json
++-- README.md
 ```
 
 ## Why Codex

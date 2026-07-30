@@ -4,11 +4,11 @@
  * Type definitions for project analysis output and plugin interface.
  */
 
-// ─── SDK Version ───────────────────────────────────────────────────────
+// --- SDK Version -------------------------------------------------------
 
 export const SDK_VERSION = "1.0.0" as const;
 
-// ─── Project Profile ──────────────────────────────────────────────────
+// --- Project Profile --------------------------------------------------
 
 /**
  * Primary output of project analysis.
@@ -47,7 +47,7 @@ export interface ProjectProfile {
 	analyzedAt: string;
 }
 
-// ─── Framework Detection ──────────────────────────────────────────────
+// --- Framework Detection ----------------------------------------------
 
 export type FrameworkCategory =
 	| "frappe"
@@ -76,7 +76,7 @@ export interface DetectedFramework {
 	primary: boolean;
 }
 
-// ─── Language Detection ──────────────────────────────────────────────
+// --- Language Detection ----------------------------------------------
 
 export interface DetectedLanguage {
 	/** Language name */
@@ -87,7 +87,7 @@ export interface DetectedLanguage {
 	coverage: number;
 }
 
-// ─── Package Manager ───────────────────────────────────────────────────
+// --- Package Manager ---------------------------------------------------
 
 export type PackageManagerType =
 	| "npm"
@@ -107,7 +107,7 @@ export interface PackageManagerProfile {
 	primary: boolean;
 }
 
-// ─── Application Profile ──────────────────────────────────────────────
+// --- Application Profile ----------------------------------------------
 
 export interface ApplicationProfile {
 	/** Unique application identifier */
@@ -128,7 +128,7 @@ export interface ApplicationProfile {
 	relativePath: string;
 }
 
-// ─── Project Commands ─────────────────────────────────────────────────
+// --- Project Commands -------------------------------------------------
 
 export interface ProjectCommands {
 	/** Unit test commands */
@@ -147,7 +147,7 @@ export interface ProjectCommands {
 	migrate: string[];
 }
 
-// ─── Project Rules ────────────────────────────────────────────────────
+// --- Project Rules ----------------------------------------------------
 
 export type RulePriority = "mandatory" | "advisory" | "convention";
 
@@ -177,7 +177,7 @@ export interface RuleSection {
 	line: number;
 }
 
-// ─── Test Capabilities ────────────────────────────────────────────────
+// --- Test Capabilities ------------------------------------------------
 
 export type TestRunner =
 	| "vitest"
@@ -201,7 +201,7 @@ export interface TestCapability {
 	pattern?: string;
 }
 
-// ─── Warnings ──────────────────────────────────────────────────────────
+// --- Warnings ----------------------------------------------------------
 
 export type WarningCode =
 	| "CONFLICTING_FRAMEWORKS"
@@ -220,7 +220,7 @@ export interface ProjectWarning {
 	affected?: string[];
 }
 
-// ─── Detection Signal ──────────────────────────────────────────────────
+// --- Detection Signal --------------------------------------------------
 
 export interface DetectionSignal {
 	/** Signal type */
@@ -233,7 +233,7 @@ export interface DetectionSignal {
 	value?: string;
 }
 
-// ─── Plugin Interface ─────────────────────────────────────────────────
+// --- Plugin Interface -------------------------------------------------
 
 /**
  * Result of framework plugin detection phase.
@@ -295,7 +295,7 @@ export interface FrameworkAnalyzerPlugin {
 	): Promise<Partial<ProjectProfile>>;
 }
 
-// ─── Analyzer Configuration ───────────────────────────────────────────
+// --- Analyzer Configuration -------------------------------------------
 
 export interface AnalyzerConfig {
 	/** Maximum files to scan */
@@ -351,7 +351,7 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
 	detectMonorepo: true,
 };
 
-// ─── Analysis Request / Response ─────────────────────────────────────
+// --- Analysis Request / Response -------------------------------------
 
 export interface AnalyzeRequest {
 	/** Path to repository root */
@@ -385,7 +385,7 @@ export type AnalysisErrorCode =
 	| "INVALID_CONFIG"
 	| "UNKNOWN_ERROR";
 
-// ─── Cache ────────────────────────────────────────────────────────────
+// --- Cache ------------------------------------------------------------
 
 export interface CacheEntry {
 	/** Cached project profile */

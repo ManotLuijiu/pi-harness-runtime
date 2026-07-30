@@ -35,7 +35,7 @@ import {
 	mergeRules,
 } from "../src/rule-discovery.js";
 
-// ─── Temp Fixture Helpers ─────────────────────────────────────────────
+// --- Temp Fixture Helpers ---------------------------------------------
 
 const tempDirs: string[] = [];
 
@@ -56,7 +56,7 @@ afterEach(async () => {
 	tempDirs.length = 0;
 });
 
-// ─── detectLanguages Tests ────────────────────────────────────────────
+// --- detectLanguages Tests --------------------------------------------
 
 describe("detectLanguages", () => {
 	test("detects TypeScript files", () => {
@@ -196,7 +196,7 @@ describe("detectLanguages", () => {
 	});
 });
 
-// ─── detectPackageManager Tests ───────────────────────────────────────
+// --- detectPackageManager Tests ---------------------------------------
 
 describe("detectPackageManager", () => {
 	test("detects npm from package.json", () => {
@@ -274,7 +274,7 @@ describe("detectPackageManager", () => {
 	});
 });
 
-// ─── parsePackageJsonScripts Tests ────────────────────────────────────
+// --- parsePackageJsonScripts Tests ------------------------------------
 
 describe("parsePackageJsonScripts", () => {
 	test("extracts all scripts", () => {
@@ -350,7 +350,7 @@ describe("parsePackageJsonScripts", () => {
 	});
 });
 
-// ─── categorizeCommands Tests ─────────────────────────────────────────
+// --- categorizeCommands Tests -----------------------------------------
 
 describe("categorizeCommands", () => {
 	test("categorizes jest test commands", () => {
@@ -485,7 +485,7 @@ describe("categorizeCommands", () => {
 	});
 });
 
-// ─── parsePythonCommands Tests ────────────────────────────────────────
+// --- parsePythonCommands Tests ----------------------------------------
 
 describe("parsePythonCommands", () => {
 	test("detects pytest from pyproject.toml", () => {
@@ -510,7 +510,7 @@ describe("parsePythonCommands", () => {
 	});
 });
 
-// ─── parseComposerScripts Tests ───────────────────────────────────────
+// --- parseComposerScripts Tests ---------------------------------------
 
 describe("parseComposerScripts", () => {
 	test("extracts composer scripts", () => {
@@ -548,7 +548,7 @@ describe("parseComposerScripts", () => {
 	});
 });
 
-// ─── AnalysisCache Tests ──────────────────────────────────────────────
+// --- AnalysisCache Tests ----------------------------------------------
 
 describe("AnalysisCache", () => {
 	test("generates consistent cache keys", () => {
@@ -658,7 +658,7 @@ describe("AnalysisCache", () => {
 	});
 });
 
-// ─── hashRuleFiles Tests ──────────────────────────────────────────────
+// --- hashRuleFiles Tests ----------------------------------------------
 
 describe("hashRuleFiles", () => {
 	test("generates consistent hash for same files", async () => {
@@ -687,7 +687,7 @@ describe("hashRuleFiles", () => {
 	});
 });
 
-// ─── hashManifestFiles Tests ───────────────────────────────────────────
+// --- hashManifestFiles Tests -------------------------------------------
 
 describe("hashManifestFiles", () => {
 	test("generates consistent hash", async () => {
@@ -712,7 +712,7 @@ describe("hashManifestFiles", () => {
 	});
 });
 
-// ─── FileSystemWalker Tests ────────────────────────────────────────────
+// --- FileSystemWalker Tests --------------------------------------------
 
 describe("FileSystemWalker", () => {
 	test("rejects non-absolute root path", () => {
@@ -867,7 +867,7 @@ describe("FileSystemWalker", () => {
 	});
 });
 
-// ─── Rule Discovery Tests ─────────────────────────────────────────────
+// --- Rule Discovery Tests ---------------------------------------------
 
 describe("rule-discovery", () => {
 	test("parseRuleFile extracts sections from markdown", async () => {
@@ -961,7 +961,7 @@ describe("rule-discovery", () => {
 	});
 });
 
-// ─── Signal Detection Tests ───────────────────────────────────────────
+// --- Signal Detection Tests -------------------------------------------
 
 describe("scanSignals", () => {
 	test("returns empty array when no signals match", async () => {
@@ -1090,7 +1090,7 @@ describe("GenericFrameworkDetector", () => {
 	});
 });
 
-// ─── ProjectAnalyzer Integration Tests ────────────────────────────────
+// --- ProjectAnalyzer Integration Tests --------------------------------
 
 describe("ProjectAnalyzer", () => {
 	let analyzer: ProjectAnalyzer;
@@ -1380,7 +1380,7 @@ describe("ProjectAnalyzer", () => {
 	});
 });
 
-// ─── Complexity Estimation ────────────────────────────────────────────
+// --- Complexity Estimation --------------------------------------------
 
 describe("complexity signals from FileSystemWalker", () => {
 	test("file count reflects all scanned files", async () => {
@@ -1462,7 +1462,7 @@ describe("complexity signals from FileSystemWalker", () => {
 	});
 });
 
-// ─── Error Cases ──────────────────────────────────────────────────────
+// --- Error Cases ------------------------------------------------------
 
 describe("error handling", () => {
 	test("analyzer handles corrupted JSON gracefully", async () => {
@@ -1504,7 +1504,7 @@ describe("error handling", () => {
 	});
 });
 
-// ─── Additional Cache TTL Tests ────────────────────────────────────────
+// --- Additional Cache TTL Tests ----------------------------------------
 
 describe("AnalysisCache TTL behavior", () => {
 	test("cache returns null for expired entries", async () => {

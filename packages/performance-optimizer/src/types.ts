@@ -4,7 +4,7 @@
  * Interfaces for performance analysis and recommendations.
  */
 
-// ─── Input Types ─────────────────────────────────────────────────────────────
+// --- Input Types -------------------------------------------------------------
 
 export interface RuntimeMetricSnapshot {
 	jobId: string;
@@ -59,7 +59,7 @@ export interface PerformancePolicy {
 	mandatoryStages: string[];
 }
 
-// ─── Local Type Definitions ────────────────────────────────────────────────────
+// --- Local Type Definitions ----------------------------------------------------
 
 export interface TaskGraphSnapshot {
 	nodes: Array<{
@@ -78,7 +78,7 @@ export interface PerformanceOptimizationRequest {
 	policy: PerformancePolicy;
 }
 
-// ─── Output Types ─────────────────────────────────────────────────────────────
+// --- Output Types -------------------------------------------------------------
 
 export type PerformanceRecommendation =
 	| { type: "reduce_context"; targetTokens: number; reason: string }
@@ -99,7 +99,7 @@ export interface PerformanceOptimizationPlan {
 	generatedAt: string;
 }
 
-// ─── Runtime Events ────────────────────────────────────────────────────────────
+// --- Runtime Events ------------------------------------------------------------
 
 export type PerformanceOptimizerEvent =
 	| { type: "performance.analysis.started"; jobId: string }

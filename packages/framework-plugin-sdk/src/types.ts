@@ -4,14 +4,14 @@
  * Core types for the plugin system.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Plugin Types ─────────────────────────────────────────────────────────────
+// --- Plugin Types -------------------------------------------------------------
 
 /**
  * Plugin capability
@@ -104,7 +104,7 @@ export interface PluginPermission {
 	scope?: "own" | "all";
 }
 
-// ─── Plugin Instance ─────────────────────────────────────────────────────────
+// --- Plugin Instance ---------------------------------------------------------
 
 /**
  * Plugin instance
@@ -156,7 +156,7 @@ export interface Plugin {
 	activatedAt?: string;
 }
 
-// ─── Lifecycle Types ──────────────────────────────────────────────────────────
+// --- Lifecycle Types ----------------------------------------------------------
 
 /**
  * Plugin lifecycle events
@@ -183,7 +183,7 @@ export interface LifecycleContext {
 	data?: Record<string, unknown>;
 }
 
-// ─── Hook Types ──────────────────────────────────────────────────────────────
+// --- Hook Types --------------------------------------------------------------
 
 /**
  * Hook handler
@@ -215,7 +215,7 @@ export interface HookResult {
 	durationMs: number;
 }
 
-// ─── Extension Types ─────────────────────────────────────────────────────────
+// --- Extension Types ---------------------------------------------------------
 
 /**
  * Provider extension
@@ -305,7 +305,7 @@ export interface ToolExtension {
 	config?: Record<string, unknown>;
 }
 
-// ─── Sandbox Types ──────────────────────────────────────────────────────────
+// --- Sandbox Types ----------------------------------------------------------
 
 /**
  * Sandbox configuration
@@ -328,7 +328,7 @@ export interface SandboxResult {
 	durationMs: number;
 }
 
-// ─── Registry Types ────────────────────────────────────────────────────────
+// --- Registry Types --------------------------------------------------------
 
 /**
  * Registry entry
@@ -342,7 +342,7 @@ export interface RegistryEntry {
 	metadata?: Record<string, unknown>;
 }
 
-// ─── Configuration Types ────────────────────────────────────────────────────
+// --- Configuration Types ----------------------------------------------------
 
 /**
  * Plugin manager configuration
@@ -409,7 +409,7 @@ export interface LoadOptions {
 	skipValidation?: boolean;
 }
 
-// ─── Error Types ────────────────────────────────────────────────────────────
+// --- Error Types ------------------------------------------------------------
 
 /**
  * Plugin error

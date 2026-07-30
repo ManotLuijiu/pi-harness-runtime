@@ -3,7 +3,7 @@
  *
  * Core types for automated code review.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

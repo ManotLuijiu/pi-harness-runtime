@@ -8,15 +8,15 @@ Implements the [Google Agent-to-Agent (A2A) protocol](https://google.github.io/A
 
 ```
 packages/a2a-adapter/
-├── src/
-│   ├── agent.ts              # A2AAgent class (agentcard, task handling)
-│   ├── client.ts             # A2AClient class (agent discovery, delegation)
-│   ├── protocol.ts           # A2A protocol types and constants
-│   ├── transport.ts          # HTTP transport with SSE support
-│   ├── types.ts
-│   └── index.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- agent.ts              # A2AAgent class (agentcard, task handling)
+|   +-- client.ts             # A2AClient class (agent discovery, delegation)
+|   +-- protocol.ts           # A2A protocol types and constants
+|   +-- transport.ts          # HTTP transport with SSE support
+|   +-- types.ts
+|   +-- index.ts
++-- package.json
++-- README.md
 ```
 
 ## A2A Protocol Overview
@@ -106,11 +106,11 @@ export interface Skill {
 ## Task Lifecycle
 
 ```
-SendingAgent → [send_task] → ReceivingAgent
-                         → Task created (status: working)
-                         → TaskUpdate events (optional)
-                         → Task completed/cancelled/failed
-SendingAgent ← [task_result] ← ReceivingAgent
+SendingAgent -> [send_task] -> ReceivingAgent
+                         -> Task created (status: working)
+                         -> TaskUpdate events (optional)
+                         -> Task completed/cancelled/failed
+SendingAgent <-  [task_result] <-  ReceivingAgent
 ```
 
 ## Harness Integration

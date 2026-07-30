@@ -8,14 +8,14 @@ After context overflow compaction with `willRetry=false`, the agent does NOT aut
 
 ### The Compaction Flow
 
-1. **Context overflow occurs** → `_checkCompaction()` is called
+1. **Context overflow occurs** -> `_checkCompaction()` is called
 2. **For overflow with `stopReason === "stop"`** (the common case):
-   - `willRetry = assistantMessage.stopReason !== "stop"` → **FALSE**
+   - `willRetry = assistantMessage.stopReason !== "stop"` -> **FALSE**
    - Calls `_runAutoCompaction("overflow", false)`
 3. **Inside `_runAutoCompaction`** (line 1685):
 
    ```javascript
-   return this.agent.hasQueuedMessages();  // ← Returns FALSE for overflow case!
+   return this.agent.hasQueuedMessages();  // <-  Returns FALSE for overflow case!
    ```
 
 4. **Result**: Session pauses waiting for user input
@@ -45,7 +45,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-**Problem**: `before_agent_start` only fires when a **new prompt is submitted**. After overflow compaction with `willRetry=false`, no prompt is submitted → resume is never delivered.
+**Problem**: `before_agent_start` only fires when a **new prompt is submitted**. After overflow compaction with `willRetry=false`, no prompt is submitted -> resume is never delivered.
 
 ## Solution Implemented: Post-Compaction Message Queue
 
@@ -53,9 +53,9 @@ Added a new extension API `queuePostCompactionMessage()` that allows extensions 
 
 ### Flow After Fix
 
-1. `session_before_compact` → Build resume snapshot in DB
-2. `session_compact` → Queue resume via `ctx.queuePostCompactionMessage()`
-3. After compaction completes → `drainPostCompactionMessages()` delivers queued messages
+1. `session_before_compact` -> Build resume snapshot in DB
+2. `session_compact` -> Queue resume via `ctx.queuePostCompactionMessage()`
+3. After compaction completes -> `drainPostCompactionMessages()` delivers queued messages
 4. Agent continues and delivers resume automatically
 
 ## Files Changed

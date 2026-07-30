@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CompactableMessage } from "../packages/types/src/runtime-types.js";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------------
 
 export interface SessionMemory {
 	jobId: string;
@@ -41,7 +41,7 @@ export interface TestResult {
 	timestamp: string;
 }
 
-// ─── Session Memory Manager ─────────────────────────────────────────────────
+// --- Session Memory Manager -------------------------------------------------
 
 export class SessionMemoryManager {
 	private memory: SessionMemory;
@@ -66,7 +66,7 @@ export class SessionMemoryManager {
 		};
 	}
 
-	// ─── Public API ───────────────────────────────────────────────────────────
+	// --- Public API -----------------------------------------------------------
 
 	/**
 	 * Extract key facts from recent messages
@@ -362,7 +362,7 @@ export class SessionMemoryManager {
 		this.save();
 	}
 
-	// ─── Private Methods ──────────────────────────────────────────────────
+	// --- Private Methods --------------------------------------------------
 
 	private load(): SessionMemory | null {
 		if (!existsSync(this.memoryPath)) {
@@ -388,7 +388,7 @@ export class SessionMemoryManager {
 	}
 }
 
-// ─── Factory ────────────────────────────────────────────────────────────────
+// --- Factory ----------------------------------------------------------------
 
 /**
  * Create a SessionMemoryManager for a job

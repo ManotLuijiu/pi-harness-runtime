@@ -174,9 +174,35 @@ async function main(): Promise<void> {
 		gitAmendCommit();
 	}
 
-	console.log(`\n✅ Release ${newVersion} ready.\n`);
-	console.log("   To publish:\n");
-	console.log("   git push --follow-tags origin develop\n");
+	// Step 5: Push
+	if (!isDryRun) {
+		console.log("\n🚀 Step 5: Pushing to origin...");
+		try {
+			execSync("git push --follow-tags origin develop", {
+				cwd: ROOT,
+				stdio: "inherit",
+			});
+		} catch {
+			console.error("Git push failed.");
+			process.exit(1);
+		}
+	}
+
+	// Step 6: Publish to npm (root package only, not workspaces)
+	if (!isDryRun) {
+		console.log("\n📦 Step 6: Publishing to npm (pi-harness-runtime only)...");
+		try {
+			execSync("npm publish --workspaces=false", {
+				cwd: ROOT,
+				stdio: "inherit",
+			});
+		} catch (err) {
+			console.error("npm publish failed. Check that you're logged in (npm login) and the version hasn't already been published.");
+			process.exit(1);
+		}
+	}
+
+	console.log(`\n✅ Release ${newVersion} complete.\n`);
 }
 
 main().catch((err) => {

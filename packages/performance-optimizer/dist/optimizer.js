@@ -298,7 +298,7 @@ export class PerformanceOptimizer {
         }
     }
 }
-// ─── Factory ───────────────────────────────────────────────────────────────
+// --- Factory ---------------------------------------------------------------
 export function createPerformanceOptimizer(policy) {
     return new PerformanceOptimizer(policy);
 }

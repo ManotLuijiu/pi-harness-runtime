@@ -17,19 +17,19 @@ The current checkpoint system (`packages/checkpoint/checkpoint-manager.ts`) only
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Checkpoint Engine                           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Manager    │  │   Storage    │  │   Recovery   │           │
-│  │   (API)      │  │   (I/O)      │  │   (Restore) │           │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Snapshot   │  │    Diff      │  │   Metadata   │           │
-│  │   Full       │  │   Incremental│  │   Index      │           │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                      Checkpoint Engine                           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Manager    |  |   Storage    |  |   Recovery   |           |
+|  |   (API)      |  |   (I/O)      |  |   (Restore) |           |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
+|  +--------------+  +--------------+  +--------------+           |
+|  |   Snapshot   |  |    Diff      |  |   Metadata   |           |
+|  |   Full       |  |   Incremental|  |   Index      |           |
+|  +--------------+  +--------------+  +--------------+           |
++-----------------------------------------------------------------+
 ```
 
 ## Key Components
@@ -136,21 +136,21 @@ interface CheckpointMetadata {
 
 ```
 packages/checkpoint/
-├── src/
-│   ├── index.ts                    # Public exports
-│   ├── engine.ts                   # CheckpointEngine main class
-│   ├── storage.ts                  # File I/O with compression
-│   ├── differ.ts                   # Diff calculation
-│   ├── recovery.ts                 # Recovery strategies
-│   ├── indexer.ts                  # Metadata index
-│   ├── types.ts                    # Extended types
-│   └── errors.ts                   # Checkpoint errors
-├── test/
-│   ├── engine.test.ts
-│   ├── differ.test.ts
-│   └── recovery.test.ts
-├── package.json
-└── README.md
++-- src/
+|   +-- index.ts                    # Public exports
+|   +-- engine.ts                   # CheckpointEngine main class
+|   +-- storage.ts                  # File I/O with compression
+|   +-- differ.ts                   # Diff calculation
+|   +-- recovery.ts                 # Recovery strategies
+|   +-- indexer.ts                  # Metadata index
+|   +-- types.ts                    # Extended types
+|   +-- errors.ts                   # Checkpoint errors
++-- test/
+|   +-- engine.test.ts
+|   +-- differ.test.ts
+|   +-- recovery.test.ts
++-- package.json
++-- README.md
 ```
 
 ## Usage Examples

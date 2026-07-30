@@ -11,13 +11,13 @@ import { AnalysisCache, hashRuleFiles, hashManifestFiles, hashFrameworkConfigFil
 import { discoverRuleFiles, mergeRules, extractCommandsFromRules, extractMetadataFromRules, } from "./rule-discovery.js";
 import { parsePackageJsonScripts, categorizeCommands, detectPackageManager, parsePythonCommands, parseComposerScripts, } from "./command-discovery.js";
 import { GenericFrameworkDetector } from "./signals.js";
-// ─── Default Plugins ────────────────────────────────────────────────────
+// --- Default Plugins ----------------------------------------------------
 /**
  * Default framework analyzer plugins.
  * These are used when no custom plugins are provided.
  */
 export const DEFAULT_PLUGINS = [];
-// ─── Language Detection ────────────────────────────────────────────────
+// --- Language Detection ------------------------------------------------
 /**
  * Language file extensions mapping.
  */
@@ -69,7 +69,7 @@ export function detectLanguages(files) {
     languages.sort((a, b) => b.coverage - a.coverage);
     return languages;
 }
-// ─── Test Capability Detection ─────────────────────────────────────────
+// --- Test Capability Detection -----------------------------------------
 /**
  * Detect test capabilities from project files.
  */
@@ -148,7 +148,7 @@ export async function detectTestCapabilities(fs, framework) {
     }
     return capabilities;
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────
+// --- Main Analyzer -----------------------------------------------------
 /**
  * Project analyzer implementation.
  */

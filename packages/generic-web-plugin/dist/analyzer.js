@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
-// ─── Detection ────────────────────────────────────────────────────────────────
+// --- Detection ----------------------------------------------------------------
 /**
  * Detect if a directory is a generic web project
  */
@@ -19,7 +19,7 @@ export async function detectWeb(root) {
         existsSync(join(root, "components"));
     return hasPackageJson && (hasNodeModules || hasSrc);
 }
-// ─── Framework Detection ────────────────────────────────────────────────────
+// --- Framework Detection ----------------------------------------------------
 async function detectFramework(root) {
     const pkgJson = await readFile(join(root, "package.json"), "utf-8").catch(() => "{}");
     const pkg = JSON.parse(pkgJson);
@@ -63,7 +63,7 @@ async function detectFramework(root) {
         return "astro";
     return "static";
 }
-// ─── Route Scanning ─────────────────────────────────────────────────────────
+// --- Route Scanning ---------------------------------------------------------
 async function findRouteFiles(root, framework) {
     const routes = [];
     const patterns = getRoutePatterns(framework);
@@ -186,7 +186,7 @@ function deduplicateRoutes(routes) {
     }
     return result;
 }
-// ─── API Endpoint Detection ──────────────────────────────────────────────────
+// --- API Endpoint Detection --------------------------------------------------
 async function findApiEndpoints(root, framework) {
     if (![
         "express",
@@ -287,7 +287,7 @@ function extractHttpMethods(filePath) {
         return ["GET"];
     }
 }
-// ─── Analysis ────────────────────────────────────────────────────────────────
+// --- Analysis ----------------------------------------------------------------
 /**
  * Deep analysis of a generic web project
  */

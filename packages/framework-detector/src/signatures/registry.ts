@@ -6,7 +6,7 @@
 
 import type { FrameworkSignature } from "../types.js";
 
-// ─── Default Signatures ────────────────────────────────────────────────────
+// --- Default Signatures ----------------------------------------------------
 
 /**
  * Get all default framework signatures
@@ -49,7 +49,7 @@ export function getDefaultSignatures(): FrameworkSignature[] {
 	];
 }
 
-// ─── React ──────────────────────────────────────────────────────────────
+// --- React --------------------------------------------------------------
 
 function getReactSignature(): FrameworkSignature {
 	return {
@@ -73,7 +73,7 @@ function getReactSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Vue ───────────────────────────────────────────────────────────────
+// --- Vue ---------------------------------------------------------------
 
 function getVueSignature(): FrameworkSignature {
 	return {
@@ -101,7 +101,7 @@ function getVueSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Angular ───────────────────────────────────────────────────────────
+// --- Angular -----------------------------------------------------------
 
 function getAngularSignature(): FrameworkSignature {
 	return {
@@ -128,7 +128,7 @@ function getAngularSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Next.js ───────────────────────────────────────────────────────────
+// --- Next.js -----------------------------------------------------------
 
 function getNextJsSignature(): FrameworkSignature {
 	return {
@@ -148,7 +148,7 @@ function getNextJsSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Nuxt ──────────────────────────────────────────────────────────────
+// --- Nuxt --------------------------------------------------------------
 
 function getNuxtSignature(): FrameworkSignature {
 	return {
@@ -166,7 +166,7 @@ function getNuxtSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Svelte ───────────────────────────────────────────────────────────
+// --- Svelte -----------------------------------------------------------
 
 function getSvelteSignature(): FrameworkSignature {
 	return {
@@ -183,7 +183,7 @@ function getSvelteSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Express ───────────────────────────────────────────────────────────
+// --- Express -----------------------------------------------------------
 
 function getExpressSignature(): FrameworkSignature {
 	return {
@@ -206,7 +206,7 @@ function getExpressSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Fastify ──────────────────────────────────────────────────────────
+// --- Fastify ----------------------------------------------------------
 
 function getFastifySignature(): FrameworkSignature {
 	return {
@@ -227,7 +227,7 @@ function getFastifySignature(): FrameworkSignature {
 	};
 }
 
-// ─── NestJS ───────────────────────────────────────────────────────────
+// --- NestJS -----------------------------------------------------------
 
 function getNestJsSignature(): FrameworkSignature {
 	return {
@@ -254,7 +254,7 @@ function getNestJsSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Django ───────────────────────────────────────────────────────────
+// --- Django -----------------------------------------------------------
 
 function getDjangoSignature(): FrameworkSignature {
 	return {
@@ -276,7 +276,7 @@ function getDjangoSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Flask ─────────────────────────────────────────────────────────────
+// --- Flask -------------------------------------------------------------
 
 function getFlaskSignature(): FrameworkSignature {
 	return {
@@ -297,7 +297,7 @@ function getFlaskSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Spring Boot ──────────────────────────────────────────────────────
+// --- Spring Boot ------------------------------------------------------
 
 function getSpringBootSignature(): FrameworkSignature {
 	return {
@@ -335,7 +335,7 @@ function getSpringBootSignature(): FrameworkSignature {
 	};
 }
 
-// ─── FastAPI ──────────────────────────────────────────────────────────
+// --- FastAPI ----------------------------------------------------------
 
 function getFastApiSignature(): FrameworkSignature {
 	return {
@@ -356,7 +356,7 @@ function getFastApiSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Remix ────────────────────────────────────────────────────────────
+// --- Remix ------------------------------------------------------------
 
 function getRemixSignature(): FrameworkSignature {
 	return {
@@ -383,7 +383,7 @@ function getRemixSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Astro ───────────────────────────────────────────────────────────
+// --- Astro -----------------------------------------------------------
 
 function getAstroSignature(): FrameworkSignature {
 	return {
@@ -404,7 +404,7 @@ function getAstroSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Electron ────────────────────────────────────────────────────────
+// --- Electron --------------------------------------------------------
 
 function getElectronSignature(): FrameworkSignature {
 	return {
@@ -421,7 +421,7 @@ function getElectronSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Tauri ───────────────────────────────────────────────────────────
+// --- Tauri -----------------------------------------------------------
 
 function getTauriSignature(): FrameworkSignature {
 	return {
@@ -448,7 +448,7 @@ function getTauriSignature(): FrameworkSignature {
 	};
 }
 
-// ─── React Native ────────────────────────────────────────────────────
+// --- React Native ----------------------------------------------------
 
 function getReactNativeSignature(): FrameworkSignature {
 	return {
@@ -471,7 +471,7 @@ function getReactNativeSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Flutter ──────────────────────────────────────────────────────────
+// --- Flutter ----------------------------------------------------------
 
 function getFlutterSignature(): FrameworkSignature {
 	return {
@@ -487,7 +487,7 @@ function getFlutterSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Frappe ───────────────────────────────────────────────────────────
+// --- Frappe -----------------------------------------------------------
 
 function getFrappeSignature(): FrameworkSignature {
 	return {
@@ -510,7 +510,7 @@ function getFrappeSignature(): FrameworkSignature {
 	};
 }
 
-// ─── ERPNext ──────────────────────────────────────────────────────────
+// --- ERPNext ----------------------------------------------------------
 
 function getErpNextSignature(): FrameworkSignature {
 	return {
@@ -527,7 +527,7 @@ function getErpNextSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Frappe SPA ───────────────────────────────────────────────────────
+// --- Frappe SPA -------------------------------------------------------
 
 function getFrappeSpaSignature(): FrameworkSignature {
 	return {
@@ -555,7 +555,7 @@ function getFrappeSpaSignature(): FrameworkSignature {
 	};
 }
 
-// ─── Signature Registry Class ───────────────────────────────────────────
+// --- Signature Registry Class -------------------------------------------
 
 export class SignatureRegistry {
 	private signatures: Map<string, FrameworkSignature> = new Map();

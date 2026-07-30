@@ -432,7 +432,7 @@ export class BuiltAdapter {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a new provider builder

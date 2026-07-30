@@ -308,7 +308,7 @@ export class DeepAgentsAdapter implements AgentWorker {
 		return this.config?.supportedModels ?? ["deepagents/default"];
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	/**
 	 * Build a DeepAgents API request from a task request

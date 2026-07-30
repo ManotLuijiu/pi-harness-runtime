@@ -6,7 +6,7 @@
 
 import type { PolicyEngineConfig, PolicyState, TokenUsage } from "./types.js";
 
-// ─── Rate Limiter ──────────────────────────────────────────────────────────
+// --- Rate Limiter ----------------------------------------------------------
 
 interface RateLimitEntry {
 	count: number;
@@ -78,7 +78,7 @@ export class RateLimiter {
 	}
 }
 
-// ─── Budget Tracker ────────────────────────────────────────────────────────
+// --- Budget Tracker --------------------------------------------------------
 
 interface BudgetEntry {
 	spent: number;
@@ -156,7 +156,7 @@ export class BudgetTracker {
 	}
 }
 
-// ─── Policy Engine ─────────────────────────────────────────────────────────
+// --- Policy Engine ---------------------------------------------------------
 
 export class PolicyEngine {
 	private readonly config: PolicyEngineConfig;
@@ -353,7 +353,7 @@ export class PolicyEngine {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a policy engine

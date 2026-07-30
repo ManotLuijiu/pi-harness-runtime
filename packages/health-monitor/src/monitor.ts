@@ -23,7 +23,7 @@ export const DEFAULT_CONFIG: Required<MonitorConfig> = {
 const recoveryAttempts = new Map<ComponentName, number>();
 const startTime = Date.now();
 
-// ─── Collectors ────────────────────────────────────────────────────────────────
+// --- Collectors ----------------------------------------------------------------
 
 export interface SnapshotValue {
 	value: number;

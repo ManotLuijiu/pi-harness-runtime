@@ -4,14 +4,14 @@
  * Core types for building provider adapters.
  */
 
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 
 /**
  * SDK version for compatibility checks
  */
 export const SDK_VERSION = "1.0.0";
 
-// ─── Provider Types (from @pi/types) ────────────────────────────────────────
+// --- Provider Types (from @pi/types) ----------------------------------------
 
 /**
  * Provider capability
@@ -62,7 +62,7 @@ export interface ProviderResponse {
 	error?: string;
 }
 
-// ─── Rate Limit Config ──────────────────────────────────────────────────────
+// --- Rate Limit Config ------------------------------------------------------
 
 /**
  * Rate limit configuration for providers
@@ -74,7 +74,7 @@ export interface RateLimitConfig {
 	concurrentRequests?: number;
 }
 
-// ─── SDK Types ──────────────────────────────────────────────────────────────
+// --- SDK Types --------------------------------------------------------------
 
 /**
  * Adapter version information
@@ -262,7 +262,7 @@ export interface RegistryEvents {
 	onHealthCheckFailed: (adapterId: string, result: HealthCheckResult) => void;
 }
 
-// ─── Provider Adapter Types ────────────────────────────────────────────────
+// --- Provider Adapter Types ------------------------------------------------
 
 /**
  * Provider adapter interface

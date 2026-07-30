@@ -24,14 +24,14 @@ import type {
 	StateDelta,
 } from "./types.js";
 
-// ─── Default Configuration ─────────────────────────────────────────────────
+// --- Default Configuration -------------------------------------------------
 
 const DEFAULT_CONFIG = {
 	compression: true,
 	checksumAlgorithm: "sha256" as const,
 };
 
-// ─── Storage Manager ──────────────────────────────────────────────────────
+// --- Storage Manager ------------------------------------------------------
 
 export class StorageManager {
 	private readonly rootDir: string;
@@ -426,7 +426,7 @@ export class StorageManager {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a storage manager

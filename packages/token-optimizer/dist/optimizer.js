@@ -3,12 +3,12 @@
  */
 const TOKENS_PER_CHAR = 0.25;
 const DEFAULT_PRICING = {
-    "gpt-4o": { inputPer1M: 2.50, outputPer1M: 10.00, currency: "USD" },
-    "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.60, currency: "USD" },
-    "claude-sonnet": { inputPer1M: 3.00, outputPer1M: 15.00, currency: "USD" },
+    "gpt-4o": { inputPer1M: 2.5, outputPer1M: 10.0, currency: "USD" },
+    "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6, currency: "USD" },
+    "claude-sonnet": { inputPer1M: 3.0, outputPer1M: 15.0, currency: "USD" },
     "claude-haiku": { inputPer1M: 0.25, outputPer1M: 1.25, currency: "USD" },
-    "gemini-2.5": { inputPer1M: 0.125, outputPer1M: 0.50, currency: "USD" },
-    "default": { inputPer1M: 1.00, outputPer1M: 3.00, currency: "USD" },
+    "gemini-2.5": { inputPer1M: 0.125, outputPer1M: 0.5, currency: "USD" },
+    default: { inputPer1M: 1.0, outputPer1M: 3.0, currency: "USD" },
 };
 export { DEFAULT_PRICING };
 /** Estimate token count from string. */
@@ -22,7 +22,13 @@ export function estimateMessageTokens(messages) {
 /** Build a token budget from components. */
 export function buildBudget(maxTokens, systemTokens = 0, reservedTokens = 0) {
     const availableTokens = Math.max(0, maxTokens - systemTokens - reservedTokens);
-    return { maxTokens, systemTokens, promptTokens: 0, reservedTokens, availableTokens };
+    return {
+        maxTokens,
+        systemTokens,
+        promptTokens: 0,
+        reservedTokens,
+        availableTokens,
+    };
 }
 /** Split messages by priority for progressive trimming. */
 export function splitByPriority(messages) {
@@ -37,7 +43,12 @@ export function splitByPriority(messages) {
 /** Optimize messages to fit within a token budget. */
 export function optimizeBudget(messages, budget) {
     if (budget.availableTokens <= 0) {
-        return { kept: [], removed: messages, finalBudget: budget, compressionRatio: 1 };
+        return {
+            kept: [],
+            removed: messages,
+            finalBudget: budget,
+            compressionRatio: 1,
+        };
     }
     const prioritized = splitByPriority(messages);
     const all = [...prioritized.high, ...prioritized.medium, ...prioritized.low];

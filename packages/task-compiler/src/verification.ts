@@ -21,7 +21,7 @@ export function assignVerification(
 	});
 }
 
-// ─── Output builders by task type ─────────────────────────────────────
+// --- Output builders by task type -------------------------------------
 
 function buildOutputs(
 	task: CompiledTask,
@@ -64,7 +64,7 @@ function buildOutputs(
 	}
 }
 
-// ─── Type-specific output builders ───────────────────────────────────
+// --- Type-specific output builders -----------------------------------
 
 function buildImplementationOutputs(
 	task: CompiledTask,

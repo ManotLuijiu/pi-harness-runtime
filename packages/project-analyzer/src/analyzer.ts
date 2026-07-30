@@ -44,7 +44,7 @@ import {
 } from "./command-discovery.js";
 import { GenericFrameworkDetector } from "./signals.js";
 
-// ─── Default Plugins ────────────────────────────────────────────────────
+// --- Default Plugins ----------------------------------------------------
 
 /**
  * Default framework analyzer plugins.
@@ -52,7 +52,7 @@ import { GenericFrameworkDetector } from "./signals.js";
  */
 export const DEFAULT_PLUGINS: FrameworkAnalyzerPlugin[] = [];
 
-// ─── Language Detection ────────────────────────────────────────────────
+// --- Language Detection ------------------------------------------------
 
 /**
  * Language file extensions mapping.
@@ -113,7 +113,7 @@ export function detectLanguages(
 	return languages;
 }
 
-// ─── Test Capability Detection ─────────────────────────────────────────
+// --- Test Capability Detection -----------------------------------------
 
 /**
  * Detect test capabilities from project files.
@@ -203,7 +203,7 @@ export async function detectTestCapabilities(
 	return capabilities;
 }
 
-// ─── Main Analyzer ─────────────────────────────────────────────────────
+// --- Main Analyzer -----------------------------------------------------
 
 /**
  * Project analyzer implementation.

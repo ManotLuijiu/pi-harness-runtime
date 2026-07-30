@@ -4,14 +4,14 @@
  * Extensible plugin system for framework integrations.
  */
 
-// ─── Manager ──────────────────────────────────────────────────────────
+// --- Manager ----------------------------------------------------------
 
 export {
 	PluginManager,
 	createPluginManager,
 } from "./manager.js";
 
-// ─── Types ────────────────────────────────────────────────────────────
+// --- Types ------------------------------------------------------------
 
 export {
 	SDK_VERSION,

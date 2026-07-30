@@ -20,7 +20,7 @@ import type {
 	SessionStatus,
 } from "./types.js";
 
-// ─── Session Index ────────────────────────────────────────────────────────
+// --- Session Index --------------------------------------------------------
 
 /**
  * Session index entry
@@ -36,7 +36,7 @@ interface SessionIndexEntry {
 	totalTokens: number;
 }
 
-// ─── Session Store ────────────────────────────────────────────────────────
+// --- Session Store --------------------------------------------------------
 
 export class SessionStore {
 	private readonly rootDir: string;
@@ -338,7 +338,7 @@ export class SessionStore {
 	}
 }
 
-// ─── Factory Function ────────────────────────────────────────────────────
+// --- Factory Function ----------------------------------------------------
 
 /**
  * Create a session store

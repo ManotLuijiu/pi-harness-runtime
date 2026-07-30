@@ -474,7 +474,7 @@ export class AdapterRegistry extends EventEmitter {
 	}
 }
 
-// ─── Factory Function ──────────────────────────────────────────────────────
+// --- Factory Function ------------------------------------------------------
 
 /**
  * Create a new adapter registry

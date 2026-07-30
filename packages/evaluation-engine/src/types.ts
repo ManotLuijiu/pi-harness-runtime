@@ -4,7 +4,7 @@
  * Interfaces for task evaluation and acceptance criteria checking.
  */
 
-// ─── Task Output Types ─────────────────────────────────────────────────────────
+// --- Task Output Types ---------------------------------------------------------
 
 export interface TaskOutputArtifact {
 	id: string;
@@ -44,7 +44,7 @@ export interface CompiledTask {
 	mandatoryStages: string[];
 }
 
-// ─── Evaluation Types ─────────────────────────────────────────────────────────
+// --- Evaluation Types ---------------------------------------------------------
 
 export interface EvaluationRequest {
 	jobId: string;
@@ -113,7 +113,7 @@ export type EvaluationState =
 	| "failed"
 	| "needs_review";
 
-// ─── Scoring Weights ───────────────────────────────────────────────────────────
+// --- Scoring Weights -----------------------------------------------------------
 
 export interface ScoringWeights {
 	correctness: number;

@@ -82,6 +82,8 @@ export function providerFromModelId(
 		lower.startsWith("glm")
 	)
 		return "glm";
+	// Fallback for bare model names (no provider prefix)
+	if (lower.startsWith("gpt")) return "openai"; // e.g., "gpt-5.4" → openai
 	return null;
 }
 
@@ -106,8 +108,13 @@ export function providerDisplayName(provider: ProviderId): string {
 }
 
 /** True if this provider has a continuous scrape path today (only MiniMax). */
+/**
+ * Providers with continuous quota scraping via browser/API.
+ * - minimax: has both 5h and weekly windows
+ * - openai: has weekly-only window (no 5h limit since 2026)
+ */
 export function providerHasContinuousScrape(provider: ProviderId): boolean {
-	return provider === "minimax";
+	return provider === "minimax" || provider === "openai";
 }
 
 /** True if this provider has a TUI-driven signal path today. */

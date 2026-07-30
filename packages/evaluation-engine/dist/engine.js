@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { DEFAULT_SCORING_WEIGHTS } from "./types.js";
-// ─── Evidence Collection ───────────────────────────────────────────────────────
+// --- Evidence Collection -------------------------------------------------------
 function collectEvidence(outputs, testResults, policyFindings) {
     const evidence = [];
     // Add test results as evidence
@@ -38,7 +38,7 @@ function collectEvidence(outputs, testResults, policyFindings) {
     }
     return evidence;
 }
-// ─── Missing Output Detection ──────────────────────────────────────────────────
+// --- Missing Output Detection --------------------------------------------------
 function findMissingOutputs(requiredArtifacts, outputs) {
     const findings = [];
     const outputPaths = new Set(outputs.filter((o) => o.path).map((o) => o.path));
@@ -57,7 +57,7 @@ function findMissingOutputs(requiredArtifacts, outputs) {
     }
     return findings;
 }
-// ─── Test Analysis ────────────────────────────────────────────────────────────
+// --- Test Analysis ------------------------------------------------------------
 function analyzeTests(testResults) {
     const findings = [];
     let passedCount = 0;
@@ -87,7 +87,7 @@ function analyzeTests(testResults) {
     }
     return { findings, passedCount, totalCount, hasFailures };
 }
-// ─── Policy Analysis ──────────────────────────────────────────────────────────
+// --- Policy Analysis ----------------------------------------------------------
 function analyzePolicies(policyFindings) {
     const findings = [];
     const criticalFindings = [];
@@ -106,7 +106,7 @@ function analyzePolicies(policyFindings) {
     }
     return { findings, criticalFindings };
 }
-// ─── Acceptance Criteria Coverage ─────────────────────────────────────────────
+// --- Acceptance Criteria Coverage ---------------------------------------------
 function analyzeAcceptanceCoverage(acceptanceCriteria, outputs, testResults) {
     const findings = [];
     const coveredCriteria = [];
@@ -148,7 +148,7 @@ function analyzeAcceptanceCoverage(acceptanceCriteria, outputs, testResults) {
         : 100;
     return { findings, coverage, unmetCriteria };
 }
-// ─── Scoring ─────────────────────────────────────────────────────────────────
+// --- Scoring -----------------------------------------------------------------
 function calculateScore(weights, testAnalysis, acceptanceCoverage, criticalPolicies, securityFindings, regressionFindings) {
     const breakdown = {};
     // Correctness (30%) - based on missing outputs
@@ -188,7 +188,7 @@ function calculateScore(weights, testAnalysis, acceptanceCoverage, criticalPolic
         regressionPenalty));
     return { score: Math.round(totalScore), breakdown };
 }
-// ─── Failure Classification ───────────────────────────────────────────────────
+// --- Failure Classification ---------------------------------------------------
 function classifyFailure(findings) {
     const classes = [];
     for (const finding of findings) {
@@ -226,7 +226,7 @@ function classifyFailure(findings) {
     }
     return classes;
 }
-// ─── Main Engine ───────────────────────────────────────────────────────────────
+// --- Main Engine ---------------------------------------------------------------
 export class EvaluationEngine {
     weights;
     state = "pending";
@@ -337,7 +337,7 @@ export class EvaluationEngine {
         this.state = "pending";
     }
 }
-// ─── Factory ─────────────────────────────────────────────────────────────────
+// --- Factory -----------------------------------------------------------------
 export function createEvaluationEngine(weights) {
     return new EvaluationEngine(weights);
 }

@@ -2,7 +2,7 @@
  * A2A Adapter — Types (RFC-0069)
  */
 
-// ─── Agent Card ─────────────────────────────────────────────────────────────
+// --- Agent Card -------------------------------------------------------------
 
 export interface AgentCard {
 	name: string;
@@ -36,7 +36,7 @@ export interface Authentication {
 	credentials?: string;
 }
 
-// ─── Task ─────────────────────────────────────────────────────────────────
+// --- Task -----------------------------------------------------------------
 
 export type TaskStatus =
 	| "submitted"
@@ -71,7 +71,7 @@ export interface Artifact {
 	parts: Array<{ type: "text"; text: string }>;
 }
 
-// ─── A2A Requests / Responses ─────────────────────────────────────────────
+// --- A2A Requests / Responses ---------------------------------------------
 
 export type A2ARequest =
 	| {
@@ -92,7 +92,7 @@ export interface A2AResponse {
 	error?: { code: number; message: string };
 }
 
-// ─── A2A Client ─────────────────────────────────────────────────────────
+// --- A2A Client ---------------------------------------------------------
 
 export interface A2AClientConfig {
 	timeout?: number;
@@ -104,7 +104,7 @@ export interface TaskHandle {
 	status: TaskStatus;
 }
 
-// ─── A2A Agent ───────────────────────────────────────────────────────────
+// --- A2A Agent -----------------------------------------------------------
 
 export interface A2AAgentConfig {
 	name: string;

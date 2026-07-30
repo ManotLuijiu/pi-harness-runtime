@@ -247,7 +247,7 @@ export class RuntimeApi extends EventEmitter {
 		}
 	}
 
-	// ─── Private Methods ────────────────────────────────────────────────
+	// --- Private Methods ------------------------------------------------
 
 	private startWebSocket(): void {
 		this.wsServer = new WebSocketServer({

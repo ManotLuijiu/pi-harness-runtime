@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-// ─── Detection ───────────────────────────────────────────────────────────────
+// --- Detection ---------------------------------------------------------------
 function isDjangoWorkspace(root) {
     return (existsSync(join(root, "manage.py")) ||
         (existsSync(join(root, "settings.py")) &&
@@ -14,7 +14,7 @@ function isDjangoWorkspace(root) {
         (existsSync(join(root, "requirements.txt")) &&
             existsSync(join(root, "manage.py"))));
 }
-// ─── Version ────────────────────────────────────────────────────────────────
+// --- Version ----------------------------------------------------------------
 async function detectVersion(root) {
     try {
         const content = await readFile(join(root, "requirements.txt"), "utf-8");
@@ -42,7 +42,7 @@ async function detectVersion(root) {
     }
     return undefined;
 }
-// ─── Settings Parser ─────────────────────────────────────────────────────────
+// --- Settings Parser ---------------------------------------------------------
 async function parseSettings(root) {
     const installedApps = [];
     const middleware = [];
@@ -90,7 +90,7 @@ async function parseSettings(root) {
     }
     return { installedApps, middleware };
 }
-// ─── Django App Scanner ─────────────────────────────────────────────────────
+// --- Django App Scanner -----------------------------------------------------
 async function scanDjangoApps(root) {
     const apps = [];
     // Django project apps can be:
@@ -153,7 +153,7 @@ async function scanDjangoApps(root) {
     }
     return apps;
 }
-// ─── Management Commands ────────────────────────────────────────────────────
+// --- Management Commands ----------------------------------------------------
 async function findManagementCommands(root) {
     const commands = [];
     // Simple recursive scan for management/commands directories
@@ -191,7 +191,7 @@ async function findManagementCommands(root) {
     }
     return [...new Set(commands)];
 }
-// ─── Requirements ───────────────────────────────────────────────────────────
+// --- Requirements -----------------------------------------------------------
 async function parseRequirements(root) {
     const reqPath = join(root, "requirements.txt");
     if (!existsSync(reqPath))
@@ -208,7 +208,7 @@ async function parseRequirements(root) {
         return [];
     }
 }
-// ─── Main Analyzer ─────────────────────────────────────────────────────────
+// --- Main Analyzer ---------------------------------------------------------
 export async function analyzeDjango(root) {
     if (!isDjangoWorkspace(root))
         return null;

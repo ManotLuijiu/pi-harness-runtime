@@ -3,7 +3,7 @@
  *
  * Core types for the enhanced checkpoint system.
  */
-// ─── SDK Version ────────────────────────────────────────────────────────────
+// --- SDK Version ------------------------------------------------------------
 /**
  * SDK version for compatibility checks
  */

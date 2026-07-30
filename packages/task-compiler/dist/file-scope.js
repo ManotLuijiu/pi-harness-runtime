@@ -46,7 +46,7 @@ export function assignFileScope(candidates, project) {
         };
     });
 }
-// ─── File inference by task type ───────────────────────────────────────
+// --- File inference by task type ---------------------------------------
 function inferFiles(candidate, project, _sourceExts, testExts) {
     const { type, objective } = candidate;
     const base = project.projectPath;
@@ -89,7 +89,7 @@ function inferFiles(candidate, project, _sourceExts, testExts) {
         }
     }
 }
-// ─── Extract file mentions from objective text ──────────────────────────
+// --- Extract file mentions from objective text --------------------------
 function extractFileMentions(text) {
     // Match common file/directory patterns in natural language:
     // - "src/components/Button.tsx"
@@ -102,7 +102,7 @@ function extractFileMentions(text) {
     // Deduplicate and return
     return [...new Set(matches)];
 }
-// ─── Ownership mode ────────────────────────────────────────────────────
+// --- Ownership mode ----------------------------------------------------
 function getOwnershipMode(type) {
     // Parallel tasks with "exclusive" mode cannot modify the same files
     switch (type) {
@@ -120,7 +120,7 @@ function getOwnershipMode(type) {
             return "shared_read";
     }
 }
-// ─── Exclusions ────────────────────────────────────────────────────────
+// --- Exclusions --------------------------------------------------------
 function getExclusions(_type, project) {
     const exclusions = [
         // Never touch these regardless of task type
@@ -140,7 +140,7 @@ function getExclusions(_type, project) {
     }
     return exclusions;
 }
-// ─── Capability inference ───────────────────────────────────────────────
+// --- Capability inference -----------------------------------------------
 function inferCapabilities(type) {
     const caps = {
         analysis: ["plan", "analysis"],
@@ -154,7 +154,7 @@ function inferCapabilities(type) {
     };
     return caps[type] ?? ["code"];
 }
-// ─── Extension detection ─────────────────────────────────────────────────
+// --- Extension detection -------------------------------------------------
 function detectSourceExtensions(project) {
     const frameworks = project.frameworks ?? [];
     const exts = new Set(["ts", "tsx", "js", "jsx"]);

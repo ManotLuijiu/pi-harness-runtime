@@ -1,20 +1,20 @@
 # @pi-harness/cookie-sanitizer
 
-> Forgiving input → strict canonical cache for provider-quota mirroring.
+> Forgiving input -> strict canonical cache for provider-quota mirroring.
 
 A normalization boundary that lets users drop **any** cookie file (any name, any format) into a known folder, and turns it into a single standard Netscape file the rest of the runtime can rely on.
 
 ```
-~/.pi-harness-runtime/cookies/          ← user drops anything here
-            │
+~/.pi-harness-runtime/cookies/          <-  user drops anything here
+            |
             ▼
-   Cookie Sanitizer                     ← THIS PACKAGE
-            │
+   Cookie Sanitizer                     <-  THIS PACKAGE
+            |
             ▼
-~/.config/<provider>-cookies.txt        ← canonical, runtime-owned
-            │
+~/.config/<provider>-cookies.txt        <-  canonical, runtime-owned
+            |
             ▼
-   MiniMaxQuotaScraper (unchanged)      ← reads only the canonical
+   MiniMaxQuotaScraper (unchanged)      <-  reads only the canonical
 ```
 
 ## Why
@@ -30,8 +30,8 @@ The previous design expected users to know the exact path (`~/.config/minimax-co
 
 **File names** — any name in the drop folder. Inference prefers:
 
-1. Filename hint (`minimax-*.txt`, `*claude*`, etc.) → provider
-2. Dominant cookie domain (≥ 80% match) → provider
+1. Filename hint (`minimax-*.txt`, `*claude*`, etc.) -> provider
+2. Dominant cookie domain (≥ 80% match) -> provider
 3. `providerHint` option overrides all of the above
 
 **Provider scope** — currently shipping with: `minimax`, `anthropic`, `openai`, `glm`, `openrouter`. The registry is open and inference by domain works for any provider whose cookies are in the drop folder.
@@ -46,7 +46,7 @@ import { sync } from "@pi-harness/cookie-sanitizer";
 const result = sync();
 
 if (result.wrote) {
-  console.log(`Synced ${result.totalCookies} cookies for ${result.provider} → ${result.cachePath}`);
+  console.log(`Synced ${result.totalCookies} cookies for ${result.provider} -> ${result.cachePath}`);
 } else {
   console.log(`No-op: ${result.errors[0]?.message ?? "nothing to sync"}`);
 }
@@ -60,7 +60,7 @@ import { CookieWatcher } from "@pi-harness/cookie-sanitizer";
 const watcher = new CookieWatcher({
   dropDir: "~/.pi-harness-runtime/cookies",
   onEvent: (e) => {
-    if (e.kind === "sync-ok") console.log(`Synced ${e.cookies} cookies → ${e.cachePath}`);
+    if (e.kind === "sync-ok") console.log(`Synced ${e.cookies} cookies -> ${e.cachePath}`);
     if (e.kind === "sync-error") console.error(`Sync error: ${e.message}`);
   },
 });
@@ -115,23 +115,23 @@ bun test test/sync.test.ts
 
 ```
 src/
-├── index.ts            # public API surface
-├── types.ts            # canonical types
-├── detect-format.ts    # Netscape vs JSON detection
-├── parse-netscape.ts   # Netscape parser + serializer
-├── parse-json.ts       # EditThisCookie JSON parser
-├── normalize.ts        # dedupe, expire, domain-match
-├── infer-provider.ts   # filename + domain inference
-├── atomic-write.ts     # POSIX atomic write
-├── sync.ts             # orchestrator
-└── watcher.ts          # chokidar v5 wrapper
++-- index.ts            # public API surface
++-- types.ts            # canonical types
++-- detect-format.ts    # Netscape vs JSON detection
++-- parse-netscape.ts   # Netscape parser + serializer
++-- parse-json.ts       # EditThisCookie JSON parser
++-- normalize.ts        # dedupe, expire, domain-match
++-- infer-provider.ts   # filename + domain inference
++-- atomic-write.ts     # POSIX atomic write
++-- sync.ts             # orchestrator
++-- watcher.ts          # chokidar v5 wrapper
 
 test/
-├── parse.test.ts       # 14 cases — Netscape + JSON
-├── normalize.test.ts   # 12 cases — dedupe/expire/domain
-├── infer.test.ts       # 13 cases — filename + domain + combined
-├── sync.test.ts        # 12 cases — end-to-end
-└── watcher.test.ts     # 2 cases — config sanity (chokidar is exercised live)
++-- parse.test.ts       # 14 cases — Netscape + JSON
++-- normalize.test.ts   # 12 cases — dedupe/expire/domain
++-- infer.test.ts       # 13 cases — filename + domain + combined
++-- sync.test.ts        # 12 cases — end-to-end
++-- watcher.test.ts     # 2 cases — config sanity (chokidar is exercised live)
 ```
 
 ## Limitations

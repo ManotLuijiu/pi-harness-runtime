@@ -100,6 +100,8 @@ function ensureDirs(config: MinimaxBrowserAuthConfig): void {
 	const statusPath = config.statusPath ?? getStatusPath();
 	fs.mkdirSync(path.dirname(profileDir), { recursive: true });
 	fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+	// Also ensure the cookie drop folder exists
+	fs.mkdirSync(path.join(getRuntimeDir(), "cookies"), { recursive: true });
 }
 
 export function saveAuthStatus(

@@ -2,7 +2,7 @@
  * Model Registry Types (RFC-0053)
  */
 
-// ─── Pricing Types ───────────────────────────────────────────────────
+// --- Pricing Types ---------------------------------------------------
 
 export type Currency = "USD" | "THB";
 
@@ -15,7 +15,7 @@ export interface Pricing {
 	cacheWritePer1M?: number;
 }
 
-// ─── Model Info ───────────────────────────────────────────────────────
+// --- Model Info -------------------------------------------------------
 
 export type ModelStatus = "active" | "deprecated" | "disabled";
 
@@ -34,7 +34,7 @@ export interface ModelInfo {
 	deprecatedAt?: string;
 }
 
-// ─── Registry Types ───────────────────────────────────────────────────
+// --- Registry Types ---------------------------------------------------
 
 export interface ModelFilters {
 	providerId?: string;
@@ -55,7 +55,7 @@ export interface ModelRegistry {
 	updateStatus(providerId: string, modelId: string, status: ModelStatus): void;
 }
 
-// ─── Event Types ─────────────────────────────────────────────────────
+// --- Event Types -----------------------------------------------------
 
 export type ModelRegistryEvent =
 	| { type: "model.registered"; providerId: string; modelId: string }

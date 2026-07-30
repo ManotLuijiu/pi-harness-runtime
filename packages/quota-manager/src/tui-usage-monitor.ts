@@ -104,6 +104,7 @@ export class TUIUsageMonitor extends EventEmitter {
 	processMessage(message: string): TUIUsageSignal | null {
 		// Try to identify provider
 		const provider = this.detectProvider(message);
+
 		if (!provider) {
 			return null;
 		}
@@ -125,7 +126,6 @@ export class TUIUsageMonitor extends EventEmitter {
 
 		// Debug log
 		if (this.debug) {
-			console.log(`[TUIUsageMonitor] Detected ${provider}:`, signal);
 		}
 
 		return signal;

@@ -135,7 +135,7 @@ export function applyCommandPolicy(
 	});
 }
 
-// ─── Extract project commands from ProjectProfile ───────────────────────────
+// --- Extract project commands from ProjectProfile ---------------------------
 
 interface ProjectCommandSet {
 	permitted: string[];

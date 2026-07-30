@@ -4,7 +4,7 @@
  * Message history management and search.
  */
 import { createHash } from "node:crypto";
-// ─── Message History ──────────────────────────────────────────────────────
+// --- Message History ------------------------------------------------------
 export class MessageHistory {
     messages = [];
     maxMessages;
@@ -123,7 +123,7 @@ export class MessageHistory {
         }, 0);
     }
 }
-// ─── Message Search ────────────────────────────────────────────────────────
+// --- Message Search --------------------------------------------------------
 export class MessageSearch {
     index = new Map();
     /**
@@ -212,7 +212,7 @@ export class MessageSearch {
         this.index.delete(sessionId);
     }
 }
-// ─── Context Window Manager ────────────────────────────────────────────────
+// --- Context Window Manager ------------------------------------------------
 export class ContextWindowManager {
     maxTokens;
     history;

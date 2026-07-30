@@ -33,7 +33,7 @@ import type {
 	ContextPolicy,
 } from "../src/types.js";
 
-// ─── Test fixtures ───────────────────────────────────────────────────────
+// --- Test fixtures -------------------------------------------------------
 
 function makeCandidate(
 	overrides?: Partial<ContextCandidate>,
@@ -64,7 +64,7 @@ function makeRequest(
 	};
 }
 
-// ─── AC-1: Required project rules always included ────────────────────────
+// --- AC-1: Required project rules always included ------------------------
 
 describe("AC-1: Required project rules always included", () => {
 	it("includes required project_rule even when budget is tiny", async () => {
@@ -111,7 +111,7 @@ describe("AC-1: Required project rules always included", () => {
 	});
 });
 
-// ─── AC-2: .env content denied ──────────────────────────────────────────
+// --- AC-2: .env content denied ------------------------------------------
 
 describe("AC-2: .env content denied by policy", () => {
 	it("denies .env file content", () => {
@@ -161,7 +161,7 @@ describe("AC-2: .env content denied by policy", () => {
 	});
 });
 
-// ─── AC-3: Broken optional OKF link does not fail compilation ─────────────
+// --- AC-3: Broken optional OKF link does not fail compilation -------------
 
 describe("AC-3: Broken optional OKF link does not fail compilation", () => {
 	it("does not throw when optional OKF has no content", async () => {
@@ -189,7 +189,7 @@ describe("AC-3: Broken optional OKF link does not fail compilation", () => {
 	});
 });
 
-// ─── AC-4: Broken required source fails compilation ──────────────────────
+// --- AC-4: Broken required source fails compilation ----------------------
 
 describe("AC-4: Broken required source fails compilation", () => {
 	it("throws MISSING_REQUIRED_SOURCE when required source has no content", async () => {
@@ -227,7 +227,7 @@ describe("AC-4: Broken required source fails compilation", () => {
 	});
 });
 
-// ─── AC-5: Duplicate source slices merged ───────────────────────────────
+// --- AC-5: Duplicate source slices merged -------------------------------
 
 describe("AC-5: Duplicate source slices merged", () => {
 	it("merges slices from the same file", () => {
@@ -319,7 +319,7 @@ describe("AC-5: Duplicate source slices merged", () => {
 	});
 });
 
-// ─── AC-6: Context under token budget ───────────────────────────────────
+// --- AC-6: Context under token budget -----------------------------------
 
 describe("AC-6: Context remains under requested token budget", () => {
 	it("fits within budget when content is small enough", async () => {
@@ -380,7 +380,7 @@ describe("AC-6: Context remains under requested token budget", () => {
 	});
 });
 
-// ─── AC-7: Changed file hash invalidates cache ───────────────────────────
+// --- AC-7: Changed file hash invalidates cache ---------------------------
 
 describe("AC-7: Changed file hash invalidates cache", () => {
 	it("source_hash_changed invalidates when hash differs", () => {
@@ -478,7 +478,7 @@ describe("AC-7: Changed file hash invalidates cache", () => {
 	});
 });
 
-// ─── AC-8: Identical repo state → identical compiled context ─────────────
+// --- AC-8: Identical repo state → identical compiled context -------------
 
 describe("AC-8: Identical repository state produces identical compiled context", () => {
 	it("same candidates produce same cache key", () => {
@@ -550,7 +550,7 @@ describe("AC-8: Identical repository state produces identical compiled context",
 	});
 });
 
-// ─── AC-9: Omitted items include explicit reasons ──────────────────────
+// --- AC-9: Omitted items include explicit reasons ----------------------
 
 describe("AC-9: Omitted items include explicit reasons", () => {
 	it("policy denied items have reason=policy_denied", async () => {
@@ -619,7 +619,7 @@ describe("AC-9: Omitted items include explicit reasons", () => {
 	});
 });
 
-// ─── Additional coverage ─────────────────────────────────────────────────
+// --- Additional coverage -------------------------------------------------
 
 describe("mergePolicy", () => {
 	it("merges user policy with defaults", () => {

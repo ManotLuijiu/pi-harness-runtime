@@ -6,15 +6,15 @@ Required source files:
 
 ```text
 packages/prompt-compiler/src/
-├── types.ts
-├── normalize.ts
-├── section-builder.ts
-├── deduplicate.ts
-├── budget.ts
-├── validate.ts
-├── render.ts
-├── compiler.ts
-└── index.ts
++-- types.ts
++-- normalize.ts
++-- section-builder.ts
++-- deduplicate.ts
++-- budget.ts
++-- validate.ts
++-- render.ts
++-- compiler.ts
++-- index.ts
 ```
 
 Hard requirements:

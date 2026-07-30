@@ -13,6 +13,7 @@
  * Runs directly from Bun.
  */
 
+import { Key } from "@earendil-works/pi-tui";
 import type {
 	CompactOptions,
 	ExtensionAPI,
@@ -22,6 +23,7 @@ import type {
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
+import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
@@ -38,6 +40,8 @@ import {
 } from "./packages/quota-manager/src/tui-usage-monitor.ts";
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
+import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
+import { registerCopySyncShortcut } from "./packages/clipboard/src/copy-sync.js";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
@@ -62,15 +66,56 @@ import {
 	type SharedBlackboard,
 	createBlackboard,
 } from "./harness/blackboard.ts";
-import {
-	scheduleAutoResume,
-	cancelAutoResume,
-} from "./harness/index.js";
+import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
 import { homedir } from "node:os";
-import { existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-// ─── Harness Runtime State ────────────────────────────────────────────
+// --- Debug log → file instead of TUI ---------------------------------
+const DEBUG_LOG_DIR = join(homedir(), ".pi", "harness-logs");
+const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
+
+try {
+	if (!existsSync(DEBUG_LOG_DIR)) mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+} catch {
+	/* non-fatal */
+}
+
+// Write harness runtime logs to file only (NOT to TUI stdout)
+function _debugLog(...args: unknown[]): void {
+	try {
+		const line =
+			new Date().toISOString() +
+			" " +
+			args
+				.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+				.join(" ");
+		appendFileSync(DEBUG_LOG_PATH, line + "\n");
+	} catch {
+		// non-fatal
+	}
+}
+
+// --- Selective console override — harness DEBUG → file only --------
+// Real errors (no [DEBUG prefix) still print to TUI so you notice problems.
+const _origLog = console.log.bind(console);
+const _origError = console.error.bind(console);
+
+console.log = (...args: unknown[]) => {
+	_origLog(...args);
+	_debugLog(...args);
+};
+console.error = (...args: unknown[]) => {
+	const first = String(args[0] ?? "");
+	if (first.startsWith("[DEBUG")) {
+		_debugLog(...args);
+	} else {
+		_origError(...args);
+		_debugLog(...args);
+	}
+};
+
+// --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
 
 interface HarnessSession {
@@ -121,6 +166,11 @@ function ensureHarnessDir() {
 	if (!existsSync(HARNESS_ROOT_DIR)) {
 		mkdirSync(HARNESS_ROOT_DIR, { recursive: true });
 	}
+	// Also ensure the shared cookie drop folder exists
+	const cookieDropDir = join(homedir(), ".pi-harness-runtime", "cookies");
+	if (!existsSync(cookieDropDir)) {
+		mkdirSync(cookieDropDir, { recursive: true });
+	}
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
@@ -164,13 +214,16 @@ export default function (pi: ExtensionAPI) {
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
 
-	// ─── Auto-track every assistant message ──────────────────────────────
+	// --- Auto-track every assistant message ------------------------------
 	pi.on("message_end", async (event, ctx) => {
 		if (isOutputLimitResumePromptMessage(event.message)) {
 			pendingOutputLimitResumeAfterSettled = false;
 			return;
 		}
 		if (event.message.role !== "assistant") return;
+
+		// DEBUG: Log model ID
+
 		const m = event.message as {
 			role?: string;
 			stopReason?: unknown;
@@ -218,14 +271,17 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const text = readMessageText(event.message);
 			if (text) {
+				// 	"[DEBUG message_end] Processing TUI text (first 200 chars):",
+				// 	text.substring(0, 200),
+				// );
 				tuiMonitor.processMessage(text);
 			}
-		} catch {
-			// best-effort
+		} catch (e) {
+			// console.error("[DEBUG message_end] TUI processMessage error:", e);
 		}
 	});
 
-	// ─── Smart quota fetch for MiniMax status ────────────────────────
+	// --- Smart quota fetch for MiniMax status ------------------------
 	const MINIMAX_REFRESH_MIN_INTERVAL_MS = 15 * 60 * 1000;
 	const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
 	const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
@@ -233,7 +289,12 @@ export default function (pi: ExtensionAPI) {
 		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
 		: new MiniMaxQuotaScraper();
 
-	// ─── Cookie sanitizer integration ────────────────────────────────────
+	// --- Smart quota fetch for OpenAI status -------------------------
+	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+	const _openaiQuotaScraper = new OpenAIQuotaScraper();
+	let lastOpenAIQuotaFetchAt = 0;
+
+	// --- Cookie sanitizer integration ------------------------------------
 	// The drop folder is the user-facing, forgiving input. The canonical
 	// cache (`~/.config/minimax-cookies.txt`) is the runtime-owned,
 	// normalized output that `MiniMaxQuotaScraper` reads. Either being
@@ -256,7 +317,7 @@ export default function (pi: ExtensionAPI) {
 
 	const cookieQuotaAutoFetchAvailable = hasCookieSource();
 
-	// ─── TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) ──
+	// --- TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) --
 	// The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
 	// TUI / message stream and emits signals we write to per-provider mirror
 	// entries. For providers that don't expose a continuous usage API this is
@@ -265,6 +326,9 @@ export default function (pi: ExtensionAPI) {
 	const tuiMonitor = new TUIUsageMonitor({ quotaManager });
 
 	tuiMonitor.on("signal", (signal: TUIUsageSignal) => {
+		// 	"[DEBUG tuiMonitor signal] Received signal:",
+		// 	JSON.stringify(signal),
+		// );
 		try {
 			writeMirrorRecord(signal.provider as ProviderId, {
 				synced_at: signal.timestamp,
@@ -285,13 +349,20 @@ export default function (pi: ExtensionAPI) {
 	// Live watcher — sanitises on every change in the drop folder.
 	const cookieWatcher = new CookieWatcher({
 		dropDir: cookieDropDir,
-		syncOptions: { cachePath: cookieCachePath },
+		syncOptions: { cachePath: cookieCachePath, providerHint: "minimax" },
 		onEvent: (event) => {
 			if (event.kind === "sync-error" || event.kind === "watcher-error") {
-				console.error(
-					"[pi-harness] cookie-sanitizer:",
-					"message" in event ? event.message : "",
-				);
+				const msg = "message" in event ? event.message : "";
+				if (msg.includes("ENOSPC")) {
+					console.error(
+						"[pi-harness] cookie-sanitizer: ENOSPC — inotify watchers exhausted.\n" +
+							"  Fix (run once as sudo):\n" +
+							"    echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
+							"    sudo sysctl --system",
+					);
+				} else {
+					console.error("[pi-harness] cookie-sanitizer:", msg);
+				}
 			}
 			// A successful sync means the canonical cache is fresh; the
 			// next autoFetchQuota() should pick it up immediately. Reset
@@ -303,11 +374,26 @@ export default function (pi: ExtensionAPI) {
 	});
 	try {
 		cookieWatcher.start();
+		// Sync existing drop-folder cookies now (ignoreInitial: true means
+		// the watcher won't do this automatically on startup).
+		cookieWatcher.triggerNow();
 	} catch (e) {
-		console.error(
-			"[pi-harness] cookie-sanitizer watcher failed to start:",
-			e instanceof Error ? e.message : String(e),
-		);
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes("ENOSPC")) {
+			console.error(
+				"[pi-harness] cookie-sanitizer watcher: ENOSPC — " +
+					"inotify watcher limit reached.\n" +
+					"Fix (once, as root):\n" +
+					"  echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
+					"  sudo sysctl --system\n" +
+					"Drop folder sync still works — polling will resume automatically.",
+			);
+		} else {
+			console.error(
+				"[pi-harness] cookie-sanitizer watcher failed to start:",
+				msg,
+			);
+		}
 	}
 
 	let footerStatusCtx: {
@@ -327,6 +413,11 @@ export default function (pi: ExtensionAPI) {
 		provider: ProviderId,
 		record: Omit<import("./mirror.js").ProviderMirrorRecord, "provider">,
 	): void {
+		// 	"[DEBUG writeMirrorRecord] Writing record for provider:",
+		// 	provider,
+		// 	"record:",
+		// 	JSON.stringify(record),
+		// );
 		mirrorStore.writeProvider(provider, { ...record, provider });
 		if (footerStatusCtx) {
 			refreshFooterStatus(
@@ -360,6 +451,11 @@ export default function (pi: ExtensionAPI) {
 	/** Set the active provider; triggers a footer refresh. */
 	function noteActiveProvider(modelId: string | null | undefined): void {
 		const p = providerFromModelId(modelId);
+		// 	"[DEBUG noteActiveProvider] modelId =",
+		// 	modelId,
+		// 	"-> provider =",
+		// 	p,
+		// );
 		if (p !== lastActiveProvider) {
 			lastActiveProvider = p;
 			if (footerStatusCtx) {
@@ -490,43 +586,123 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	async function maybeAutoFetchQuota(
-		modelId: string | null | undefined,
-	): Promise<void> {
-		if (!isMiniMaxModel(modelId) || quotaAutoFetchInFlight) {
-			return;
-		}
+	/**
+	 * Auto-fetch OpenAI quota via ChatGPT Codex analytics.
+	 * GPT has WEEKLY-ONLY limits (no 5h window).
+	 */
+	async function autoFetchOpenAIQuota(options?: {
+		suppressErrors?: boolean;
+	}): Promise<boolean> {
+		const suppressErrors = options?.suppressErrors === true;
 
-		const nowMs = Date.now();
-		if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
-			return;
-		}
-
-		const mirror = mirrorStore.read();
-		const freshness = mirrorStore.freshness(mirror, nowMs);
-		const shouldFetchBaseline = !mirror || freshness === "expired";
-		const usageSinceSync = getMiniMaxUsageSince(
-			mirror?.synced_at ? Date.parse(mirror.synced_at) : 0,
-		);
-		const shouldFetchFromUsage =
-			usageSinceSync.tokens >= MINIMAX_REFRESH_TOKEN_THRESHOLD ||
-			usageSinceSync.requests >= MINIMAX_REFRESH_REQUEST_THRESHOLD ||
-			(freshness === "stale" && usageSinceSync.requests > 0);
-
-		if (!shouldFetchBaseline && !shouldFetchFromUsage) {
-			return;
-		}
-
-		quotaAutoFetchInFlight = true;
-		lastQuotaAutoFetchAt = nowMs;
 		try {
-			await autoFetchQuota({ suppressErrors: true });
-		} finally {
-			quotaAutoFetchInFlight = false;
+			// Try direct API first (faster)
+			const directResult = await _openaiQuotaScraper.scrapeDirect();
+			if (directResult) {
+				writeMirrorRecord("openai", {
+					synced_at: directResult.scrapedAt,
+					source: "scrape",
+					weekly_used_pct: directResult.weeklyUsedPct,
+					weekly_resets_at: directResult.weeklyResetsAt,
+					weekly_resets_at_epoch: directResult.weeklyResetsAtEpoch,
+					// No 5h window for GPT - set to undefined
+					h5_used_pct: undefined,
+				});
+				return true;
+			}
+
+			// Fall back to browser scrape
+			const data = await _openaiQuotaScraper.scrape();
+			writeMirrorRecord("openai", {
+				synced_at: data.scrapedAt,
+				source: "scrape",
+				weekly_used_pct: data.weeklyUsedPct,
+				weekly_resets_at: data.weeklyResetsAt,
+				weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
+				// No 5h window for GPT - set to undefined
+				h5_used_pct: undefined,
+			});
+			return true;
+		} catch (error) {
+			if (!suppressErrors) {
+				console.error(
+					"[pi-harness] OpenAI quota auto-fetch skipped:",
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			return false;
 		}
 	}
 
-	// ─── /usage — show full status ───────────────────────────────────────
+	async function maybeAutoFetchQuota(
+		modelId: string | null | undefined,
+	): Promise<void> {
+		const provider = providerFromModelId(modelId);
+
+		// MiniMax path
+		if (provider === "minimax") {
+			if (quotaAutoFetchInFlight) return;
+
+			const nowMs = Date.now();
+			if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			const mirror = mirrorStore.read();
+			const freshness = mirrorStore.freshness(mirror, nowMs);
+			const shouldFetchBaseline = !mirror || freshness === "expired";
+			const usageSinceSync = getMiniMaxUsageSince(
+				mirror?.synced_at ? Date.parse(mirror.synced_at) : 0,
+			);
+			const shouldFetchFromUsage =
+				usageSinceSync.tokens >= MINIMAX_REFRESH_TOKEN_THRESHOLD ||
+				usageSinceSync.requests >= MINIMAX_REFRESH_REQUEST_THRESHOLD ||
+				(freshness === "stale" && usageSinceSync.requests > 0);
+
+			if (!shouldFetchBaseline && !shouldFetchFromUsage) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastQuotaAutoFetchAt = nowMs;
+			try {
+				await autoFetchQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
+			return;
+		}
+
+		// OpenAI path (GPT has weekly-only limits, no 5h window)
+		if (provider === "openai") {
+			if (quotaAutoFetchInFlight) return;
+
+			const nowMs = Date.now();
+			if (nowMs - lastOpenAIQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			// Check if OpenAI cookie file exists
+			const openaiCookieFile = join(homedir(), ".config", "openai-cookies.txt");
+			if (!existsSync(openaiCookieFile)) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastOpenAIQuotaFetchAt = nowMs;
+			try {
+				await autoFetchOpenAIQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
+			return;
+		}
+
+		// Other providers (GLM, Anthropic, etc.) - TUI signal path only for now
+		return;
+	}
+
+	// --- /usage — show full status ---------------------------------------
 	pi.registerCommand("usage", {
 		description: "Show Codex-style usage status (local + provider mirror)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -544,7 +720,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage refresh — force auto-fetch ────────────────────────────
+	// --- /usage refresh — force auto-fetch ----------------------------
 	pi.registerCommand("usage-refresh", {
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -569,14 +745,14 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage today — focused view ─────────────────────────────────────
+	// --- /usage today — focused view -------------------------------------
 	pi.registerCommand("usage-today", {
 		description: "Show today's usage + 5h window",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const local = aggregateWindows(tracker.all());
 			const lines = [
 				" Today's usage",
-				"─────────────────────────────────────",
+				"-------------------------------------",
 				` Model:       ${ctx.model?.id ?? "unknown"}`,
 				` Today:       ${local.today.tokens} tokens · ${local.today.requests} requests · $${local.today.cost.toFixed(4)}`,
 				` This 5h:     ${local.five_h.tokens} tokens · ${local.five_h.requests} requests · $${local.five_h.cost.toFixed(4)}`,
@@ -587,14 +763,14 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage week — focused view ──────────────────────────────────────
+	// --- /usage week — focused view --------------------------------------
 	pi.registerCommand("usage-week", {
 		description: "Show this week's usage + lifetime totals",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const local = aggregateWindows(tracker.all());
 			const lines = [
 				" This week's usage",
-				"─────────────────────────────────────",
+				"-------------------------------------",
 				` Model:       ${ctx.model?.id ?? "unknown"}`,
 				` This week:   ${local.weekly.tokens} tokens · ${local.weekly.requests} requests · $${local.weekly.cost.toFixed(4)}`,
 				` Lifetime:    ${local.lifetime.tokens} tokens · ${local.lifetime.requests} requests · $${local.lifetime.cost.toFixed(4)}`,
@@ -605,7 +781,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /usage reset — clear mirror ─────────────────────────────────────
+	// --- /usage reset — clear mirror -------------------------------------
 	pi.registerCommand("usage-reset", {
 		description: "Clear the provider mirror (force re-sync next time)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -645,7 +821,13 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness start — Start a new harness job ──────────────────────
+	// --- /github-login — Connect GitHub Gist for clipboard sync ------------
+	registerGithubLoginCommand(pi);
+
+	// --- Ctrl+Shift+C — Copy to clipboard + sync to Gist ------------
+	registerCopySyncShortcut(pi, Key);
+
+	// --- /harness start — Start a new harness job ----------------------
 	pi.registerCommand("harness-start", {
 		description: "Start a new harness job: /harness start <requirement>",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
@@ -717,7 +899,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness status — Show harness job status ─────────────────────
+	// --- /harness status — Show harness job status ---------------------
 	pi.registerCommand("harness-status", {
 		description: "Show current harness job status",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -738,22 +920,22 @@ export default function (pi: ExtensionAPI) {
 			const progress = currentSession.graph.getProgressSummary();
 			const lines = [
 				`Harness Job Status`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Job ID:     ${currentSession.jobId}`,
 				`Status:     ${summary.status}`,
 				`Terminal:   ${summary.isTerminal ? "Yes" : "No"}`,
 				`Can Resume: ${summary.canResume ? "Yes" : "No"}`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Tasks:      ${progress.done}/${progress.total} done, ${progress.running} running, ${progress.failed} failed`,
 				`Created:    ${currentSession.createdAt}`,
-				`${"─".repeat(40)}`,
+				`${"-".repeat(40)}`,
 				`Run /harness tasks for task list`,
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
 
-	// ─── /harness tasks — List all tasks ───────────────────────────────
+	// --- /harness tasks — List all tasks -------------------------------
 	pi.registerCommand("harness-tasks", {
 		description: "List all tasks in the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -776,7 +958,7 @@ export default function (pi: ExtensionAPI) {
 
 			const lines = [
 				`Tasks for Job ${currentSession.jobId}`,
-				`${"─".repeat(50)}`,
+				`${"-".repeat(50)}`,
 			];
 
 			for (const task of tasks) {
@@ -784,14 +966,14 @@ export default function (pi: ExtensionAPI) {
 				lines.push(`[${task.id}] ${status} ${task.title}`);
 			}
 
-			lines.push(`${"─".repeat(50)}`);
+			lines.push(`${"-".repeat(50)}`);
 			const ready = currentSession.graph.getReadyTasks();
 			lines.push(`${ready.length} tasks ready to execute.`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
 
-	// ─── /harness pause — Pause the harness job ───────────────────────
+	// --- /harness pause — Pause the harness job -----------------------
 	pi.registerCommand("harness-pause", {
 		description: "Pause the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -800,54 +982,54 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-		const checkpoint = currentSession.machine.getCheckpoint();
-		if (!checkpoint) {
-			ctx.ui.notify("Failed to get checkpoint.", "error");
-			return;
-		}
+			const checkpoint = currentSession.machine.getCheckpoint();
+			if (!checkpoint) {
+				ctx.ui.notify("Failed to get checkpoint.", "error");
+				return;
+			}
 
-		// Read 5h reset epoch from mirror so we can schedule auto-resume
-		const mirror = mirrorStore.readProvider("minimax");
-		const resumeAtIso = mirror?.h5_resets_at_epoch
-			? new Date(mirror.h5_resets_at_epoch).toISOString()
-			: undefined;
+			// Read 5h reset epoch from mirror so we can schedule auto-resume
+			const mirror = mirrorStore.readProvider("minimax");
+			const resumeAtIso = mirror?.h5_resets_at_epoch
+				? new Date(mirror.h5_resets_at_epoch).toISOString()
+				: undefined;
 
-		const result = await currentSession.machine.transition("paused_quota");
-		if (!result.success) {
-			ctx.ui.notify(`Failed to pause: ${result.error}`, "error");
-			return;
-		}
+			const result = await currentSession.machine.transition("paused_quota");
+			if (!result.success) {
+				ctx.ui.notify(`Failed to pause: ${result.error}`, "error");
+				return;
+			}
 
-		// Persist resumeAt so auto-resume survives worker restart
-		if (resumeAtIso) {
-			await currentSession.machine.setResumeTime(resumeAtIso);
-		}
+			// Persist resumeAt so auto-resume survives worker restart
+			if (resumeAtIso) {
+				await currentSession.machine.setResumeTime(resumeAtIso);
+			}
 
-		// Schedule auto-resume for 5h quota
-		if (resumeAtIso) {
-			const scheduled = scheduleAutoResume(
-				"minimax",
-				currentSession.machine,
-				mirrorStore,
-			);
-			ctx.ui.notify(
-				`Job paused.\n` +
-					`Auto-resume at ${scheduled ?? resumeAtIso} (5h quota exhausted).\n` +
-					`Run /harness cancel to abort.`,
-				"info",
-			);
-		} else {
-			ctx.ui.notify(
-				`Job ${currentSession.jobId} paused.\n` +
-					`Current status: paused_quota\n` +
-					`Run /harness resume to continue.`,
-				"info",
-			);
-		}
-		}
+			// Schedule auto-resume for 5h quota
+			if (resumeAtIso) {
+				const scheduled = scheduleAutoResume(
+					"minimax",
+					currentSession.machine,
+					mirrorStore,
+				);
+				ctx.ui.notify(
+					`Job paused.\n` +
+						`Auto-resume at ${scheduled ?? resumeAtIso} (5h quota exhausted).\n` +
+						`Run /harness cancel to abort.`,
+					"info",
+				);
+			} else {
+				ctx.ui.notify(
+					`Job ${currentSession.jobId} paused.\n` +
+						`Current status: paused_quota\n` +
+						`Run /harness resume to continue.`,
+					"info",
+				);
+			}
+		},
 	});
 
-	// ─── /harness resume — Resume the harness job ───────────────────────
+	// --- /harness resume — Resume the harness job -----------------------
 	pi.registerCommand("harness-resume", {
 		description: "Resume a paused harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -883,7 +1065,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── /harness cancel — Cancel the harness job ──────────────────────
+	// --- /harness cancel — Cancel the harness job ----------------------
 	pi.registerCommand("harness-cancel", {
 		description: "Cancel the current harness job",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
@@ -920,7 +1102,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── Footer status (persistent badge) ────────────────────────────────
+	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", (_event, ctx) => {
 		footerStatusCtx = ctx;
 		refreshFooterStatus(
@@ -999,6 +1181,13 @@ export default function (pi: ExtensionAPI) {
 		queueAutoResume("post-compact", "resume", "followUp");
 	});
 
+	// --- Periodic quota refresh every 15 minutes ---
+	// `maybeAutoFetchQuota` checks its own rate-limit (MINIMAX_REFRESH_MIN_INTERVAL_MS)
+	// so this is safe to call frequently.
+	setInterval(() => {
+		void maybeAutoFetchQuota(lastActiveProvider ?? null);
+	}, MINIMAX_REFRESH_MIN_INTERVAL_MS);
+
 	function queueAutoResume(
 		reason: string,
 		content: string,
@@ -1060,9 +1249,9 @@ export default function (pi: ExtensionAPI) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// ----------------------------------------------------------------------
 // Helper: refresh persistent footer status with one-line summary
-// ──────────────────────────────────────────────────────────────────────
+// ----------------------------------------------------------------------
 function refreshFooterStatus(
 	ctx: { ui: { setStatus: (key: string, value: string) => void } },
 	tracker: UsageTracker,
@@ -1074,6 +1263,9 @@ function refreshFooterStatus(
 	const local = aggregateWindows(tracker.all());
 	const provider = getActiveProvider();
 	const mirror = provider ? mirrorStore.readProvider(provider) : null;
+	// 	"[DEBUG refreshFooterStatus] mirror =",
+	// 	mirror ? JSON.stringify(mirror) : null,
+	// );
 	const freshness = mirrorStore.freshness(mirror, nowMs);
 	ctx.ui.setStatus(
 		"harness-runtime",

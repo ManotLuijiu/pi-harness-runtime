@@ -21,7 +21,7 @@ export function buildGraph(tasks: CompiledTask[]): TaskGraph {
 		taskMap.set(task.id, task);
 	}
 
-	// ─── Compute dependents ────────────────────────────────────────────
+	// --- Compute dependents --------------------------------------------
 
 	const dependents = new Map<string, string[]>();
 	for (const task of tasks) {
@@ -34,7 +34,7 @@ export function buildGraph(tasks: CompiledTask[]): TaskGraph {
 		}
 	}
 
-	// ─── Find roots and terminals ─────────────────────────────────────
+	// --- Find roots and terminals -------------------------------------
 
 	const roots = tasks
 		.filter((t) => t.dependencies.length === 0)
@@ -44,7 +44,7 @@ export function buildGraph(tasks: CompiledTask[]): TaskGraph {
 		.filter((t) => (dependents.get(t.id)?.length ?? 0) === 0)
 		.map((t) => t.id);
 
-	// ─── Deterministic topological sort ────────────────────────────────
+	// --- Deterministic topological sort --------------------------------
 
 	const order = topologicalSort([...tasks], taskMap);
 
@@ -57,7 +57,7 @@ export function buildGraph(tasks: CompiledTask[]): TaskGraph {
 	};
 }
 
-// ─── Kahn's topological sort with deterministic tiebreaking ─────────────────
+// --- Kahn's topological sort with deterministic tiebreaking -----------------
 
 function topologicalSort(
 	tasks: CompiledTask[],
@@ -121,7 +121,7 @@ function topologicalSort(
 	return result;
 }
 
-// ─── Dependency depth helper ───────────────────────────────────────────────
+// --- Dependency depth helper -----------------------------------------------
 
 function countDepth(
 	taskId: string,
@@ -137,7 +137,7 @@ function countDepth(
 	return max + 1;
 }
 
-// ─── Dependency map (for use by topologicalSort) ───────────────────────────
+// --- Dependency map (for use by topologicalSort) ---------------------------
 
 const dependents = new Map<string, string[]>();
 

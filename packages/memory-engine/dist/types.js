@@ -3,12 +3,12 @@
  *
  * Interfaces for OKF-based knowledge management.
  */
-// ─── Reserved Files ───────────────────────────────────────────────────────────
+// --- Reserved Files -----------------------------------------------------------
 export const RESERVED_FILES = ["index.md", "log.md"];
 export function isReservedFile(filename) {
     return RESERVED_FILES.includes(filename);
 }
-// ─── Secret Detection ─────────────────────────────────────────────────────────
+// --- Secret Detection ---------------------------------------------------------
 export const SECRET_PATTERNS = [
     /api[_-]?key/i,
     /password/i,

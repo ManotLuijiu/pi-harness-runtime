@@ -13,7 +13,7 @@ When the context window fills up during agent execution:
 
 | Aspect | Reference | pi-harness-runtime |
 |---|---|---|
-| Token estimation pre-check | `compact.ts` → `willExceedLimit()` | ✅ `context-window-manager.ts` (wired in orchestrator) |
+| Token estimation pre-check | `compact.ts` -> `willExceedLimit()` | ✅ `context-window-manager.ts` (wired in orchestrator) |
 | Microcompact | Strips tool results, keeps summaries | ✅ `microcompactToolResults()` in context-window-manager |
 | Full compact | `compactConversation()` + `generateContinuePrompt()` | ✅ `CompactOrchestrator.runFullCompact()` |
 | Post-compact invoke | `invokeWithCompact()` retries automatically | ✅ `CompactOrchestrator.invokeWithCompact()` with auto-retry |
@@ -30,25 +30,25 @@ When the context window fills up during agent execution:
 
 ```
 LoopRuntime.executeTask()
-  └─> CompactOrchestrator.invokeWithCompact()
-        ├─> beforeInvoke():
-        │     1. Estimate token count
-        │     2. Update ContextWindowManager
-        │     3. Microcompact: prune tool results if near limit
-        │
-        ├─> agent.invoke()
-        │
-        └─> afterInvoke():
-              ├─ on output_limit → OutputLimitHandler.truncate()
-              ├─ on context_window_full → autoCompactIfNeeded()
-              │     1. Full compact conversation
-              │     2. Generate continue prompt
-              │     3. Save partial artifacts
-              │     4. Save compaction event
-              │     5. Return ContinueRequired → LoopRuntime retries
-              │
-              ├─ on success → emit task result
-              └─ on error → propagate / retry / escalate
+  +-> CompactOrchestrator.invokeWithCompact()
+        +-> beforeInvoke():
+        |     1. Estimate token count
+        |     2. Update ContextWindowManager
+        |     3. Microcompact: prune tool results if near limit
+        |
+        +-> agent.invoke()
+        |
+        +-> afterInvoke():
+              +- on output_limit -> OutputLimitHandler.truncate()
+              +- on context_window_full -> autoCompactIfNeeded()
+              |     1. Full compact conversation
+              |     2. Generate continue prompt
+              |     3. Save partial artifacts
+              |     4. Save compaction event
+              |     5. Return ContinueRequired -> LoopRuntime retries
+              |
+              +- on success -> emit task result
+              +- on error -> propagate / retry / escalate
 ```
 
 ---
@@ -73,7 +73,7 @@ export interface CompactState {
   totalCompactions: number;
   messages: CompactableMessage[];
   continuePrompt: string;
-  partialArtifacts: Record<string, string>;  // filename → partial content
+  partialArtifacts: Record<string, string>;  // filename -> partial content
   compactionHistory: CompactionRecord[];
 }
 ```
@@ -98,9 +98,9 @@ Changes:
 
 Changes:
 
-- `savePartialArtifact()` → called after each tool_use block in afterInvoke
-- `loadPartialArtifacts()` → called on retry to reconstruct partial state
-- `markPostCompaction()` → writes flag file for next tick to detect
+- `savePartialArtifact()` -> called after each tool_use block in afterInvoke
+- `loadPartialArtifacts()` -> called on retry to reconstruct partial state
+- `markPostCompaction()` -> writes flag file for next tick to detect
 
 ### 6. `harness/loop-runtime.ts` (EXISTING — add retry loop)
 
@@ -145,7 +145,7 @@ export interface CompactionRecord {
 
 - [ ] `CompactOrchestrator` instantiated in `LoopRuntime` constructor
 - [ ] `beforeInvoke()` called before every agent.invoke()
-- [ ] `afterInvoke()` handles output_limit → truncate → maybe compact
+- [ ] `afterInvoke()` handles output_limit -> truncate -> maybe compact
 - [ ] `ContinueRequired` result causes retry with prepended continue prompt
 - [ ] Partial artifacts saved and restored across retries
 - [ ] Compaction events logged to `harness/context/compaction_events.jsonl`
@@ -157,8 +157,8 @@ export interface CompactionRecord {
 ## Testing Strategy
 
 1. **Unit**: Each orchestrator method independently testable
-2. **Integration**: Mock agent.invoke() → verify compact → verify retry
-3. **E2E simulation**: Feed artificially long message list → verify auto-resume
+2. **Integration**: Mock agent.invoke() -> verify compact -> verify retry
+3. **E2E simulation**: Feed artificially long message list -> verify auto-resume
 
 ---
 
@@ -308,33 +308,33 @@ packages/types/src/runtime-types.ts  (added ContextWindowUpdate)
 
 ```
 LoopRuntime
-  └─> executeTaskWithCompact()
-        ├─> SessionMemoryManager.getMemoryForContext() — inject session context
-        │
-        ├─> CompactOrchestrator.invokeWithCompact()
-        │     ├─> ContextWindowManager.estimateTokensWithBuffer()
-        │     ├─> shouldCircuitBreak() check
-        │     ├─> microcompactToolResults() — prune old tool results
-        │     ├─> runFullCompact()
-        │     │     ├─> ForkedSummarizer.summarize() OR heuristic
-        │     │     ├─> ContinuePromptGenerator.generateBoundary()
-        │     │     └─> preserveRecentToolResults()
-        │     └─> ContinuePromptGenerator.generateMinimal()
-        │
-        ├─> onPreCompact / onPostCompact callbacks
-        │     ├─> PartialRecovery.saveFromCompact()
-        │     ├─> AutoCompactEngine.saveCompactionArtifact()
-        │     └─> SessionMemoryManager.extractFacts()
-        │
-        └─> Retry loop — retry after compact if needed
+  +-> executeTaskWithCompact()
+        +-> SessionMemoryManager.getMemoryForContext() — inject session context
+        |
+        +-> CompactOrchestrator.invokeWithCompact()
+        |     +-> ContextWindowManager.estimateTokensWithBuffer()
+        |     +-> shouldCircuitBreak() check
+        |     +-> microcompactToolResults() — prune old tool results
+        |     +-> runFullCompact()
+        |     |     +-> ForkedSummarizer.summarize() OR heuristic
+        |     |     +-> ContinuePromptGenerator.generateBoundary()
+        |     |     +-> preserveRecentToolResults()
+        |     +-> ContinuePromptGenerator.generateMinimal()
+        |
+        +-> onPreCompact / onPostCompact callbacks
+        |     +-> PartialRecovery.saveFromCompact()
+        |     +-> AutoCompactEngine.saveCompactionArtifact()
+        |     +-> SessionMemoryManager.extractFacts()
+        |
+        +-> Retry loop — retry after compact if needed
 
 AutoResume Flow:
-  1. Compact triggered → summarize old messages
+  1. Compact triggered -> summarize old messages
   2. Generate continue prompt with summary
   3. Save partial artifacts
   4. Append continue message to messages
   5. Retry LLM call with compacted context
-  6. On success → extract facts to session memory
+  6. On success -> extract facts to session memory
 ```
 
 ### Usage Example

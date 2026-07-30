@@ -67,7 +67,7 @@ export function buildSections(
 	return sections;
 }
 
-// ─── Section builders ───────────────────────────────────────────────────
+// --- Section builders ---------------------------------------------------
 
 function buildIdentitySection(req: NormalizedRequest): PromptSection {
 	const lines = [
