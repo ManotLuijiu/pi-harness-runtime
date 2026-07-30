@@ -1,0 +1,21 @@
+id = "moocoding.clipboard"
+name = "Clipboard Bridge"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Clipboard bridge via tmux - fixes copy/paste in remote SSH sessions"
+platforms = ["linux"]
+
+[config]
+# Disable herdr's broken clipboard toast (shows even when copy fails)
+# User should also set in their herdr config.toml:
+# [ui.toast.clipboard]
+# enabled = false
+
+[[startup]]
+# Start tmux clipboard bridge in background pane
+command = ["bash", "start-bridge.sh"]
+detach = true
+
+[[events]]
+on = "pane.output"
+command = ["bash", "watch-output.sh"]
