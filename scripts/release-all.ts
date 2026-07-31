@@ -4,10 +4,12 @@
  *
  * Uses the adapter-based release orchestrator:
  * 1. Detects which stack applies (Node/monorepo, Tauri, Rust, Python)
- * 2. Runs standard-version to create the git tag
- * 3. Syncs all manifest versions (adapter-specific)
- * 4. Verifies consistency
- * 5. Amends commit, pushes, and publishes
+ * 2. Syncs all manifest versions (adapter-specific) - NO standard-version here!
+ * 3. Verifies consistency
+ * 4. Push commit with version bump
+ *
+ * IMPORTANT: standard-version runs in CI (release.yml), not here!
+ * This script only bumps versions and pushes - CI creates the tag.
  *
  * Usage:
  *   bun scripts/release-all.ts              # bump patch
@@ -58,11 +60,14 @@ async function main(): Promise<void> {
 		}
 	}
 
+	// Skip standard-version when running locally.
+	// CI (release.yml) will run standard-version on tag push.
 	await release({
 		dryRun: isDryRun,
 		verbose: true,
 		bumpType,
 		newVersion,
+		skipStandardVersion: true,
 	});
 }
 
