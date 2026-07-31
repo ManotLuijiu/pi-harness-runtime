@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/runtime",
-  "version": "0.10.4",
+  "version": "0.10.3",
   "description": "pi-harness-runtime — runtime",
   "type": "module",
   "main": "./dist/index.js",
