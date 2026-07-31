@@ -205,13 +205,14 @@ export class OpenAIQuotaScraper {
 Drop your chatgpt.com cookies (Netscape or EditThisCookie JSON) into:
   ${dropHint}
 Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
-			if (!this.config.quiet) console.error(`[OpenAIQuotaScraper] ${msg}`);
+			if (!this.config.quiet)
+				console.error(`[DEBUG OpenAIQuotaScraper] ${msg}`);
 			throw new Error(msg);
 		}
 
 		// Launch browser
 		if (!this.config.quiet) {
-			console.log("[OpenAIQuotaScraper] Launching browser...");
+			console.log("[DEBUG OpenAIQuotaScraper] Launching browser...");
 		}
 
 		const browser = await chromium.launch({
@@ -259,7 +260,9 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 		try {
 			// Navigate to analytics page
 			if (!this.config.quiet) {
-				console.log("[OpenAIQuotaScraper] Navigating to analytics page...");
+				console.log(
+					"[DEBUG OpenAIQuotaScraper] Navigating to analytics page...",
+				);
 			}
 
 			await page.goto(ANALYTICS_URL, {
@@ -282,14 +285,16 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 			if (currentUrl.includes("login") || currentUrl.includes("auth")) {
 				const msg =
 					"OpenAI cookies are expired or insufficient. Please re-export cookies from chatgpt.com.";
-				if (!this.config.quiet) console.error("[OpenAIQuotaScraper] " + msg);
+				if (!this.config.quiet)
+					console.error("[DEBUG OpenAIQuotaScraper] " + msg);
 				throw new Error(msg);
 			}
 
 			// Parse the usage data from the captured API response
 			if (!usageData) {
 				const msg = "Failed to capture usage data from API";
-				if (!this.config.quiet) console.error("[OpenAIQuotaScraper] " + msg);
+				if (!this.config.quiet)
+					console.error("[DEBUG OpenAIQuotaScraper] " + msg);
 				throw new Error(msg);
 			}
 
@@ -306,7 +311,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 
 			if (!this.config.quiet) {
 				console.log(
-					`[OpenAIQuotaScraper] Weekly usage: ${weeklyUsedPct}%, resets in ${weeklyResetsAt}`,
+					`[DEBUG OpenAIQuotaScraper] Weekly usage: ${weeklyUsedPct}%, resets in ${weeklyResetsAt}`,
 				);
 			}
 
@@ -349,7 +354,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 			if (!response.ok) {
 				if (!this.config.quiet) {
 					console.log(
-						`[OpenAIQuotaScraper] Direct API failed: ${response.status}`,
+						`[DEBUG OpenAIQuotaScraper] Direct API failed: ${response.status}`,
 					);
 				}
 				return null;
@@ -374,7 +379,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
 		} catch (error) {
 			if (!this.config.quiet) {
 				console.warn(
-					"[OpenAIQuotaScraper] Direct API error:",
+					"[DEBUG OpenAIQuotaScraper] Direct API error:",
 					error instanceof Error ? error.message : String(error),
 				);
 			}

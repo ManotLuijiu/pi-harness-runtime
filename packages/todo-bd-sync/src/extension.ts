@@ -35,7 +35,7 @@ export function registerTodoBdSync(
 
 	// Check if bd is installed
 	if (!deps.bd.installed) {
-		console.log("[todo-bd-sync] bd CLI not found - skipping todo sync");
+		console.log("[DEBUG todo-bd-sync] bd CLI not found - skipping todo sync");
 		console.log(
 			"[todo-bd-sync] Install bd: see https://github.com/gastownhall/beads",
 		);
@@ -53,7 +53,7 @@ export function registerTodoBdSync(
 		: "not installed (using fallback)";
 
 	console.log(`[todo-bd-sync] rpiv-todo: ${rpivTodoStatus}`);
-	console.log("[todo-bd-sync] bd CLI: installed");
+	console.log("[DEBUG todo-bd-sync] bd CLI: installed");
 
 	// Create and start sync
 	const sync = createTodoBdSync(pi, {
@@ -87,8 +87,10 @@ export function registerTodoBdSync(
 	);
 	reminder.start();
 
-	console.log("[todo-bd-sync] Enabled - two-way sync active");
-	console.log("[todo-bd-sync] Reminder DISABLED — set autoRemind: true to enable");
+	console.log("[DEBUG todo-bd-sync] Enabled - two-way sync active");
+	console.log(
+		"[todo-bd-sync] Reminder DISABLED — set autoRemind: true to enable",
+	);
 
 	return sync;
 }
