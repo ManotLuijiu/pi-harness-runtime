@@ -79,28 +79,26 @@ jobs:
       #     bun test packages/*/test/*.test.ts
       #     bun test test/*.test.ts
 
+      - name: Unpublish all existing versions
+        run: |
+          echo "Unpublishing all existing versions..."
+          npm view pi-harness-runtime versions --json 2>/dev/null | \
+            jq -r '.[]' | \
+            while read v; do
+              echo "Unpublishing pi-harness-runtime@$v..."
+              npm unpublish "pi-harness-runtime@$v" --force 2>/dev/null || true
+            done
+          echo "Waiting 30s for npm registry to propagate..."
+          sleep 30
+          echo "Done unpublishing"
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
         run: |
           # Use pure OIDC trusted publishing.
-          # Avoid setup-node temp npm auth config so npm does not inherit
-          # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
-
-          # Unpublish any higher versions first to prevent conflict
-          CURRENT=$(node -p "require('./package.json').version")
-          npm view pi-harness-runtime versions --json 2>/dev/null | \
-            jq -r '.[]' | \
-            while read v; do
-              # Bash string comparison for semver
-              if [[ "$v" > "$CURRENT" ]]; then
-                echo "Unpublishing $v..."
-                PKG="pi-harness-runtime@$v"
-                npm unpublish "$PKG" --force 2>/dev/null || true
-              fi
-            done
 
           publish_args() {
             local version
