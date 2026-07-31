@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/cookie-sanitizer",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "pi-harness-runtime — cookie sanitizer (provider-quota cookie file normaliser)",
   "type": "module",
   "main": "./dist/index.js",
