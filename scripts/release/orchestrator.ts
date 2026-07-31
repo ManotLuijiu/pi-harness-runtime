@@ -66,6 +66,11 @@ export interface ReleaseOptions {
 	skipGit?: boolean;
 	skipNpm?: boolean;
 	skipPublish?: boolean;
+	/**
+	 * Skip running standard-version (tag creation).
+	 * Set to true when running locally - CI handles standard-version.
+	 */
+	skipStandardVersion?: boolean;
 }
 
 /**
@@ -113,22 +118,30 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 		console.log(`\n📦 Using adapter: ${adapter.name} (${adapter.id})`);
 	}
 
-	// ── Step 1: Run standard-version ─────────────────────────────────────
-	const bumpArg = options.newVersion ?? options.bumpType ?? "patch";
-	const stdCmd = dryRun
-		? `npx standard-version --dry-run --release-as ${bumpArg}`
-		: `npx standard-version --release-as ${bumpArg}`;
+	// ── Step 1: Run standard-version (only in CI, not locally) ───────────
+	// Local runs: skip standard-version, just bump versions
+	// CI runs: run standard-version to create tags
+	if (options.skipStandardVersion) {
+		console.log(`\n🚀 Release (${adapter.name})\n`);
+		console.log(`📦 Step 1: Skipping standard-version (run locally)`);
+		console.log(`   CI will run standard-version on tag push\n`);
+	} else {
+		const bumpArg = options.newVersion ?? options.bumpType ?? "patch";
+		const stdCmd = dryRun
+			? `npx standard-version --dry-run --release-as ${bumpArg}`
+			: `npx standard-version --release-as ${bumpArg}`;
 
-	console.log(`\n🚀 Release (${adapter.name})\n`);
-	if (!options.skipGit) {
-		console.log(`📦 Step 1: Running standard-version...`);
-		console.log(`   $ ${stdCmd}`);
-		if (!dryRun) {
-			try {
-				execSync(stdCmd, { cwd: repoRoot, stdio: "inherit" });
-			} catch {
-				console.error("standard-version failed.");
-				process.exit(1);
+		console.log(`\n🚀 Release (${adapter.name})\n`);
+		if (!options.skipGit) {
+			console.log(`📦 Step 1: Running standard-version...`);
+			console.log(`   $ ${stdCmd}`);
+			if (!dryRun) {
+				try {
+					execSync(stdCmd, { cwd: repoRoot, stdio: "inherit" });
+				} catch {
+					console.error("standard-version failed.");
+					process.exit(1);
+				}
 			}
 		}
 	}
