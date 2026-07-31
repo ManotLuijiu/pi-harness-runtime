@@ -33,17 +33,13 @@ async function main(): Promise<void> {
 
 	// Parse release type
 	const isDryRun = args.includes("--dry-run");
-	const releaseArgs = args.filter((a) => a !== "--dry-run");
-	const cmdParts = releaseArgs.filter(
-		(a) => !a.startsWith("--dry-run") && !a.startsWith("--"),
-	);
 
 	let bumpType: "patch" | "minor" | "major" | "prerelease" = "patch";
 	let newVersion: string | undefined;
 
 	// Detect --release-as X.Y.Z vs --release-as minor/patch/major
-	const releaseAsArg = cmdParts.find((a) => a.startsWith("--release-as="));
-	const releaseAsIdx = cmdParts.indexOf("--release-as");
+	const releaseAsArg = args.find((a) => a.startsWith("--release-as="));
+	const releaseAsIdx = args.indexOf("--release-as");
 	if (releaseAsArg) {
 		const val = releaseAsArg.split("=")[1];
 		if (/^\d+\.\d+\.\d+/.test(val)) {
@@ -52,7 +48,7 @@ async function main(): Promise<void> {
 			bumpType = val as typeof bumpType;
 		}
 	} else if (releaseAsIdx >= 0) {
-		const val = cmdParts[releaseAsIdx + 1];
+		const val = args[releaseAsIdx + 1];
 		if (val && /^\d+\.\d+\.\d+/.test(val)) {
 			newVersion = val;
 		} else if (val) {
