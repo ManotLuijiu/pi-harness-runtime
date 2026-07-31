@@ -20,7 +20,10 @@ import {
 	type TodoBdSync,
 	type TodoBdSyncConfig,
 } from "./index.js";
-import { getDependencyStatus, logDependencyStatus } from "./detector.js";
+import {
+	getDependencyStatus,
+	logDependencyStatus,
+} from "./detector.js";
 import { createCustomReminder } from "./todo-reminder.js";
 import { getOpenBdIssues } from "./sync.js";
 
@@ -35,7 +38,44 @@ export function registerTodoBdSync(
 
 	// Check if bd is installed
 	if (!deps.bd.installed) {
+		// Show user how to install bd
+		const installMsg = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  bd (beads) is not installed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+To use todo-bd-sync, install bd first:
+
+   https://github.com/gastownhall/beads
+
+Quick install (requires Node.js):
+
+   npm install -g @gastownhall/beads
+
+   OR
+
+   pi install npm:@gastownhall/beads
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+		console.log(installMsg);
 		return null;
+	}
+
+	// Check if bd is initialized in this project
+	if (!deps.bd.initialized) {
+		const initMsg = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 bd (beads) detected but not initialized
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run the following command to initialize:
+
+   bd init
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+		console.log(initMsg);
 	}
 
 	// Log dependency status for debugging (only if debug mode)
