@@ -67,6 +67,17 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
+
+// --- todo-bd-sync: Two-way sync between rpiv-todo and bd --------------------
+// Lazy import - only loads when packages/todo-bd-sync exists
+async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/todo-bd-sync/src/extension.js");
+		mod.registerTodoBdSync(pi, { debug: false });
+	} catch {
+		// todo-bd-sync not available
+	}
+}
 import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -213,6 +224,31 @@ export default function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
+
+	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
+	// Start async init but don't await - runs in background
+	void initTodoBdSync(pi);
+
+	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
+	// This makes the todo overlay ALWAYS activate at session start
+	const AUTO_TODO_INVOKE_HINT = `
+
+You have access to a todo tool that shows a persistent task overlay.
+ALWAYS use it at the START of every session to capture user requirements as tasks.
+When the user gives you a multi-step task:
+1. Immediately create todo items for each step using the todo tool
+2. Keep tasks updated - mark in_progress when working, completed when done
+3. When a task is completed, continue to the next or ask the user
+
+The todo overlay persists and helps track progress across your conversation.
+`;
+	let firstAgentStart = true;
+	pi.on("before_agent_start", async (event) => {
+		if (firstAgentStart) {
+			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
+			firstAgentStart = false;
+		}
+	});
 
 	// --- Auto-track every assistant message ------------------------------
 	pi.on("message_end", async (event, ctx) => {
@@ -408,6 +444,49 @@ export default function (pi: ExtensionAPI) {
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
+
+	// --- Context-usage escalating warning tiers -----------------------------
+	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
+	// Per-session dedup: only notify when crossing INTO a new higher tier.
+	const TIER_WARNING = 0.75; // amber
+	const TIER_ERROR = 0.85; // red
+	let lastNotifiedTier: "none" | "warning" | "error" = "none";
+
+	function maybeNotifyContextUsage(ctx: ExtensionContext): void {
+		const usage = ctx.getContextUsage();
+		const pct = usage?.percent;
+		if (pct === null || pct === undefined) return;
+		if (pct >= 0.9) return; // proactive compact handles 90%+
+
+		const tier: "none" | "warning" | "error" =
+			pct >= TIER_ERROR ? "error" : pct >= TIER_WARNING ? "warning" : "none";
+
+		// Only notify when crossing into a strictly higher tier
+		if (tier === "none") {
+			lastNotifiedTier = "none";
+			return;
+		}
+		if (
+			tier === "warning" &&
+			lastNotifiedTier !== "warning" &&
+			lastNotifiedTier !== "error"
+		) {
+			lastNotifiedTier = "warning";
+			ctx.ui.notify(
+				`Context at ${Math.round(pct * 100)}% — consider condensing`,
+				"info",
+			);
+			return;
+		}
+		if (tier === "error" && lastNotifiedTier !== "error") {
+			lastNotifiedTier = "error";
+			ctx.ui.notify(
+				`Context at ${Math.round(pct * 100)}% — approaching limit`,
+				"warning",
+			);
+			return;
+		}
+	}
 
 	function writeMirrorRecord(
 		provider: ProviderId,
@@ -1126,6 +1205,7 @@ export default function (pi: ExtensionAPI) {
 		);
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
+		maybeNotifyContextUsage(ctx);
 	});
 
 	pi.on("agent_end", () => {
