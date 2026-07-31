@@ -92,6 +92,16 @@ export function isBdInstalled(): boolean {
 }
 
 /**
+ * Check if bd is initialized in the current project
+ * (i.e., .beads/ directory exists)
+ */
+export function isBdInitialized(cwd?: string): boolean {
+	const projectDir = cwd || process.cwd();
+	const beadsDir = join(projectDir, ".beads");
+	return existsSync(beadsDir);
+}
+
+/**
  * Get the version of bd CLI if installed
  */
 export function getBdVersion(): string | null {
@@ -109,6 +119,9 @@ export function getBdVersion(): string | null {
 /**
  * Get installation status of both dependencies
  */
+/**
+ * Get installation status of both dependencies
+ */
 export interface DependencyStatus {
 	rpivTodo: {
 		installed: boolean;
@@ -118,10 +131,13 @@ export interface DependencyStatus {
 	bd: {
 		installed: boolean;
 		version: string | null;
+		initialized: boolean;
+		installUrl: string;
 	};
 }
 
-export function getDependencyStatus(): DependencyStatus {
+export function getDependencyStatus(cwd?: string): DependencyStatus {
+	const installed = isBdInstalled();
 	return {
 		rpivTodo: {
 			installed: isRpivTodoInstalled(),
@@ -129,8 +145,10 @@ export function getDependencyStatus(): DependencyStatus {
 			loaded: isRpivTodoLoaded(),
 		},
 		bd: {
-			installed: isBdInstalled(),
-			version: getBdVersion(),
+			installed,
+			version: installed ? getBdVersion() : null,
+			initialized: installed ? isBdInitialized(cwd) : false,
+			installUrl: "https://github.com/gastownhall/beads",
 		},
 	};
 }
@@ -145,6 +163,9 @@ export function logDependencyStatus(): void {
 		`  rpiv-todo: installed=${status.rpivTodo.installed}, version=${status.rpivTodo.version}, loaded=${status.rpivTodo.loaded}`,
 	);
 	console.log(
-		`  bd: installed=${status.bd.installed}, version=${status.bd.version}`,
+		`  bd: installed=${status.bd.installed}, version=${status.bd.version}, initialized=${status.bd.initialized}`,
 	);
+	if (!status.bd.installed) {
+		console.log(`  bd install: ${status.bd.installUrl}`);
+	}
 }

@@ -906,7 +906,10 @@ The todo overlay persists and helps track progress across your conversation.
 	registerGithubLoginCommand(pi);
 
 	// --- Ctrl+Shift+C — Copy to clipboard + sync to Gist ------------
-	registerCopySyncShortcut(pi, Key);
+	// NOTE: Shortcut disabled to avoid conflict with pi-usage-status extension
+	// which also registers ctrl+shift+c for clipboard sync.
+	// The copyAndSync function is still exported and can be called manually.
+	// registerCopySyncShortcut(pi, Key);
 
 	// --- /harness start — Start a new harness job ----------------------
 	pi.registerCommand("harness-start", {
