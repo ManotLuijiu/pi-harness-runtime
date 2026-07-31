@@ -1,0 +1,22 @@
+name: Unpublish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to unpublish'
+        required: true
+        default: '1.1.0'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  unpublish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Unpublish from npm
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          npm unpublish pi-harness-runtime@${VERSION} --force
