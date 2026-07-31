@@ -79,10 +79,6 @@ jobs:
       #     bun test packages/*/test/*.test.ts
       #     bun test test/*.test.ts
 
-      - name: Unpublish any existing version to prevent conflict
-        run: |
-          npm unpublish pi-harness-runtime --force 2>/dev/null || true
-
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
@@ -93,13 +89,26 @@ jobs:
           # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
 
+          # Unpublish any higher versions first to prevent conflict
+          CURRENT=$(node -p "require('./package.json').version")
+          npm view pi-harness-runtime versions --json 2>/dev/null | \
+            jq -r '.[]' | \
+            while read v; do
+              # Bash string comparison for semver
+              if [[ "$v" > "$CURRENT" ]]; then
+                echo "Unpublishing $v..."
+                PKG="pi-harness-runtime@$v"
+                npm unpublish "$PKG" --force 2>/dev/null || true
+              fi
+            done
+
           publish_args() {
             local version
             version=$(node -p "require('./package.json').version")
             if [[ "$version" == *-* ]]; then
               echo "--access public --tag beta"
             else
-              echo "--access public"
+              echo "--access public --tag latest"
             fi
           }
 
