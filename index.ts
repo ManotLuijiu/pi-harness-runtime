@@ -327,7 +327,7 @@ The todo overlay persists and helps track progress across your conversation.
 
 	// --- Smart quota fetch for OpenAI status -------------------------
 	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-	const _openaiQuotaScraper = new OpenAIQuotaScraper();
+	const _openaiQuotaScraper = new OpenAIQuotaScraper({ quiet: true });
 	let lastOpenAIQuotaFetchAt = 0;
 
 	// --- Cookie sanitizer integration ------------------------------------
@@ -382,6 +382,8 @@ The todo overlay persists and helps track progress across your conversation.
 		}
 	});
 
+	let lastQuotaAutoFetchAt = 0;
+
 	// Live watcher — sanitises on every change in the drop folder.
 	const cookieWatcher = new CookieWatcher({
 		dropDir: cookieDropDir,
@@ -408,6 +410,7 @@ The todo overlay persists and helps track progress across your conversation.
 			}
 		},
 	});
+
 	try {
 		cookieWatcher.start();
 		// Sync existing drop-folder cookies now (ignoreInitial: true means
@@ -435,7 +438,6 @@ The todo overlay persists and helps track progress across your conversation.
 	let footerStatusCtx: {
 		ui: { setStatus: (key: string, value: string) => void };
 	} | null = null;
-	let lastQuotaAutoFetchAt = 0;
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
