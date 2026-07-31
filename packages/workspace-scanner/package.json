@@ -1,6 +1,6 @@
 {
   "name": "@pi/workspace-scanner",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
