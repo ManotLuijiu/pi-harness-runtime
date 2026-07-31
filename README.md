@@ -27,6 +27,76 @@ pi install npm:pi-harness-runtime
 
 Requires Pi v0.37.3+.
 
+### Headless Server Setup (herdr clipboard bridge)
+
+If running on a **headless server** via herdr SSH, install the clipboard bridge plugin to enable copy/paste between server and local machine:
+
+```bash
+# 1. Link the plugin (already included in this package)
+cd ~/.config/herdr/plugins
+ln -s ~/.config/herdr/plugins/moocoding.clipboard-bridge moocoding.clipboard-bridge 2>/dev/null || true
+
+# 2. Add keybinding to ~/.config/herdr/config.toml
+cat >> ~/.config/herdr/config.toml << 'EOF'
+
+[[keys.command]]
+key = "prefix+y"
+type = "plugin_action"
+command = "moocoding.clipboard-bridge.copy"
+description = "Copy selected text via bridge"
+EOF
+
+# 3. Reload herdr config
+herdr server reload-config
+```
+
+### todo-bd-sync (Auto Task Tracker)
+
+Automatic two-way sync between rpiv-todo overlay and bd issue tracker.
+
+When you use `bd` for issue tracking, this feature automatically syncs tasks.
+
+> **Important:** `bd` is **not** implemented or bundled by `pi-harness-runtime`.
+> It is the external **Beads CLI** from the upstream project:
+> `https://github.com/gastownhall/beads`
+>
+> Install it system-wide from upstream, then initialize it in your own project:
+
+```bash
+# Install beads CLI (system-wide - don't clone this repo into your project)
+curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash
+
+# Initialize in YOUR project
+cd your-project
+bd init
+
+# Optional: refresh or install richer instructions for your agent
+bd setup codex    # Codex CLI - installs skill, AGENTS.md guidance, and hooks
+bd setup claude   # Claude Code - installs hooks/settings
+bd setup factory  # Factory.ai Droid - creates/updates AGENTS.md
+```
+
+- Install dependencies:
+
+```bash
+# Install rpiv-todo overlay
+pi install npm:@juicesharp/rpiv-todo
+
+# Verify bd is available from your upstream beads install
+bd --version
+```
+
+- Works automatically: Just use prompts with multiple steps, and tasks sync to bd
+- Manual commands:
+
+```bash
+/bd-todo-sync    # Force sync all mapped tasks
+/bd-todo-status  # Show sync status
+```
+
+> **Note:** Auto-reminder is **disabled by default** (bug fix for transcript growth).
+> See [docs/todo-bd-sync.md](docs/todo-bd-sync.md) for details.
+
 ## Usage Commands
 
 ```bash
@@ -35,6 +105,8 @@ Requires Pi v0.37.3+.
 /usage today       # today's usage + 5h window
 /usage week        # this week's usage + lifetime totals
 /usage reset       # clear provider mirror
+/bd-todo-sync      # Force sync all mapped tasks (todo <-> bd)
+/bd-todo-status    # Show todo-bd sync status and dependencies
 ```
 
 ## Harness Commands
@@ -244,6 +316,56 @@ The runtime watches `~/.pi-harness-runtime/cookies/` for cookie files. Drop any 
 
 **Override:** set `QUOTA_COOKIE_FILE=/path/to/your/cookies.txt` to bypass the sanitizer
 and read a specific file directly.
+
+## herdr Integration (Clipboard Bridge)
+
+> **⚠️ This only applies when using herdr.dev**
+>
+> If you're using a normal terminal (iTerm2, Terminal.app, etc.), clipboard works fine — no special setup needed.
+
+When running on a **headless server via herdr.dev**, clipboard operations need special setup because:
+
+- herdr's `copy_on_select` uses OSC52 which fails in VS Code's integrated terminal PTY
+- UTF-8 box-drawing characters (`┌─┐│└`) get corrupted to garbled text
+- Server-side clipboard tools (`xclip`, `wl-copy`) don't exist
+
+### Quick Setup
+
+```bash
+# Copy the example config (includes clipboard bridge keybinding)
+cp config.toml.example ~/.config/herdr/config.toml
+
+# Reload herdr config
+herdr server reload-config
+```
+
+### Usage
+
+1. **Select text** with mouse in herdr terminal
+2. Press **`prefix+y`** (prefix is `ctrl+b` by default)
+3. Text is copied via the bridge to your local clipboard
+
+### How It Works
+
+```
+Select text in herdr
+        ↓
+Press prefix+y (plugin action)
+        ↓
+~/.herdr-clipboard (bridge file)
+        ↓
+SSH reverse tunnel or tmux buffer
+        ↓
+Your local machine clipboard
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `config.toml.example` | Template for `~/.config/herdr/config.toml` |
+| `~/.herdr-clipboard` | Bridge file between herdr and clipboard |
+| `~/.config/herdr/plugins/moocoding.clipboard-bridge/` | herdr plugin |
 
 ### Other Providers
 
