@@ -95,7 +95,7 @@ jobs:
             if [[ "$version" == *-* ]]; then
               echo "--access public --tag beta"
             else
-              echo "--access public"
+              echo "--access public --tag latest"
             fi
           }
 
