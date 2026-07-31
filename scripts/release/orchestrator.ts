@@ -147,8 +147,11 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 	}
 
 	// ── Step 2: Read new version from git tag ─────────────────────────────
-	let newVersion: string;
-	if (!options.skipGit) {
+	let newVersion: string | undefined;
+
+	// Only read from git tag if NOT skipping standard-version (i.e., in CI)
+	// When skipping standard-version (local runs), adapter.bump() calculates the next version
+	if (!options.skipStandardVersion && !options.skipGit) {
 		try {
 			const tags = git(["tag", "--sort=-v:refname"], repoRoot);
 			const latestTag = tags.split("\n")[0];
@@ -157,24 +160,27 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 			// Fallback: read from adapter
 			newVersion = (await adapter.getCanonicalVersion(ctx)) ?? "0.0.0";
 		}
-	} else {
-		newVersion = (await adapter.getCanonicalVersion(ctx)) ?? "0.0.0";
+	} else if (!options.skipGit) {
+		// skipStandardVersion=true (local): let adapter calculate next version
+		newVersion = undefined;
 	}
 
+	// Explicit --release-as=X.Y.Z always wins
 	if (options.newVersion) {
 		newVersion = options.newVersion;
 	}
 
-	console.log(`\n📋 Step 2: Release version is ${newVersion}`);
+	const displayVersion = newVersion ?? `(calculated from ${options.bumpType ?? "patch"})`;
+	console.log(`\n📋 Step 2: Release version is ${displayVersion}`);
 
 	// ── Step 3: Sync all manifest versions ────────────────────────────────
 	const manifests = await adapter.readManifests(ctx);
 	console.log(
-		`\n📦 Step 3: Syncing ${manifests.length} manifest(s) to ${newVersion}...`,
+		`\n📦 Step 3: Syncing ${manifests.length} manifest(s)...`,
 	);
 	if (verbose) {
 		for (const m of manifests) {
-			console.log(`   ${m.path}: ${m.version} -> ${newVersion}`);
+			console.log(`   ${m.path}: ${m.version} -> (calculated)`);
 		}
 	}
 
@@ -187,9 +193,12 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 		console.log(`   ${action}`);
 	}
 
+	// Get the actual new version (either provided or calculated by bump)
+	const actualVersion = bumpResult.newVersion;
+
 	// ── Step 4: Verify ──────────────────────────────────────────────────
 	console.log(`\n🔍 Step 4: Verifying...`);
-	const verifyResult = await adapter.verify(ctx, newVersion);
+	const verifyResult = await adapter.verify(ctx, actualVersion);
 
 	for (const warning of verifyResult.warnings) {
 		console.warn(`   ⚠ ${warning}`);
@@ -207,7 +216,7 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 	}
 
 	if (verifyResult.ok) {
-		console.log(`   ✓ All manifests synchronized to ${newVersion}`);
+		console.log(`   ✓ All manifests synchronized to ${actualVersion}`);
 	} else if (dryRun) {
 		console.log(
 			`   ⚠ Verification skipped in dry-run (versions not yet bumped)`,
@@ -265,5 +274,5 @@ export async function release(options: ReleaseOptions = {}): Promise<void> {
 		}
 	}
 
-	console.log(`\n✅ Release ${newVersion} complete (${adapter.name})\n`);
+	console.log(`\n✅ Release ${actualVersion} complete (${adapter.name})\n`);
 }

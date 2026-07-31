@@ -1,6 +1,6 @@
 {
   "name": "@pi/scheduler-adapter",
-  "version": "0.10.1",
+  "version": "0.10.4",
   "description": "Scheduler Adapter — cron, systemd, launchd, internal adapters for autonomous runtime (RFC-0101 §6)",
   "type": "module",
   "main": "./dist/index.js",
