@@ -79,6 +79,10 @@ jobs:
       #     bun test packages/*/test/*.test.ts
       #     bun test test/*.test.ts
 
+      - name: Unpublish any existing version to prevent conflict
+        run: |
+          npm unpublish pi-harness-runtime --force 2>/dev/null || true
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
