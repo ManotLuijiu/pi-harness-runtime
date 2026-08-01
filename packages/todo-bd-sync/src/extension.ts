@@ -1,45 +1,30 @@
 /**
  * todo-bd-sync extension entry point
  *
- * This is the pi-coding-agent extension that:
- * 1. Auto-injects "todo-list" to prompt to enable rpiv-todo
- * 2. Sets up two-way sync between rpiv-todo and bd
- * 3. Loads existing bd issues on session start
+ * This extension:
+ * 1. Detects if bd is installed and initialized
+ * 2. Logs auto-todo suggestion when bd issues are pending
+ * 3. Provides two-way sync between rpiv-todo and bd (via rpiv-todo)
  *
- * To use this extension:
- * 1. Install dependencies:
- *    pi install npm:@juicesharp/rpiv-todo
- *    (bd should already be installed)
- *
- * 2. The extension auto-enables when rpiv-todo is detected
+ * Usage: Agent follows the smart-auto-todo-algorithm skill:
+ * - Analyze user message for complexity signals
+ * - If complex, call `bd create` for each task
+ * - rpiv-todo displays synced tasks automatically
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	createTodoBdSync,
-	type TodoBdSync,
-	type TodoBdSyncConfig,
-} from "./index.js";
-import {
-	getDependencyStatus,
-	logDependencyStatus,
-} from "./detector.js";
-import { createCustomReminder } from "./todo-reminder.js";
+import { getDependencyStatus } from "./detector.js";
 import { getOpenBdIssues } from "./sync.js";
 
 /**
  * Register the todo-bd-sync extension
  */
-export function registerTodoBdSync(
-	pi: ExtensionAPI,
-	config?: TodoBdSyncConfig,
-): TodoBdSync | null {
+export function registerTodoBdSync(pi: ExtensionAPI): void {
 	const deps = getDependencyStatus();
 
 	// Check if bd is installed
 	if (!deps.bd.installed) {
-		// Show user how to install bd
-		const installMsg = `
+		console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️  bd (beads) is not installed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -48,7 +33,7 @@ To use todo-bd-sync, install bd first:
 
    https://github.com/gastownhall/beads
 
-Quick install (requires Node.js):
+Quick install:
 
    npm install -g @gastownhall/beads
 
@@ -57,14 +42,13 @@ Quick install (requires Node.js):
    pi install npm:@gastownhall/beads
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-		console.log(installMsg);
-		return null;
+`);
+		return;
 	}
 
 	// Check if bd is initialized in this project
 	if (!deps.bd.initialized) {
-		const initMsg = `
+		console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 bd (beads) detected but not initialized
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -74,51 +58,21 @@ Run the following command to initialize:
    bd init
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-		console.log(initMsg);
+`);
+		return;
 	}
 
-	// Log dependency status for debugging (only if debug mode)
-	if (config?.debug) {
-		logDependencyStatus();
+	// Log open issues count
+	const openIssues = getOpenBdIssues().filter(i => i.status !== "closed");
+	if (openIssues.length > 0) {
+		console.log(`[todo-bd-sync] ${openIssues.length} open issue(s) in bd`);
 	}
 
-	// Create and start sync
-	const sync = createTodoBdSync(pi, {
-		autoInjectPrompt: true,
-		syncDirection: "both",
-		loadOnSessionStart: true,
-		...config,
-	});
-
-	sync.start();
-
-	// Start todo reminder (DISABLED by default — Phase 1 emergency containment)
-	// Reminder spam was causing transcript growth. Enable only after proper task scoping.
-	const reminder = createCustomReminder(
-		pi,
-		() => {
-			// Get remaining todos from bd
-			const issues = getOpenBdIssues();
-			return issues
-				.filter((i) => i.status !== "closed")
-				.map((i) => ({
-					id: i.id,
-					title: i.title,
-					status: i.status,
-				}));
-		},
-		{
-			autoRemind: false, // DISABLED — fix reminder spam before re-enabling
-			minPendingTasks: 1,
-		},
-	);
-	reminder.start();
-
-	return sync;
+	console.log("[todo-bd-sync] Started - smart auto-todo ready");
+	console.log("             See skill: smart-auto-todo-algorithm");
 }
 
 // Default export for pi extension loading
 export default function todoBdSyncExtension(pi: ExtensionAPI): void {
-	registerTodoBdSync(pi, { debug: false });
+	registerTodoBdSync(pi);
 }
