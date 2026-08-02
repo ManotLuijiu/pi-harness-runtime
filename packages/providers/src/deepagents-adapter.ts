@@ -20,8 +20,8 @@ import type {
 	DeepAgentsConfig,
 	DeepAgentsTaskRequest,
 	DeepAgentsResult,
-} from "../../packages/types/src/agent-worker-types.js";
-import type { RuntimeTask } from "../../packages/types/src/runtime-types.js";
+} from "../../types/src/agent-worker-types.js";
+import type { RuntimeTask } from "../../types/src/runtime-types.js";
 
 /**
  * DeepAgents Adapter
