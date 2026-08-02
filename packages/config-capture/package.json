@@ -1,0 +1,23 @@
+{
+  "name": "@moocoding/config-capture",
+  "version": "0.10.4",
+  "description": "Auto-capture API-fetched configuration values to AGENTS.md",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "pi-extension",
+    "config",
+    "documentation",
+    "dns",
+    "routes"
+  ],
+  "author": "MooCoding",
+  "license": "MIT"
+}

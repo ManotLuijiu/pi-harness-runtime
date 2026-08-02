@@ -78,6 +78,17 @@ async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
 		// todo-bd-sync not available
 	}
 }
+
+// --- config-capture: Auto-detect and document API configuration -------------
+// Lazy import - only loads when packages/config-capture exists
+async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/config-capture/src/index.js");
+		mod.registerConfigCapture(pi, { debug: false });
+	} catch {
+		// config-capture not available
+	}
+}
 import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -228,6 +239,9 @@ export default function (pi: ExtensionAPI) {
 	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
 	// Start async init but don't await - runs in background
 	void initTodoBdSync(pi);
+
+	// --- config-capture: Auto-detect API config and document it -----------
+	void initConfigCapture(pi);
 
 	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
 	// This makes the todo overlay ALWAYS activate at session start
