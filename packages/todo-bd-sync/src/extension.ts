@@ -3,10 +3,8 @@
  *
  * This extension:
  * 1. Detects if bd is installed and initialized
- * 2. Auto-injects "add tasks to todo-list" when task is complex
+ * 2. Auto-injects todo tool call when task is complex
  * 3. Provides two-way sync between rpiv-todo and bd (via rpiv-todo)
- *
- * The magic phrase "add tasks to todo-list" triggers rpiv-todo to track the task.
  */
 
 import type { ExtensionAPI, InputEvent, InputEventResult } from "@earendil-works/pi-coding-agent";
@@ -60,7 +58,7 @@ Run the following command to initialize:
 	}
 
 	// ── Smart Auto-Todo Injection ──────────────────────────────────────────
-	// Listen to user input and inject "add tasks to todo-list" when needed
+	// Listen to user input and inject todo tool call when task is complex
 	
 	pi.on("input", (event: InputEvent): InputEventResult | undefined => {
 		// Only process user input (not from extensions or RPC)
@@ -69,7 +67,7 @@ Run the following command to initialize:
 		}
 
 		const text = event.text.trim();
-		if (!text || text.length < 10) {
+		if (!text || text.length < 5) {
 			return; // Skip very short inputs
 		}
 
@@ -77,15 +75,38 @@ Run the following command to initialize:
 		const decision = decideAutoTodo(text);
 
 		// If should create todo and phrase not already present
-		if (decision.shouldCreate && !text.toLowerCase().includes("add tasks to todo-list")) {
-			const score = getTaskComplexityScore(text);
-			console.log(`[auto-todo] Task detected: ${decision.reason} (score: ${score}/100, pending: ${pendingCount})`);
-			
-			// Transform the input to add the magic phrase
-			return {
-				action: "transform",
-				text: `${text}\n\nadd tasks to todo-list`,
-			};
+		if (decision.shouldCreate) {
+			// Check if already has explicit todo instruction
+			const hasExplicitTodo = 
+				text.toLowerCase().includes("use the todo") ||
+				text.toLowerCase().includes("add to todo") ||
+				text.toLowerCase().includes("track as todo") ||
+				text.toLowerCase().includes("todo list") ||
+				text.toLowerCase().includes("create todo");
+
+			if (!hasExplicitTodo) {
+				const score = getTaskComplexityScore(text);
+				console.log(`[auto-todo] Task detected: ${decision.reason} (score: ${score}/100, pending: ${pendingCount})`);
+				
+				// Clearer instruction that explicitly tells LLM to use todo tool
+				// This is more direct than just adding text - it tells LLM to CALL the todo tool
+				const injection = `
+
+IMPORTANT: Use the \`todo\` tool to track this task:
+1. Create a todo item with subject: "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}"
+2. Mark it as in_progress
+3. Track your progress as you work
+
+\`\`\`json
+{"action": "create", "subject": "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}", "activeForm": "working on task"}
+\`\`\`
+`;
+				
+				return {
+					action: "transform",
+					text: text + injection,
+				};
+			}
 		}
 
 		return;
