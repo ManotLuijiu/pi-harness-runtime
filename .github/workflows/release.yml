@@ -46,12 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # Trusted publishing requires Node >= 22.14.0.
-          # Keep to Node 22 LTS, then upgrade npm explicitly below.
-          node-version: "22"
-
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11.18.0
+          node-version-file: .node-version
 
       - name: Show tool versions
         run: |
@@ -66,13 +61,10 @@ jobs:
           # Project uses bun.lock, so use bun install
           bun install
 
-      # - name: Build packages
-      #   run: |
-      #     # Use bun to build all packages
-      #     bun run build
-      #
-      # Build skipped - pre-existing TypeScript errors in CI don't affect
-      # runtime. Packages work without rebuilding - dist files are in repo.
+      - name: Build packages
+        run: |
+          # Build with skipLibCheck for cross-package import type errors
+          bun run build -- --skipLibCheck
 
       # Tests skipped — pre-existing failures in CI (pass locally).
       # Run before tagging: bun test packages/*/test/*.test.ts test/*.test.mjs

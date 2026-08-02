@@ -26,7 +26,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { URL } from "node:url";
 import { EventEmitter } from "node:events";
 import type { JobStateMachine } from "../../harness/job-state-machine.js";
-import type { TaskGraphManager } from "../../harness/task-graph.js";
+import type { TaskGraphManager } from "../../../harness/task-graph.js";
 import type { CheckpointManager } from "../../harness/job-state-machine.js";
 
 export interface RuntimeApiConfig {
