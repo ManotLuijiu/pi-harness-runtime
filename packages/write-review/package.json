@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/write-review",
-  "version": "0.10.5",
+  "version": "0.10.7",
   "description": "Two-agent write-review loop with blackboard coordination",
   "type": "module",
   "main": "src/index.ts",
