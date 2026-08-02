@@ -512,22 +512,22 @@ export class RuntimeApi extends EventEmitter {
 		// Get job details
 		if (method === "GET") {
 			const checkpoint = await machine.getCheckpoint();
-				const graph = this.taskGraphs.get(jobId);
-				// Get progress from task graph
-				let progress = { total: 0, done: 0, running: 0, failed: 0 };
-				if (graph) {
-					try {
-						const tasks = graph.getAllTasks();
-						progress = {
-							total: tasks.length,
-							done: tasks.filter((t) => t.status === "done").length,
-							running: tasks.filter((t) => t.status === "running").length,
-							failed: tasks.filter((t) => t.status === "failed").length,
-						};
-					} catch {
-						// Fallback to default
-					}
+			const graph = this.taskGraphs.get(jobId);
+			// Get progress from task graph
+			let progress = { total: 0, done: 0, running: 0, failed: 0 };
+			if (graph) {
+				try {
+					const tasks = graph.getAllTasks();
+					progress = {
+						total: tasks.length,
+						done: tasks.filter((t) => t.status === "done").length,
+						running: tasks.filter((t) => t.status === "running").length,
+						failed: tasks.filter((t) => t.status === "failed").length,
+					};
+				} catch {
+					// Fallback to default
 				}
+			}
 
 			this.sendJson(
 				res,
