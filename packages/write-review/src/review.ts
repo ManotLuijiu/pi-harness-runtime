@@ -10,35 +10,35 @@ import type { WriteReviewStatus } from "./types.js";
  * Review round result
  */
 export interface ReviewResult {
-  verdict: "approved" | "changes_requested" | "blocked";
-  iteration: number;
-  message: string;
-  changesNeeded?: string[];
-  issues?: ReviewIssue[];
+	verdict: "approved" | "changes_requested" | "blocked";
+	iteration: number;
+	message: string;
+	changesNeeded?: string[];
+	issues?: ReviewIssue[];
 }
 
 /**
  * Issue found during review
  */
 export interface ReviewIssue {
-  severity: "blocker" | "major" | "minor" | "suggestion";
-  type: "correctness" | "security" | "performance" | "style" | "test" | "docs";
-  location: string;
-  description: string;
-  suggestion?: string;
+	severity: "blocker" | "major" | "minor" | "suggestion";
+	type: "correctness" | "security" | "performance" | "style" | "test" | "docs";
+	location: string;
+	description: string;
+	suggestion?: string;
 }
 
 /**
  * Build review task for pi-subagents
  */
 export function buildReviewTask(
-  status: WriteReviewStatus,
-  projectPath: string
+	status: WriteReviewStatus,
+	projectPath: string,
 ): string {
-  const codeFiles = status.codeFiles ?? [];
-  const iteration = status.iteration;
+	const codeFiles = status.codeFiles ?? [];
+	const iteration = status.iteration;
 
-  const task = `## Review Task - Iteration ${iteration}
+	const task = `## Review Task - Iteration ${iteration}
 
 Review the code written in this iteration.
 
@@ -67,87 +67,92 @@ For CHANGES_REQUESTED, list specific changes needed:
 \`\`\`
 `;
 
-  return task;
+	return task;
 }
 
 /**
  * Parse verdict from review output
  */
 export function parseVerdict(output: string): {
-  verdict: "approved" | "changes_requested" | "blocked";
-  message: string;
-  changes?: string[];
+	verdict: "approved" | "changes_requested" | "blocked";
+	message: string;
+	changes?: string[];
 } | null {
-  const lines = output.split("\n");
-  let verdict: "approved" | "changes_requested" | "blocked" | null = null;
-  let message = "";
-  const changes: string[] = [];
-  let inChanges = false;
+	const lines = output.split("\n");
+	let verdict: "approved" | "changes_requested" | "blocked" | null = null;
+	let message = "";
+	const changes: string[] = [];
+	let inChanges = false;
 
-  for (const line of lines) {
-    const lower = line.toLowerCase();
+	for (const line of lines) {
+		const lower = line.toLowerCase();
 
-    if (lower.includes("## verdict:")) {
-      if (lower.includes("approved")) {
-        verdict = "approved";
-      } else if (lower.includes("changes_requested") || lower.includes("changes requested")) {
-        verdict = "changes_requested";
-      } else if (lower.includes("blocked")) {
-        verdict = "blocked";
-      }
-      continue;
-    }
+		if (lower.includes("## verdict:")) {
+			if (lower.includes("approved")) {
+				verdict = "approved";
+			} else if (
+				lower.includes("changes_requested") ||
+				lower.includes("changes requested")
+			) {
+				verdict = "changes_requested";
+			} else if (lower.includes("blocked")) {
+				verdict = "blocked";
+			}
+			continue;
+		}
 
-    if (lower.includes("## changes needed:") || lower.includes("changes:")) {
-      inChanges = true;
-      continue;
-    }
+		if (lower.includes("## changes needed:") || lower.includes("changes:")) {
+			inChanges = true;
+			continue;
+		}
 
-    if (inChanges && line.trim().match(/^\d+\./)) {
-      changes.push(line.trim());
-      continue;
-    }
+		if (inChanges && line.trim().match(/^\d+\./)) {
+			changes.push(line.trim());
+			continue;
+		}
 
-    if (verdict && line.trim()) {
-      message += line + "\n";
-    }
-  }
+		if (verdict && line.trim()) {
+			message += line + "\n";
+		}
+	}
 
-  if (!verdict) return null;
+	if (!verdict) return null;
 
-  return {
-    verdict,
-    message: message.trim(),
-    changes: changes.length > 0 ? changes : undefined,
-  };
+	return {
+		verdict,
+		message: message.trim(),
+		changes: changes.length > 0 ? changes : undefined,
+	};
 }
 
 /**
  * Review angles for parallel review
  */
 export const REVIEW_ANGLES = [
-  {
-    name: "correctness",
-    description: "Verify implementation matches requirements and handles edge cases",
-  },
-  {
-    name: "tests",
-    description: "Check test coverage and validity",
-  },
-  {
-    name: "complexity",
-    description: "Look for unnecessary complexity and opportunities to simplify",
-  },
+	{
+		name: "correctness",
+		description:
+			"Verify implementation matches requirements and handles edge cases",
+	},
+	{
+		name: "tests",
+		description: "Check test coverage and validity",
+	},
+	{
+		name: "complexity",
+		description:
+			"Look for unnecessary complexity and opportunities to simplify",
+	},
 ];
 
 /**
  * Build parallel review prompt
  */
 export function buildParallelReviewPrompt(
-  codeFiles: string[],
-  projectPath: string
+	codeFiles: string[],
+	projectPath: string,
 ): string {
-  return `Run parallel reviewers on this code:
+	return `Run parallel reviewers on this code:
 
 1. **correctness** - Verify implementation matches requirements and handles edge cases
 2. **tests** - Check test coverage and validity
@@ -163,39 +168,39 @@ Use pi-subagents to spawn 3 parallel reviewers. Wait for all results, then synth
  * Format review summary for blackboard
  */
 export function formatReviewSummary(result: ReviewResult): string {
-  const lines = [
-    `## Review Result - Iteration ${result.iteration}`,
-    "",
-    `**Verdict:** ${result.verdict.toUpperCase()}`,
-    "",
-  ];
+	const lines = [
+		`## Review Result - Iteration ${result.iteration}`,
+		"",
+		`**Verdict:** ${result.verdict.toUpperCase()}`,
+		"",
+	];
 
-  if (result.message) {
-    lines.push("### Message");
-    lines.push(result.message);
-    lines.push("");
-  }
+	if (result.message) {
+		lines.push("### Message");
+		lines.push(result.message);
+		lines.push("");
+	}
 
-  if (result.changesNeeded && result.changesNeeded.length > 0) {
-    lines.push("### Changes Needed");
-    for (const change of result.changesNeeded) {
-      lines.push(`- ${change}`);
-    }
-    lines.push("");
-  }
+	if (result.changesNeeded && result.changesNeeded.length > 0) {
+		lines.push("### Changes Needed");
+		for (const change of result.changesNeeded) {
+			lines.push(`- ${change}`);
+		}
+		lines.push("");
+	}
 
-  if (result.issues && result.issues.length > 0) {
-    lines.push("### Issues Found");
-    for (const issue of result.issues) {
-      lines.push(`- [${issue.severity}] ${issue.type}: ${issue.description}`);
-      if (issue.location) {
-        lines.push(`  Location: ${issue.location}`);
-      }
-      if (issue.suggestion) {
-        lines.push(`  Suggestion: ${issue.suggestion}`);
-      }
-    }
-  }
+	if (result.issues && result.issues.length > 0) {
+		lines.push("### Issues Found");
+		for (const issue of result.issues) {
+			lines.push(`- [${issue.severity}] ${issue.type}: ${issue.description}`);
+			if (issue.location) {
+				lines.push(`  Location: ${issue.location}`);
+			}
+			if (issue.suggestion) {
+				lines.push(`  Suggestion: ${issue.suggestion}`);
+			}
+		}
+	}
 
-  return lines.join("\n");
+	return lines.join("\n");
 }
