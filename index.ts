@@ -312,6 +312,55 @@ AFTER running any Docker build command (docker build, docker compose build, dock
 		}
 	});
 
+	// --- Auto-Todo Reminder on Build Commands ---------------------------
+	// Detect build commands and remind agent to update todos
+	const BUILD_COMMANDS = [
+		"docker build",
+		"docker compose build",
+		"docker compose up",
+		"npm run build",
+		"yarn build",
+		"pnpm build",
+		"bun run build",
+		"make build",
+		"gradle build",
+		"dotnet build",
+		"cargo build",
+		"go build",
+		"bench build",
+	];
+
+	const TODO_BUILD_REMINDER = `
+
+IMPORTANT - TODO UPDATE REMINDER:
+Before running a build, ensure you update the current task status:
+1. Mark the task as in_progress with bd update <id> --status in_progress
+2. After build succeeds, update the task: bd close <id> --reason "Done" or bd update <id> --status pending
+
+Run \`bd ready\` to see current tasks.
+`;
+
+	// Detect build commands and append todo reminder to their output
+	pi.on("tool_execution_end", async (event) => {
+		const toolName = (event as { toolName?: string }).toolName;
+		if (toolName !== "bash") return;
+
+		const result = (event as { result?: { content?: string } }).result;
+		if (!result) return;
+
+		const content = result.content ?? "";
+
+		// Check if this is a build command
+		const isBuildCommand = BUILD_COMMANDS.some(
+			(cmd) => content.toLowerCase().includes(cmd.toLowerCase()),
+		);
+
+		if (isBuildCommand && !content.includes("bd ready") && !content.includes("TODO UPDATE")) {
+			// Append todo reminder to build output
+			result.content = content + TODO_BUILD_REMINDER;
+		}
+	});
+
 	// --- Auto-track every assistant message ------------------------------
 	pi.on("message_end", async (event, ctx) => {
 		if (isOutputLimitResumePromptMessage(event.message)) {
