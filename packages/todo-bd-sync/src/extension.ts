@@ -7,7 +7,11 @@
  * 3. Provides two-way sync between rpiv-todo and bd (via rpiv-todo)
  */
 
-import type { ExtensionAPI, InputEvent, InputEventResult } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	InputEvent,
+	InputEventResult,
+} from "@earendil-works/pi-coding-agent";
 import { getDependencyStatus } from "./detector.js";
 import { getOpenBdIssues } from "./sync.js";
 import { decideAutoTodo, getTaskComplexityScore } from "./task-analyzer.js";
@@ -59,7 +63,7 @@ Run the following command to initialize:
 
 	// ── Smart Auto-Todo Injection ──────────────────────────────────────────
 	// Listen to user input and inject todo tool call when task is complex
-	
+
 	pi.on("input", (event: InputEvent): InputEventResult | undefined => {
 		// Only process user input (not from extensions or RPC)
 		if (event.source !== "interactive") {
@@ -71,13 +75,15 @@ Run the following command to initialize:
 			return; // Skip very short inputs
 		}
 
-		const pendingCount = getOpenBdIssues().filter(i => i.status !== "closed").length;
+		const pendingCount = getOpenBdIssues().filter(
+			(i) => i.status !== "closed",
+		).length;
 		const decision = decideAutoTodo(text);
 
 		// If should create todo and phrase not already present
 		if (decision.shouldCreate) {
 			// Check if already has explicit todo instruction
-			const hasExplicitTodo = 
+			const hasExplicitTodo =
 				text.toLowerCase().includes("use the todo") ||
 				text.toLowerCase().includes("add to todo") ||
 				text.toLowerCase().includes("track as todo") ||
@@ -86,22 +92,24 @@ Run the following command to initialize:
 
 			if (!hasExplicitTodo) {
 				const score = getTaskComplexityScore(text);
-				console.log(`[auto-todo] Task detected: ${decision.reason} (score: ${score}/100, pending: ${pendingCount})`);
-				
+				console.log(
+					`[auto-todo] Task detected: ${decision.reason} (score: ${score}/100, pending: ${pendingCount})`,
+				);
+
 				// Clearer instruction that explicitly tells LLM to use todo tool
 				// This is more direct than just adding text - it tells LLM to CALL the todo tool
 				const injection = `
 
 IMPORTANT: Use the \`todo\` tool to track this task:
-1. Create a todo item with subject: "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}"
+1. Create a todo item with subject: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"
 2. Mark it as in_progress
 3. Track your progress as you work
 
 \`\`\`json
-{"action": "create", "subject": "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}", "activeForm": "working on task"}
+{"action": "create", "subject": "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}", "activeForm": "working on task"}
 \`\`\`
 `;
-				
+
 				return {
 					action: "transform",
 					text: text + injection,

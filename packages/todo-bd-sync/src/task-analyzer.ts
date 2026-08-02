@@ -30,19 +30,45 @@ interface TaskSignals {
 }
 
 const COMPLEX_KEYWORDS = [
-	"complicated", "complex", "tricky", "difficult", "refactor",
-	"architecture", "design", "implement from scratch", "rewrite",
-	"investigate", "debug", "fix the bug", "performance",
+	"complicated",
+	"complex",
+	"tricky",
+	"difficult",
+	"refactor",
+	"architecture",
+	"design",
+	"implement from scratch",
+	"rewrite",
+	"investigate",
+	"debug",
+	"fix the bug",
+	"performance",
 ];
 
 const RESEARCH_KEYWORDS = [
-	"search", "look up", "find", "research", "check", "verify",
-	"how to", "best practice", "compare", "evaluate", "review",
+	"search",
+	"look up",
+	"find",
+	"research",
+	"check",
+	"verify",
+	"how to",
+	"best practice",
+	"compare",
+	"evaluate",
+	"review",
 ];
 
 const SUBTASK_KEYWORDS = [
-	"also", "plus", "and also", "while you're at it", "on top of that",
-	"additionally", "another thing", "don't forget", "should also",
+	"also",
+	"plus",
+	"and also",
+	"while you're at it",
+	"on top of that",
+	"additionally",
+	"another thing",
+	"don't forget",
+	"should also",
 ];
 
 /**
@@ -53,32 +79,60 @@ export function analyzeTaskSignals(userMessage: string): TaskSignals {
 
 	// Count implied steps from action verbs
 	const actionVerbs = [
-		"create", "build", "implement", "design", "setup", "configure",
-		"migrate", "convert", "refactor", "optimize", "fix", "update",
-		"add", "remove", "delete", "modify", "change", "replace",
+		"create",
+		"build",
+		"implement",
+		"design",
+		"setup",
+		"configure",
+		"migrate",
+		"convert",
+		"refactor",
+		"optimize",
+		"fix",
+		"update",
+		"add",
+		"remove",
+		"delete",
+		"modify",
+		"change",
+		"replace",
 	];
-	const stepCount = Math.max(1, actionVerbs.filter(v => lower.includes(v)).length);
+	const stepCount = Math.max(
+		1,
+		actionVerbs.filter((v) => lower.includes(v)).length,
+	);
 
 	// Estimate file count from file paths and extensions
-	const filePatterns = /[\w-]+\.(ts|js|py|json|md|yaml|yml|tsx|jsx|html|css|sql)/g;
+	const filePatterns =
+		/[\w-]+\.(ts|js|py|json|md|yaml|yml|tsx|jsx|html|css|sql)/g;
 	const fileMatches = userMessage.match(filePatterns) || [];
 	const explicitFiles = fileMatches.length;
 
 	// Check for directory patterns
-	const dirPatterns = /(?:src|lib|packages|apps|components|hooks|utils|api)\/[\w/-]+/g;
+	const dirPatterns =
+		/(?:src|lib|packages|apps|components|hooks|utils|api)\/[\w/-]+/g;
 	const dirMatches = userMessage.match(dirPatterns) || [];
 
 	// Count "and", "also", "+" for multi-task indicators
 	const multiTaskIndicator = (lower.match(/and also|also|\+/g) || []).length;
-	const estimatedFiles = Math.max(1, explicitFiles + dirMatches.length + multiTaskIndicator);
+	const estimatedFiles = Math.max(
+		1,
+		explicitFiles + dirMatches.length + multiTaskIndicator,
+	);
 
 	return {
 		stepCount,
 		fileCount: estimatedFiles,
-		needsResearch: RESEARCH_KEYWORDS.some(k => lower.includes(k)),
-		createsFiles: lower.includes("create") || lower.includes("add") || lower.includes("new"),
-		explicitlyComplex: COMPLEX_KEYWORDS.some(k => lower.includes(k)),
-		likelySubtasks: SUBTASK_KEYWORDS.some(k => lower.includes(k)) || multiTaskIndicator >= 2,
+		needsResearch: RESEARCH_KEYWORDS.some((k) => lower.includes(k)),
+		createsFiles:
+			lower.includes("create") ||
+			lower.includes("add") ||
+			lower.includes("new"),
+		explicitlyComplex: COMPLEX_KEYWORDS.some((k) => lower.includes(k)),
+		likelySubtasks:
+			SUBTASK_KEYWORDS.some((k) => lower.includes(k)) ||
+			multiTaskIndicator >= 2,
 	};
 }
 
@@ -102,7 +156,7 @@ export function decideAutoTodo(
 	} = {},
 ): AutoTodoDecision {
 	const signals = analyzeTaskSignals(userMessage);
-	const pendingTasks = getOpenBdIssues().filter(i => i.status !== "closed");
+	const pendingTasks = getOpenBdIssues().filter((i) => i.status !== "closed");
 	const pendingCount = pendingTasks.length;
 
 	// ── Skip Conditions ────────────────────────────────────────────────────
@@ -118,7 +172,7 @@ export function decideAutoTodo(
 		/^how do i\s+\w+\s*\?$/i,
 	];
 
-	if (simplePatterns.some(p => p.test(userMessage.trim()))) {
+	if (simplePatterns.some((p) => p.test(userMessage.trim()))) {
 		return {
 			shouldCreate: false,
 			reason: "Simple request (lookup/one-liner)",
@@ -129,15 +183,14 @@ export function decideAutoTodo(
 
 	// Check for trivial single actions with no complexity (lower threshold)
 	// Allow more tasks to be tracked - being conservative about NOT tracking
-	const isTrivial = (
+	const isTrivial =
 		signals.stepCount === 1 &&
 		signals.fileCount <= 1 &&
 		!signals.needsResearch &&
 		!signals.createsFiles &&
 		!signals.explicitlyComplex &&
 		pendingCount === 0 &&
-		!signals.likelySubtasks
-	);
+		!signals.likelySubtasks;
 	if (isTrivial) {
 		return {
 			shouldCreate: false,
@@ -229,7 +282,7 @@ export function decideAutoTodo(
  */
 export function getTaskComplexityScore(userMessage: string): number {
 	const signals = analyzeTaskSignals(userMessage);
-	const pendingTasks = getOpenBdIssues().filter(i => i.status !== "closed");
+	const pendingTasks = getOpenBdIssues().filter((i) => i.status !== "closed");
 
 	let score = 0;
 
