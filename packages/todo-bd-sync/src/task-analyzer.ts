@@ -127,20 +127,23 @@ export function decideAutoTodo(
 		};
 	}
 
-	// Check for single file, single action with no complexity
-	if (
+	// Check for trivial single actions with no complexity (lower threshold)
+	// Allow more tasks to be tracked - being conservative about NOT tracking
+	const isTrivial = (
 		signals.stepCount === 1 &&
 		signals.fileCount <= 1 &&
 		!signals.needsResearch &&
 		!signals.createsFiles &&
 		!signals.explicitlyComplex &&
-		pendingCount === 0
-	) {
+		pendingCount === 0 &&
+		!signals.likelySubtasks
+	);
+	if (isTrivial) {
 		return {
 			shouldCreate: false,
-			reason: "Single action, single file, no research needed",
+			reason: "Trivial request (single action)",
 			confidence: "high",
-			skipReason: "Task is straightforward",
+			skipReason: "Task is trivial",
 		};
 	}
 
@@ -163,6 +166,7 @@ export function decideAutoTodo(
 	}
 
 	// ── Auto-Create Conditions ──────────────────────────────────────────
+	// Be MORE aggressive about tracking tasks - default to tracking
 	const reasons: string[] = [];
 
 	// HIGH CONFIDENCE: Task explicitly complex
@@ -170,24 +174,24 @@ export function decideAutoTodo(
 		reasons.push("explicitly complex");
 	}
 
-	// HIGH CONFIDENCE: Multiple steps
-	if (signals.stepCount >= 3) {
+	// HIGH CONFIDENCE: Multiple steps (lower from 3 to 2)
+	if (signals.stepCount >= 2) {
 		reasons.push(`${signals.stepCount} steps implied`);
 	}
 
-	// HIGH CONFIDENCE: Multiple files
-	if (signals.fileCount >= 3) {
+	// HIGH CONFIDENCE: Multiple files (lower from 3 to 2)
+	if (signals.fileCount >= 2) {
 		reasons.push(`${signals.fileCount} files involved`);
 	}
 
 	// MEDIUM CONFIDENCE: Research needed
-	if (signals.needsResearch && signals.stepCount >= 2) {
-		reasons.push("research + action");
+	if (signals.needsResearch) {
+		reasons.push("needs research");
 	}
 
-	// MEDIUM CONFIDENCE: Creates files + action
-	if (signals.createsFiles && signals.fileCount >= 2) {
-		reasons.push("creates multiple files");
+	// MEDIUM CONFIDENCE: Creates files
+	if (signals.createsFiles) {
+		reasons.push("creates files");
 	}
 
 	// MEDIUM CONFIDENCE: Likely subtasks
@@ -195,34 +199,25 @@ export function decideAutoTodo(
 		reasons.push("likely has subtasks");
 	}
 
-	// HIGH CONFIDENCE: Already 2+ pending tasks (session overload)
-	if (pendingCount >= 2) {
-		reasons.push(`${pendingCount} pending tasks in session`);
+	// MEDIUM CONFIDENCE: Has pending tasks already (session busy)
+	if (pendingCount >= 1) {
+		reasons.push(`${pendingCount} pending tasks`);
 	}
 
-	// HIGH CONFIDENCE: 3+ pending tasks
-	if (pendingCount >= 3) {
-		reasons.push("session overwhelmed (3+ pending)");
-	}
-
+	// Default to creating todo if any signal present
+	// Be conservative only for truly trivial requests (already filtered above)
 	if (reasons.length === 0) {
-		return {
-			shouldCreate: false,
-			reason: "No strong complexity signals",
-			confidence: "low",
-			skipReason: "Task doesn't meet auto-create threshold",
-		};
+		// No strong signals but not trivial either - track it anyway
+		reasons.push("multi-step task detected");
 	}
 
-	// Need at least 2 signals OR high-pending count
-	const highConfidenceReasons = ["explicitly complex", "pending tasks in session", "session overwhelmed"];
-	const hasHighConfidence = reasons.some(r => highConfidenceReasons.some(h => r.includes(h)));
-	const shouldCreate = reasons.length >= 2 || hasHighConfidence || pendingCount >= 2;
+	// Create todo if ANY reason OR any pending tasks
+	const shouldCreate = reasons.length >= 1 || pendingCount >= 1;
 
 	return {
 		shouldCreate,
 		reason: reasons.join(", "),
-		confidence: hasHighConfidence ? "high" : reasons.length >= 2 ? "medium" : "low",
+		confidence: reasons.length >= 2 ? "high" : "medium",
 	};
 }
 
