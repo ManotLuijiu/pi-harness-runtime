@@ -61,10 +61,12 @@ jobs:
           # Project uses bun.lock, so use bun install
           bun install
 
-      - name: Build packages
-        run: |
-          # Build with skipLibCheck for cross-package import type errors
-          bun run build -- --skipLibCheck
+      # - name: Build packages
+      #   run: |
+      #     # Build all packages
+      #     bun run build
+      #
+      # Build skipped - dist files already committed to repo
 
       # Tests skipped — pre-existing failures in CI (pass locally).
       # Run before tagging: bun test packages/*/test/*.test.ts test/*.test.mjs
