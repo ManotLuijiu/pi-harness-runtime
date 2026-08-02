@@ -89,6 +89,17 @@ async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
 		// config-capture not available
 	}
 }
+
+// --- write-review: Two-agent write with review loop --------------------------
+// Lazy import - only loads when packages/write-review exists
+async function initWriteReview(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/write-review/src/index.js");
+		mod.injectWriterInstructions(pi);
+	} catch {
+		// write-review not available
+	}
+}
 import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -243,6 +254,9 @@ export default function (pi: ExtensionAPI) {
 	// --- config-capture: Auto-detect API config and document it -----------
 	void initConfigCapture(pi);
 
+	// --- write-review: Two-agent write with review loop ----------------------
+	void initWriteReview(pi);
+
 	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
 	// This makes the todo overlay ALWAYS activate at session start
 	const AUTO_TODO_INVOKE_HINT = `
@@ -265,11 +279,24 @@ BEFORE committing code or triggering builds, ALWAYS check:
 3. Acknowledge pending tasks before proceeding
 4. Never commit/build without acknowledging pending todos
 `;
+
+	const WRITE_REVIEW_HINT = `
+
+WRITER-REVIEWER WORKFLOW:
+When working on a feature from {project}/wiki/* or {project}/.write-review/:
+1. Read the prompt/task file to understand requirements
+2. Write clean, complete code
+3. Mark task "in_progress" in todos
+4. When code is ready, trigger review with \`{done} bd create "Review: <task>" -t review -p 1 && bd close <id> --reason "Approved"\`
+5. If reviewer requests changes, update code and re-review
+6. Never skip review on non-trivial features
+`;
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
 			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
 			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
+			event.systemPrompt += WRITE_REVIEW_HINT;
 			firstAgentStart = false;
 		}
 	});
