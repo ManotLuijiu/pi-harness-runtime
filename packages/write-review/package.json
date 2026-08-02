@@ -1,0 +1,22 @@
+{
+  "name": "@moocoding/write-review",
+  "version": "0.10.7",
+  "description": "Two-agent write-review loop with blackboard coordination",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "pi-extension",
+    "write-review",
+    "blackboard",
+    "multi-agent"
+  ],
+  "author": "MooCoding",
+  "license": "MIT"
+}
