@@ -20,6 +20,7 @@ import { postToGist, isConfigured as isGistConfigured } from "./gist-relay.js";
 const BRIDGE_FILE = join(homedir(), ".herdr-clipboard");
 const XCLIP_WRAPPER = join(homedir(), ".local", "bin", "xclip");
 
+<<<<<<< HEAD
 // ─── Mojibake detection & repair ──────────────────────────────────────────────
 
 /**
@@ -71,6 +72,8 @@ function repairMojibake(text: string): string {
 	}
 }
 
+=======
+>>>>>>> origin/main
 // ─── Read from Xvfb clipboard ─────────────────────────────────────────────────
 
 function readFromClipboard(): string | null {
@@ -79,12 +82,17 @@ function readFromClipboard(): string | null {
 		const content = execSync(
 			`"${XCLIP_WRAPPER}" -selection clipboard -o 2>/dev/null || DISPLAY=:99 xclip -selection clipboard -o 2>/dev/null || true`,
 			{ encoding: "utf8", timeout: 2000 },
+<<<<<<< HEAD
 		)
 			.trim()
 			// Repair mojibake that xclip or Xvfb might have introduced
 			.replace(/\r\n/g, "\n");
 
 		if (content) return repairMojibake(content);
+=======
+		).trim();
+		if (content) return content;
+>>>>>>> origin/main
 	} catch {
 		// Fall through
 	}
@@ -92,8 +100,12 @@ function readFromClipboard(): string | null {
 	// Fallback: read bridge file directly
 	try {
 		if (existsSync(BRIDGE_FILE)) {
+<<<<<<< HEAD
 			const content = readFileSync(BRIDGE_FILE, "utf8").trim();
 			if (content) return repairMojibake(content);
+=======
+			return readFileSync(BRIDGE_FILE, "utf8").trim();
+>>>>>>> origin/main
 		}
 	} catch {
 		// fall through
@@ -106,8 +118,11 @@ function readFromClipboard(): string | null {
 
 function writeToBridge(text: string): void {
 	try {
+<<<<<<< HEAD
 		// Write raw UTF-8 bytes — no transformation needed.
 		// UTF-8 strings in Node.js write correctly with writeFileSync(file, "utf8").
+=======
+>>>>>>> origin/main
 		writeFileSync(BRIDGE_FILE, text, "utf8");
 	} catch {
 		// ignore
@@ -118,10 +133,16 @@ function writeToBridge(text: string): void {
 
 function writeToXvfb(text: string): boolean {
 	try {
+<<<<<<< HEAD
 		// Pass raw bytes via Buffer to avoid any implicit encoding conversion.
 		// This ensures UTF-8 multi-byte sequences are sent as-is to xclip.
 		execSync(`"${XCLIP_WRAPPER}" -selection clipboard -in`, {
 			input: Buffer.from(text, "utf8"),
+=======
+		execSync(`"${XCLIP_WRAPPER}" -selection clipboard -in`, {
+			input: text,
+			encoding: "utf8",
+>>>>>>> origin/main
 			timeout: 5000,
 		});
 		return true;
@@ -176,7 +197,11 @@ export async function copyAndSync(ctx: {
 	}
 }
 
+<<<<<<< HEAD
 // ─── Register shortcut ───────────────────────────────────────────────────────
+=======
+// ─── Register shortcut ────────────────────────────────────────────────────────
+>>>>>>> origin/main
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPi = any;
