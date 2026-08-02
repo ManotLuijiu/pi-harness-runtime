@@ -291,12 +291,23 @@ When working on a feature from {project}/wiki/* or {project}/.write-review/:
 5. If reviewer requests changes, update code and re-review
 6. Never skip review on non-trivial features
 `;
+
+	const DOCKER_CLEANUP_HINT = `
+
+DOCKER CLEANUP WORKFLOW:
+AFTER running any Docker build command (docker build, docker compose build, docker compose up --build):
+1. ALWAYS run \`docker builder prune -f\` to clean up build cache
+2. This saves disk space - Docker build cache grows fast
+3. Example: After \`docker compose up --build\`, run \`docker builder prune -f\`
+4. For aggressive cleanup: \`docker builder prune -a -f\` (removes ALL unused cache)
+`;
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
 			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
 			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
 			event.systemPrompt += WRITE_REVIEW_HINT;
+			event.systemPrompt += DOCKER_CLEANUP_HINT;
 			firstAgentStart = false;
 		}
 	});
