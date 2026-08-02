@@ -1,7 +1,7 @@
 {
-  "name": "@moocoding/todo-bd-sync",
+  "name": "@moocoding/write-review",
   "version": "0.10.7",
-  "description": "Two-way sync between rpiv-todo overlay and bd issue tracker",
+  "description": "Two-agent write-review loop with blackboard coordination",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -13,9 +13,9 @@
   },
   "keywords": [
     "pi-extension",
-    "todo",
-    "bd",
-    "beads"
+    "write-review",
+    "blackboard",
+    "multi-agent"
   ],
   "author": "MooCoding",
   "license": "MIT"
