@@ -67,6 +67,39 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
+
+// --- todo-bd-sync: Two-way sync between rpiv-todo and bd --------------------
+// Lazy import - only loads when packages/todo-bd-sync exists
+async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/todo-bd-sync/src/extension.js");
+		mod.registerTodoBdSync(pi, { debug: false });
+	} catch {
+		// todo-bd-sync not available
+	}
+}
+
+// --- config-capture: Auto-detect and document API configuration -------------
+// Lazy import - only loads when packages/config-capture exists
+async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/config-capture/src/index.js");
+		mod.registerConfigCapture(pi, { debug: false });
+	} catch {
+		// config-capture not available
+	}
+}
+
+// --- write-review: Two-agent write with review loop --------------------------
+// Lazy import - only loads when packages/write-review exists
+async function initWriteReview(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/write-review/src/index.js");
+		mod.injectWriterInstructions(pi);
+	} catch {
+		// write-review not available
+	}
+}
 import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -214,6 +247,120 @@ export default function (pi: ExtensionAPI) {
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
 
+	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
+	// Start async init but don't await - runs in background
+	void initTodoBdSync(pi);
+
+	// --- config-capture: Auto-detect API config and document it -----------
+	void initConfigCapture(pi);
+
+	// --- write-review: Two-agent write with review loop ----------------------
+	void initWriteReview(pi);
+
+	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
+	// This makes the todo overlay ALWAYS activate at session start
+	const AUTO_TODO_INVOKE_HINT = `
+
+You have access to a todo tool that shows a persistent task overlay.
+ALWAYS use it at the START of every session to capture user requirements as tasks.
+When the user gives you a multi-step task:
+1. Immediately create todo items for each step using the todo tool
+2. Keep tasks updated - mark in_progress when working, completed when done
+3. When a task is completed, continue to the next or ask the user
+
+The todo overlay persists and helps track progress across your conversation.
+`;
+
+	const COMMIT_BUILD_CHECKLIST = `
+
+BEFORE committing code or triggering builds, ALWAYS check:
+1. Run 'bd ready' to see pending tasks
+2. Mark completed tasks with 'bd close <id> --reason "Done"'
+3. Acknowledge pending tasks before proceeding
+4. Never commit/build without acknowledging pending todos
+`;
+
+	const WRITE_REVIEW_HINT = `
+
+WRITER-REVIEWER WORKFLOW:
+When working on a feature from {project}/wiki/* or {project}/.write-review/:
+1. Read the prompt/task file to understand requirements
+2. Write clean, complete code
+3. Mark task "in_progress" in todos
+4. When code is ready, trigger review with \`{done} bd create "Review: <task>" -t review -p 1 && bd close <id> --reason "Approved"\`
+5. If reviewer requests changes, update code and re-review
+6. Never skip review on non-trivial features
+`;
+
+	const DOCKER_CLEANUP_HINT = `
+
+DOCKER CLEANUP WORKFLOW:
+AFTER running any Docker build command (docker build, docker compose build, docker compose up --build):
+1. ALWAYS run \`docker builder prune -f\` to clean up build cache
+2. This saves disk space - Docker build cache grows fast
+3. Example: After \`docker compose up --build\`, run \`docker builder prune -f\`
+4. For aggressive cleanup: \`docker builder prune -a -f\` (removes ALL unused cache)
+`;
+	let firstAgentStart = true;
+	pi.on("before_agent_start", async (event) => {
+		if (firstAgentStart) {
+			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
+			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
+			event.systemPrompt += WRITE_REVIEW_HINT;
+			event.systemPrompt += DOCKER_CLEANUP_HINT;
+			firstAgentStart = false;
+		}
+	});
+
+	// --- Auto-Todo Reminder on Build Commands ---------------------------
+	// Detect build commands and remind agent to update todos
+	const BUILD_COMMANDS = [
+		"docker build",
+		"docker compose build",
+		"docker compose up",
+		"npm run build",
+		"yarn build",
+		"pnpm build",
+		"bun run build",
+		"make build",
+		"gradle build",
+		"dotnet build",
+		"cargo build",
+		"go build",
+		"bench build",
+	];
+
+	const TODO_BUILD_REMINDER = `
+
+IMPORTANT - TODO UPDATE REMINDER:
+Before running a build, ensure you update the current task status:
+1. Mark the task as in_progress with bd update <id> --status in_progress
+2. After build succeeds, update the task: bd close <id> --reason "Done" or bd update <id> --status pending
+
+Run \`bd ready\` to see current tasks.
+`;
+
+	// Detect build commands and append todo reminder to their output
+	pi.on("tool_execution_end", async (event) => {
+		const toolName = (event as { toolName?: string }).toolName;
+		if (toolName !== "bash") return;
+
+		const result = (event as { result?: { content?: string } }).result;
+		if (!result) return;
+
+		const content = result.content ?? "";
+
+		// Check if this is a build command
+		const isBuildCommand = BUILD_COMMANDS.some(
+			(cmd) => content.toLowerCase().includes(cmd.toLowerCase()),
+		);
+
+		if (isBuildCommand && !content.includes("bd ready") && !content.includes("TODO UPDATE")) {
+			// Append todo reminder to build output
+			result.content = content + TODO_BUILD_REMINDER;
+		}
+	});
+
 	// --- Auto-track every assistant message ------------------------------
 	pi.on("message_end", async (event, ctx) => {
 		if (isOutputLimitResumePromptMessage(event.message)) {
@@ -291,7 +438,7 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Smart quota fetch for OpenAI status -------------------------
 	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-	const _openaiQuotaScraper = new OpenAIQuotaScraper();
+	const _openaiQuotaScraper = new OpenAIQuotaScraper({ quiet: true });
 	let lastOpenAIQuotaFetchAt = 0;
 
 	// --- Cookie sanitizer integration ------------------------------------
@@ -346,6 +493,8 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	let lastQuotaAutoFetchAt = 0;
+
 	// Live watcher — sanitises on every change in the drop folder.
 	const cookieWatcher = new CookieWatcher({
 		dropDir: cookieDropDir,
@@ -372,6 +521,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
 	try {
 		cookieWatcher.start();
 		// Sync existing drop-folder cookies now (ignoreInitial: true means
@@ -399,7 +549,6 @@ export default function (pi: ExtensionAPI) {
 	let footerStatusCtx: {
 		ui: { setStatus: (key: string, value: string) => void };
 	} | null = null;
-	let lastQuotaAutoFetchAt = 0;
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
@@ -408,6 +557,49 @@ export default function (pi: ExtensionAPI) {
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
+
+	// --- Context-usage escalating warning tiers -----------------------------
+	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
+	// Per-session dedup: only notify when crossing INTO a new higher tier.
+	const TIER_WARNING = 0.75; // amber
+	const TIER_ERROR = 0.85; // red
+	let lastNotifiedTier: "none" | "warning" | "error" = "none";
+
+	function maybeNotifyContextUsage(ctx: ExtensionContext): void {
+		const usage = ctx.getContextUsage();
+		const pct = usage?.percent;
+		if (pct === null || pct === undefined) return;
+		if (pct >= 0.9) return; // proactive compact handles 90%+
+
+		const tier: "none" | "warning" | "error" =
+			pct >= TIER_ERROR ? "error" : pct >= TIER_WARNING ? "warning" : "none";
+
+		// Only notify when crossing into a strictly higher tier
+		if (tier === "none") {
+			lastNotifiedTier = "none";
+			return;
+		}
+		if (
+			tier === "warning" &&
+			lastNotifiedTier !== "warning" &&
+			lastNotifiedTier !== "error"
+		) {
+			lastNotifiedTier = "warning";
+			ctx.ui.notify(
+				`Context at ${Math.round(pct * 100)}% — consider condensing`,
+				"info",
+			);
+			return;
+		}
+		if (tier === "error" && lastNotifiedTier !== "error") {
+			lastNotifiedTier = "error";
+			ctx.ui.notify(
+				`Context at ${Math.round(pct * 100)}% — approaching limit`,
+				"warning",
+			);
+			return;
+		}
+	}
 
 	function writeMirrorRecord(
 		provider: ProviderId,
@@ -825,7 +1017,10 @@ export default function (pi: ExtensionAPI) {
 	registerGithubLoginCommand(pi);
 
 	// --- Ctrl+Shift+C — Copy to clipboard + sync to Gist ------------
-	registerCopySyncShortcut(pi, Key);
+	// NOTE: Shortcut disabled to avoid conflict with pi-usage-status extension
+	// which also registers ctrl+shift+c for clipboard sync.
+	// The copyAndSync function is still exported and can be called manually.
+	// registerCopySyncShortcut(pi, Key);
 
 	// --- /harness start — Start a new harness job ----------------------
 	pi.registerCommand("harness-start", {
@@ -1126,6 +1321,7 @@ export default function (pi: ExtensionAPI) {
 		);
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
+		maybeNotifyContextUsage(ctx);
 	});
 
 	pi.on("agent_end", () => {

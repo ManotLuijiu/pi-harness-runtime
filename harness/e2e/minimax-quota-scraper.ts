@@ -387,7 +387,8 @@ export class MiniMaxQuotaScraper {
 		} catch {
 			const msg =
 				"Playwright not installed. Install with: bun add playwright\nThen install browsers: bunx playwright install chromium";
-			if (!this.config.quiet) console.error("[MiniMaxQuotaScraper] " + msg);
+			if (!this.config.quiet)
+				console.error("[DEBUG MiniMaxQuotaScraper] " + msg);
 			throw new Error(msg);
 		}
 
@@ -399,8 +400,7 @@ export class MiniMaxQuotaScraper {
 
 		if (cookies.length === 0) {
 			const dropHint = join(homedir(), ".pi-harness-runtime", "cookies");
-			const msg =
-				`No cookies found.
+			const msg = `No cookies found.
 Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:
   ${dropHint}
 …or run: bun packages/auth/src/run-minimax-auth.ts auth`;
@@ -550,7 +550,7 @@ MiniMax Quota Scraper Setup Instructions
 3. Use the scraper:
    const scraper = new MiniMaxQuotaScraper();
    const quota = await scraper.scrape();
-   console.log("5h usage:", quota.h5UsedPct, "%");
+   console.log("[DEBUG MiniMaxQuotaScraper] 5h usage:", quota.h5UsedPct, "%");
 `;
 	}
 }

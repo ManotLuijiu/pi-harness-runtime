@@ -1,0 +1,27 @@
+# herdr Configuration for pi-harness-runtime
+# Copy this file to ~/.config/herdr/config.toml
+#
+# Usage:
+#   cp config.toml.example ~/.config/herdr/config.toml
+#   herdr server reload-config
+
+onboarding = false
+
+[ui]
+# Disable herdr's built-in clipboard (doesn't work on headless servers)
+copy_on_select = false
+
+[ui.toast.clipboard]
+enabled = false
+
+# ============================================
+# Custom Keybindings for pi-harness-runtime
+# ============================================
+
+# Copy selected text via clipboard bridge plugin
+# Usage: Select text with mouse, then press prefix+y
+[[keys.command]]
+key = "prefix+y"
+type = "plugin_action"
+command = "moocoding.clipboard-bridge.copy"
+description = "Copy selected text via bridge"
