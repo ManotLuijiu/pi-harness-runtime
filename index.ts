@@ -256,10 +256,20 @@ When the user gives you a multi-step task:
 
 The todo overlay persists and helps track progress across your conversation.
 `;
+
+	const COMMIT_BUILD_CHECKLIST = `
+
+BEFORE committing code or triggering builds, ALWAYS check:
+1. Run 'bd ready' to see pending tasks
+2. Mark completed tasks with 'bd close <id> --reason "Done"'
+3. Acknowledge pending tasks before proceeding
+4. Never commit/build without acknowledging pending todos
+`;
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
 			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
+			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
 			firstAgentStart = false;
 		}
 	});
