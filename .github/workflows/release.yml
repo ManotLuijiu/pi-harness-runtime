@@ -79,33 +79,28 @@ jobs:
           github.event.inputs.dry_run != 'true'
         run: |
           # Use OIDC trusted publishing (no token needed)
-          # The npm CLI automatically uses the OIDC token from the GitHub Actions environment
-          local version
-          version=$(node -p "require('./package.json').version")
-          if [[ "$version" == *-* ]]; then
-            echo "Publishing ${name}@${version} with --tag beta"
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
+            echo "Publishing pi-harness-runtime@${VERSION} with --tag beta"
             npm publish --access public --tag beta --provenance
           else
-            echo "Publishing ${name}@${version} with --tag latest"
+            echo "Publishing pi-harness-runtime@${VERSION} with --tag latest"
             npm publish --access public --tag latest --provenance
           fi
-        working-directory: .
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          local version
-          version=$(node -p "require('./package.json').version")
-          if [[ "$version" == *-* ]]; then
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
             echo "Dry-run: npm publish --access public --tag beta --dry-run"
             npm publish --access public --tag beta --dry-run
           else
             echo "Dry-run: npm publish --access public --dry-run"
             npm publish --access public --dry-run
           fi
-        working-directory: .
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
