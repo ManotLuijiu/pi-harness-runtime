@@ -3,6 +3,14 @@
  */
 
 export { A2AClient, type AgentSearchCriteria } from "./client.js";
+export {
+	startDiscoveryAgent,
+	DiscoveryAgent,
+	AgentRegistry,
+	loadAgentCard,
+	discoverAgents,
+	type A2ADiscoveryConfig,
+} from "./discovery.js";
 export { A2ATransport } from "./transport.js";
 export {
 	createAgentCard,
