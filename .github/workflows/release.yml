@@ -25,17 +25,13 @@ on:
         required: false
         default: "false"
 
-permissions:
-  contents: write
-  id-token: write
-
-env:
-  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
     if: >-
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/v')
@@ -50,6 +46,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          registry-url: https://registry.npmjs.org/
+          # OIDC token is automatically available when id-token: write is set
 
       - name: Show tool versions
         run: |
@@ -83,107 +81,41 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Use pure OIDC trusted publishing.
-          # Avoid setup-node temp npm auth config so npm does not inherit
-          # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
-          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
+          # Configure npm auth
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
 
-          publish_args() {
-            local version
-            version=$(node -p "require('./package.json').version")
-            if [[ "$version" == *-* ]]; then
-              echo "--access public --tag beta"
-            else
-              echo "--access public --tag latest"
-            fi
-          }
+          # Diagnostics
+          echo "Registry:"
+          npm config get registry
+          echo "Authenticated as (whoami):"
+          if ! npm whoami; then
+            echo "::error::npm authentication failed"
+            exit 1
+          fi
+          echo "Package info:"
+          node -p "require('./package.json').name + '@' + require('./package.json').version"
 
-          stage_dir() {
-            local source_dir="$1"
-            local staged_dir
-            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
-            rsync -a --delete \
-              --exclude '.git' \
-              --exclude 'node_modules' \
-              "${source_dir%/}/" "${staged_dir}/"
-            echo "$staged_dir"
-          }
+          # Choose tag based on version
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="latest"
+          if [[ "$VERSION" == *-* ]]; then TAG="beta"; fi
 
-          publish_with_retry() {
-            local max_retries=3
-            local retry=1
-            local name
-            local version
-            local args
-            name=$(node -p "require('./package.json').name")
-            version=$(node -p "require('./package.json').version")
-            args=$(publish_args)
+          # Ensure we target the official registry explicitly
+          REGISTRY="https://registry.npmjs.org/"
 
-            while [ "$retry" -le "$max_retries" ]; do
-              echo "Publish attempt ${retry}/${max_retries}"
-              echo "Package: ${name}@${version}"
-              echo "Directory: $(pwd)"
-              echo "npm publish ${args}"
-              if npm publish ${args}; then
-                return 0
-              fi
-              if [ "$retry" -lt "$max_retries" ]; then
-                local delay=$((retry * 5))
-                echo "Publish failed; retrying in ${delay}s..."
-                sleep "$delay"
-              fi
-              retry=$((retry + 1))
-            done
-            return 1
-          }
-
-          # Only the root pi-harness-runtime package is published.
-          # Workspace packages (@pi-harness/*) are bundled into the root package
-          # via the files whitelist and are NOT published individually — they
-          # have no npm Trusted Publishing configured and are private to
-          # this monorepo.
-
-          root_stage=$(stage_dir ".")
-          cd "$root_stage"
-          echo "Root publish args: $(publish_args)"
-          publish_with_retry
-          cd - > /dev/null
+          # Attempt publish
+          echo "Publishing pi-harness-runtime@${VERSION}..."
+          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
-
-          publish_args() {
-            local version
-            version=$(node -p "require('./package.json').version")
-            if [[ "$version" == *-* ]]; then
-              echo "--access public --tag beta --dry-run"
-            else
-              echo "--access public --dry-run"
-            fi
-          }
-
-          stage_dir() {
-            local source_dir="$1"
-            local staged_dir
-            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
-            rsync -a --delete \
-              --exclude '.git' \
-              --exclude 'node_modules' \
-              "${source_dir%/}/" "${staged_dir}/"
-            echo "$staged_dir"
-          }
-
-          # Dry-run: only root package.
-          root_stage=$(stage_dir ".")
-          cd "$root_stage"
-          echo "Root publish args: $(publish_args)"
-          npm publish $(publish_args)
-          cd - > /dev/null
-          echo "Skipping workspace packages: bundled into root package."
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' >> ~/.npmrc
+          npm publish --access public --dry-run
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
