@@ -82,7 +82,10 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' >> ~/.npmrc
-          npm publish --access public
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="latest"
+          if [[ "$VERSION" == *-* ]]; then TAG="beta"; fi
+          npm publish --access public --tag "$TAG" --provenance
 
       - name: Publish to npm (dry-run)
         if: >-
