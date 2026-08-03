@@ -81,11 +81,31 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' >> ~/.npmrc
+          # Configure npm auth
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
+
+          # Diagnostics
+          echo "Registry:"
+          npm config get registry
+          echo "Authenticated as (whoami):"
+          if ! npm whoami; then
+            echo "::error::npm authentication failed"
+            exit 1
+          fi
+          echo "Package info:"
+          node -p "require('./package.json').name + '@' + require('./package.json').version"
+
+          # Choose tag based on version
           VERSION=$(node -p "require('./package.json').version")
           TAG="latest"
           if [[ "$VERSION" == *-* ]]; then TAG="beta"; fi
-          npm publish --access public --tag "$TAG" --provenance
+
+          # Ensure we target the official registry explicitly
+          REGISTRY="https://registry.npmjs.org/"
+
+          # Attempt publish
+          echo "Publishing pi-harness-runtime@${VERSION}..."
+          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
