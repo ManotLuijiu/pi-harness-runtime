@@ -29,6 +29,9 @@ permissions:
   contents: write
   id-token: write
 
+env:
+  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
 jobs:
   release:
     name: Release
@@ -61,12 +64,9 @@ jobs:
           # Project uses bun.lock, so use bun install
           bun install
 
-      # - name: Build packages
-      #   run: |
-      #     # Build all packages
-      #     bun run build
-      #
-      # Build skipped - dist files already committed to repo
+      - name: Build packages
+        run: |
+          bun run build
 
       # Tests skipped — pre-existing failures in CI (pass locally).
       # Run before tagging: bun test packages/*/test/*.test.ts test/*.test.mjs
@@ -80,6 +80,8 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Use pure OIDC trusted publishing.
           # Avoid setup-node temp npm auth config so npm does not inherit
