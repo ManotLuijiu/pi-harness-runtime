@@ -78,8 +78,6 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Configure npm auth
           echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
