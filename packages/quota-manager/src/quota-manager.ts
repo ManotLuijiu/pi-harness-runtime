@@ -5,10 +5,7 @@
  * Playwright, and local estimates. Produces provider availability state.
  */
 
-import type {
-	QuotaSignal,
-	QuotaState,
-} from "../../types/src/runtime-types.js";
+import type { QuotaSignal, QuotaState } from "../../types/src/runtime-types.js";
 
 export interface QuotaSignalInput {
 	provider: string;
