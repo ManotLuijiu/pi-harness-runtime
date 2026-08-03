@@ -46,8 +46,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
+          # Trusted publishing requires a recent npm CLI with OIDC support.
           node-version: "22"
           registry-url: https://registry.npmjs.org/
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.18.0
 
       - name: Show tool versions
         run: |
