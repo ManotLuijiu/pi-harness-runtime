@@ -33,6 +33,7 @@
     "harness/**/*.ts",
     "packages",
     "skills",
+    "prompts",
     "package.json",
     "status-parsers.ts",
     "README.md",
@@ -65,6 +66,9 @@
     ],
     "skills": [
       "./skills"
+    ],
+    "prompts": [
+      "./prompts"
     ]
   },
   "peerDependencies": {
