@@ -1,0 +1,12 @@
+{
+  "name": "@pi-harness/okf-indexer",
+  "version": "0.10.0",
+  "description": "OKF document indexer for SKILL.md files (RFC-0106)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --skipLibCheck",
+    "index": "bun run src/cli.ts"
+  }
+}
