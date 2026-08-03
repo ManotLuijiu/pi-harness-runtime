@@ -44,23 +44,15 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Trusted publishing requires a recent npm CLI with OIDC support.
+          # Avoid registry-url here; setup-node injects npm auth config that interferes with OIDC.
           node-version: "22"
-          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
 
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@11.18.0
-
-      - name: Prepare npmrc for trusted publishing
-        run: |
-          # actions/setup-node writes an _authToken line when registry-url is set.
-          # That placeholder breaks npm OIDC trusted publishing unless we remove it.
-          NPMRC="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          sed -i '/_authToken/d' "$NPMRC"
-          echo "Using npmrc: $NPMRC"
-          cat "$NPMRC"
 
       - name: Show tool versions
         run: |
