@@ -124,7 +124,9 @@ jobs:
           fi
 
           echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG} via OIDC trusted publishing..."
-          npm publish --provenance --access public --tag "$TAG" --registry "$REGISTRY"
+          # npm automatically generates provenance for trusted publishing on GitHub Actions.
+          # Avoid explicit --provenance due to npm CLI crashes in this flow.
+          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
