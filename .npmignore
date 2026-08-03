@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Dev files
+*.test.ts
+*.test.mjs
+coverage/
+test/
+
+# Build artifacts in root (packages have their own dist)
+packages/*/dist/
+packages/*/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+*.yml
+
+# Docs
+docs/
+wiki/
+history/
+
+# Config
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Hidden dirs
+.*
+!CHANGELOG.md
+!LICENSE
+!README.md
