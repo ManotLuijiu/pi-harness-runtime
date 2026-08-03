@@ -1,0 +1,23 @@
+{
+  "name": "@moocoding/tencentdb-memory",
+  "version": "0.10.0",
+  "description": "TencentDB Agent Memory client - sync skills to centralized knowledge base",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "pi-extension",
+    "mcp",
+    "memory",
+    "knowledge-base",
+    "tencentdb"
+  ],
+  "author": "MooCoding",
+  "license": "MIT"
+}
