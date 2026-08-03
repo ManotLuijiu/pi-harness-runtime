@@ -91,16 +91,12 @@ jobs:
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
         run: |
-          # Configure npm auth
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
+          # Use npm Trusted Publishing via GitHub Actions OIDC.
+          # Do not require a long-lived NPM_TOKEN secret or npm login in CI.
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
 
           echo "Registry:"
           npm config get registry
-          echo "Authenticated as (whoami):"
-          if ! npm whoami; then
-            echo "::error::npm authentication failed"
-            exit 1
-          fi
 
           NAME="${{ steps.meta.outputs.name }}"
           VERSION="${{ steps.meta.outputs.version }}"
@@ -114,17 +110,15 @@ jobs:
             exit 0
           fi
 
-          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG}..."
-          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
+          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG} via OIDC trusted publishing..."
+          npm publish --provenance --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
           npm publish --access public --dry-run
 
       - name: Create GitHub Release
