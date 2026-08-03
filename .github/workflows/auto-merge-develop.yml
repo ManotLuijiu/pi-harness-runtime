@@ -111,6 +111,28 @@ jobs:
           MAX_RETRIES=8
           RETRY_COUNT=0
           SLEEP_BASE=8
+          REPO_OWNER="${{ github.repository_owner }}"
+
+          merge_pr_locally_into_main() {
+            local pr_number="$1"
+            local head_ref="$2"
+            echo "Attempting local merge of ${head_ref} into main..."
+            git config --local user.email \
+              "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git fetch origin
+            git checkout -B temp-main origin/main
+            if git merge --no-edit "origin/${head_ref}"; then
+              echo "Local merge into main succeeded; pushing..."
+              git push origin HEAD:refs/heads/main
+              return 0
+            fi
+            echo "Local merge into main produced conflicts."
+            git merge --abort || true
+            gh pr comment "$pr_number" --body \
+              "Conflicts exist. Please resolve locally."
+            return 1
+          }
 
           while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
             MERGEABLE=$(gh pr view "$PR_NUMBER" \
@@ -141,12 +163,21 @@ jobs:
 
             if [ "$MERGEABLE" = "MERGEABLE" ]; then
               echo "PR is mergeable, performing squash merge..."
-              gh pr merge "$PR_NUMBER" --squash --delete-branch=false
-              exit $?
+              if gh pr merge "$PR_NUMBER" --squash --delete-branch=false; then
+                exit 0
+              fi
+              if [ "$HEAD_REPO_OWNER" != "$REPO_OWNER" ]; then
+                echo "GitHub merge failed for a fork PR; cannot use local push fallback."
+                exit 1
+              fi
+              echo "GitHub merge API failed; attempting local main-branch merge fallback..."
+              if merge_pr_locally_into_main "$PR_NUMBER" "$HEAD_REF"; then
+                exit 0
+              fi
+              exit 1
             fi
 
             if [ "$MERGEABLE" = "CONFLICTING" ]; then
-              REPO_OWNER="${{ github.repository_owner }}"
               if [ "$HEAD_REPO_OWNER" != "$REPO_OWNER" ]; then
                 echo "Fork PR with conflicts - notifying contributor"
                 gh pr comment "$PR_NUMBER" --body "Conflicts exist with main."
