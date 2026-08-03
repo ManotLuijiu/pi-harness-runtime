@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.9...v0.10.11) (2026-08-03)
+
+
+### Features
+
+* add knowledge-retrieval package for TencentDB-Agent-Memory MCP (RFC-0105) ([a4558d0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a4558d098c7b662b01d9502c8560219eafbf1941))
+* add okf-indexer package for SKILL.md indexing (RFC-0106) ([a3cc7da](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a3cc7da0a390d5c8176d0d871418780facabcb5c))
+* extend a2a-adapter with discovery server (RFC-0104) ([0c4fc18](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0c4fc1826fd55f10305bfbd894b32b5b55f1ab86))
+
+
+### Bug Fixes
+
+* act on CONFLICTING immediately even when mergeStateStatus=DIRTY ([b7f290e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b7f290ece8e0e989635aacc456fffd4ee19183ec))
+* add --provenance to npm publish for OIDC ([72aa76f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/72aa76f8a5d4cfba984479da834e6695888902a0))
+* add diagnostics to npm publish and remove provenance ([124dabe](https://github.com/ManotLuijiu/pi-harness-runtime/commit/124dabea98b59e891fa95b9c92860d9c85657cd4))
+* apply stashed release workflow change ([8257689](https://github.com/ManotLuijiu/pi-harness-runtime/commit/82576896795c7cbc3adfbfa8500a77779896169a))
+* auto-merge detects fork PRs and posts helpful comments ([c7ff0b9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c7ff0b90b7b03ca061b1dcaf4ae8b865050f72a4))
+* fall back to local merge for workflow PRs ([5fabebd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5fabebd293cbb9180f3c6c3887873b645ecc8956))
+* improve auto-merge workflow with longer backoff and auto-resolve conflicts ([0c33f29](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0c33f290097cf7c990909dbace88434fab72744b))
+* move permissions to job level for OIDC npm publish ([a8345d1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a8345d1ff2e9ade96335c56b973ba8ccf1df9296))
+* npm publish with token and provenance ([4529b4c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4529b4c72751e07a6e6317133c222a501c828e45))
+* remove local keyword from bash script in publish step ([4ef5810](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4ef5810145e1233a66fecde2d985e070ab8f2524))
+* remove NPM_TOKEN env - use OIDC only for npm publish ([4107ecf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4107ecf0eb4217127b57d3be5fa3d2788d1a2175))
+* rewrite release workflow - pure OIDC publish ([056d25b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/056d25b5ac673ab6ff9fad88283cd9eb5b3092ae))
+* run release workflow on main pushes ([225b284](https://github.com/ManotLuijiu/pi-harness-runtime/commit/225b28489921c1f178fc8586816c8cc8e0019e12))
+* use NPM_TOKEN in .npmrc format ([cd6be04](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cd6be048bcfb245c741b3e6b6af92d6400eed621))
+* use NPM_TOKEN secret directly for npm publish ([48a3bb2](https://github.com/ManotLuijiu/pi-harness-runtime/commit/48a3bb2bd7ca3c41cd81c2bf4935dc872dc78a57))
+* use npm-publish-github-action for OIDC ([dbf3bd4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/dbf3bd47d4448c2df4247fda0b67e3c9315923a9))
+
 ## [0.10.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.24...v0.10.0) (2026-07-30)
 
 
