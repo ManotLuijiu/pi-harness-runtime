@@ -44,10 +44,15 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
+          # Trusted publishing requires a recent npm CLI with OIDC support.
+          # Avoid registry-url here; setup-node injects npm auth config that interferes with OIDC.
           node-version: "22"
-          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.18.0
 
       - name: Show tool versions
         run: |
@@ -86,51 +91,41 @@ jobs:
           echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Create .npmignore to exclude node_modules
-        run: |
-          # Exclude node_modules from npm pack - they should be rebuilt by consumers
-          echo 'node_modules/' > .npmignore
-          echo '.git/' >> .npmignore
-          echo '.github/' >> .npmignore
-          echo 'scripts/' >> .npmignore
-          echo 'test/' >> .npmignore
-          echo '*.tsbuildinfo' >> .npmignore
-
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Configure npm auth
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
-          
-          if ! npm whoami; then
-            echo "::error::npm authentication failed"
-            exit 1
-          fi
+          # Use npm Trusted Publishing via GitHub Actions OIDC.
+          # Do not require a long-lived NPM_TOKEN secret or npm login in CI.
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
+
+          echo "Registry:"
+          npm config get registry
 
           NAME="${{ steps.meta.outputs.name }}"
           VERSION="${{ steps.meta.outputs.version }}"
           TAG="${{ steps.meta.outputs.npm_tag }}"
+          REGISTRY="https://registry.npmjs.org/"
 
-          if npm view "${NAME}@${VERSION}" >/dev/null 2>&1; then
-            echo "Version ${NAME}@${VERSION} already published; skipping."
+          echo "Package info: ${NAME}@${VERSION}"
+
+          if npm view "${NAME}@${VERSION}" version --registry "$REGISTRY" >/dev/null 2>&1; then
+            echo "Version ${NAME}@${VERSION} is already published; skipping npm publish."
             exit 0
           fi
 
-          echo "Publishing ${NAME}@${VERSION}..."
-          npm publish --access public --tag "$TAG"
+          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG} via OIDC trusted publishing..."
+          # npm automatically generates provenance for trusted publishing on GitHub Actions.
+          # Avoid explicit --provenance due to npm CLI crashes in this flow.
+          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
           npm publish --access public --dry-run
 
       - name: Create GitHub Release
