@@ -108,8 +108,9 @@ jobs:
           PR_NUMBER="${{ steps.create-pr.outputs.PR_NUMBER }}"
           echo "Attempting to merge PR #$PR_NUMBER..."
 
-          MAX_RETRIES=6
+          MAX_RETRIES=8
           RETRY_COUNT=0
+          SLEEP_BASE=8
 
           while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
             MERGEABLE=$(gh pr view "$PR_NUMBER" \
@@ -119,15 +120,16 @@ jobs:
               --json mergeStateStatus \
               --jq '.mergeStateStatus')
 
-            echo "Attempt $((RETRY_COUNT + 1))/${MAX_RETRIES}:"
+            echo "Attempt $((RETRY_COUNT+1))/${MAX_RETRIES}"
             echo "mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
 
             if [ "$MERGEABLE" = "UNKNOWN" ] || \
                [ "$MERGE_STATE" = "UNKNOWN" ] || \
                [ "$MERGE_STATE" = "DIRTY" ]; then
               RETRY_COUNT=$((RETRY_COUNT + 1))
-              echo "Merge state is still settling; waiting 10s..."
-              sleep 10
+              SLEEP=$((SLEEP_BASE * RETRY_COUNT))
+              echo "Merge state settling; waiting ${SLEEP}s..."
+              sleep $SLEEP
               continue
             fi
 
@@ -138,30 +140,46 @@ jobs:
             fi
 
             if [ "$MERGEABLE" = "CONFLICTING" ]; then
-              echo "::error::PR #$PR_NUMBER has actual merge conflicts"
-              echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
-              echo "::error::Manual resolution required. Run:"
-              echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
-              echo "::error::git merge origin/main"
-              echo "::error::Resolve conflicts, then git push origin develop"
-              exit 1
+              echo "PR has conflicts. Attempting auto-merge..."
+
+              git fetch origin
+              HEAD_REF=$(gh pr view "$PR_NUMBER" \
+                --json headRefName --jq '.headRefName')
+              git checkout -b temp-merge "origin/${HEAD_REF}"
+              git fetch origin main
+
+              if git merge --no-edit origin/main; then
+                echo "Merge succeeded; pushing back..."
+                git push origin "HEAD:refs/heads/${HEAD_REF}"
+                MERGEABLE=$(gh pr view "$PR_NUMBER" \
+                  --json mergeable --jq '.mergeable')
+                if [ "$MERGEABLE" = "MERGEABLE" ]; then
+                  gh pr merge "$PR_NUMBER" --squash \
+                    --delete-branch=false
+                  exit $?
+                else
+                  echo "PR still not mergeable"
+                  exit 1
+                fi
+              else
+                echo "Conflicts remain; posting comment..."
+                git merge --abort || true
+                gh pr comment "$PR_NUMBER" --body \
+                  "Auto-merge failed: conflicts exist. Please resolve manually."
+                exit 1
+              fi
             fi
 
-            echo "::error::Unexpected PR merge state"
-            echo "::error::mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
+            echo "Unexpected state: mergeable=$MERGEABLE"
             exit 1
           done
 
-          echo "::error::PR merge state did not become ready in time"
-          echo "::error::Last observed merge state required manual inspection"
-          echo "::error::Resolve locally with:"
-          echo "::error::gh pr checkout $PR_NUMBER && git fetch origin main"
-          echo "::error::git merge origin/main"
+          echo "Merge state did not become ready in time"
+          gh pr comment "$PR_NUMBER" --body \
+            "Auto-merge timed out. Please inspect manually."
           exit 1
 
       - name: Report failure
         if: failure()
         run: |
-          echo "Auto-merge failed."
-          echo "Check PR mergeability."
-          echo "Resolve conflicts manually if required."
+          echo "Auto-merge failed. Check PR mergeability."
