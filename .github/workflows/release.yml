@@ -79,79 +79,33 @@ jobs:
           github.event.inputs.dry_run != 'true'
         run: |
           # Use OIDC trusted publishing (no token needed)
-          npm publish --access public
-            local name
-            local version
-            local args
-            name=$(node -p "require('./package.json').name")
-            version=$(node -p "require('./package.json').version")
-            args=$(publish_args)
-
-            while [ "$retry" -le "$max_retries" ]; do
-              echo "Publish attempt ${retry}/${max_retries}"
-              echo "Package: ${name}@${version}"
-              echo "Directory: $(pwd)"
-              echo "npm publish ${args}"
-              if npm publish ${args}; then
-                return 0
-              fi
-              if [ "$retry" -lt "$max_retries" ]; then
-                local delay=$((retry * 5))
-                echo "Publish failed; retrying in ${delay}s..."
-                sleep "$delay"
-              fi
-              retry=$((retry + 1))
-            done
-            return 1
-          }
-
-          # Only the root pi-harness-runtime package is published.
-          # Workspace packages (@pi-harness/*) are bundled into the root package
-          # via the files whitelist and are NOT published individually — they
-          # have no npm Trusted Publishing configured and are private to
-          # this monorepo.
-
-          root_stage=$(stage_dir ".")
-          cd "$root_stage"
-          echo "Root publish args: $(publish_args)"
-          publish_with_retry
-          cd - > /dev/null
+          # The npm CLI automatically uses the OIDC token from the GitHub Actions environment
+          local version
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Publishing ${name}@${version} with --tag beta"
+            npm publish --access public --tag beta --provenance
+          else
+            echo "Publishing ${name}@${version} with --tag latest"
+            npm publish --access public --tag latest --provenance
+          fi
+        working-directory: .
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
-
-          publish_args() {
-            local version
-            version=$(node -p "require('./package.json').version")
-            if [[ "$version" == *-* ]]; then
-              echo "--access public --tag beta --dry-run"
-            else
-              echo "--access public --dry-run"
-            fi
-          }
-
-          stage_dir() {
-            local source_dir="$1"
-            local staged_dir
-            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
-            rsync -a --delete \
-              --exclude '.git' \
-              --exclude 'node_modules' \
-              "${source_dir%/}/" "${staged_dir}/"
-            echo "$staged_dir"
-          }
-
-          # Dry-run: only root package.
-          root_stage=$(stage_dir ".")
-          cd "$root_stage"
-          echo "Root publish args: $(publish_args)"
-          npm publish $(publish_args)
-          cd - > /dev/null
-          echo "Skipping workspace packages: bundled into root package."
+          local version
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Dry-run: npm publish --access public --tag beta --dry-run"
+            npm publish --access public --tag beta --dry-run
+          else
+            echo "Dry-run: npm publish --access public --dry-run"
+            npm publish --access public --dry-run
+          fi
+        working-directory: .
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
