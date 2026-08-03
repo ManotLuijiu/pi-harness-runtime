@@ -78,6 +78,11 @@ jobs:
           github.event.inputs.dry_run != 'true'
         run: |
           # Use OIDC trusted publishing (no token needed)
+          echo "=== npm whoami (should use OIDC) ==="
+          npm whoami || true
+          echo "=== npm config list ==="
+          npm config list
+          echo "=== npm publish ==="
           VERSION=$(node -p "require('./package.json').version")
           if [[ "$VERSION" == *-* ]]; then
             echo "Publishing pi-harness-runtime@${VERSION} with --tag beta"
