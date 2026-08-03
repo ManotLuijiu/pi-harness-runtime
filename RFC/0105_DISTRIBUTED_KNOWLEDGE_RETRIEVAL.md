@@ -10,7 +10,7 @@
 
 ## Summary
 
-Deploy TencentDB-Agent-Memory server for centralized knowledge retrieval with hybrid search (BM25 + vector + RRF fusion), replacing per-project `moocoding-skills` folder with a single server accessible via MCP.
+Deploy TencentDB-Agent-Memory server for centralized knowledge retrieval with hybrid search (BM25 + vector + RRF fusion), replacing per-project `moocoding-skills` folder with a single server accessible via MCP. Support multi-server topology: **Source Server** (owns skills) and **Consumer Servers** (read-only access via Proxy).
 
 ---
 
@@ -19,185 +19,274 @@ Deploy TencentDB-Agent-Memory server for centralized knowledge retrieval with hy
 **Current state:**
 
 ```
-project-A/.claude-plugins/moocoding-skills/skills/...
-project-B/.claude-plugins/moocoding-skills/skills/...
-project-C/.claude-plugins/moocoding-skills/skills/...
+machine-A/frappe-bench/.claude-plugins/moocoding-skills/skills/...
+machine-B/frappe-bench/.claude-plugins/moocoding-skills/skills/...
+machine-C/frappe-bench/.claude-plugins/moocoding-skills/skills/...
 ```
 
 **Problems:**
 
-- Skills duplicated across projects
+- Skills duplicated across machines
 - No unified search
-- Manual sync required
-- Storage waste
+- Manual sync required per machine
+- Source of truth unclear
 
 **Solution:**
 
 ```
-TencentDB-Agent-Memory Server (single source of truth)
-        ↓
-All skills indexed once
-        ↓
-MCP Tools: tdai_memory_search, tdai_codegraph_query
-        ↓
-All projects access via API
+Source Server (MooCoding's server)
+  - Owns: frappe-bench/.claude-plugins/moocoding-skills/skills/*
+  - Services: Memory Core (8420), Knowledge (8424), Panel UI (8125), Proxy (8096)
+  - Owner syncs skills here via okf-indexer
+  
+Consumer Servers (all other users)
+  - No local skills folder needed
+  - Connect to Source Server's Proxy (8096)
+  - pi-harness-runtime queries via MCP → Proxy → Knowledge service
 ```
 
 ---
 
-## Architecture
+## Server Architecture (TencentDB-Agent-Memory)
 
-```
-+-------------------+
-| Skills Source      |
-| moocoding-skills/ |
-+-------------------+
-        ↓ sync
-+------------------------+
-| TencentDB-Agent-Memory |
-| Server                 |
-| - Wiki (OKF format)   |
-| - CodeGraph           |
-| - sqlite-vec          |
-| - Hybrid retrieval    |
-+------------------------+
-        ↓ MCP/HTTP
-+-------------------+
-| pi-harness-runtime |
-| (all projects)     |
-+-------------------+
-```
+| Service | Port | Purpose |
+|---------|------|---------|
+| Memory Core | 8420 | Memory read/write, auth, skill/RAG data plane |
+| Panel UI | 8125 | Team memory control panel |
+| Knowledge | 8424 | Wiki / code-graph service |
+| Proxy | 8096 | LLM request proxy (Anthropic/OpenAI dual-protocol) |
 
 ---
 
-## Server Specification
+## Multi-Server Topology
 
-| Component | Spec | Notes |
-|-----------|------|-------|
-| **CPU** | 2 vCPU | Lightweight API |
-| **RAM** | 4 GB | SQLite buffers |
-| **Storage** | 50 GB SSD | Grows with KB |
-| **OS** | Ubuntu 22.04 | Docker |
-| **Embedding** | OpenAI API | or BGE-M3 |
-
-**Recommended:** $10-20/month VPS (Hetzner, DigitalOcean) or self-host.
-
----
-
-## Docker Compose
-
-```yaml
-services:
-  tdai-memory:
-    image: ghcr.io/tencentcloud/tdai-memory:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - STORE_BACKEND=sqlite
-      - RECALL_STRATEGY=hybrid
+```
+┌─────────────────────────────────────────────────────────┐
+│  SOURCE SERVER (e.g., memory.moo-vpn.online)           │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ Memory Core │  │  Knowledge   │  │    Proxy    │  │
+│  │   (8420)    │  │   (8424)    │  │   (8096)    │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+│         ▲               ▲               ▲              │
+│         │               │               │              │
+│  Skills sync via   Wiki/Skills    LLM API          │
+│  okf-indexer       storage         gateway          │
+│                                                         │
+│  Owner: MooCoding                                      │
+│  Source: frappe-bench/.claude-plugins/moocoding-skills/│
+└─────────────────────────────────────────────────────────┘
+           │                              ▲
+           │ MCP Query                    │ LLM Proxy
+           ▼                              │
+┌─────────────────────────────────────────────────────────┐
+│  CONSUMER SERVER (e.g., user's laptop)                 │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │Memory Core  │  │  Knowledge  │  │   Proxy     │  │
+│  │  (optional) │  │ (optional)  │  │  (optional) │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+│                                                         │
+│  pi-harness-runtime ──MCP──→ Source Server's Proxy    │
+│                                                         │
+│  Consumer: Any user                                     │
+│  No local skills folder needed                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## MCP Integration
+## Configuration Schema
 
 ```typescript
-// MCP server connecting to TencentDB-Agent-Memory
-interface MemoryMCP {
-  // Search skills
-  tdai_memory_search(query: string): Promise<SkillResult[]>;
-
-  // Code graph queries
-  tdai_codegraph_query(symbol: string): Promise<CodeGraphResult>;
-
-  // Sync skills from source
-  tdai_sync_skills(sourcePath: string): Promise<SyncResult>;
-}
-
-interface SkillResult {
-  id: string;
-  title: string;
-  content: string;
-  score: number;
-  path: string;  // Original SKILL.md path
-}
-```
-
----
-
-## OKF (Open Knowledge Format)
-
-Skills stored as OKF wiki pages:
-
-```typescript
-interface OKFDocument {
-  id: string;
-  title: string;
-  sections: OKFSection[];
-  links: string[];  // Links to other OKF docs
-  metadata: {
-    source: string;  // Original SKILL.md path
-    tags: string[];
-    created: string;
-    updated: string;
+interface TencentDBConfig {
+  /** Source Server (owns skills) */
+  sourceServer: {
+    url: string;           // e.g., "https://memory.moo-vpn.online"
+    userKey: string;       // Business user's sk-mem-xxx
+  };
+  
+  /** Local Server (optional, for self-hosted consumers) */
+  localServer?: {
+    memoryCore: string;    // http://localhost:8420
+    knowledge: string;     // http://localhost:8424
+    proxy: string;        // http://localhost:8096
+  };
+  
+  /** Skills Source (for sync on Source Server) */
+  skillsSource?: {
+    path: string;          // e.g., "~/frappe-bench/.claude-plugins/moocoding-skills/skills"
+    watch?: boolean;       // Auto-sync on file changes
+  };
+  
+  /** Sync settings */
+  sync?: {
+    autoSync: boolean;     // Sync on startup
+    interval?: number;     // Minutes between syncs (default: 60)
   };
 }
+```
 
-interface OKFSection {
-  id: string;
-  title: string;
-  content: string;
-  level: number;  // h1-h6
+---
+
+## Configuration Locations
+
+| Priority | Location | Example |
+|----------|----------|---------|
+| 1 | CLI flag | `--tencentdb-url https://memory.example.com` |
+| 2 | Env var | `TENANTDB_URL`, `TENANTDB_USER_KEY` |
+| 3 | Config file | `.pi/settings.json` → `tencentdb` |
+| 4 | Interactive prompt | User prompted on first use |
+
+---
+
+## API Endpoints
+
+### Memory Core (8420)
+
+```bash
+# Auth
+POST /v3/meta/auth/verify
+
+# User management
+POST /v3/meta/user/create
+GET  /v3/meta/user/list
+
+# Team/Agent/Task
+POST /v3/meta/team/create
+GET  /v3/meta/team/list
+POST /v3/meta/agent/create
+GET  /v3/meta/agent/list
+```
+
+### Knowledge Service (8424)
+
+```bash
+# Wiki/Skills
+POST /v3/wiki/documents
+GET  /v3/wiki/documents?team_id=xxx
+GET  /v3/wiki/documents/{id}
+DELETE /v3/wiki/documents/{id}
+
+# Search
+POST /v3/wiki/search
+POST /v3/knowledge/graph/search
+
+# Skills
+POST /v3/skills/sync
+GET  /v3/skills/list
+GET  /v3/skills/{name}
+```
+
+### Proxy (8096)
+
+```bash
+# LLM Gateway
+POST /claude-code/{serviceId}/v1/messages
+POST /claude-code/{serviceId}/v1/chat/completions
+```
+
+---
+
+## Sync Strategy (okf-indexer → Source Server)
+
+```bash
+# 1. Owner configures Source Server
+TENANTDB_URL=https://memory.moo-vpn.online
+TENANTDB_USER_KEY=sk-mem-xxx
+
+# 2. Sync skills from local source
+okf-sync --source ~/frappe-bench/.claude-plugins/moocoding-skills/skills
+
+# 3. Knowledge service indexes SKILL.md → OKF Wiki
+POST /v3/wiki/documents
+{
+  "title": "Frappe Custom Field Lifecycle",
+  "content": "# Frappe Custom Field Lifecycle\n\n## When to Use\n...",
+  "tags": ["frappe", "custom-field"],
+  "team_id": "moocoding"
+}
+
+# 4. CodeGraph indexes relationships
+POST /v3/knowledge/graph/sync
+{
+  "nodes": [...],
+  "edges": [...]
 }
 ```
 
 ---
 
-## Sync Strategy
+## Consumer Access (MCP)
 
 ```typescript
-// Periodic sync from moocoding-skills to server
-async function syncSkills() {
-  const skillsDir = 'frappe-bench/.claude-plugins/moocoding-skills/skills/';
-
-  for (const skillPath of glob(skillsDir + '*/SKILL.md')) {
-    const skill = parseSKILL(skillPath);
-    const okf = convertToOKF(skill);
-    await tdaiClient.ingest(okf);
+// pi-harness-runtime connects via MCP to Source Server's Knowledge service
+const config = {
+  sourceServer: {
+    url: "https://memory.moo-vpn.online",
+    userKey: process.env.TENANTDB_USER_KEY,
   }
+};
+
+// MCP tools exposed:
+interface TDAMCTools {
+  // Search skills
+  tdai_memory_search(query: string): Promise<SearchResult[]>;
+  
+  // Code graph
+  tdai_codegraph_query(symbol: string): Promise<GraphResult>;
+  
+  // List skills
+  tdai_list_skills(): Promise<SkillInfo[]>;
+  
+  // Health check
+  tdai_health(): Promise<HealthStatus>;
 }
 ```
 
 ---
 
-## Retrieval Flow
+## CLI Commands
 
-```
-Agent: "I need to fix TypeScript errors"
-        ↓
-tdai_memory_search("typescript errors")
-        ↓
-TencentDB-Agent-Memory (hybrid: BM25 + vec + RRF)
-        ↓
-Returns ranked skills with scores
-        ↓
-Agent reads relevant SKILL.md sections
-        ↓
-Executes task with retrieved knowledge
+```bash
+# Setup (interactive)
+/tencentdb setup
+
+# Sync skills to Source Server
+/tencentdb sync
+
+# Watch mode (auto-sync on changes)
+/tencentdb sync --watch
+
+# Search skills
+/tencentdb search "typescript errors"
+
+# Status
+/tencentdb status
+
+# Connect to Source Server (consumer mode)
+/tencentdb connect --url https://memory.moo-vpn.online --key sk-mem-xxx
 ```
 
 ---
 
-## Dependencies
+## Environment Variables
 
-| Dependency | Purpose |
-|------------|---------|
-| TencentDB-Agent-Memory | Server software |
-| OpenAI API | Embeddings |
-| MCP | Protocol to pi-harness-runtime |
+```bash
+# Source Server (required for consumer)
+TENANTDB_URL=https://memory.moo-vpn.online
+TENANTDB_USER_KEY=sk-mem-xxx
+
+# Local Server (for self-hosted, optional)
+TENANTDB_MEMORY_CORE=http://localhost:8420
+TENANTDB_KNOWLEDGE=http://localhost:8424
+TENANTDB_PROXY=http://localhost:8096
+
+# Sync settings
+TENANTDB_SKILLS_SOURCE=~/frappe-bench/.claude-plugins/moocoding-skills/skills
+TENANTDB_AUTO_SYNC=true
+TENANTDB_SYNC_INTERVAL=60
+```
 
 ---
 
