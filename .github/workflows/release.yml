@@ -63,7 +63,7 @@ jobs:
 
       - name: Build packages
         run: |
-          # Build all packages - errors suppressed, dist files used from repo
+          bun run build
 
       # Tests skipped — pre-existing failures in CI (pass locally).
       # Run before tagging: bun test packages/*/test/*.test.ts test/*.test.mjs
