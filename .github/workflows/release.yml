@@ -46,6 +46,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          registry-url: https://registry.npmjs.org/
+          # OIDC token is automatically available when id-token: write is set
 
       - name: Show tool versions
         run: |
@@ -76,35 +78,17 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        run: |
-          # Use OIDC trusted publishing (no token needed)
-          echo "=== npm whoami (should use OIDC) ==="
-          npm whoami || true
-          echo "=== npm config list ==="
-          npm config list
-          echo "=== npm publish ==="
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *-* ]]; then
-            echo "Publishing pi-harness-runtime@${VERSION} with --tag beta"
-            npm publish --access public --tag beta --provenance
-          else
-            echo "Publishing pi-harness-runtime@${VERSION} with --tag latest"
-            npm publish --access public --tag latest --provenance
-          fi
+        uses: canalina/npm-publish-github-action@v1
+        with:
+          tag: latest
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *-* ]]; then
-            echo "Dry-run: npm publish --access public --tag beta --dry-run"
-            npm publish --access public --tag beta --dry-run
-          else
-            echo "Dry-run: npm publish --access public --dry-run"
-            npm publish --access public --dry-run
-          fi
+        uses: canalina/npm-publish-github-action@v1
+        with:
+          dry_run: true
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
