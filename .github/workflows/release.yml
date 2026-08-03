@@ -83,35 +83,9 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Use pure OIDC trusted publishing.
-          # Avoid setup-node temp npm auth config so npm does not inherit
-          # NPM_CONFIG_USERCONFIG / NODE_AUTH_TOKEN fallback state.
-          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN
-
-          publish_args() {
-            local version
-            version=$(node -p "require('./package.json').version")
-            if [[ "$version" == *-* ]]; then
-              echo "--access public --tag beta --provenance"
-            else
-              echo "--access public --tag latest --provenance"
-            fi
-          }
-
-          stage_dir() {
-            local source_dir="$1"
-            local staged_dir
-            staged_dir=$(mktemp -d "${RUNNER_TEMP}/publish-stage-XXXXXX")
-            rsync -a --delete \
-              --exclude '.git' \
-              --exclude 'node_modules' \
-              "${source_dir%/}/" "${staged_dir}/"
-            echo "$staged_dir"
-          }
-
-          publish_with_retry() {
-            local max_retries=3
-            local retry=1
+          # Write token to .npmrc for authentication
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' >> ~/.npmrc
+          npm publish --access public
             local name
             local version
             local args
