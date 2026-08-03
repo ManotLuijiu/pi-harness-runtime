@@ -92,9 +92,9 @@ jobs:
             local version
             version=$(node -p "require('./package.json').version")
             if [[ "$version" == *-* ]]; then
-              echo "--access public --tag beta"
+              echo "--access public --tag beta --provenance"
             else
-              echo "--access public --tag latest"
+              echo "--access public --tag latest --provenance"
             fi
           }
 
