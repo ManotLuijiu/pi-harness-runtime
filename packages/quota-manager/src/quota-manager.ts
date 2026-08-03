@@ -8,7 +8,7 @@
 import type {
 	QuotaSignal,
 	QuotaState,
-} from "../../packages/types/src/runtime-types.js";
+} from "../../types/src/runtime-types.js";
 
 export interface QuotaSignalInput {
 	provider: string;
