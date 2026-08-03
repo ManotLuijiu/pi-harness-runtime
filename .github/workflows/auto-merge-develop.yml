@@ -129,9 +129,9 @@ jobs:
             echo "mergeable=$MERGEABLE state=$MERGE_STATE"
             echo "headRepoOwner=$HEAD_REPO_OWNER headRef=$HEAD_REF"
 
+            # Wait only when GitHub hasn't determined mergeability yet
             if [ "$MERGEABLE" = "UNKNOWN" ] || \
-               [ "$MERGE_STATE" = "UNKNOWN" ] || \
-               [ "$MERGE_STATE" = "DIRTY" ]; then
+               [ "$MERGE_STATE" = "UNKNOWN" ]; then
               RETRY_COUNT=$((RETRY_COUNT + 1))
               SLEEP=$((SLEEP_BASE * RETRY_COUNT))
               echo "Merge state settling; waiting ${SLEEP}s..."
@@ -149,7 +149,7 @@ jobs:
               REPO_OWNER="${{ github.repository_owner }}"
               if [ "$HEAD_REPO_OWNER" != "$REPO_OWNER" ]; then
                 echo "Fork PR with conflicts - notifying contributor"
-                gh pr comment "$PR_NUMBER" --body "Auto-merge failed: this PR has conflicts with main. Please resolve locally."
+                gh pr comment "$PR_NUMBER" --body "Conflicts exist with main."
                 exit 1
               fi
 
