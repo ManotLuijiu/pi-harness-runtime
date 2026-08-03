@@ -93,11 +93,13 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # Debug: show first 4 chars of token
+          echo "Token prefix: ${NPM_TOKEN:0:4}"
+          echo "Token length: ${#NPM_TOKEN}"
+          
           # Configure npm auth
           echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
-
-          echo "Registry:"
-          npm config get registry
+          cat ~/.npmrc
           echo "Authenticated as (whoami):"
           if ! npm whoami; then
             echo "::error::npm authentication failed"
