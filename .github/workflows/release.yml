@@ -86,6 +86,16 @@ jobs:
           echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Create .npmignore to exclude node_modules
+        run: |
+          # Exclude node_modules from npm pack - they should be rebuilt by consumers
+          echo 'node_modules/' > .npmignore
+          echo '.git/' >> .npmignore
+          echo '.github/' >> .npmignore
+          echo 'scripts/' >> .npmignore
+          echo 'test/' >> .npmignore
+          echo '*.tsbuildinfo' >> .npmignore
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
@@ -93,14 +103,9 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Debug: show first 4 chars of token
-          echo "Token prefix: ${NPM_TOKEN:0:4}"
-          echo "Token length: ${#NPM_TOKEN}"
-          
           # Configure npm auth
           echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > ~/.npmrc
-          cat ~/.npmrc
-          echo "Authenticated as (whoami):"
+          
           if ! npm whoami; then
             echo "::error::npm authentication failed"
             exit 1
@@ -109,17 +114,14 @@ jobs:
           NAME="${{ steps.meta.outputs.name }}"
           VERSION="${{ steps.meta.outputs.version }}"
           TAG="${{ steps.meta.outputs.npm_tag }}"
-          REGISTRY="https://registry.npmjs.org/"
 
-          echo "Package info: ${NAME}@${VERSION}"
-
-          if npm view "${NAME}@${VERSION}" version --registry "$REGISTRY" >/dev/null 2>&1; then
-            echo "Version ${NAME}@${VERSION} is already published; skipping npm publish."
+          if npm view "${NAME}@${VERSION}" >/dev/null 2>&1; then
+            echo "Version ${NAME}@${VERSION} already published; skipping."
             exit 0
           fi
 
-          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG}..."
-          npm publish --access public --tag "$TAG" --registry "$REGISTRY"
+          echo "Publishing ${NAME}@${VERSION}..."
+          npm publish --access public --tag "$TAG"
 
       - name: Publish to npm (dry-run)
         if: >-
