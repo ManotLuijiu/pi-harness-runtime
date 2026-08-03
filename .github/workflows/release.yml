@@ -53,6 +53,15 @@ jobs:
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@11.18.0
 
+      - name: Prepare npmrc for trusted publishing
+        run: |
+          # actions/setup-node writes an _authToken line when registry-url is set.
+          # That placeholder breaks npm OIDC trusted publishing unless we remove it.
+          NPMRC="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          sed -i '/_authToken/d' "$NPMRC"
+          echo "Using npmrc: $NPMRC"
+          cat "$NPMRC"
+
       - name: Show tool versions
         run: |
           node --version
