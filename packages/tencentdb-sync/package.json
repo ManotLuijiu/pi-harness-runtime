@@ -1,0 +1,26 @@
+{
+  "name": "@pi-harness/tencentdb-sync",
+  "version": "0.10.0",
+  "description": "Sync SKILL.md skills to TencentDB-Agent-Memory server (RFC-0105/0106)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --skipLibCheck",
+    "sync": "bun run src/cli.ts",
+    "watch": "bun run src/cli.ts --watch"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
