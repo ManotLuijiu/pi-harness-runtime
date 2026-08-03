@@ -119,9 +119,15 @@ jobs:
             MERGE_STATE=$(gh pr view "$PR_NUMBER" \
               --json mergeStateStatus \
               --jq '.mergeStateStatus')
+            HEAD_REPO_OWNER=$(gh pr view "$PR_NUMBER" \
+              --json headRepositoryOwner \
+              --jq '.headRepositoryOwner.login')
+            HEAD_REF=$(gh pr view "$PR_NUMBER" \
+              --json headRefName --jq '.headRefName')
 
             echo "Attempt $((RETRY_COUNT+1))/${MAX_RETRIES}"
-            echo "mergeable=$MERGEABLE mergeStateStatus=$MERGE_STATE"
+            echo "mergeable=$MERGEABLE state=$MERGE_STATE"
+            echo "headRepoOwner=$HEAD_REPO_OWNER headRef=$HEAD_REF"
 
             if [ "$MERGEABLE" = "UNKNOWN" ] || \
                [ "$MERGE_STATE" = "UNKNOWN" ] || \
@@ -140,16 +146,23 @@ jobs:
             fi
 
             if [ "$MERGEABLE" = "CONFLICTING" ]; then
-              echo "PR has conflicts. Attempting auto-merge..."
+              REPO_OWNER="${{ github.repository_owner }}"
+              if [ "$HEAD_REPO_OWNER" != "$REPO_OWNER" ]; then
+                echo "Fork PR with conflicts - notifying contributor"
+                gh pr comment "$PR_NUMBER" --body "Auto-merge failed: this PR has conflicts with main. Please resolve locally."
+                exit 1
+              fi
 
+              echo "Attempting non-interactive merge into ${HEAD_REF}..."
+              git config --local user.email \
+                "github-actions[bot]@users.noreply.github.com"
+              git config --local user.name "github-actions[bot]"
               git fetch origin
-              HEAD_REF=$(gh pr view "$PR_NUMBER" \
-                --json headRefName --jq '.headRefName')
               git checkout -b temp-merge "origin/${HEAD_REF}"
               git fetch origin main
 
               if git merge --no-edit origin/main; then
-                echo "Merge succeeded; pushing back..."
+                echo "Local merge succeeded; pushing back..."
                 git push origin "HEAD:refs/heads/${HEAD_REF}"
                 MERGEABLE=$(gh pr view "$PR_NUMBER" \
                   --json mergeable --jq '.mergeable')
@@ -158,14 +171,14 @@ jobs:
                     --delete-branch=false
                   exit $?
                 else
-                  echo "PR still not mergeable"
+                  echo "PR still not mergeable: $MERGEABLE"
                   exit 1
                 fi
               else
-                echo "Conflicts remain; posting comment..."
+                echo "Merge produced conflicts; posting comment..."
                 git merge --abort || true
                 gh pr comment "$PR_NUMBER" --body \
-                  "Auto-merge failed: conflicts exist. Please resolve manually."
+                  "Conflicts exist. Please resolve locally."
                 exit 1
               fi
             fi
