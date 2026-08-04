@@ -62,7 +62,7 @@ Consumer Servers (all other users)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  SOURCE SERVER (e.g., https://your-memory-server.example.com)           │
+│  SOURCE SERVER (e.g., memory.moo-vpn.online)           │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
 │  │ Memory Core │  │  Knowledge   │  │    Proxy    │  │
@@ -102,7 +102,7 @@ Consumer Servers (all other users)
 interface TencentDBConfig {
   /** Source Server (owns skills) */
   sourceServer: {
-    url: string;           // e.g., "https://https://your-memory-server.example.com"
+    url: string;           // e.g., "https://memory.moo-vpn.online"
     userKey: string;       // Business user's sk-mem-xxx
   };
   
@@ -192,7 +192,7 @@ POST /claude-code/{serviceId}/v1/chat/completions
 
 ```bash
 # 1. Owner configures Source Server
-TENANTDB_URL=https://https://your-memory-server.example.com
+TENANTDB_URL=https://memory.moo-vpn.online
 TENANTDB_USER_KEY=sk-mem-xxx
 
 # 2. Sync skills from local source
@@ -223,7 +223,7 @@ POST /v3/knowledge/graph/sync
 // pi-harness-runtime connects via MCP to Source Server's Knowledge service
 const config = {
   sourceServer: {
-    url: "https://https://your-memory-server.example.com",
+    url: "https://memory.moo-vpn.online",
     userKey: process.env.TENANTDB_USER_KEY,
   }
 };
@@ -265,7 +265,7 @@ interface TDAMCTools {
 /tencentdb status
 
 # Connect to Source Server (consumer mode)
-/tencentdb connect --url https://https://your-memory-server.example.com --key sk-mem-xxx
+/tencentdb connect --url https://memory.moo-vpn.online --key sk-mem-xxx
 ```
 
 ---
@@ -274,7 +274,7 @@ interface TDAMCTools {
 
 ```bash
 # Source Server (required for consumer)
-TENANTDB_URL=https://https://your-memory-server.example.com
+TENANTDB_URL=https://memory.moo-vpn.online
 TENANTDB_USER_KEY=sk-mem-xxx
 
 # Local Server (for self-hosted, optional)
