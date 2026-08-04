@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "0.10.12",
+  "version": "0.10.13",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -16,7 +16,8 @@
     "auth:minimax:scrape": "bun packages/auth/src/run-minimax-auth.ts scrape",
     "skills:sync": "bun scripts/skills-sync.ts",
     "skills:sync:check": "bun scripts/skills-sync.ts --check-only",
-    "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck > /dev/null 2>&1 || true; done"
+    "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck > /dev/null 2>&1 || true; done",
+    "prepublishOnly": "bun run build"
   },
   "bin": {
     "harness-auth": "packages/auth/src/run-minimax-auth.ts"
@@ -25,8 +26,10 @@
     "*.ts",
     "harness/**/*.ts",
     "packages/**/src/**/*.{ts,js}",
+    "packages/**/dist/**/*.{js,d.ts,js.map,d.ts.map}",
     "skills/**/*",
     "prompts/**/*",
+    "scripts/**/*",
     "package.json",
     "README.md",
     "CHANGELOG.md",
