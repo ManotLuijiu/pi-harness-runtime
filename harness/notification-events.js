@@ -9,7 +9,7 @@
  *   ResumeScheduled, ContextCompacted, OutputLimitContinued,
  *   E2EFailed, HumanReviewNeeded, ReadyForClient, JobCancelled, Error
  */
-import { NotificationCenter } from "../packages/notification/notification-center.js";
+import { NotificationCenter } from "../packages/notification/dist/notification-center.js";
 export class HarnessNotificationEvents {
     center;
     config;
