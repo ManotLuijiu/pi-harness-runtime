@@ -348,7 +348,16 @@ Run \`bd ready\` to see current tasks.
 		const result = (event as { result?: { content?: string } }).result;
 		if (!result) return;
 
-		const content = result.content ?? "";
+		// Handle content that might be an array or object
+		const rawContent = result.content;
+		let content: string;
+		if (typeof rawContent === "string") {
+			content = rawContent;
+		} else if (Array.isArray(rawContent)) {
+			content = rawContent.map((c) => typeof c === "string" ? c : JSON.stringify(c)).join("\n");
+		} else {
+			content = JSON.stringify(rawContent ?? "");
+		}
 
 		// Check if this is a build command
 		const isBuildCommand = BUILD_COMMANDS.some(

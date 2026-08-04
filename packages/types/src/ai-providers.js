@@ -63,4 +63,3 @@ export function isKnownAiProvider(id) {
 export function getProviderLabel(id) {
     return PROVIDER_LABELS[id] ?? id;
 }
-//# sourceMappingURL=ai-providers.js.map
