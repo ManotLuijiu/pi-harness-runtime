@@ -10,12 +10,12 @@
  *   E2EFailed, HumanReviewNeeded, ReadyForClient, JobCancelled, Error
  */
 
-import { NotificationCenter } from "../packages/notification/notification-center.js";
+import { NotificationCenter } from "../packages/notification/dist/notification-center.js";
 import type {
 	NotificationConfig,
 	NotificationEvent,
 	NotificationContext,
-} from "../packages/notification/types.js";
+} from "../packages/notification/dist/types.js";
 import type { JobStateMachine } from "./job-state-machine.js";
 import type { TaskGraphManager } from "./task-graph.js";
 
