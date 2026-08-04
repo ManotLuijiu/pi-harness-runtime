@@ -10,7 +10,7 @@ This command helps you connect to your own TencentDB-Agent-Memory server for cen
 
 ### 1. Use Default Server (Recommended for Testing)
 If you don't have your own server, you can use the public demo:
-- **URL**: `https://memory.moo-vpn.online`
+- **URL**: `https://https://your-memory-server.example.com`
 - **Note**: This is a shared server, data may be visible to others
 
 ### 2. Deploy Your Own Server
