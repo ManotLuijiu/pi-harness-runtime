@@ -1,6 +1,6 @@
 {
   "name": "@pi/laravel-plugin",
-  "version": "0.10.20",
+  "version": "0.10.21",
   "description": "Laravel framework analysis — artisan commands, Eloquent models, Blade",
   "type": "module",
   "main": "./dist/index.js",
