@@ -15,9 +15,7 @@ const AGENT_ID = "review-agent";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`);
 
 type CodeWrittenPayload = { taskId: string; files: string[]; branch?: string };
 

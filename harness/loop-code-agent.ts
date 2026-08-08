@@ -22,9 +22,7 @@ const AGENT_TYPE = "code";
 const POLL_MS = 1000;
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`);
 
 async function main(): Promise<void> {
 	console.log(`[${AGENT_ID}] Starting...`);
