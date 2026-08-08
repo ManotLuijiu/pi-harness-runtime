@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/providers",
-  "version": "0.10.20",
+  "version": "0.10.21",
   "description": "pi-harness-runtime — providers",
   "type": "module",
   "main": "./dist/index.js",
