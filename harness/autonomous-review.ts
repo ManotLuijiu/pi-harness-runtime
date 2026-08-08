@@ -13,6 +13,11 @@ import {
 
 const AGENT_ID = "review-agent";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
+// Suppress stack traces — only show error message to keep TUI clean
+const logError = (err: unknown) =>
+	console.error(
+		`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
+	);
 
 type CodeWrittenPayload = { taskId: string; files: string[]; branch?: string };
 
@@ -78,11 +83,11 @@ async function main(): Promise<void> {
 	bus.startPolling(async (payload) => {
 		if (payload.topic === "code.written") {
 			const data = payload.data as CodeWrittenPayload;
-			if (data.files?.length) runReview(bus, data).catch(console.error);
+			if (data.files?.length) runReview(bus, data).catch(logError);
 		}
 	});
 	console.log(`[${AGENT_ID}] Workspace: ${bus.getWorkspace()}`);
 	console.log(`[${AGENT_ID}] Polling for code.written...`);
 }
 
-main().catch(console.error);
+main().catch(logError);
