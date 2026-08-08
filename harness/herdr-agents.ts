@@ -9,6 +9,12 @@ import {
 	ensureHerdrWorkspace,
 } from "../packages/event-bus/src/herdr-bus.js";
 
+// Suppress stack traces — only show error message to keep TUI clean
+const logError = (err: unknown) =>
+	console.error(
+		`[herdr] Error: ${err instanceof Error ? err.message : String(err)}`,
+	);
+
 async function startReviewAgent(): Promise<void> {
 	console.log("[herdr:review] Starting review agent...");
 	const bus = createHerdrBus("review-agent");
@@ -78,10 +84,10 @@ function showStatus(): void {
 const [command] = process.argv.slice(2);
 switch (command) {
 	case "review":
-		startReviewAgent().catch(console.error);
+		startReviewAgent().catch(logError);
 		break;
 	case "code":
-		startCodeAgent().catch(console.error);
+		startCodeAgent().catch(logError);
 		break;
 	case "status":
 		showStatus();

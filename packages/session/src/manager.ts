@@ -18,6 +18,11 @@ import type {
 import { ContextWindowManager } from "./history.js";
 import { PolicyEngine } from "./policy.js";
 import { SessionStore } from "./store.js";
+// Suppress stack traces — only show error message to keep TUI clean
+const logError = (err: unknown) =>
+	console.error(
+		`[session] Error: ${err instanceof Error ? err.message : String(err)}`,
+	);
 
 // --- Default Configuration -------------------------------------------------
 
@@ -59,7 +64,7 @@ export class SessionManager {
 		// Start cleanup timer
 		if (this.config.autoCleanup) {
 			this.cleanupTimer = setInterval(
-				() => this.cleanup().catch(console.error),
+				() => this.cleanup().catch(logError),
 				this.config.cleanupIntervalMs,
 			);
 		}
