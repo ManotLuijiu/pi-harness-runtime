@@ -11,9 +11,7 @@ import {
 
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[herdr] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[herdr] Error: ${err instanceof Error ? err.message : String(err)}`);
 
 async function startReviewAgent(): Promise<void> {
 	console.log("[herdr:review] Starting review agent...");

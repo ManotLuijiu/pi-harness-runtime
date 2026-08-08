@@ -20,9 +20,7 @@ import { PolicyEngine } from "./policy.js";
 import { SessionStore } from "./store.js";
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[session] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[session] Error: ${err instanceof Error ? err.message : String(err)}`);
 
 // --- Default Configuration -------------------------------------------------
 

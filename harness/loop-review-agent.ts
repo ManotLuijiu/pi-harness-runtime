@@ -14,7 +14,10 @@ import {
 	parseVerdict,
 } from "../packages/event-bus/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
-import type { LoopNextAction, LoopVerdict } from "./loop-types.js";
+import type {
+	LoopNextAction,
+	LoopVerdict,
+} from "./loop-types.js";
 
 const AGENT_ID = "review-agent";
 const AGENT_TYPE = "review";
@@ -22,9 +25,7 @@ const POLL_MS = 1000;
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`);
 
 async function main(): Promise<void> {
 	console.log(`[${AGENT_ID}] Starting...`);

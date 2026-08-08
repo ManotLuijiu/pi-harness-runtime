@@ -39,9 +39,7 @@ interface LogEvent {
 const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2s poll
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>
-	console.error(
-		`[herdr:bus] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
+	console.error(`[herdr:bus] Error: ${err instanceof Error ? err.message : String(err)}`);
 const MAX_EVENTS_PER_POLL = 50;
 const PAYLOADS_DIR = "payloads";
 const SUBSCRIPTIONS_DIR = "subscriptions";
