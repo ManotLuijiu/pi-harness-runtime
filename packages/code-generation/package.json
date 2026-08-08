@@ -1,6 +1,6 @@
 {
   "name": "@pi/code-generation",
-  "version": "0.10.20",
+  "version": "0.10.21",
   "description": "Code generation pipeline for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
