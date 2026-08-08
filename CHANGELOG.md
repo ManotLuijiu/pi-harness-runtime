@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.20](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.20) (2026-08-08)
+
+
+### Bug Fixes
+
+* align TS formatting with main (remove 3-line logError) ([2515ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2515ad54f43f0566123c686d3ec4f92ad363ea13))
+* correct import paths for notification-center dist files ([f248722](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f24872240c07bf115f69530a3bdabedf73e3c858))
+* handle array/object content in pi-usage-status build detection ([68b07a8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/68b07a8e8167a95ab1b519782a07ec3a582eec5a))
+* skip publish-time scripts in release workflow ([b385148](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b38514835dc3f6fd717ca8c71dbb6d131de4887f))
+* suppress noisy stack traces in harness agents ([34bbe98](https://github.com/ManotLuijiu/pi-harness-runtime/commit/34bbe98f59e740fcfcd8622f1dcc09c379f6f3df))
+
 ### [0.10.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.9...v0.10.11) (2026-08-03)
 
 
