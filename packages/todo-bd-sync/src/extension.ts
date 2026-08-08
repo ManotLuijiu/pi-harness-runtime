@@ -13,8 +13,7 @@ import type {
 	InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 import { getDependencyStatus } from "./detector.js";
-import { getOpenBdIssues } from "./sync.js";
-import { decideAutoTodo, getTaskComplexityScore } from "./task-analyzer.js";
+import { decideAutoTodo } from "./task-analyzer.js";
 
 /**
  * Register the todo-bd-sync extension
@@ -22,43 +21,9 @@ import { decideAutoTodo, getTaskComplexityScore } from "./task-analyzer.js";
 export function registerTodoBdSync(pi: ExtensionAPI): void {
 	const deps = getDependencyStatus();
 
-	// Check if bd is installed
-	if (!deps.bd.installed) {
-		console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  bd (beads) is not installed
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-To use todo-bd-sync, install bd first:
-
-   https://github.com/gastownhall/beads
-
-Quick install:
-
-   npm install -g @gastownhall/beads
-
-   OR
-
-   pi install npm:@gastownhall/beads
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
+	// Silently skip if bd is not installed or initialized
+	if (!deps.bd.installed || !deps.bd.initialized) {
 		return;
-	}
-
-	// Check if bd is initialized in this project
-	if (!deps.bd.initialized) {
-		console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 bd (beads) detected but not initialized
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Run the following command to initialize:
-
-   bd init
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
 	}
 
 	// ── Smart Auto-Todo Injection ──────────────────────────────────────────
@@ -75,9 +40,6 @@ Run the following command to initialize:
 			return; // Skip very short inputs
 		}
 
-		const pendingCount = getOpenBdIssues().filter(
-			(i) => i.status !== "closed",
-		).length;
 		const decision = decideAutoTodo(text);
 
 		// If should create todo and phrase not already present
@@ -91,10 +53,7 @@ Run the following command to initialize:
 				text.toLowerCase().includes("create todo");
 
 			if (!hasExplicitTodo) {
-				const score = getTaskComplexityScore(text);
-				console.log(
-					`[auto-todo] Task detected: ${decision.reason} (score: ${score}/100, pending: ${pendingCount})`,
-				);
+				// Silently inject - no console noise
 
 				// Clearer instruction that explicitly tells LLM to use todo tool
 				// This is more direct than just adding text - it tells LLM to CALL the todo tool
@@ -120,7 +79,7 @@ IMPORTANT: Use the \`todo\` tool to track this task:
 		return;
 	});
 
-	console.log("[todo-bd-sync] Started - smart auto-todo enabled");
+	// Silent startup - no console noise
 }
 
 // Default export for pi extension loading
