@@ -29,3 +29,4 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 .dolt/
 *.db
 .beads-credential-key
+.write-review/
