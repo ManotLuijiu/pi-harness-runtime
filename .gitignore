@@ -20,6 +20,9 @@ harness/skills-staging/source-mirror/
 harness/skills-staging/sanitized-candidates/
 harness/skills-staging/reports/
 
+# Source JS files (should be in dist/, not src/)
+packages/*/src/*.js
+
 # Build outputs
 packages/*/dist/
 .pi-subagents/
