@@ -1,6 +1,6 @@
 {
   "name": "@pi/health-monitor",
-  "version": "0.10.21",
+  "version": "0.10.22",
   "type": "module",
   "description": "Health monitoring and auto-healing",
   "main": "dist/index.js",
