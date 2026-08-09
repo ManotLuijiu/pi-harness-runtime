@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/scheduler",
-  "version": "0.10.22",
+  "version": "0.10.23",
   "description": "pi-harness-runtime — scheduler",
   "type": "module",
   "main": "./dist/index.js",
