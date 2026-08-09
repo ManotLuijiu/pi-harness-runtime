@@ -148,7 +148,7 @@ export function getDependencyStatus(cwd?: string): DependencyStatus {
 			installed,
 			version: installed ? getBdVersion() : null,
 			initialized: installed ? isBdInitialized(cwd) : false,
-			installUrl: "https://github.com/gastownhall/beads",
+			installUrl: "https://github.com/beads/bd#installation",
 		},
 	};
 }
