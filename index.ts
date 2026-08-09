@@ -73,7 +73,7 @@ import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
 async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
 	try {
 		const mod = await import("./packages/todo-bd-sync/src/extension.js");
-		mod.registerTodoBdSync(pi, { debug: false });
+		mod.registerTodoBdSync(pi);
 	} catch {
 		// todo-bd-sync not available
 	}
@@ -98,6 +98,17 @@ async function initWriteReview(pi: ExtensionAPI): Promise<void> {
 		mod.injectWriterInstructions(pi);
 	} catch {
 		// write-review not available
+	}
+}
+
+// --- file-copy-helper: Inject cp rule when mimicking files --------------------
+// Lazy import - only loads when packages/file-copy-helper exists
+async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/file-copy-helper/src/extension.js");
+		mod.registerFileCopyHelper(pi);
+	} catch {
+		// file-copy-helper not available
 	}
 }
 import { homedir } from "node:os";
@@ -256,6 +267,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- write-review: Two-agent write with review loop ----------------------
 	void initWriteReview(pi);
+
+	// --- file-copy-helper: Inject cp rule when mimicking files -------------
+	void initFileCopyHelper(pi);
 
 	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
 	// This makes the todo overlay ALWAYS activate at session start
