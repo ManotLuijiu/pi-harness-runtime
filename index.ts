@@ -368,17 +368,23 @@ Run \`bd ready\` to see current tasks.
 		if (typeof rawContent === "string") {
 			content = rawContent;
 		} else if (Array.isArray(rawContent)) {
-			content = rawContent.map((c) => typeof c === "string" ? c : JSON.stringify(c)).join("\n");
+			content = rawContent
+				.map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
+				.join("\n");
 		} else {
 			content = JSON.stringify(rawContent ?? "");
 		}
 
 		// Check if this is a build command
-		const isBuildCommand = BUILD_COMMANDS.some(
-			(cmd) => content.toLowerCase().includes(cmd.toLowerCase()),
+		const isBuildCommand = BUILD_COMMANDS.some((cmd) =>
+			content.toLowerCase().includes(cmd.toLowerCase()),
 		);
 
-		if (isBuildCommand && !content.includes("bd ready") && !content.includes("TODO UPDATE")) {
+		if (
+			isBuildCommand &&
+			!content.includes("bd ready") &&
+			!content.includes("TODO UPDATE")
+		) {
 			// Append todo reminder to build output
 			result.content = content + TODO_BUILD_REMINDER;
 		}
