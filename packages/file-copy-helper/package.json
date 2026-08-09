@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/file-copy-helper",
-  "version": "0.10.23",
+  "version": "0.10.24",
   "description": "Injects cp/sudo cp rule when user asks to mimic/copy files",
   "type": "module",
   "main": "dist/index.js",
