@@ -1,0 +1,17 @@
+{
+  "name": "@moocoding/file-copy-helper",
+  "version": "0.1.0",
+  "description": "Injects cp/sudo cp rule when user asks to mimic/copy files",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/extension.ts --outdir dist/src/ --target node"
+  }
+}
