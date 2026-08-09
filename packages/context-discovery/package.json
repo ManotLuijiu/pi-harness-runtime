@@ -1,6 +1,6 @@
 {
   "name": "@pi/context-discovery",
-  "version": "0.10.22",
+  "version": "0.10.23",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
