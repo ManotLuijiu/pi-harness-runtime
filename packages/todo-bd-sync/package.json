@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/todo-bd-sync",
-  "version": "0.10.21",
+  "version": "0.10.22",
   "description": "Two-way sync between rpiv-todo overlay and bd issue tracker",
   "type": "module",
   "main": "src/index.ts",
