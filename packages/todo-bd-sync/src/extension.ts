@@ -5,13 +5,11 @@
  * Only provides dependency detection status.
  */
 
-import type {
-	ExtensionAPI,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
  * Register the todo-bd-sync extension
- * 
+ *
  * NOTE: Auto-injection disabled - was causing issues with bd working.
  * The todo tool call injection has been removed.
  */
