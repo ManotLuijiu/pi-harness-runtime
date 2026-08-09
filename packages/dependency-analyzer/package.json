@@ -1,6 +1,6 @@
 {
   "name": "@pi/dependency-analyzer",
-  "version": "0.10.21",
+  "version": "0.10.22",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
