@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.25) (2026-08-10)
+
+
+### Features
+
+* **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
+
+
+### Bug Fixes
+
+* align TS formatting with main (remove 3-line logError) ([2515ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2515ad54f43f0566123c686d3ec4f92ad363ea13))
+* correct import paths for notification-center dist files ([f248722](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f24872240c07bf115f69530a3bdabedf73e3c858))
+* **file-copy-helper:** strengthen rule - agent must NOT read source files before copying ([5bbf7f7](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5bbf7f70f19213f4e08059aa3766301d5966daa8))
+* handle array/object content in pi-usage-status build detection ([68b07a8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/68b07a8e8167a95ab1b519782a07ec3a582eec5a))
+* skip publish-time scripts in release workflow ([b385148](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b38514835dc3f6fd717ca8c71dbb6d131de4887f))
+* suppress noisy stack traces in harness agents ([34bbe98](https://github.com/ManotLuijiu/pi-harness-runtime/commit/34bbe98f59e740fcfcd8622f1dcc09c379f6f3df))
+* **todo-bd-sync:** disable auto-injection completely - was causing noisy output ([699d6de](https://github.com/ManotLuijiu/pi-harness-runtime/commit/699d6de5e7f3b062799a0f791b386d1ecd452b00))
+* **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
+* update bd install URL to correct repo ([5800f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5800f304913912a84c34d3f42a29b01bb2d87b24))
+
 ### [0.10.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.24) (2026-08-09)
 
 
