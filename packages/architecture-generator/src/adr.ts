@@ -4,13 +4,13 @@
  * Generate Architecture Decision Records.
  */
 
-import type { ADR } from './types.js';
+import type { ADR } from "./types.js";
 
 /**
  * Generate an ADR file
  */
 export function generateADR(adr: ADR): string {
-  return `# ${adr.id}: ${adr.title}
+	return `# ${adr.id}: ${adr.title}
 
 ## Status
 ${adr.status}
@@ -33,19 +33,19 @@ ${adr.consequences}
  * Create a new ADR
  */
 export function createADR(
-  id: string,
-  title: string,
-  context: string,
-  decision: string,
-  consequences: string
+	id: string,
+	title: string,
+	context: string,
+	decision: string,
+	consequences: string,
 ): ADR {
-  return {
-    id,
-    title,
-    status: 'proposed',
-    context,
-    decision,
-    consequences,
-    createdAt: new Date().toISOString().split('T')[0],
-  };
+	return {
+		id,
+		title,
+		status: "proposed",
+		context,
+		decision,
+		consequences,
+		createdAt: new Date().toISOString().split("T")[0],
+	};
 }
