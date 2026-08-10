@@ -1,0 +1,21 @@
+{
+  "name": "@pi-harness/milestone-manager",
+  "version": "0.10.0",
+  "description": "Track milestones and alerts when items are at risk",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Tests not configured\""
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

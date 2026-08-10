@@ -1,0 +1,24 @@
+{
+  "name": "@pi-harness/project-bootstrap",
+  "version": "0.10.0",
+  "description": "Project scaffolding from typed ProjectSpec",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Tests not configured\""
+  },
+  "dependencies": {
+    "@pi-harness/framework-detector": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
