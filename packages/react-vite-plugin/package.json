@@ -1,6 +1,6 @@
 {
   "name": "@pi/react-vite-plugin",
-  "version": "0.10.25",
+  "version": "0.10.26",
   "description": "React/Vite framework analysis — components, config, TypeScript setup",
   "type": "module",
   "main": "./dist/index.js",
