@@ -1,5 +1,9 @@
 # RFC-0056 — Performance Optimizer
 
+## Related RFCs
+
+- RFC-0055 (Cost Optimizer) - Budget tracking and cost minimization
+
 ## 1. Purpose
 
 The Performance Optimizer improves runtime throughput and reduces waste without changing task semantics. It analyzes execution metrics and produces advisory optimization decisions for scheduling, provider selection, context size, retry policy, and concurrency.
