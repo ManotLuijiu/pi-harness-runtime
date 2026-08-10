@@ -25,33 +25,73 @@ const COPY_KEYWORDS = [
 	"move from",
 ];
 
+// When agent starts reading source files (bad behavior to break)
+const READ_SOURCE_TRIGGERS = [
+	"expand",
+	"read ",
+	"view ",
+	"cat ",
+	"catting",
+	"reading the file",
+	"reading file",
+	"lets read",
+];
+
+// Extract source and destination from user request
 const COPY_RULE = `
-## File Copy Rule (CRITICAL)
+## COPY FILES DIRECTLY (CRITICAL)
 
-When copying files between folders, ALWAYS use \`cp\` or \`sudo cp\` instead of writing from scratch:
+When asked to mimic, copy, clone, or replicate files:
 
+1. **DO NOT read the source files** - just copy them directly
+2. **Run \`sudo cp\` immediately** - no reading needed
+3. **If files have different owners**, use sudo
+
+Examples:
 \`\`\`bash
-# Direct copy (if you have permission)
-cp /path/to/source/file.ts /path/to/dest/file.ts
-
-# With sudo (if permission denied)
-sudo cp /path/to/source/file.ts /path/to/dest/file.ts
+# Copy single file
+sudo cp /source/file.ts /dest/file.ts
 
 # Copy entire folder
-sudo cp -r /path/to/source/folder /path/to/dest/
+sudo cp -r /source/folder/ /dest/folder/
+
+# Copy matching pattern
+sudo cp /source/*.tsx /dest/
 \`\`\`
 
-**NEVER write files from scratch when copying is available** - it causes incomplete/imprecise code.
+**STOP**: Do NOT use \`read\`, \`expand\`, or \`cat\` on source files. Just copy.
 
-The source files already exist. Just copy them directly.
+**Why**: Reading wastes time. The source files are complete - copying preserves everything exactly.
+`;
+
+// Lighter reminder when agent starts reading source
+const READ_WARNING = `
+## STOP READING - JUST COPY
+
+You are about to read a source file. DO NOT read it.
+
+Just run: sudo cp /path/to/source /path/to/dest
+
+Copying is instant and preserves exact code. Reading is unnecessary.
 `;
 
 /**
  * Check if text contains copy-related keywords
  */
-function shouldInject(text: string): boolean {
+function shouldInjectCopyRule(text: string): boolean {
 	const lower = text.toLowerCase();
 	return COPY_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+/**
+ * Check if text contains source file reading triggers
+ */
+function shouldInjectReadWarning(text: string): boolean {
+	const lower = text.toLowerCase();
+	// Check if this looks like reading source files before copying
+	const hasSourcePath = /(source|auto-|from-|orig)/i.test(text);
+	const hasReadIntent = READ_SOURCE_TRIGGERS.some((t) => lower.includes(t));
+	return hasSourcePath && hasReadIntent;
 }
 
 /**
@@ -70,10 +110,18 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 		}
 
 		// Check if this is a copy/mimic request
-		if (shouldInject(text)) {
+		if (shouldInjectCopyRule(text)) {
 			return {
 				action: "transform",
 				text: text + COPY_RULE,
+			};
+		}
+
+		// Warn if agent is about to read source files unnecessarily
+		if (shouldInjectReadWarning(text)) {
+			return {
+				action: "transform",
+				text: text + READ_WARNING,
 			};
 		}
 
