@@ -20,8 +20,8 @@
  * ```
  */
 
-export * from './types.js';
-export * from './bootstrap.js';
-export { minimalTemplate } from './minimal.js';
-export { nodeTypescriptTemplate } from './typescript.js';
-export { frappeTemplate } from './frappe.js';
+export * from "./types.js";
+export * from "./bootstrap.js";
+export { minimalTemplate } from "./minimal.js";
+export { nodeTypescriptTemplate } from "./typescript.js";
+export { frappeTemplate } from "./frappe.js";
