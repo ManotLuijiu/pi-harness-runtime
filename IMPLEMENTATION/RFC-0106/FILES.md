@@ -7,37 +7,16 @@ packages/
   knowledge-graph/
     src/
       index.ts              # Main exports
-      okf-parser.ts         # Parse SKILL.md to OKF
-      graph-extractor.ts    # Extract nodes and edges
-      provenance-linker.ts  # Link RFC/IMPLEMENTATION
-      mcp-client.ts         # Graph MCP tools
-      types.ts             # Shared types
+      types.ts             # Type definitions
+      graph-extractor.ts   # Extract nodes/edges from SKILL.md
+      provenance-linker.ts # Provenance and inference
+      mcp-client.ts       # Knowledge Service MCP client
+    package.json
+    tsconfig.json
 ```
 
-## Configuration
+## Dependencies
 
-```
-configs/
-  knowledge-graph/
-    graph.json             # Graph settings
-    extraction.json       # Extraction rules
-    provenance.json       # Provenance mapping
-```
-
-## Scripts
-
-```
-scripts/
-  extract-knowledge-graph.ts  # Build graph from skills
-  migrate-neo4j.ts           # Future: Neo4j migration
-```
-
-## Documentation
-
-```
-docs/
-  knowledge-graph/
-    README.md
-    GRAPH_SCHEMA.md
-    PROVENANCE.md
-```
+| Package | Purpose |
+|---------|---------|
+| @pi-harness/okf-indexer | SKILL.md parsing |

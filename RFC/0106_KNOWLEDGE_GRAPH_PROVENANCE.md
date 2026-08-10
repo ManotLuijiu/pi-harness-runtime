@@ -350,7 +350,7 @@ scripts/
 ## Dependencies
 
 | Dependency | Purpose |
-|------------|---------|
+| ------------ | --------- |
 | TencentDB-Agent-Memory | Knowledge Service (8424) |
 | okf-indexer | SKILL.md → OKF parsing |
 | chokidar | File watching for auto-sync |
