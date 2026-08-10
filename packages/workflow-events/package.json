@@ -1,6 +1,6 @@
 {
   "name": "@pi/workflow-events",
-  "version": "0.10.26",
+  "version": "0.10.27",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
