@@ -1,4 +1,12 @@
-# RFC 0040: Framework Plugin SDK
+# RFC-0040 — Framework Plugin SDK
+
+## Supersedes
+
+- RFC-0061 (Frappe Plugin)
+- RFC-0062 (Next.js Plugin)
+- RFC-0063 (React/Vite Plugin)
+- RFC-0064 (Django Plugin)
+- RFC-0065 (Laravel Plugin)
 
 ## Summary
 
