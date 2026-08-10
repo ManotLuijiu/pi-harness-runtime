@@ -1,6 +1,6 @@
 {
   "name": "@pi/framework-plugin-sdk",
-  "version": "0.10.25",
+  "version": "0.10.26",
   "description": "Framework plugin SDK for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
