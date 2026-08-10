@@ -1,0 +1,21 @@
+{
+  "name": "@pi-harness/architecture-generator",
+  "version": "0.10.0",
+  "description": "Generate ADR and Mermaid diagrams from project analysis",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Tests not configured\""
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

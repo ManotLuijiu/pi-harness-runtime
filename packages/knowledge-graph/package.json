@@ -1,0 +1,24 @@
+{
+  "name": "@pi-harness/knowledge-graph",
+  "version": "0.10.0",
+  "description": "Knowledge Graph extraction and provenance linking for SKILL.md files",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Tests not configured\""
+  },
+  "dependencies": {
+    "@pi-harness/okf-indexer": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
