@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/requirement-compiler",
-  "version": "0.10.24",
+  "version": "0.10.25",
   "description": "Compiles raw requirements into validated CompiledRequirement with ambiguity detection and risk tagging",
   "type": "module",
   "main": "./dist/index.js",
