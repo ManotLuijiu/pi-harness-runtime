@@ -1,5 +1,10 @@
 # RFC-0071 — Requirement Intake
 
+## Related RFCs
+
+- RFC-0043 (Requirement Compiler) - Converts typed Requirements to CompiledRequirements with ambiguity detection
+- RFC-0044 (Task Compiler) - Converts CompiledRequirements to Task DAGs
+
 ## Summary
 
 Captures and structures requirements from natural language, GitHub issues, or structured input into typed `Requirement` objects ready for downstream planning systems.
@@ -59,18 +64,23 @@ export interface RequirementIntakeOptions {
 ## Core Functions
 
 ### `parse(text, options?)`
+
 Parses raw text into a `Requirement`. Uses keyword detection for type and priority cues.
 
 ### `parseBatch(texts, options?)`
+
 Processes multiple inputs in parallel.
 
 ### `classify(requirement)`
+
 Infers `RequirementType` from content analysis.
 
 ### `estimateEffort(requirement)`
+
 Tags effort level based on description complexity heuristics.
 
 ### `addDependency(requirement, dependsOnId)`
+
 Adds a dependency relationship. Validates no cycles.
 
 ## Events
