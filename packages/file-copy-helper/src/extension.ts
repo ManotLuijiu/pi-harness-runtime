@@ -37,6 +37,23 @@ const READ_SOURCE_TRIGGERS = [
 	"lets read",
 ];
 
+// When agent sees import/module errors (needs to copy those files too)
+const IMPORT_ERROR_TRIGGERS = [
+	"import error",
+	"import errors",
+	"cannot find module",
+	"cannot resolve",
+	"module not found",
+	"missing import",
+	"missing file",
+	"does not exist",
+	"@repo/",
+	"error one by one",
+	"fix errors one by one",
+	"fix imports one by one",
+	"roll back",
+];
+
 // Extract source and destination from user request
 const COPY_RULE = `
 ## COPY FILES DIRECTLY (CRITICAL)
@@ -75,6 +92,34 @@ Just run: sudo cp /path/to/source /path/to/dest
 Copying is instant and preserves exact code. Reading is unnecessary.
 `;
 
+// When agent sees import errors - copy those files too!
+const IMPORT_ERROR_RULE = `
+## IMPORT ERRORS? COPY THOSE FILES TOO!
+
+When you see import/module errors after copying a file:
+
+1. **STOP fixing imports one by one**
+2. **STOP rolling back**
+3. **LIST all missing import files** for the user
+4. **Ask user which to copy**, then copy them via sudo cp
+
+Example:
+\`\`\`bash
+# If error shows missing:
+# - @repo/auth/server
+# - @repo/design-system/components/ui/sidebar
+# - ./components/notifications-provider
+
+# Then copy these files the same way:
+sudo cp /source/path/@repo/auth/server.ts /dest/path/@repo/auth/server.ts
+sudo cp -r /source/path/@repo/design-system/components/ui/sidebar /dest/path/@repo/design-system/components/ui/sidebar
+sudo cp /source/path/components/notifications-provider.tsx /dest/path/components/notifications-provider.tsx
+\`\`\`
+
+**NEVER fix imports one by one** - copy the missing files instead!
+**NEVER roll back** - keep the copied file and copy its dependencies!
+`;
+
 /**
  * Check if text contains copy-related keywords
  */
@@ -92,6 +137,14 @@ function shouldInjectReadWarning(text: string): boolean {
 	const hasSourcePath = /(source|auto-|from-|orig)/i.test(text);
 	const hasReadIntent = READ_SOURCE_TRIGGERS.some((t) => lower.includes(t));
 	return hasSourcePath && hasReadIntent;
+}
+
+/**
+ * Check if text contains import error triggers
+ */
+function shouldInjectImportErrorRule(text: string): boolean {
+	const lower = text.toLowerCase();
+	return IMPORT_ERROR_TRIGGERS.some((t) => lower.includes(t));
 }
 
 /**
@@ -122,6 +175,14 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 			return {
 				action: "transform",
 				text: text + READ_WARNING,
+			};
+		}
+
+		// Inject import error rule when agent sees missing imports
+		if (shouldInjectImportErrorRule(text)) {
+			return {
+				action: "transform",
+				text: text + IMPORT_ERROR_RULE,
 			};
 		}
 
