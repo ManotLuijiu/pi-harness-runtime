@@ -2,7 +2,11 @@
 
 Status: Draft  
 Target package: `packages/provider-router`  
-Depends on: RFC-0051 Capability Registry, RFC-0053 Model Registry
+Depends on: RFC-0051 Capability Registry, RFC-0053 Model Registry  
+
+## Supersedes
+
+- RFC-0008 (Provider Router - original brief version)
 
 ## 1. Problem
 
