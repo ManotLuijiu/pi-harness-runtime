@@ -1,6 +1,6 @@
 {
   "name": "@pi/django-plugin",
-  "version": "0.10.24",
+  "version": "0.10.25",
   "description": "Django framework analysis — models, management commands, settings",
   "type": "module",
   "main": "./dist/index.js",

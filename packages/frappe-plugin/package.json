@@ -1,6 +1,6 @@
 {
   "name": "@pi/frappe-plugin",
-  "version": "0.10.24",
+  "version": "0.10.25",
   "description": "Frappe/ERPNext framework analysis — DocTypes, hooks, bench sites, site config",
   "type": "module",
   "main": "./dist/index.js",
