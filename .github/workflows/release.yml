@@ -115,10 +115,25 @@ jobs:
             exit 0
           fi
 
-          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG} via OIDC trusted publishing..."
-          # Build already ran earlier in this workflow.
-          # Skip publish-time scripts to avoid npm CLI exit-handler crashes in prepublishOnly.
-          npm publish --ignore-scripts --no-audit --no-fund --prefer-offline --tag "$TAG" --registry "$REGISTRY"
+          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG}..."
+          # Retry up to 3 times for npm exit handler bug
+          for i in 1 2 3; do
+            echo "Attempt $i/3..."
+            if npm publish \
+              --ignore-scripts \
+              --no-audit \
+              --no-fund \
+              --prefer-offline \
+              --tag "$TAG" \
+              --registry "$REGISTRY"; then
+              echo "Publish successful!"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "All publish attempts failed"
+          exit 1
 
       - name: Publish to npm (dry-run)
         if: >-
