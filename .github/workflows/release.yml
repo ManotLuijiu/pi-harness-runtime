@@ -95,10 +95,10 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        uses: npm/publish@v4
+        uses: JS-DevTools/npm-publish@v3
         with:
           tag: ${{ steps.meta.outputs.npm_tag }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm (dry-run)
         if: >-
