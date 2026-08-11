@@ -1,6 +1,6 @@
 {
   "name": "@pi/event-store",
-  "version": "0.10.27",
+  "version": "0.10.30",
   "type": "module",
   "main": "src/index.ts",
   "exports": {

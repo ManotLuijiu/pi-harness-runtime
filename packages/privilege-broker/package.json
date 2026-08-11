@@ -1,6 +1,6 @@
 {
   "name": "@pi/privilege-broker",
-  "version": "0.10.27",
+  "version": "0.10.30",
   "description": "Privilege Broker — capability registry and command executor for autonomous runtime (RFC-0101 §7)",
   "type": "module",
   "main": "./dist/index.js",
