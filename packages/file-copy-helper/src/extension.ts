@@ -13,40 +13,16 @@ import type {
 
 // Keywords that trigger the copy rule injection
 // MUST have explicit mimic/copy/clone/replicate intent + source/dest context
-const COPY_KEYWORDS = [
-	"mimic",
-	"replicate",
-	"clone",
-];
+const COPY_KEYWORDS = ["mimic", "replicate", "clone"];
 
 // Must have destination context to trigger (avoids false positives)
-const COPY_DEST_CONTEXT = [
-	"to ",
-	"into ",
-	"/dest/",
-	"/target/",
-	"over to",
-];
+const COPY_DEST_CONTEXT = ["to ", "into ", "/dest/", "/target/", "over to"];
 
 // Must have source context to trigger
-const COPY_SOURCE_CONTEXT = [
-	"from ",
-	"source",
-	"/source/",
-	"orig",
-];
+const COPY_SOURCE_CONTEXT = ["from ", "source", "/source/", "orig"];
 
-// When agent starts reading source files (bad behavior to break)
-const READ_SOURCE_TRIGGERS = [
-	"expand",
-	"read ",
-	"view ",
-	"cat ",
-	"catting",
-	"reading the file",
-	"reading file",
-	"lets read",
-];
+// REMOVED: READ_SOURCE_TRIGGERS and READ_WARNING
+// These caused false positives on normal copy/paste actions
 
 // When agent sees import/module errors (needs to copy those files too)
 const IMPORT_ERROR_TRIGGERS = [
@@ -90,17 +66,6 @@ sudo cp /source/*.tsx /dest/
 **STOP**: Do NOT use \`read\`, \`expand\`, or \`cat\` on source files. Just copy.
 
 **Why**: Reading wastes time. The source files are complete - copying preserves everything exactly.
-`;
-
-// Lighter reminder when agent starts reading source
-const READ_WARNING = `
-## STOP READING - JUST COPY
-
-You are about to read a source file. DO NOT read it.
-
-Just run: sudo cp /path/to/source /path/to/dest
-
-Copying is instant and preserves exact code. Reading is unnecessary.
 `;
 
 // When agent sees import errors - copy those files too!
@@ -160,17 +125,6 @@ function shouldInjectCopyRule(text: string): boolean {
 }
 
 /**
- * Check if text contains source file reading triggers
- */
-function shouldInjectReadWarning(text: string): boolean {
-	const lower = text.toLowerCase();
-	// Check if this looks like reading source files before copying
-	const hasSourcePath = /(source|auto-|from-|orig)/i.test(text);
-	const hasReadIntent = READ_SOURCE_TRIGGERS.some((t) => lower.includes(t));
-	return hasSourcePath && hasReadIntent;
-}
-
-/**
  * Check if text contains import error triggers
  */
 function shouldInjectImportErrorRule(text: string): boolean {
@@ -198,14 +152,6 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 			return {
 				action: "transform",
 				text: text + COPY_RULE,
-			};
-		}
-
-		// Warn if agent is about to read source files unnecessarily
-		if (shouldInjectReadWarning(text)) {
-			return {
-				action: "transform",
-				text: text + READ_WARNING,
 			};
 		}
 

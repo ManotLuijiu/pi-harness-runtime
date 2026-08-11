@@ -1,7 +1,7 @@
 /**
  * Provider Router Types (RFC-0054)
  */
-// ─── Latency Ranking ─────────────────────────────────────────────────
+// --- Latency Ranking -------------------------------------------------
 export const LATENCY_RANK = {
     fast: 1,
     medium: 2,
