@@ -60,7 +60,7 @@ jobs:
           npm --version
 
       - name: Install bun
-        run: npm install -g bun
+        run: npm install -g bun --allow-scripts=bun
 
       - name: Install dependencies
         run: |
