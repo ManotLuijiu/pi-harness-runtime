@@ -4,6 +4,26 @@
  * Adds write-review hints to the agent's system prompt.
  */
 
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+/**
+ * Find the project root (directory containing .git)
+ */
+function findProjectRoot(startPath: string): string {
+  let dir = startPath;
+  // Limit traversal to prevent infinite loops
+  for (let i = 0; i < 20; i++) {
+    if (existsSync(join(dir, ".git"))) {
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break; // Reached filesystem root
+    dir = parent;
+  }
+  return startPath; // Fallback to start path
+}
+
 /**
  * Write-review hint for system prompt
  */
@@ -105,7 +125,7 @@ export function injectWriterInstructions(
 
 	// System prompt injection
 	pi.on("before_agent_start", async (event) => {
-		const cwd = process.cwd?.() ?? "/";
+		const cwd = findProjectRoot(process.cwd?.() ?? "/");
 		if (cwd !== currentProject) {
 			currentProject = cwd;
 			blackboard = createBlackboard(cwd);
