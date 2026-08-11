@@ -12,17 +12,28 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 // Keywords that trigger the copy rule injection
+// MUST have explicit mimic/copy/clone/replicate intent + source/dest context
 const COPY_KEYWORDS = [
 	"mimic",
-	"copy from",
-	"copy to",
-	"clone from",
-	"clone to",
 	"replicate",
-	"port from",
-	"migrate from",
-	"bring from",
-	"move from",
+	"clone",
+];
+
+// Must have destination context to trigger (avoids false positives)
+const COPY_DEST_CONTEXT = [
+	"to ",
+	"into ",
+	"/dest/",
+	"/target/",
+	"over to",
+];
+
+// Must have source context to trigger
+const COPY_SOURCE_CONTEXT = [
+	"from ",
+	"source",
+	"/source/",
+	"orig",
 ];
 
 // When agent starts reading source files (bad behavior to break)
@@ -122,10 +133,30 @@ sudo cp /source/path/components/notifications-provider.tsx /dest/path/components
 
 /**
  * Check if text contains copy-related keywords
+ * Requires: explicit intent (mimic/copy/clone/replicate) AND destination context
  */
 function shouldInjectCopyRule(text: string): boolean {
 	const lower = text.toLowerCase();
-	return COPY_KEYWORDS.some((keyword) => lower.includes(keyword));
+
+	// Must have explicit mimic/copy/clone/replicate intent
+	const hasIntent = COPY_KEYWORDS.some((keyword) => lower.includes(keyword));
+	if (!hasIntent) {
+		return false;
+	}
+
+	// Must have destination context (avoids false positives on "copy this code" etc)
+	const hasDest = COPY_DEST_CONTEXT.some((ctx) => lower.includes(ctx));
+	if (!hasDest) {
+		return false;
+	}
+
+	// Should have source context for full mimic behavior
+	const hasSource = COPY_SOURCE_CONTEXT.some((ctx) => lower.includes(ctx));
+	if (!hasSource) {
+		return false;
+	}
+
+	return true;
 }
 
 /**
