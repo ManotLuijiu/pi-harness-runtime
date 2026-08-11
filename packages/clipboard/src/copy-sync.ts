@@ -71,10 +71,59 @@ function repairMojibake(text: string): string {
 	}
 }
 
-// ─── Read from Xvfb clipboard ─────────────────────────────────────────────────
+// ─── Detect clipboard tool ──────────────────────────────────────────────────
+
+/**
+ * Detect the best available system clipboard tool.
+ * Returns "wl-copy" (Wayland), "xclip" (X11), or null (none).
+ */
+function detectClipboardTool(): string | null {
+	const { spawnSync } = require("node:child_process");
+
+	// Wayland first (wl-copy is more modern)
+	if (spawnSync("wl-copy", ["--help"], { stdio: "ignore" }).status === 0) {
+		return "wl-copy";
+	}
+
+	// X11 fallback (xclip)
+	if (spawnSync("xclip", ["-help"], { stdio: "ignore" }).status === 0) {
+		return "xclip";
+	}
+
+	return null;
+}
+
+// ─── Read from system clipboard ───────────────────────────────────────────────
+
+function readFromSystemClipboard(tool: string): string | null {
+	const { execSync } = require("node:child_process");
+
+	try {
+		let cmd: string;
+		if (tool === "wl-copy") {
+			cmd = "wl-copy --primary --type text/plain 2>/dev/null || wl-copy 2>/dev/null || true";
+		} else {
+			cmd = "xclip -selection clipboard -o 2>/dev/null || true";
+		}
+
+		const content = execSync(cmd, { encoding: "utf8", timeout: 2000 }).trim();
+		return content || null;
+	} catch {
+		return null;
+	}
+}
+
+// ─── Read from Xvfb clipboard (fallback) ──────────────────────────────────────
 
 function readFromClipboard(): string | null {
-	// Try Xvfb xclip first (our headless clipboard)
+	// 1. Try system clipboard first (xclip/wl-copy - what herdr uses)
+	const tool = detectClipboardTool();
+	if (tool) {
+		const content = readFromSystemClipboard(tool);
+		if (content) return repairMojibake(content);
+	}
+
+	// 2. Try Xvfb xclip (legacy fallback for headless servers)
 	try {
 		const content = execSync(
 			`"${XCLIP_WRAPPER}" -selection clipboard -o 2>/dev/null || DISPLAY=:99 xclip -selection clipboard -o 2>/dev/null || true`,
@@ -89,7 +138,7 @@ function readFromClipboard(): string | null {
 		// Fall through
 	}
 
-	// Fallback: read bridge file directly
+	// 3. Fallback: read bridge file directly
 	try {
 		if (existsSync(BRIDGE_FILE)) {
 			const content = readFileSync(BRIDGE_FILE, "utf8").trim();
