@@ -59,8 +59,8 @@ jobs:
           node --version
           npm --version
 
-      - name: Install bun
-        run: npm install -g bun --allow-scripts=bun
+      - name: Install pnpm
+        run: npm install -g pnpm
 
       - name: Install dependencies
         run: |
@@ -95,10 +95,10 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        uses: JS-DevTools/npm-publish@v3
-        with:
-          tag: ${{ steps.meta.outputs.npm_tag }}
-          token: ${{ secrets.NPM_TOKEN }}
+        run: |
+          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
+          pnpm config set registry https://registry.npmjs.org/
+          pnpm publish --tag ${{ steps.meta.outputs.npm_tag }}
 
       - name: Publish to npm (dry-run)
         if: >-
