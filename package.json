@@ -1,11 +1,11 @@
 {
   "name": "pi-harness-runtime",
   "version": "0.10.30",
-  "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
+  "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready \u2014 expect breaking changes.",
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies",
+    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies && ([ -f ~/.config/herdr/config.toml ] || mkdir -p ~/.config/herdr && cp config.toml.example ~/.config/herdr/config.toml)",
     "release": "bun scripts/release-all.ts",
     "release:patch": "bun scripts/release-all.ts --release-as patch",
     "release:minor": "bun scripts/release-all.ts --release-as minor",
