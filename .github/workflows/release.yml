@@ -52,7 +52,7 @@ jobs:
           package-manager-cache: false
 
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11.18.0
+        run: npm install -g npm@latest
 
       - name: Show tool versions
         run: |
