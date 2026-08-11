@@ -118,7 +118,7 @@ jobs:
           echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG} via OIDC trusted publishing..."
           # Build already ran earlier in this workflow.
           # Skip publish-time scripts to avoid npm CLI exit-handler crashes in prepublishOnly.
-          npm publish --ignore-scripts --access public --tag "$TAG" --registry "$REGISTRY"
+          npm publish --ignore-scripts --no-audit --access public --tag "$TAG" --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
