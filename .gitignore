@@ -32,3 +32,4 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 *.db
 .beads-credential-key
 .write-review/
+.pi/
