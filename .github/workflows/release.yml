@@ -95,45 +95,9 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        run: |
-          # Use npm Trusted Publishing via GitHub Actions OIDC.
-          # Do not require a long-lived NPM_TOKEN secret or npm login in CI.
-          unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
-
-          echo "Registry:"
-          npm config get registry
-
-          NAME="${{ steps.meta.outputs.name }}"
-          VERSION="${{ steps.meta.outputs.version }}"
-          TAG="${{ steps.meta.outputs.npm_tag }}"
-          REGISTRY="https://registry.npmjs.org/"
-
-          echo "Package info: ${NAME}@${VERSION}"
-
-          if npm view "${NAME}@${VERSION}" version --registry "$REGISTRY" >/dev/null 2>&1; then
-            echo "Version ${NAME}@${VERSION} is already published; skipping npm publish."
-            exit 0
-          fi
-
-          echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG}..."
-          # Retry with exponential backoff for npm exit handler bug
-          for i in 1 2 3 4 5; do
-            echo "Attempt $i/5..."
-            if npm publish \
-              --ignore-scripts \
-              --no-audit \
-              --no-fund \
-              --prefer-offline \
-              --tag "$TAG" \
-              --registry "$REGISTRY" 2>&1; then
-              echo "Publish successful!"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying in ${i}0s..."
-            sleep $((i * 10))
-          done
-          echo "All publish attempts failed"
-          exit 1
+        uses: actions/npm-nodejs-publish@65f1e7b # v1.1.2
+        with:
+          tag: ${{ steps.meta.outputs.npm_tag }}
 
       - name: Publish to npm (dry-run)
         if: >-
