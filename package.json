@@ -33,7 +33,8 @@
     "package.json",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "config.toml.example"
   ],
   "keywords": [
     "pi-package",
