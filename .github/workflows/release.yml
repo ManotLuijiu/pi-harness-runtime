@@ -116,24 +116,17 @@ jobs:
           fi
 
           echo "Publishing ${NAME}@${VERSION} with dist-tag ${TAG}..."
-          # Retry up to 3 times for npm exit handler bug
-          for i in 1 2 3; do
-            echo "Attempt $i/3..."
-            if npm publish \
-              --ignore-scripts \
-              --no-audit \
-              --no-fund \
-              --prefer-offline \
-              --tag "$TAG" \
-              --registry "$REGISTRY"; then
-              echo "Publish successful!"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying..."
-            sleep 5
-          done
-          echo "All publish attempts failed"
-          exit 1
+          # Use npm pack + npm publish for better reliability
+          PACKAGE_FILE=$(npm pack --dry-run --json 2>/dev/null | \
+            grep '"filename"' | cut -d'"' -f4)
+          if [ -z "$PACKAGE_FILE" ]; then
+            PACKAGE_FILE="${NAME}-${VERSION}.tgz"
+            npm pack
+          fi
+          echo "Package file: ${PACKAGE_FILE}"
+          npm publish "${PACKAGE_FILE}" \
+            --tag "$TAG" \
+            --registry "$REGISTRY"
 
       - name: Publish to npm (dry-run)
         if: >-
