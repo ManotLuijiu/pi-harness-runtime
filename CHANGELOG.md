@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.30](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.29...v0.10.30) (2026-08-11)
+
+
+### Bug Fixes
+
+* **file-copy-helper:** require explicit intent for copy rule injection ([ddfece0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ddfece0bcbf440dfd4edc0d442b078e84e906c68))
+* **release:** add --no-fund --prefer-offline to npm publish ([19adf58](https://github.com/ManotLuijiu/pi-harness-runtime/commit/19adf58c5de3192a2322ec5afe3b8ccb8ecedc3c))
+* **release:** add --no-git-checks to pnpm publish ([74f29aa](https://github.com/ManotLuijiu/pi-harness-runtime/commit/74f29aa2220d02be4ba47b1c0f0e22ddcba1ffc9))
+* **release:** add retry mechanism for npm publish ([0cfc95d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0cfc95d33a4cd1cfb629fcbba88dd4a5b931ab8c))
+* **release:** allow bun postinstall scripts ([df88c21](https://github.com/ManotLuijiu/pi-harness-runtime/commit/df88c217ffc8c8794ceba49385690901d7673b56))
+* **release:** keep bun install, add pnpm for publish ([ab400fc](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab400fcc33f41ec1e60db21a1c3afb5cecedd494))
+* **release:** simpler npm publish with retry ([1508480](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1508480363728cab83ccd5084ca2d17275d88e08))
+* **release:** use actions/npm-nodejs-publish action ([d161f3f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d161f3f986f13926b7865c6d7788a11605d4dfbd))
+* **release:** use JS-DevTools/npm-publish action ([a5efce0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a5efce0cf3fd2d9c85339998e61e65b05766724e))
+* **release:** use latest npm to fix exit handler issue ([0ad8da9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0ad8da9ac84d5134783be4f94fd9e112bb298362))
+* **release:** use npm pack + publish pattern ([85efcc1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/85efcc181ca2214dd5a1d01bbeefb46f2a53975f))
+* **release:** use npm/publish action ([43c6a20](https://github.com/ManotLuijiu/pi-harness-runtime/commit/43c6a20752e4c7fdb548a8f3e1134188857ce1ca))
+* **release:** use pnpm for publish to avoid npm exit handler bug ([a038950](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a03895032a57cee039e2ed4b720e46e3d3c13961))
+
 ### [0.10.27](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.27) (2026-08-10)
 
 
