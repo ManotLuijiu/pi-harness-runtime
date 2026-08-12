@@ -19,6 +19,7 @@ import type {
 } from "./types.js";
 import type { ChannelAdapter } from "./base-adapter.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
+import { LineAdapter } from "./adapters/line-adapter.js";
 import { NtfyAdapter } from "./adapters/ntfy-adapter.js";
 import { EmailAdapter } from "./adapters/email-adapter.js";
 import { WebhookAdapter } from "./adapters/webhook-adapter.js";
@@ -168,6 +169,10 @@ export class NotificationCenter {
 				return new WebhookAdapter(
 					config.config as import("./types.js").WebhookConfig,
 				);
+			case "line":
+				return new LineAdapter(
+					config.config as import("./types.js").LineConfig,
+				);
 			default:
 				return null;
 		}
@@ -276,6 +281,7 @@ export class NotificationCenter {
 	private getDefaultRedactPatterns(): RegExp[] {
 		return [
 			/Bearer\s+[\w-]+/gi, // Bearer tokens
+			/channel[_-]?access[_-]?token["\s:=]+[^\s,}]+/gi, // LINE channel access token
 			/password["\s:=]+[^\s,}]+/gi, // passwords
 			/cookie["\s:=]+[^\s,}]+/gi, // cookies
 			/secret["\s:=]+[^\s,}]+/gi, // secrets
