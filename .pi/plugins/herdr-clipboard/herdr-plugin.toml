@@ -16,6 +16,7 @@ platforms = ["linux"]
 command = ["bash", "start-bridge.sh"]
 detach = true
 
-[[events]]
-on = "pane.output"
-command = ["bash", "watch-output.sh"]
+[[actions]]
+name = "paste"
+description = "Paste from local clipboard into focused pane"
+command = ["bash", "paste.sh"]

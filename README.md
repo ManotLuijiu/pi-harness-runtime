@@ -36,7 +36,7 @@ If running on a **headless server** via herdr SSH, install the clipboard bridge 
 cd ~/.config/herdr/plugins
 ln -s ~/.config/herdr/plugins/moocoding.clipboard-bridge moocoding.clipboard-bridge 2>/dev/null || true
 
-# 2. Add keybinding to ~/.config/herdr/config.toml
+# 2. Add keybindings to ~/.config/herdr/config.toml
 cat >> ~/.config/herdr/config.toml << 'EOF'
 
 [[keys.command]]
@@ -44,6 +44,12 @@ key = "prefix+y"
 type = "plugin_action"
 command = "moocoding.clipboard-bridge.copy"
 description = "Copy selected text via bridge"
+
+[[keys.command]]
+key = "prefix+p"
+type = "plugin_action"
+command = "moocoding.clipboard-bridge.paste"
+description = "Paste from clipboard bridge"
 EOF
 
 # 3. Reload herdr config
