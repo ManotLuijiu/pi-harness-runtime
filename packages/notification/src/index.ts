@@ -7,3 +7,4 @@
 export * from "./notification-center.js";
 export * from "./base-adapter.js";
 export * from "./types.js";
+export { LineAdapter } from "./adapters/line-adapter.js";

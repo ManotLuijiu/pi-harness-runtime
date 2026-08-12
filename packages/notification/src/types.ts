@@ -40,10 +40,10 @@ export interface NotificationChannelConfig {
 	id: string;
 	type: NotificationChannelType;
 	enabled: boolean;
-	config: TelegramConfig | NtfyConfig | EmailConfig | WebhookConfig;
+	config: TelegramConfig | NtfyConfig | EmailConfig | WebhookConfig | LineConfig;
 }
 
-export type NotificationChannelType = "telegram" | "ntfy" | "email" | "webhook";
+export type NotificationChannelType = "telegram" | "ntfy" | "email" | "webhook" | "line";
 
 export interface TelegramConfig {
 	botToken: string;
@@ -72,6 +72,11 @@ export interface WebhookConfig {
 	method?: "POST" | "PUT";
 	headers?: Record<string, string>;
 	authToken?: string;
+}
+
+export interface LineConfig {
+	channelAccessToken: string;
+	userId: string;
 }
 
 export interface NotificationResult {
