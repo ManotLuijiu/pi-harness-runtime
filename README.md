@@ -373,15 +373,31 @@ Your local machine clipboard
 | `~/.herdr-clipboard` | Bridge file between herdr and clipboard |
 | `~/.config/herdr/plugins/moocoding.clipboard-bridge/` | herdr plugin |
 
-### LINE Notification Setup (for Thai users)
+### LINE Notification Setup
 
-Get notified on your phone when tasks complete! LINE is very popular in Thailand for notifications.
+Get notified on your phone when tasks complete! LINE notifications via the LINE Messaging API.
 
-#### Prerequisites
+#### Step-by-Step Setup
 
-1. **Create a LINE Messaging API channel** at [LINE Developers Console](https://developers.line.biz/)
-2. **Get your Channel Access Token** from the Messaging API tab
-3. **Get your User ID** (1Ue2...) - found in your LINE Messaging API channel settings
+**1. Create a LINE Messaging API channel**
+
+1. Go to [LINE Developers Console](https://developers.line.biz/)
+2. Log in with your LINE account
+3. Click **Create a channel** → select **Messaging API**
+4. Fill in the required fields (channel name, description, etc.)
+5. Once created, go to the **Messaging API** tab
+
+**2. Get your Channel Access Token**
+
+1. In the Messaging API tab, scroll to **Long-term channel access token**
+2. Click **Issue** to generate the token
+3. Copy the token (starts with `eyJ...`)
+
+**3. Get your User ID**
+
+1. Go to your channel's **Basic settings** tab
+2. Find **Your user ID** (a long alphanumeric string like `U123456...`)
+3. Copy this ID
 
 #### Configuration
 
@@ -390,26 +406,50 @@ Add to your `config.toml`:
 ```toml
 [notification.line]
 enabled = true
-channelAccessToken = "YOUR_CHANNEL_ACCESS_TOKEN"
-userId = "YOUR_USER_ID"
+channelAccessToken = "YOUR_CHANNEL_ACCESS_TOKEN"  # from Messaging API tab
+userId = "YOUR_USER_ID"                           # from Basic settings tab
 ```
 
-#### Events Notified
+#### How It Works
 
-| Event | Description |
-|-------|-------------|
-| `ReadyForClient` | All tasks done, ready for new work |
-| `TaskCompleted` | Individual task completed |
-| `TaskFailed` | Task failed with error |
-| `Error` | Runtime error occurred |
+```
+Task event triggered (e.g., TaskCompleted)
+        ↓
+Notification payload created with event details
+        ↓
+LineAdapter.send() called
+        ↓
+POST to https://api.line.me/v2/bot/message/push
+        ↓
+Push notification sent to your LINE app
+```
+
+#### Supported Events
+
+| Event | Emoji | Description |
+|-------|-------|-------------|
+| `JobStarted` | 🚀 | Job execution started |
+| `TaskCompleted` | ✅ | Task completed successfully |
+| `TaskFailed` | ❌ | Task failed with error |
+| `QuotaPaused` | ⏸️ | Quota limit reached, paused |
+| `ResumeScheduled` | ▶️ | Resume scheduled |
+| `ContextCompacted` | 📦 | Context window compacted |
+| `OutputLimitContinued` | 🔄 | Output limit exceeded, continued |
+| `E2EFailed` | 🧪 | E2E test failed |
+| `HumanReviewNeeded` | 👤 | Human review required |
+| `ReadyForClient` | 🎉 | All tasks done, ready for new work |
+| `JobCancelled` | 🚫 | Job was cancelled |
+| `Error` | ⚠️ | Runtime error occurred |
 
 #### Example Notification
 
 ```
-🔔 Task Completed
-Job: feature-auth (job-abc123)
+✅ Task Completed
+
+Implement login flow
+
 Task: Implement login flow
-Duration: 2m 34s
+Job: feature-auth
 ```
 
 ### Other Providers
