@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies && ([ -f ~/.config/herdr/config.toml ] || mkdir -p ~/.config/herdr && cp config.toml.example ~/.config/herdr/config.toml)",
+    "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies && node scripts/copy-plugins.js && ([ -f ~/.config/herdr/config.toml ] || mkdir -p ~/.config/herdr && cp config.toml.example ~/.config/herdr/config.toml)",
     "release": "bun scripts/release-all.ts",
     "release:patch": "bun scripts/release-all.ts --release-as patch",
     "release:minor": "bun scripts/release-all.ts --release-as minor",
@@ -30,6 +30,7 @@
     "skills/**/*",
     "prompts/**/*",
     "scripts/**/*",
+    ".pi/plugins/**/*",
     "package.json",
     "README.md",
     "CHANGELOG.md",
