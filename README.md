@@ -373,6 +373,45 @@ Your local machine clipboard
 | `~/.herdr-clipboard` | Bridge file between herdr and clipboard |
 | `~/.config/herdr/plugins/moocoding.clipboard-bridge/` | herdr plugin |
 
+### LINE Notification Setup (for Thai users)
+
+Get notified on your phone when tasks complete! LINE is very popular in Thailand for notifications.
+
+#### Prerequisites
+
+1. **Create a LINE Messaging API channel** at [LINE Developers Console](https://developers.line.biz/)
+2. **Get your Channel Access Token** from the Messaging API tab
+3. **Get your User ID** (1Ue2...) - found in your LINE Messaging API channel settings
+
+#### Configuration
+
+Add to your `config.toml`:
+
+```toml
+[notification.line]
+enabled = true
+channelAccessToken = "YOUR_CHANNEL_ACCESS_TOKEN"
+userId = "YOUR_USER_ID"
+```
+
+#### Events Notified
+
+| Event | Description |
+|-------|-------------|
+| `ReadyForClient` | All tasks done, ready for new work |
+| `TaskCompleted` | Individual task completed |
+| `TaskFailed` | Task failed with error |
+| `Error` | Runtime error occurred |
+
+#### Example Notification
+
+```
+🔔 Task Completed
+Job: feature-auth (job-abc123)
+Task: Implement login flow
+Duration: 2m 34s
+```
+
 ### Other Providers
 
 No setup needed. The runtime reads TUI messages and captures quota-exhaustion signals.
