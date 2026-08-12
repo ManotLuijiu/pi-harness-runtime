@@ -25,3 +25,11 @@ key = "prefix+y"
 type = "plugin_action"
 command = "moocoding.clipboard-bridge.copy"
 description = "Copy selected text via bridge"
+
+# Paste from clipboard bridge
+# Usage: Press prefix+p to paste content from bridge file
+[[keys.command]]
+key = "prefix+p"
+type = "plugin_action"
+command = "moocoding.clipboard-bridge.paste"
+description = "Paste from clipboard bridge"
