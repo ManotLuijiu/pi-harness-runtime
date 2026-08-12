@@ -428,6 +428,7 @@ footer updates immediately and the data persists in `mirror.json`.
 - [x] Cookie-file drop folder + live sync (`cookie-sanitizer`)
 - [x] Per-provider quota mirror (`mirror.json` keyed by provider)
 - [x] Multi-provider TUI signal capture (OpenAI, GLM, Anthropic, OpenRouter)
+- [x] LINE notification adapter (Thai mobile notifications)
 - [ ] E2E test engine integration
 - [ ] Claude adapter
 - [ ] Production stress testing
