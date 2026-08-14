@@ -62,9 +62,6 @@ jobs:
       - name: Install bun
         run: npm install -g bun --allow-scripts=bun
 
-      - name: Install pnpm
-        run: npm install -g pnpm
-
       - name: Install dependencies
         run: |
           # Project uses bun.lock, so use bun install
@@ -100,8 +97,7 @@ jobs:
           github.event.inputs.dry_run != 'true'
         run: |
           unset NPM_CONFIG_USERCONFIG NODE_AUTH_TOKEN NPM_TOKEN
-          pnpm config set registry https://registry.npmjs.org/
-          pnpm publish --no-git-checks --tag ${{ steps.meta.outputs.npm_tag }}
+          npm publish --access public --ignore-scripts
 
       - name: Publish to npm (dry-run)
         if: >-
