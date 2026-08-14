@@ -12,8 +12,6 @@
   "dependencies": {
     "@pi/clipboard": "workspace:*",
     "@pi/framework-plugin-sdk": "workspace:*"
-  },
-  "peerDependencies": {
-    "@pi/framework-plugin-sdk": "^1.0.0"
   }
+
 }
