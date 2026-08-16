@@ -24,6 +24,8 @@ import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
+import { GLMQuotaScraper } from "./harness/e2e/glm-quota-scraper.js";
+import { ChatGPTQuotaScraper } from "./harness/e2e/chatgpt-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
