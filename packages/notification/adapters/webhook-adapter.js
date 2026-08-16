@@ -3,7 +3,7 @@
  *
  * Sends notifications to a generic webhook endpoint.
  */
-import { BaseChannelAdapter } from "../base-adapter.js";
+import { BaseChannelAdapter } from "../base-adapter.ts";
 export class WebhookAdapter extends BaseChannelAdapter {
     id = "webhook";
     type = "webhook";

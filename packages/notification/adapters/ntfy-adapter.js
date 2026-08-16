@@ -3,7 +3,7 @@
  *
  * Sends notifications via ntfy.sh (or self-hosted ntfy server).
  */
-import { BaseChannelAdapter } from "../base-adapter.js";
+import { BaseChannelAdapter } from "../base-adapter.ts";
 export class NtfyAdapter extends BaseChannelAdapter {
     id = "ntfy";
     type = "ntfy";

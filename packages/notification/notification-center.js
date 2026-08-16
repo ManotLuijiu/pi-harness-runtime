@@ -8,10 +8,10 @@
  * - Redact sensitive data before sending
  * - Notification failure does not crash runtime
  */
-import { TelegramAdapter } from "./adapters/telegram-adapter.js";
-import { NtfyAdapter } from "./adapters/ntfy-adapter.js";
-import { EmailAdapter } from "./adapters/email-adapter.js";
-import { WebhookAdapter } from "./adapters/webhook-adapter.js";
+import { TelegramAdapter } from "./adapters/telegram-adapter.ts";
+import { NtfyAdapter } from "./adapters/ntfy-adapter.ts";
+import { EmailAdapter } from "./adapters/email-adapter.ts";
+import { WebhookAdapter } from "./adapters/webhook-adapter.ts";
 export class NotificationCenter {
     adapters = new Map();
     redactPatterns;
