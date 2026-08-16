@@ -142,24 +142,8 @@ function _debugLog(...args: unknown[]): void {
 	}
 }
 
-// --- Selective console override — harness DEBUG → file only --------
-// Real errors (no [DEBUG prefix) still print to TUI so you notice problems.
-const _origLog = console.log.bind(console);
-const _origError = console.error.bind(console);
-
-console.log = (...args: unknown[]) => {
-	_origLog(...args);
-	_debugLog(...args);
-};
-console.error = (...args: unknown[]) => {
-	const first = String(args[0] ?? "");
-	if (first.startsWith("[DEBUG")) {
-		_debugLog(...args);
-	} else {
-		_origError(...args);
-		_debugLog(...args);
-	}
-};
+// --- Debug logging (file only, no console override) ---------------
+// Logs written to file only. Real console output preserved for pi's TUI.
 
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
@@ -220,9 +204,7 @@ function ensureHarnessDir() {
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
-	const { JsonCheckpointManager } = await import(
-		"./packages/checkpoint/src/checkpoint-manager.ts"
-	);
+	const { JsonCheckpointManager } = await import("./packages/checkpoint/src/checkpoint-manager.ts");
 	return new JsonCheckpointManager(
 		HARNESS_ROOT_DIR,
 	) as unknown as CheckpointManager;
@@ -655,9 +637,7 @@ Run \`bd ready\` to see current tasks.
 
 	async function hasBrowserProfileAutoFetchSource(): Promise<boolean> {
 		try {
-			const { getLiveSessionPath, getStatusPath } = await import(
-				"./packages/auth/src/minimax-browser-auth.ts"
-			);
+			const { getLiveSessionPath, getStatusPath } = await import("./packages/auth/src/minimax-browser-auth.ts");
 			return existsSync(getLiveSessionPath()) || existsSync(getStatusPath());
 		} catch {
 			return false;
@@ -717,9 +697,7 @@ Run \`bd ready\` to see current tasks.
 		}
 
 		try {
-			const { scrapeWithExistingProfile } = await import(
-				"./packages/auth/src/minimax-browser-auth.ts"
-			);
+			const { scrapeWithExistingProfile } = await import("./packages/auth/src/minimax-browser-auth.ts");
 			const status = await scrapeWithExistingProfile({ quiet: true });
 			if (
 				status.page_url.includes("unified-login") ||
