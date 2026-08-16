@@ -48,7 +48,6 @@ jobs:
         with:
           node-version: "24"  # OIDC requires Node.js 24+ for npm >= 11.5.1
           registry-url: 'https://registry.npmjs.org'
-          cache: false
 
       - name: Install bun
         run: npm install -g bun --allow-scripts=bun
