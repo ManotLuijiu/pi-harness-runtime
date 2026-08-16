@@ -46,13 +46,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          # No registry-url to avoid setting NODE_AUTH_TOKEN
-
-      - name: Configure npm for OIDC
-        run: |
-          # Configure npm to use OIDC for publishing
-          npm config set //registry.npmjs.org/:_authMethod=oauth2
+          node-version: "24"  # OIDC requires Node.js 24+ for npm >= 11.5.1
+          registry-url: 'https://registry.npmjs.org'
+          cache: false
 
       - name: Install bun
         run: npm install -g bun --allow-scripts=bun
@@ -91,8 +87,7 @@ jobs:
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
         run: |
-          # Use OIDC for authentication (Trusted Publishing)
-          npm config set //registry.npmjs.org/:_authMethod=oauth2
+          # OIDC handles auth automatically - no token needed
           npm publish --access public --ignore-scripts
 
       - name: Publish to npm (dry-run)
@@ -100,7 +95,6 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          npm config set //registry.npmjs.org/:_authMethod=oauth2
           npm publish --ignore-scripts --access public --dry-run
 
       - name: Create GitHub Release
