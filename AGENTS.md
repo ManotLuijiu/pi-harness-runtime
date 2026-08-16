@@ -22,6 +22,7 @@ bd list --status pending
 **Only patch-level updates (`0.10.x`)** — no minor/major bumps until the app is fully functional.
 
 When releasing:
+
 ```bash
 bun scripts/release-all.ts --release-as patch   # default, use this
 bun scripts/release-all.ts --release-as minor   # only if explicitly requested
@@ -48,9 +49,11 @@ bun scripts/release-all.ts --release-as patch
 
 - **GitHub Actions OIDC release path should not require `npm login`.**
 - If a **local/manual npm publish fallback** is needed and `npm whoami` fails, ask the user to run:
+
   ```bash
   npm login
   ```
+
   before retrying the publish.
 - Do not assume a previous local npm login is still valid.
 
@@ -86,3 +89,43 @@ write /path/to/dest/file.ts
 ```
 
 **Why**: Copying preserves exact code including comments, formatting, and subtle details. Writing from scratch introduces drift and incompleteness.
+
+## NPM Package Build Issues (Important!)
+
+### Bug: Missing `dist/` Directories in Packages
+
+**Problem**: When `packages/*/dist/` is gitignored and a package has `.js` imports but no compiled output, the published npm package will crash pi on load with:
+
+```
+Cannot find module '../packages/notification/dist/notification-center.js'
+```
+
+**Root Cause**:
+
+- The main build script (`bun run build`) only compiles packages with `tsconfig.json`
+- If TypeScript is missing from `devDependencies`, `node_modules/.bin/tsc` doesn't exist
+- The build loop silently ignores errors: `|| true`
+- Packages get published WITHOUT their `dist/` directories
+- Runtime imports from `dist/*.js` fail
+
+**Solution**:
+
+1. Ensure `typescript` is in `devDependencies` (so `tsc` is available)
+2. Run `bun run build` locally BEFORE pushing
+3. Verify `packages/*/dist/` contains compiled `.js` files
+4. Commit the `dist/` output or ensure build succeeds in CI
+
+```bash
+# Check if dist exists before publishing
+ls packages/notification/dist/
+
+# If missing, build and check again
+bun run build
+ls packages/notification/dist/
+```
+
+**Prevention**: Add `typescript` to `devDependencies`:
+
+```bash
+bun add -d typescript
+```
