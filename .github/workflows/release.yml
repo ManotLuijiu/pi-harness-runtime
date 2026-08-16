@@ -16,8 +16,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - develop
   workflow_dispatch:
     inputs:
       dry_run:
@@ -34,8 +32,7 @@ jobs:
       contents: write
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/tags/v') ||
-      github.ref == 'refs/heads/develop'
+      startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,12 +41,10 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          # Trusted publishing requires a recent npm CLI with OIDC support.
-          # Avoid registry-url here; setup-node injects npm auth config that interferes with OIDC.
-          node-version: "22"
-          package-manager-cache: false
+          node-version: "24" # OIDC requires Node.js 24+ for npm >= 11.5.1
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install bun
         run: npm install -g bun --allow-scripts=bun
@@ -83,29 +78,45 @@ jobs:
           echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Update run name with version
+        if: github.event_name == 'push'
+        run: |
+          # Update workflow run name to show version
+          RUN_NAME="Release v${{ steps.meta.outputs.version }}"
+          echo "Updating run name to: $RUN_NAME"
+          echo "Run ID: $GITHUB_RUN_ID"
+          echo "Repository: $GITHUB_REPOSITORY"
+
+          # Use github context directly in the URL
+          API_URL="https://api.github.com/repos/${{ github.repository }}"
+          API_URL="${API_URL}/actions/runs/${{ github.run_id }}"
+          curl -s -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}" \
+            -d '{"name":"Release v${{ steps.meta.outputs.version }}"}' || true
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # OIDC handles auth automatically - no token needed
           npm publish --access public --ignore-scripts
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm publish --ignore-scripts --access public --dry-run
 
       - name: Create GitHub Release
         if: >-
-          startsWith(github.ref, 'refs/tags/v') ||
-          github.ref == 'refs/heads/develop'
-        uses: softprops/action-gh-release@v2
+          startsWith(github.ref, 'refs/tags/v')
+        # v2 has Node 20 deprecation warnings
+        uses: softprops/action-gh-release@v2.0.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
