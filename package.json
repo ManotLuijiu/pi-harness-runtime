@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -82,7 +82,8 @@
     "@types/ws": "^8.18.1",
     "husky": "^9.1.7",
     "playwright": "^1.62.0",
-    "standard-version": "^9.5.0"
+    "standard-version": "^9.5.0",
+    "typescript": "^7.0.2"
   },
   "workspaces": [
     "packages/*"

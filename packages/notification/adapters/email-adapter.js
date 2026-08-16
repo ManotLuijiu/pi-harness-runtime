@@ -3,7 +3,7 @@
  *
  * Sends notifications via SMTP.
  */
-import { BaseChannelAdapter } from "../base-adapter.js";
+import { BaseChannelAdapter } from "../base-adapter.ts";
 // Simple SMTP client using built-in net module
 async function sendSmtpEmail(host, port, user, password, from, to, subject, body, tls = false) {
     // For a production implementation, you'd use a proper SMTP library

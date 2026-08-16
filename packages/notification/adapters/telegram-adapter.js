@@ -3,7 +3,7 @@
  *
  * Sends notifications via Telegram Bot API.
  */
-import { BaseChannelAdapter } from "../base-adapter.js";
+import { BaseChannelAdapter } from "../base-adapter.ts";
 export class TelegramAdapter extends BaseChannelAdapter {
     id = "telegram";
     type = "telegram";
