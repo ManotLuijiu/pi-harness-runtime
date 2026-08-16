@@ -101,9 +101,31 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Debug: check npm configuration
+          echo "=== NPM Configuration ==="
+          npm config get registry
+          npm config get //registry.npmjs.org/:_authToken || echo "No auth token from NODE_AUTH_TOKEN"
+          
+          # Debug: check if OIDC token is available
+          echo "=== Checking OIDC Token ==="
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+            echo "OIDC token available"
+            curl -s "$ACTIONS_ID_TOKEN_REQUEST_URL" -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" | head -c 200 || echo "Could not fetch OIDC token"
+          else
+            echo "No OIDC token available"
+          fi
+          
+          # Debug: check package info
+          echo "=== Package Info ==="
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "Publishing ${NAME}@${VERSION}"
+          
           # OIDC handles auth automatically - no token needed
-          npm publish --access public --ignore-scripts
+          npm publish --access public --ignore-scripts --dry-run
 
       - name: Publish to npm (dry-run)
         if: >-
