@@ -81,6 +81,19 @@ jobs:
           echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Update run name with version
+        if: github.event_name == 'push'
+        run: |
+          # Update the workflow run name to include version
+          RUN_NAME="Release v${{ steps.meta.outputs.version }}"
+          echo "Updating run name to: $RUN_NAME"
+          gh api \
+            --method PATCH \
+            "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f name="$RUN_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||
