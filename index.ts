@@ -1391,6 +1391,16 @@ Run \`bd ready\` to see current tasks.
 	// so this is safe to call frequently.
 	setInterval(() => {
 		void maybeAutoFetchQuota(lastActiveProvider ?? null);
+		// Also refresh footer status so user sees updated quota data
+		if (footerStatusCtx) {
+			refreshFooterStatus(
+				footerStatusCtx,
+				tracker,
+				mirrorStore,
+				hasCookieSource,
+				() => lastActiveProvider,
+			);
+		}
 	}, MINIMAX_REFRESH_MIN_INTERVAL_MS);
 
 	function queueAutoResume(
