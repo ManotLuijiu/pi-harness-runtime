@@ -82,23 +82,32 @@ jobs:
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
-        uses: jsdaniell/npm-publish@v1.0.1
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          access: public
+        run: |
+          # Unset OIDC env vars that npm might auto-detect
+          unset ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            ACTIONS_ID_TOKEN_REQUEST_URL || true
+          # Configure npm auth
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --access public --ignore-scripts
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
-        uses: jsdaniell/npm-publish@v1.0.1
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          dry-run: true
-          access: public
+        run: |
+          # Unset OIDC env vars that npm might auto-detect
+          unset ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            ACTIONS_ID_TOKEN_REQUEST_URL || true
+          # Configure npm auth
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --ignore-scripts --access public --dry-run
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         if: >-
