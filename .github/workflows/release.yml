@@ -84,15 +84,19 @@ jobs:
       - name: Update run name with version
         if: github.event_name == 'push'
         run: |
-          # Update the workflow run name to include version
+          # Update workflow run name to show version
           RUN_NAME="Release v${{ steps.meta.outputs.version }}"
           echo "Updating run name to: $RUN_NAME"
-          gh api \
-            --method PATCH \
-            "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            -f name="$RUN_NAME"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Construct API URL
+          API_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          curl -s -X PATCH \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API_URL}" \
+            -d "{\"name\":\"${RUN_NAME}\"}" || true
 
       - name: Publish to npm
         if: >-
