@@ -87,16 +87,18 @@ jobs:
           # Update workflow run name to show version
           RUN_NAME="Release v${{ steps.meta.outputs.version }}"
           echo "Updating run name to: $RUN_NAME"
+          echo "Run ID: $GITHUB_RUN_ID"
+          echo "Repository: $GITHUB_REPOSITORY"
 
-          # Construct API URL
-          API_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
+          # Use github context directly in the URL
+          API_URL="https://api.github.com/repos/${{ github.repository }}"
+          API_URL="${API_URL}/actions/runs/${{ github.run_id }}"
           curl -s -X PATCH \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${API_URL}" \
-            -d "{\"name\":\"${RUN_NAME}\"}" || true
+            -d '{"name":"Release v${{ steps.meta.outputs.version }}"}' || true
 
       - name: Publish to npm
         if: >-
