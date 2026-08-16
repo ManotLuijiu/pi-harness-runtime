@@ -44,12 +44,11 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          # Trusted publishing requires a recent npm CLI with OIDC support.
-          # Avoid registry-url here; setup-node injects npm auth config that interferes with OIDC.
           node-version: "22"
-          package-manager-cache: false
+          # Configure registry for OIDC-based trusted publishing
+          registry-url: 'https://registry.npmjs.org/'
 
       - name: Install bun
         run: npm install -g bun --allow-scripts=bun
@@ -87,19 +86,21 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           github.event.inputs.dry_run != 'true'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          npm publish --access public --ignore-scripts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm publish --access public --ignore-scripts
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          npm publish --ignore-scripts --access public --dry-run
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm publish --ignore-scripts --access public --dry-run
 
       - name: Create GitHub Release
         if: >-
