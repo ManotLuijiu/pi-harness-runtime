@@ -448,8 +448,8 @@ Run \`bd ready\` to see current tasks.
 	const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
 	const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
 	const quotaScraper = process.env.QUOTA_COOKIE_FILE
-		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
-		: new MiniMaxQuotaScraper();
+		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE, quiet: true })
+		: new MiniMaxQuotaScraper({ quiet: true });
 
 	// --- Smart quota fetch for OpenAI status -------------------------
 	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
