@@ -204,7 +204,9 @@ function ensureHarnessDir() {
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
-	const { JsonCheckpointManager } = await import("./packages/checkpoint/src/checkpoint-manager.ts");
+	const { JsonCheckpointManager } = await import(
+		"./packages/checkpoint/src/checkpoint-manager.ts"
+	);
 	return new JsonCheckpointManager(
 		HARNESS_ROOT_DIR,
 	) as unknown as CheckpointManager;
@@ -552,10 +554,7 @@ Run \`bd ready\` to see current tasks.
 					"Drop folder sync still works — polling will resume automatically.",
 			);
 		} else {
-			console.error(
-				"[pi-harness] cookie-sanitizer watcher failed to start:",
-				msg,
-			);
+			console.error("[pi-harness] cookie-sanitizer watcher failed to start:", msg);
 		}
 	}
 
@@ -637,7 +636,9 @@ Run \`bd ready\` to see current tasks.
 
 	async function hasBrowserProfileAutoFetchSource(): Promise<boolean> {
 		try {
-			const { getLiveSessionPath, getStatusPath } = await import("./packages/auth/src/minimax-browser-auth.ts");
+			const { getLiveSessionPath, getStatusPath } = await import(
+				"./packages/auth/src/minimax-browser-auth.ts"
+			);
 			return existsSync(getLiveSessionPath()) || existsSync(getStatusPath());
 		} catch {
 			return false;
@@ -697,7 +698,9 @@ Run \`bd ready\` to see current tasks.
 		}
 
 		try {
-			const { scrapeWithExistingProfile } = await import("./packages/auth/src/minimax-browser-auth.ts");
+			const { scrapeWithExistingProfile } = await import(
+				"./packages/auth/src/minimax-browser-auth.ts"
+			);
 			const status = await scrapeWithExistingProfile({ quiet: true });
 			if (
 				status.page_url.includes("unified-login") ||
@@ -714,10 +717,7 @@ Run \`bd ready\` to see current tasks.
 			}
 
 			const parsed = parseMiniMaxQuotaText(rawText);
-			if (
-				parsed.h5UsedPct === undefined &&
-				parsed.weeklyUsedPct === undefined
-			) {
+			if (parsed.h5UsedPct === undefined && parsed.weeklyUsedPct === undefined) {
 				return null;
 			}
 
@@ -744,8 +744,7 @@ Run \`bd ready\` to see current tasks.
 		suppressErrors?: boolean;
 	}): Promise<boolean> {
 		const suppressErrors = options?.suppressErrors === true;
-		const profileRecord =
-			await autoFetchQuotaFromBrowserProfile(suppressErrors);
+		const profileRecord = await autoFetchQuotaFromBrowserProfile(suppressErrors);
 		if (profileRecord) {
 			writeMirrorRecord("minimax", {
 				synced_at: profileRecord.synced_at,
@@ -926,8 +925,7 @@ Run \`bd ready\` to see current tasks.
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const autoFetchAvailable =
-				cookieQuotaAutoFetchAvailable ||
-				(await hasBrowserProfileAutoFetchSource());
+				cookieQuotaAutoFetchAvailable || (await hasBrowserProfileAutoFetchSource());
 			if (!autoFetchAvailable) {
 				ctx.ui.notify(
 					"MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.",
@@ -1160,10 +1158,7 @@ Run \`bd ready\` to see current tasks.
 				return;
 			}
 
-			const lines = [
-				`Tasks for Job ${currentSession.jobId}`,
-				`${"-".repeat(50)}`,
-			];
+			const lines = [`Tasks for Job ${currentSession.jobId}`, `${"-".repeat(50)}`];
 
 			for (const task of tasks) {
 				const status = task.status.padEnd(10);
@@ -1484,12 +1479,6 @@ function refreshFooterStatus(
 	const freshness = mirrorStore.freshness(mirror, nowMs);
 	ctx.ui.setStatus(
 		"harness-runtime",
-		buildFooterStatusValue(
-			local,
-			mirror,
-			freshness,
-			hasCookieSource(),
-			provider,
-		),
+		buildFooterStatusValue(local, mirror, freshness, hasCookieSource(), provider),
 	);
 }

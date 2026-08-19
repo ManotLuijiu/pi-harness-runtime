@@ -5,12 +5,12 @@
 
 # Issue prefix for this repository (used by bd init)
 # If not set, bd init will auto-detect from directory name
-# Example: issue-prefix: "myproject" creates issues like "myproject-1", "myproject-2", etc.
-# issue-prefix: ""
+# Example: issue-prefix: "myproject" creates issues like "myproject-1"
+issue-prefix: "pi-harness-runtime"
 
 # Use no-db mode: JSONL-only, no Dolt database
 # When true, bd will use .beads/issues.jsonl as the source of truth
-# no-db: false
+no-db: true
 
 # Enable JSON output by default
 # json: false
@@ -29,7 +29,7 @@
 # events-export: false
 
 # Multi-repo configuration (experimental - bd-307)
-# Allows hydrating from multiple repositories and routing writes to the correct database
+# Allows hydrating from multiple repos and routing writes to the correct repo
 # repos:
 #   primary: "."  # Primary repo (where this database lives)
 #   additional:   # Additional repos to hydrate from (read-only)
