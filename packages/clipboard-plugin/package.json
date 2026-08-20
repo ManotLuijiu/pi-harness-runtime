@@ -1,6 +1,6 @@
 {
   "name": "@pi/clipboard-plugin",
-  "version": "0.10.30",
+  "version": "1.1.10",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
@@ -13,5 +13,4 @@
     "@pi/clipboard": "workspace:*",
     "@pi/framework-plugin-sdk": "workspace:*"
   }
-
 }

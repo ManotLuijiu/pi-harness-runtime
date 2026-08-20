@@ -1,6 +1,6 @@
 {
   "name": "@pi/evaluation-runner",
-  "version": "0.10.30",
+  "version": "1.1.10",
   "type": "module",
   "description": "Framework-agnostic evaluation framework for AI outputs (RFC-0020)",
   "main": "dist/index.js",
