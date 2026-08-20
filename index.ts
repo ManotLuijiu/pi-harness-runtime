@@ -345,7 +345,7 @@ Run \`bd ready\` to see current tasks.
 		const toolName = (event as { toolName?: string }).toolName;
 		if (toolName !== "bash") return;
 
-		const result = (event as { result?: { content?: string } }).result;
+		const result = (event as { result?: { content?: unknown } }).result;
 		if (!result) return;
 
 		// Handle content that might be an array or object
@@ -371,8 +371,13 @@ Run \`bd ready\` to see current tasks.
 			!content.includes("bd ready") &&
 			!content.includes("TODO UPDATE")
 		) {
-			// Append todo reminder to build output
-			result.content = content + TODO_BUILD_REMINDER;
+			// Append todo reminder without changing the tool result content shape.
+			const reminderBlock = { type: "text", text: TODO_BUILD_REMINDER };
+			if (Array.isArray(rawContent)) {
+				result.content = [...rawContent, reminderBlock];
+			} else {
+				result.content = [{ type: "text", text: content + TODO_BUILD_REMINDER }];
+			}
 		}
 	});
 

@@ -295,8 +295,14 @@ Run \`bd ready\` to see current tasks.
         // Check if this is a build command
         const isBuildCommand = BUILD_COMMANDS.some((cmd) => content.toLowerCase().includes(cmd.toLowerCase()));
         if (isBuildCommand && !content.includes("bd ready") && !content.includes("TODO UPDATE")) {
-            // Append todo reminder to build output
-            result.content = content + TODO_BUILD_REMINDER;
+            // Append todo reminder without changing the tool result content shape.
+            const reminderBlock = { type: "text", text: TODO_BUILD_REMINDER };
+            if (Array.isArray(rawContent)) {
+                result.content = [...rawContent, reminderBlock];
+            }
+            else {
+                result.content = [{ type: "text", text: content + TODO_BUILD_REMINDER }];
+            }
         }
     });
     // --- Auto-track every assistant message ------------------------------
