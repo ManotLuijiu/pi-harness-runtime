@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/tencentdb-sync",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Sync SKILL.md skills to TencentDB-Agent-Memory server (RFC-0105/0106)",
   "type": "module",
   "main": "./dist/index.js",
