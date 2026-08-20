@@ -29,7 +29,10 @@ export function createClipboardBridgeTool(): ToolExtension {
 				},
 				execute: async () => {
 					const content = pasteFromBridge();
-					return { content };
+					if (!content) {
+						return { content: [], isError: false };
+					}
+					return { content: [{ type: "text", text: content }] };
 				},
 			},
 		],
