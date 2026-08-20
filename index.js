@@ -386,7 +386,6 @@ Run \`bd ready\` to see current tasks.
             return false;
         }
     };
-    const cookieQuotaAutoFetchAvailable = hasCookieSource();
     // --- TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) --
     // The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
     // TUI / message stream and emits signals we write to per-provider mirror
@@ -601,7 +600,7 @@ Run \`bd ready\` to see current tasks.
             });
             return true;
         }
-        if (!cookieQuotaAutoFetchAvailable) {
+        if (!hasCookieSource()) {
             return false;
         }
         try {
@@ -676,7 +675,7 @@ Run \`bd ready\` to see current tasks.
             if (nowMs - lastQuotaAutoFetchAt < MINIMAX_REFRESH_MIN_INTERVAL_MS) {
                 return;
             }
-            const mirror = mirrorStore.read();
+            const mirror = mirrorStore.readProvider("minimax");
             const freshness = mirrorStore.freshness(mirror, nowMs);
             const shouldFetchBaseline = !mirror || freshness === "expired";
             const usageSinceSync = getMiniMaxUsageSince(mirror?.synced_at ? Date.parse(mirror.synced_at) : 0);
@@ -727,7 +726,8 @@ Run \`bd ready\` to see current tasks.
         description: "Show Codex-style usage status (local + provider mirror)",
         handler: async (_args, ctx) => {
             const local = aggregateWindows(tracker.all());
-            const mirror = mirrorStore.read();
+            const provider = providerFromModelId(ctx.model?.id ?? null);
+            const mirror = provider ? mirrorStore.readProvider(provider) : mirrorStore.read();
             const output = renderStatus({
                 model: ctx.model?.id ?? null,
                 cwd: ctx.cwd ?? process.cwd(),
@@ -743,7 +743,7 @@ Run \`bd ready\` to see current tasks.
     pi.registerCommand("usage-refresh", {
         description: "Force refresh quota from provider console",
         handler: async (_args, ctx) => {
-            const autoFetchAvailable = cookieQuotaAutoFetchAvailable ||
+            const autoFetchAvailable = hasCookieSource() ||
                 (await hasBrowserProfileAutoFetchSource());
             if (!autoFetchAvailable) {
                 ctx.ui.notify("MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.", "warning");
