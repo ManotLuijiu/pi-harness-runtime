@@ -1,6 +1,6 @@
 {
   "name": "@pi/mcp-adapter",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "type": "module",
   "description": "MCP server adapter for pi-harness — exposes harness capabilities as MCP tools/resources/prompts (RFC-0068)",
   "main": "dist/index.js",

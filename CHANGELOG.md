@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.12](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.11...v1.1.12) (2026-08-20)
+
+
+### Bug Fixes
+
+* **runtime:** refresh minimax quota from provider mirror ([a8976b4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a8976b4ff61e28b964bf76405142672798714647))
+
 ### [1.1.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.11) (2026-08-20)
 
 

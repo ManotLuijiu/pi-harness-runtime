@@ -1,6 +1,6 @@
 {
   "name": "@pi/prompt-versioning",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "type": "module",
   "description": "Version control for prompts with rollback support (RFC-0019)",
   "main": "dist/index.js",

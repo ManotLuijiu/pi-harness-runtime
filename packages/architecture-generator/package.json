@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/architecture-generator",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "description": "Generate ADR and Mermaid diagrams from project analysis",
   "type": "module",
   "main": "./dist/index.js",
