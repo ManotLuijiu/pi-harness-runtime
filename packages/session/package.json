@@ -1,6 +1,6 @@
 {
   "name": "@pi/session",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Session management system for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",

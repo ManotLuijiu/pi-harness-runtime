@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.11) (2026-08-20)
+
+
+### Features
+
+* add quota scrapers for ChatGPT and GLM providers ([17f9d0e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/17f9d0e7d6f486210a30244f2fecc0131e8b7d57))
+* improve Playwright Prompt ([24ac09b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/24ac09b75f5d79924a7a0c9e47cdacc9da143a68))
+* index.ts ([d0fc002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d0fc002d6d16e59318155677cb6128846bc993a4))
+* update workflow run name to show version number ([ee8c59f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ee8c59fec4c0116a5948b2ae04ad4609edaed3ac))
+
+
+### Bug Fixes
+
+* add typescript as devDependency, build notification dist ([c76b522](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c76b5221c33262c38615c6117ecf9db13ab7b5d2))
+* **clipboard-plugin:** return proper content array format in tool result ([400bbdb](https://github.com/ManotLuijiu/pi-harness-runtime/commit/400bbdbe2b17a8c31571942a7ccacc2c2f4f56bc))
+* configure npm to use OIDC auth method for trusted publishing ([0b9042e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0b9042e49726ece53f5bfccd0afa7eceac5e75ec))
+* debug run name update API call ([0301d44](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0301d44d260315147c4f5445ec83d80ed2f9bcfc))
+* properly configure npm auth for publish workflow ([f4fe31a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f4fe31a9096ce3fb065f4fbbfe7db74eaad620b3))
+* refresh footer status on periodic quota refresh ([59885a1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/59885a14e8261b0aa03e5ae6d11651bb5c40671a))
+* remove console override that was crashing pi ([b8d1d02](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b8d1d029c773fd16a6f52e08186eb687f4d2cbbc))
+* remove develop branch trigger from release workflow ([28da559](https://github.com/ManotLuijiu/pi-harness-runtime/commit/28da559ccd3cbb7860a409b1d52436aad175ca07))
+* remove invalid cache: false option ([00079b6](https://github.com/ManotLuijiu/pi-harness-runtime/commit/00079b6fe4ad59fedc2464d3c8c8309897d6a543))
+* remove token config - use OIDC trusted publishing only ([177d395](https://github.com/ManotLuijiu/pi-harness-runtime/commit/177d3956194fe2196cd11491c7b42257eaf0ca95))
+* resolve merge conflict in package.json, release v1.1.6 ([a976a73](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a976a73bf5210dfd1f20477850c40ef336235f64))
+* **runtime:** preserve tool result content array shape ([012ed45](https://github.com/ManotLuijiu/pi-harness-runtime/commit/012ed4530f5b016c907414ce757dc279bbf05dfb))
+* unset OIDC env vars before npm publish ([463e88c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/463e88c92a1687e1620584fb7efe672f7782d535))
+* use curl for updating run name (gh CLI not available in runner) ([1d0701d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1d0701d3d5ea73b4eeaddee64bce2ee0e93cc89b))
+* use Node.js 24 for OIDC trusted publishing ([8a74380](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8a74380eb95b8cfbea627f0332a5e79853592431))
+* use npm-publish action instead of direct npm publish ([4c7218c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4c7218c99436703dd0a210c3866f35dc305911f5))
+* use OIDC Trusted Publishing instead of token auth ([01626b5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/01626b579f77d67d965c3a276bd5e9a3bcf1f67b))
+
 ### [1.1.10](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.10) (2026-08-20)
 
 
