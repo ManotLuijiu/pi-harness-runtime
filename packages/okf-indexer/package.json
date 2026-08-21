@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/okf-indexer",
-  "version": "1.1.12",
+  "version": "1.1.13",
   "description": "OKF document indexer for SKILL.md files (RFC-0106)",
   "type": "module",
   "main": "./dist/index.js",
