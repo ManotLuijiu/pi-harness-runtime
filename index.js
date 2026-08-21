@@ -23,7 +23,7 @@ import { TUIUsageMonitor, } from "./packages/quota-manager/src/tui-usage-monitor
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
-import { MAX_PROACTIVE_COMPACT_FAILURES, OUTPUT_LIMIT_RESUME_PROMPT, PROACTIVE_COMPACT_COOLDOWN_MS, shouldQueueOutputLimitResume, shouldQueuePostCompactionResume, shouldTriggerProactiveCompact, } from "./proactive-compact.ts";
+import { MAX_PROACTIVE_COMPACT_FAILURES, OUTPUT_LIMIT_RESUME_PROMPT, PROVIDER_OVERLOAD_RESUME_PROMPT, PROACTIVE_COMPACT_COOLDOWN_MS, getProviderOverloadResumeDelayMs, shouldQueueOutputLimitResume, shouldQueueProviderOverloadResume, shouldQueuePostCompactionResume, shouldTriggerProactiveCompact, } from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import { JobStateMachine, } from "./harness/job-state-machine.ts";
@@ -321,9 +321,15 @@ Run \`bd ready\` to see current tasks.
             pendingOutputLimitResumeAfterSettled = true;
             queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
         }
+        else if (shouldQueueProviderOverloadResume(m, providerOverloadResumeAttempts, ctx.hasPendingMessages())) {
+            providerOverloadResumeAttempts += 1;
+            scheduleProviderOverloadResume(() => ctx.hasPendingMessages());
+        }
         else if (m.stopReason === "stop") {
             outputLimitResumeAttempts = 0;
             pendingOutputLimitResumeAfterSettled = false;
+            providerOverloadResumeAttempts = 0;
+            clearProviderOverloadResume();
         }
         if (!m.usage)
             return;
@@ -466,6 +472,8 @@ Run \`bd ready\` to see current tasks.
     let outputLimitResumeAttempts = 0;
     let pendingOutputLimitResumeAfterCompact = false;
     let pendingOutputLimitResumeAfterSettled = false;
+    let providerOverloadResumeAttempts = 0;
+    let providerOverloadResumeTimer = null;
     // --- Context-usage escalating warning tiers -----------------------------
     // Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
     // Per-session dedup: only notify when crossing INTO a new higher tier.
@@ -1074,6 +1082,27 @@ Run \`bd ready\` to see current tasks.
     setInterval(() => {
         void maybeAutoFetchQuota(lastActiveProvider ?? null);
     }, MINIMAX_REFRESH_MIN_INTERVAL_MS);
+    function clearProviderOverloadResume() {
+        if (providerOverloadResumeTimer) {
+            clearTimeout(providerOverloadResumeTimer);
+            providerOverloadResumeTimer = null;
+        }
+    }
+    function scheduleProviderOverloadResume(hasPendingMessages) {
+        clearProviderOverloadResume();
+        const delayMs = getProviderOverloadResumeDelayMs();
+        const delayMinutes = Math.max(1, Math.round(delayMs / 60000));
+        console.error("[pi-harness] Provider overloaded; scheduling resume in " +
+            delayMinutes +
+            " min");
+        providerOverloadResumeTimer = setTimeout(() => {
+            providerOverloadResumeTimer = null;
+            if (hasPendingMessages()) {
+                return;
+            }
+            queueAutoResume("provider-overload", PROVIDER_OVERLOAD_RESUME_PROMPT, "followUp");
+        }, delayMs);
+    }
     function queueAutoResume(reason, content, deliverAs) {
         try {
             pi.sendUserMessage(content, { deliverAs });

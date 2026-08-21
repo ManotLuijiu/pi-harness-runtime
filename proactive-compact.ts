@@ -7,6 +7,10 @@ export const MAX_PROACTIVE_COMPACT_FAILURES = 3;
 export const OUTPUT_LIMIT_AUTO_RESUME_LIMIT = 3;
 export const OUTPUT_LIMIT_RESUME_PROMPT =
 	"Output token limit hit. Resume directly — no apology, no recap. Pick up mid-thought if the cut happened there. Break remaining work into smaller pieces.";
+export const PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT = 3;
+export const PROVIDER_OVERLOAD_AUTO_RESUME_MIN_MS = 60_000;
+export const PROVIDER_OVERLOAD_AUTO_RESUME_MAX_MS = 5 * 60_000;
+export const PROVIDER_OVERLOAD_RESUME_PROMPT = "resume";
 
 export function shouldTriggerProactiveCompact(
 	usage: ContextUsage | undefined,
@@ -33,7 +37,35 @@ export type AssistantStopLike = {
 	role?: string;
 	stopReason?: unknown;
 	errorMessage?: unknown;
+	content?: unknown;
 };
+
+function readAssistantStopText(message: AssistantStopLike): string {
+	const parts: string[] = [];
+	if (typeof message.errorMessage === "string") {
+		parts.push(message.errorMessage);
+	}
+	if (typeof message.stopReason === "string") {
+		parts.push(message.stopReason);
+	}
+	if (typeof message.content === "string") {
+		parts.push(message.content);
+	} else if (Array.isArray(message.content)) {
+		for (const part of message.content) {
+			if (typeof part === "string") {
+				parts.push(part);
+			} else if (part && typeof part === "object") {
+				const obj = part as { text?: unknown; content?: unknown };
+				if (typeof obj.text === "string") {
+					parts.push(obj.text);
+				} else if (typeof obj.content === "string") {
+					parts.push(obj.content);
+				}
+			}
+		}
+	}
+	return parts.join("\n");
+}
 
 export function isOutputLimitAssistantMessage(
 	message: AssistantStopLike,
@@ -70,6 +102,45 @@ export function shouldQueueOutputLimitResume(
 		resumeAttempts < maxAttempts &&
 		!hasPendingMessages
 	);
+}
+
+export function isProviderOverloadAssistantMessage(
+	message: AssistantStopLike,
+): boolean {
+	if (message.role !== "assistant") {
+		return false;
+	}
+
+	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|Retry failed after \d+ attempts:.*529|\b529\b|\b2064\b/i.test(
+		readAssistantStopText(message),
+	);
+}
+
+export function shouldQueueProviderOverloadResume(
+	message: AssistantStopLike,
+	resumeAttempts: number,
+	hasPendingMessages: boolean,
+	options?: { maxAttempts?: number },
+): boolean {
+	const maxAttempts =
+		options?.maxAttempts ?? PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT;
+	return (
+		isProviderOverloadAssistantMessage(message) &&
+		resumeAttempts < maxAttempts &&
+		!hasPendingMessages
+	);
+}
+
+export function getProviderOverloadResumeDelayMs(options?: {
+	minMs?: number;
+	maxMs?: number;
+	random?: () => number;
+}): number {
+	const minMs = options?.minMs ?? PROVIDER_OVERLOAD_AUTO_RESUME_MIN_MS;
+	const maxMs = options?.maxMs ?? PROVIDER_OVERLOAD_AUTO_RESUME_MAX_MS;
+	const random = options?.random ?? Math.random;
+	const clampedRandom = Math.max(0, Math.min(1, random()));
+	return Math.round(minMs + clampedRandom * (maxMs - minMs));
 }
 
 export function shouldQueuePostCompactionResume(

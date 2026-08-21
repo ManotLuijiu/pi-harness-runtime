@@ -47,8 +47,11 @@ import { registerCopySyncShortcut } from "./packages/clipboard/src/copy-sync.js"
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
+	PROVIDER_OVERLOAD_RESUME_PROMPT,
+	getProviderOverloadResumeDelayMs,
 	PROACTIVE_COMPACT_COOLDOWN_MS,
 	shouldQueueOutputLimitResume,
+	shouldQueueProviderOverloadResume,
 	shouldQueuePostCompactionResume,
 	shouldTriggerProactiveCompact,
 } from "./proactive-compact.ts";
@@ -395,6 +398,7 @@ Run \`bd ready\` to see current tasks.
 			role?: string;
 			stopReason?: unknown;
 			errorMessage?: unknown;
+			content?: unknown;
 			usage?: {
 				input?: number;
 				output?: number;
@@ -415,9 +419,20 @@ Run \`bd ready\` to see current tasks.
 			pendingOutputLimitResumeAfterCompact = true;
 			pendingOutputLimitResumeAfterSettled = true;
 			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
+		} else if (
+			shouldQueueProviderOverloadResume(
+				m,
+				providerOverloadResumeAttempts,
+				ctx.hasPendingMessages(),
+			)
+		) {
+			providerOverloadResumeAttempts += 1;
+			scheduleProviderOverloadResume(() => ctx.hasPendingMessages());
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
 			pendingOutputLimitResumeAfterSettled = false;
+			providerOverloadResumeAttempts = 0;
+			clearProviderOverloadResume();
 		}
 
 		if (!m.usage) return;
@@ -573,6 +588,9 @@ Run \`bd ready\` to see current tasks.
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
+	let providerOverloadResumeAttempts = 0;
+	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null =
+		null;
 
 	// --- Context-usage escalating warning tiers -----------------------------
 	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
@@ -1405,6 +1423,35 @@ Run \`bd ready\` to see current tasks.
 			);
 		}
 	}, MINIMAX_REFRESH_MIN_INTERVAL_MS);
+
+	function clearProviderOverloadResume(): void {
+		if (providerOverloadResumeTimer) {
+			clearTimeout(providerOverloadResumeTimer);
+			providerOverloadResumeTimer = null;
+		}
+	}
+
+	function scheduleProviderOverloadResume(hasPendingMessages: () => boolean): void {
+		clearProviderOverloadResume();
+		const delayMs = getProviderOverloadResumeDelayMs();
+		const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
+		console.error(
+			"[pi-harness] Provider overloaded; scheduling resume in " +
+				delayMinutes +
+				" min",
+		);
+		providerOverloadResumeTimer = setTimeout(() => {
+			providerOverloadResumeTimer = null;
+			if (hasPendingMessages()) {
+				return;
+			}
+			queueAutoResume(
+				"provider-overload",
+				PROVIDER_OVERLOAD_RESUME_PROMPT,
+				"followUp",
+			);
+		}, delayMs);
+	}
 
 	function queueAutoResume(
 		reason: string,

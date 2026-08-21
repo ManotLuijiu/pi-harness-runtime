@@ -6,8 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const {
+	getProviderOverloadResumeDelayMs,
+	isProviderOverloadAssistantMessage,
 	isOutputLimitAssistantMessage,
 	shouldQueueOutputLimitResume,
+	shouldQueueProviderOverloadResume,
 	shouldQueuePostCompactionResume,
 	shouldTriggerProactiveCompact,
 } = await import("../proactive-compact.ts");
@@ -98,6 +101,73 @@ test("shouldQueueOutputLimitResume honors pending messages and attempt limit", (
 	assert.equal(
 		shouldQueueOutputLimitResume(message, 3, false, { maxAttempts: 3 }),
 		false,
+	);
+});
+
+test("isProviderOverloadAssistantMessage detects transient 529 overload text", () => {
+	assert.equal(
+		isProviderOverloadAssistantMessage({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage:
+				"Retry failed after 3 attempts: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"The system is currently experiencing a peak-hour surge, and the server is temporarily busy. It usually recovers within 1-5 minutes. Please try again shortly (2064) (529)\"}}",
+		}),
+		true,
+	);
+	assert.equal(
+		isProviderOverloadAssistantMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "Error: 529 temporarily busy" }],
+		}),
+		true,
+	);
+	assert.equal(
+		isProviderOverloadAssistantMessage({ role: "assistant", stopReason: "stop" }),
+		false,
+	);
+	assert.equal(
+		isProviderOverloadAssistantMessage({ role: "user", errorMessage: "529" }),
+		false,
+	);
+});
+
+test("shouldQueueProviderOverloadResume honors pending messages and attempt limit", () => {
+	const message = {
+		role: "assistant",
+		errorMessage: "overloaded_error: server is temporarily busy (529)",
+	};
+	assert.equal(shouldQueueProviderOverloadResume(message, 0, false), true);
+	assert.equal(shouldQueueProviderOverloadResume(message, 0, true), false);
+	assert.equal(
+		shouldQueueProviderOverloadResume(message, 3, false, { maxAttempts: 3 }),
+		false,
+	);
+});
+
+test("getProviderOverloadResumeDelayMs returns bounded jitter", () => {
+	assert.equal(
+		getProviderOverloadResumeDelayMs({
+			minMs: 60_000,
+			maxMs: 300_000,
+			random: () => 0,
+		}),
+		60_000,
+	);
+	assert.equal(
+		getProviderOverloadResumeDelayMs({
+			minMs: 60_000,
+			maxMs: 300_000,
+			random: () => 1,
+		}),
+		300_000,
+	);
+	assert.equal(
+		getProviderOverloadResumeDelayMs({
+			minMs: 60_000,
+			maxMs: 300_000,
+			random: () => 0.5,
+		}),
+		180_000,
 	);
 });
 
