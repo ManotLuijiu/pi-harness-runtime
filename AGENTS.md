@@ -47,6 +47,7 @@ bun scripts/release-all.ts --release-as patch
 
 ## npm Publish Authentication
 
+- **Normal release path: do NOT run local `npm publish`.** Push the code and release tag; GitHub Actions will sync/publish to npm.
 - **GitHub Actions OIDC release path should not require `npm login`.**
 - If a **local/manual npm publish fallback** is needed and `npm whoami` fails, ask the user to run:
 
