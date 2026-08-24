@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.15](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.15) (2026-08-24)
+
+
+### Features
+
+* **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
+
+
+### Bug Fixes
+
+* **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
+
 ### [1.1.14](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.14) (2026-08-24)
 
 
