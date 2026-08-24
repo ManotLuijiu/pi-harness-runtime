@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/knowledge-retrieval",
-  "version": "1.1.13",
+  "version": "1.1.14",
   "description": "Knowledge retrieval via TencentDB-Agent-Memory MCP (RFC-0105)",
   "type": "module",
   "main": "./dist/index.js",
