@@ -1,0 +1,28 @@
+{
+  "name": "@pi/skill-mcp-client",
+  "version": "0.0.1",
+  "description": "MCP client for Skills SaaS backend",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "undici": "^6.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
