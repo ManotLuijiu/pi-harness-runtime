@@ -6,6 +6,51 @@ import {
 	type ParsedContextWindowUsage,
 	type ParsedQuotaUsageData,
 } from "./status-parsers.ts";
+
+/**
+ * Format countdown seconds into a human-readable string for TUI display.
+ * Examples: "4h 32m", "45m 12s", "12s"
+ */
+export function formatCountdownForDisplay(seconds: number): string {
+	if (seconds <= 0) return "RESET";
+
+	const days = Math.floor(seconds / 86400);
+	const hours = Math.floor((seconds % 86400) / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const secs = seconds % 60;
+
+	if (days > 0) {
+		return `${days}d ${hours}h`;
+	}
+	if (hours > 0) {
+		return `${hours}h ${minutes}m`;
+	}
+	if (minutes > 0) {
+		return `${minutes}m ${secs}s`;
+	}
+	return `${secs}s`;
+}
+
+/**
+ * Build a TUI-signal exhaustion status line with optional countdown.
+ * This is used when a provider (like GLM) hits its limit.
+ */
+export function buildExhaustionStatusLine(
+	provider: string,
+	view: ProviderMirrorRecord,
+	countdownSeconds?: number,
+): string {
+	const label = providerDisplayName(provider);
+	const limitType = view.limitType ?? "tokens";
+	const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
+
+	if (countdownSeconds !== undefined && countdownSeconds > 0) {
+		const countdown = formatCountdownForDisplay(countdownSeconds);
+		return `${label}: ⏳ ${countdown} (${limitType} hit)`;
+	}
+
+	return `${label}: limit hit (${limitType}), reset ${reset}`;
+}
 import { getProviderLabel } from "./packages/types/src/ai-providers.js";
 import {
 	providerHasContinuousScrape,
@@ -153,14 +198,14 @@ export function buildFooterStatusValue(
 		const weeklyResets = view.weekly_resets_at ?? "soon";
 
 		let statusLine: string;
-		if (view.h5_used_pct !== undefined) {
+		if (view.h5_used_pct === undefined) {
+			// OpenAI: weekly-only (no 5h window)
+			statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
+		} else {
 			// MiniMax: has both 5h and weekly windows
 			const h5Pct = view.h5_used_pct;
 			const h5Left = Math.max(0, 100 - h5Pct);
 			statusLine = `5h: ${h5Left.toFixed(0)}% left · week: ${weeklyLeft.toFixed(0)}% left`;
-		} else {
-			// OpenAI: weekly-only (no 5h window)
-			statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
 		}
 
 		const freshnessSuffix =

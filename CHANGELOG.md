@@ -4,13 +4,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.13](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.12...v1.1.13) (2026-08-21)
 
-
 ### Bug Fixes
 
 * **runtime:** auto-resume after provider overload ([7bd98bb](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7bd98bb885536667a5eb35cfe6de45a06dc77269))
 
 ### [1.1.12](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.11...v1.1.12) (2026-08-20)
-
 
 ### Bug Fixes
 
@@ -18,14 +16,12 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.11) (2026-08-20)
 
-
 ### Features
 
 * add quota scrapers for ChatGPT and GLM providers ([17f9d0e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/17f9d0e7d6f486210a30244f2fecc0131e8b7d57))
 * improve Playwright Prompt ([24ac09b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/24ac09b75f5d79924a7a0c9e47cdacc9da143a68))
 * index.ts ([d0fc002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d0fc002d6d16e59318155677cb6128846bc993a4))
 * update workflow run name to show version number ([ee8c59f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ee8c59fec4c0116a5948b2ae04ad4609edaed3ac))
-
 
 ### Bug Fixes
 
@@ -49,14 +45,12 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.10](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.10) (2026-08-20)
 
-
 ### Features
 
 * add quota scrapers for ChatGPT and GLM providers ([17f9d0e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/17f9d0e7d6f486210a30244f2fecc0131e8b7d57))
 * improve Playwright Prompt ([24ac09b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/24ac09b75f5d79924a7a0c9e47cdacc9da143a68))
 * index.ts ([d0fc002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d0fc002d6d16e59318155677cb6128846bc993a4))
 * update workflow run name to show version number ([ee8c59f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ee8c59fec4c0116a5948b2ae04ad4609edaed3ac))
-
 
 ### Bug Fixes
 
@@ -79,7 +73,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.30](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.29...v0.10.30) (2026-08-11)
 
-
 ### Bug Fixes
 
 * **file-copy-helper:** require explicit intent for copy rule injection ([ddfece0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ddfece0bcbf440dfd4edc0d442b078e84e906c68))
@@ -98,12 +91,10 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.27](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.27) (2026-08-10)
 
-
 ### Features
 
 * create packages for missing RFC implementations ([e6ce2ff](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e6ce2ffdd455b33c55212ec2b61eedcdcfb43b5e))
 * **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
-
 
 ### Bug Fixes
 
@@ -120,11 +111,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.26](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.26) (2026-08-10)
 
-
 ### Features
 
 * **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
-
 
 ### Bug Fixes
 
@@ -141,11 +130,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.25) (2026-08-10)
 
-
 ### Features
 
 * **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
-
 
 ### Bug Fixes
 
@@ -161,11 +148,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.24) (2026-08-09)
 
-
 ### Features
 
 * **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
-
 
 ### Bug Fixes
 
@@ -180,11 +165,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.23) (2026-08-09)
 
-
 ### Features
 
 * **file-copy-helper:** inject cp rule when user asks to mimic/copy files ([f089f0d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f089f0d5e3e933231c99ee38cf18fa208c8eb8b2))
-
 
 ### Bug Fixes
 
@@ -198,7 +181,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.22) (2026-08-09)
 
-
 ### Bug Fixes
 
 * align TS formatting with main (remove 3-line logError) ([2515ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2515ad54f43f0566123c686d3ec4f92ad363ea13))
@@ -211,7 +193,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.21](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.21) (2026-08-08)
 
-
 ### Bug Fixes
 
 * align TS formatting with main (remove 3-line logError) ([2515ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2515ad54f43f0566123c686d3ec4f92ad363ea13))
@@ -223,7 +204,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.20](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.20) (2026-08-08)
 
-
 ### Bug Fixes
 
 * align TS formatting with main (remove 3-line logError) ([2515ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2515ad54f43f0566123c686d3ec4f92ad363ea13))
@@ -234,13 +214,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.10.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.9...v0.10.11) (2026-08-03)
 
-
 ### Features
 
 * add knowledge-retrieval package for TencentDB-Agent-Memory MCP (RFC-0105) ([a4558d0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a4558d098c7b662b01d9502c8560219eafbf1941))
 * add okf-indexer package for SKILL.md indexing (RFC-0106) ([a3cc7da](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a3cc7da0a390d5c8176d0d871418780facabcb5c))
 * extend a2a-adapter with discovery server (RFC-0104) ([0c4fc18](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0c4fc1826fd55f10305bfbd894b32b5b55f1ab86))
-
 
 ### Bug Fixes
 
@@ -263,13 +241,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ## [0.10.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.24...v0.10.0) (2026-07-30)
 
-
 ### Features
 
 * blackboard-coordinated loop controller with early exit ([f3cf3ea](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3cf3ea479170dd75b7e9a7c3515dde230bb0da7))
 * herdr inter-agent event bus for autonomous code review ([1490cdd](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1490cddec80dac812065c3c681984524ad3194e1))
 * loop controller for write-review cycles with early exit ([95066ce](https://github.com/ManotLuijiu/pi-harness-runtime/commit/95066ce8cb58c55eaa14d69fd826b5aaff680c16))
-
 
 ### Bug Fixes
 
@@ -283,7 +259,6 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
 
-
 ### Bug Fixes
 
 * **ci:** explicitly list test files to exclude cookie auth tests in release workflow ([1c96002](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1c9600232282a1ef9323300fbd763c962aff49f6))
@@ -293,7 +268,6 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
 
 ### [0.9.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.24) (2026-07-27)
-
 
 ### Bug Fixes
 

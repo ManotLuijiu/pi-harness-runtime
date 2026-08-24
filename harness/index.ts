@@ -210,6 +210,18 @@ export type {
 	LearnedExperience,
 } from "../packages/learning-engine/src/types.js";
 
+// --- GLM Quota Countdown -----------------------------------------------
+export {
+	GLMQuotaCountdown,
+	getGLMQuotaCountdown,
+	parseGLMResetTime,
+	formatCountdown,
+} from "./glm-quota-countdown.js";
+export type {
+	GLMQuotaCountdownState,
+	CountdownTickEvent,
+} from "./glm-quota-countdown.js";
+
 // --- RFC-0059: Experience Replay ------------------------------------------
 export {
 	ExperienceReplay,
