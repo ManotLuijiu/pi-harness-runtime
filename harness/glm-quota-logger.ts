@@ -29,7 +29,11 @@ function ensureLogDir(): void {
 }
 
 /** Format log entry */
-function formatLog(level: LogLevel, jobId: string | null, message: string): string {
+function formatLog(
+	level: LogLevel,
+	jobId: string | null,
+	message: string,
+): string {
 	const timestamp = new Date().toISOString();
 	const job = jobId ? `[${jobId}]` : "[system]";
 	return `[${timestamp}] [${level}] ${job} ${message}`;
@@ -38,7 +42,11 @@ function formatLog(level: LogLevel, jobId: string | null, message: string): stri
 /**
  * Write a log entry to file
  */
-function writeLog(level: LogLevel, jobId: string | null, message: string): void {
+function writeLog(
+	level: LogLevel,
+	jobId: string | null,
+	message: string,
+): void {
 	try {
 		ensureLogDir();
 		const entry = formatLog(level, jobId, message) + "\n";
@@ -70,7 +78,11 @@ export function logWarn(jobId: string | null, message: string): void {
 /**
  * Log error level event
  */
-export function logError(jobId: string | null, message: string, error?: unknown): void {
+export function logError(
+	jobId: string | null,
+	message: string,
+	error?: unknown,
+): void {
 	const errorMsg = error instanceof Error ? error.message : String(error ?? "");
 	const fullMessage = errorMsg ? `${message}: ${errorMsg}` : message;
 	console.error(`[GLMQuota] ${jobId ? `[${jobId}] ` : ""}${fullMessage}`);
@@ -87,10 +99,7 @@ export function logCountdownStarted(
 ): void {
 	const hours = Math.floor(totalSeconds / 3600);
 	const minutes = Math.floor((totalSeconds % 3600) / 60);
-	logInfo(
-		jobId,
-		`Countdown started: ${hours}h ${minutes}m until ${resetAt}`,
-	);
+	logInfo(jobId, `Countdown started: ${hours}h ${minutes}m until ${resetAt}`);
 }
 
 /** Log countdown tick */
@@ -101,10 +110,7 @@ export function logCountdownTick(
 	const hours = Math.floor(remainingSeconds / 3600);
 	const minutes = Math.floor((remainingSeconds % 3600) / 60);
 	const secs = remainingSeconds % 60;
-	logInfo(
-		jobId,
-		`Countdown tick: ${hours}h ${minutes}m ${secs}s remaining`,
-	);
+	logInfo(jobId, `Countdown tick: ${hours}h ${minutes}m ${secs}s remaining`);
 }
 
 /** Log countdown completed */
@@ -123,19 +129,13 @@ export function logAutoResumeFailed(jobId: string, error: string): void {
 }
 
 /** Log notification sent */
-export function logNotificationSent(
-	jobId: string,
-	beforeReset: number,
-): void {
+export function logNotificationSent(jobId: string, beforeReset: number): void {
 	const minutes = Math.floor(beforeReset / 60);
 	logInfo(jobId, `Notification sent: ${minutes} minutes before reset`);
 }
 
 /** Log notification failed */
-export function logNotificationFailed(
-	jobId: string,
-	error: string,
-): void {
+export function logNotificationFailed(jobId: string, error: string): void {
 	logWarn(jobId, `Notification failed: ${error}`);
 }
 
@@ -149,10 +149,7 @@ export function logMirrorUpdate(jobId: string, success: boolean): void {
 }
 
 /** Log quota exhaustion detected */
-export function logQuotaExhausted(
-	jobId: string,
-	resetAt: string,
-): void {
+export function logQuotaExhausted(jobId: string, resetAt: string): void {
 	logInfo(jobId, `GLM 5h quota exhausted, reset at ${resetAt}`);
 }
 

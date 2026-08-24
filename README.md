@@ -1,6 +1,6 @@
 # Pi Harness Runtime
 
-[![Beta](https://img.shields.io/badge/version-0.9.13-orange?style=for-the-badge)](https://github.com/ManotLuijiu/pi-harness-runtime)
+[![Beta](https://img.shields.io/badge/version-1.1.16-orange?style=for-the-badge)](https://github.com/ManotLuijiu/pi-harness-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20|Linux-blue?style=for-the-badge)]()
 
@@ -171,8 +171,13 @@ pi-harness-runtime/
 |   +-- blackboard.ts           # Agent coordination
 |   +-- context-window-manager.ts # Context tracking
 |   +-- agent-handoff.ts        # Clean agent transitions
+|   +-- auto-quota-resume.ts    # 5h quota auto-resume scheduler
+|   +-- glm-quota-countdown.ts  # GLM countdown + notifications
+|   +-- glm-quota-logger.ts     # Structured GLM quota logging
+|   +-- notification-events.ts  # LINE/mobile notifications
 |   +-- e2e/
 |   |   +-- minimax-quota-scraper.ts  # Playwright MiniMax scraper
+|   |   +-- glm-quota-scraper.ts       # GLM API quota scraper
 |   |   +-- playwright-runner.ts       # Browser automation
 |   +-- project-detector/
 |       +-- detector.ts         # Auto-detect project type
@@ -201,12 +206,14 @@ cancelled  blocked   waiting_human  repairing  ready_for_client
 
 - **Resumable**: Every state change is checkpointed to disk
 - **Quota-aware**: Detects quota exhaustion, pauses, resumes after reset
-- **Provider-agnostic**: MiniMax, OpenAI, Claude adapters
+- **GLM Auto-Resume**: Parses 429 errors, countdown timer, notifications at 15/5/1 min, auto-resume before reset
+- **Provider-agnostic**: MiniMax, OpenAI, GLM, Claude adapters
 - **Task DAG**: Dependencies tracked, topological execution
 - **Auto-repair**: Failure classification + retry with exponential backoff
 - **E2E testing**: Scenario-based Playwright integration (coming soon)
 - **Project detection**: Auto-detects Frappe, Next.js, React, Django, Laravel
 - **Per-provider mirror**: Each LLM provider maintains its own quota record
+- **Structured logging**: GLM quota events logged to `~/.pi/harness-logs/glm-quota.log`
 
 ## Data Directory
 
@@ -219,12 +226,15 @@ All data stored locally in `~/.pi/`:
 |   +-- mirror.json        # per-provider quota mirror
 +-- harness/            # /harness data
 |   +-- jobs/
-|       +-- <job-id>/
-|           +-- checkpoint.json
-|           +-- events.jsonl
-|           +-- task-graph.json
-|           +-- blackboard/
-|           +-- repair-tasks.jsonl
+|   |   +-- <job-id>/
+|   |       +-- checkpoint.json
+|   |       +-- events.jsonl
+|   |       +-- task-graph.json
+|   |       +-- blackboard/
+|   |       +-- repair-tasks.jsonl
+|   +-- inbox/           # task inbox (RFC-0101)
++-- harness-logs/       # GLM quota logs
+|   +-- glm-quota.log    # countdown, auto-resume, notifications
 +-- okf/               # (optional) Your custom OKF knowledge
 ```
 
@@ -269,7 +279,7 @@ See `packages/context-compiler/` for how OKF concepts are loaded.
 ## Testing
 
 ```bash
-bun test   # 131+ tests passing
+bun test   # ~1500+ tests across harness and packages
 ```
 
 ## Automatic Quota Fetching
@@ -288,11 +298,59 @@ Quota data is automatically surfaced per-provider:
 The footer line carries the provider label, so you always know which LLM the data is from:
 
 ```
-MiniMax:  5h: 92% left · week: 80% left            # continuous (cookie scrape)
+MiniMax:  5h: 92% left · week: 80% left              # continuous (cookie scrape)
 OpenAI:   5h: -- · week: -- (no signal yet)          # pending first limit hit
-GLM:      limit hit (tokens), reset 2026-07-23T17:28:00Z   # TUI signal observed
-MiniMax:  cookies not found — drop any cookie file into
-          ~/.pi-harness-runtime/cookies/
+GLM:      5h quota hit, resets Aug 25 01:47          # TUI signal with countdown
+GLM:      ⏳ 4h 32m (5h quota)                      # active countdown
+```
+
+### GLM Auto-Resume with Countdown
+
+When GLM 5h quota is exhausted (429 error), the runtime:
+
+1. **Parses the reset time** from the error message (e.g., `"reset at 2026-08-25 01:47:16"`)
+2. **Starts a countdown timer** showing time until reset
+3. **Sends notifications** at 15min, 5min, and 1min before reset
+4. **Auto-resumes** the job 10 seconds before reset time
+5. **Logs all events** to `~/.pi/harness-logs/glm-quota.log`
+
+#### Log File Location
+
+```bash
+~/.pi/harness-logs/glm-quota.log
+```
+
+#### Log Levels
+
+| Level | Events |
+|-------|--------|
+| `INFO` | Countdown started, ticks, resume triggered, notifications sent |
+| `WARN` | Notification failed, mirror update failed, parse error |
+| `ERROR` | Auto-resume failed, critical errors |
+
+#### Log Format
+
+```
+[2026-08-25T01:47:00.000Z] [INFO] [job-001] Countdown started: 4h 32m until 2026-08-25T06:19:00.000Z
+[2026-08-25T01:48:00.000Z] [INFO] [job-001] Notification sent: 15 minutes before reset
+[2026-08-25T06:18:50.000Z] [INFO] [job-001] Countdown complete, triggering auto-resume
+[2026-08-25T06:18:51.000Z] [INFO] [job-001] Auto-resume succeeded, job resumed
+```
+
+#### View Logs
+
+```bash
+# Tail the log in real-time
+tail -f ~/.pi/harness-logs/glm-quota.log
+
+# View recent entries
+tail -50 ~/.pi/harness-logs/glm-quota.log
+
+# Filter by job
+grep "job-001" ~/.pi/harness-logs/glm-quota.log
+
+# Filter by errors only
+grep "\[ERROR\]" ~/.pi/harness-logs/glm-quota.log
 ```
 
 ### MiniMax Setup (one-time)
@@ -431,7 +489,7 @@ Push notification sent to your LINE app
 | `JobStarted` | 🚀 | Job execution started |
 | `TaskCompleted` | ✅ | Task completed successfully |
 | `TaskFailed` | ❌ | Task failed with error |
-| `QuotaPaused` | ⏸️ | Quota limit reached, paused |
+| `QuotaPaused` | ⏸️ | Quota limit reached, countdown started, auto-resume pending |
 | `ResumeScheduled` | ▶️ | Resume scheduled |
 | `ContextCompacted` | 📦 | Context window compacted |
 | `OutputLimitContinued` | 🔄 | Output limit exceeded, continued |
