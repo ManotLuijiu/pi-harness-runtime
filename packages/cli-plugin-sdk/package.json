@@ -1,6 +1,6 @@
 {
   "name": "@pi/cli-plugin-sdk",
-  "version": "1.1.14",
+  "version": "1.1.15",
   "type": "module",
   "description": "CLI Plugin SDK for pi-harness — install, list, remove, update, invoke plugins",
   "main": "dist/index.js",
