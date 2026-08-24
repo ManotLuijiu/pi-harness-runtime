@@ -261,3 +261,28 @@ export type {
 	KnowledgeQuery,
 	KnowledgeResult,
 } from "../packages/memory-engine/src/types.js";
+
+// --- E2E Testing (RFC-0101) -----------------------------------------------
+export {
+	detectProjectType,
+	detectAvailableTools,
+	getRecommendedTools,
+	makeSmartDecision,
+	generateToolsPresentation,
+	getE2EToolsConfig,
+} from "./e2e/tools-detector.js";
+export type {
+	SmartDecision,
+	TestingTool,
+	E2EToolsConfig,
+	ProjectType,
+	NativeAppType,
+} from "./e2e/tools-detector.js";
+export {
+	runAutoTestLoop,
+} from "./e2e/auto-test-loop.js";
+export type {
+	E2ETestResult,
+	AutoTestConfig,
+	AutoTestResult,
+} from "./e2e/auto-test-loop.js";
