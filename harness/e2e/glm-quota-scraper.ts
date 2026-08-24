@@ -143,7 +143,8 @@ export class GLMQuotaScraper {
 
 	constructor(config: GLMScraperConfig = {}) {
 		// Resolve API key: direct value > file > null
-		const apiKey = config.apiKey ?? loadApiKey(config.apiKeyFile ?? DEFAULT_API_KEY_FILE);
+		const apiKey =
+			config.apiKey ?? loadApiKey(config.apiKeyFile ?? DEFAULT_API_KEY_FILE);
 
 		this.config = {
 			apiKeyFile: config.apiKeyFile ?? DEFAULT_API_KEY_FILE,
@@ -191,13 +192,16 @@ export class GLMQuotaScraper {
 	/**
 	 * Fetch usage data from z.ai API
 	 */
-	async fetchUsage(startDate?: Date, endDate?: Date): Promise<GLMQuotaData | null> {
+	async fetchUsage(
+		startDate?: Date,
+		endDate?: Date,
+	): Promise<GLMQuotaData | null> {
 		const apiKey = this.getApiKey();
 		if (!apiKey) {
 			if (!this.config.quiet) {
 				console.error(
 					`[DEBUG GLMQuotaScraper] No API key found. ` +
-					`Set ZAI_API_KEY env var or drop key into ${DEFAULT_API_KEY_FILE}`,
+						`Set ZAI_API_KEY env var or drop key into ${DEFAULT_API_KEY_FILE}`,
 				);
 			}
 			return null;
@@ -214,7 +218,9 @@ export class GLMQuotaScraper {
 
 		try {
 			if (!this.config.quiet) {
-				console.log(`[DEBUG GLMQuotaScraper] Fetching usage from ${startStr} to ${endStr}`);
+				console.log(
+					`[DEBUG GLMQuotaScraper] Fetching usage from ${startStr} to ${endStr}`,
+				);
 			}
 
 			const response = await fetch(url, {
@@ -234,7 +240,7 @@ export class GLMQuotaScraper {
 				return null;
 			}
 
-			const data = await response.json() as {
+			const data = (await response.json()) as {
 				code?: number;
 				success?: boolean;
 				data?: {
@@ -255,7 +261,9 @@ export class GLMQuotaScraper {
 
 			if (!data.success || !data.data) {
 				if (!this.config.quiet) {
-					console.error(`[DEBUG GLMQuotaScraper] API error: ${data.msg ?? "Unknown error"}`);
+					console.error(
+						`[DEBUG GLMQuotaScraper] API error: ${data.msg ?? "Unknown error"}`,
+					);
 				}
 				return null;
 			}
@@ -279,8 +287,8 @@ export class GLMQuotaScraper {
 			if (!this.config.quiet) {
 				console.log(
 					`[DEBUG GLMQuotaScraper] Total calls: ${result.totalCalls}, ` +
-					`Total tokens: ${result.totalTokens.toLocaleString()}, ` +
-					`Model: ${result.modelName}`,
+						`Total tokens: ${result.totalTokens.toLocaleString()}, ` +
+						`Model: ${result.modelName}`,
 				);
 			}
 
@@ -320,7 +328,7 @@ export class GLMQuotaScraper {
 				return null;
 			}
 
-			const data = await response.json() as {
+			const data = (await response.json()) as {
 				code?: number;
 				success?: boolean;
 				data?: Array<{
@@ -479,7 +487,7 @@ export class GLMQuotaManager {
 			return this.lastQuota;
 		}
 
-		this.lastQuota = await this.scraper.fetchUsage() ?? undefined;
+		this.lastQuota = (await this.scraper.fetchUsage()) ?? undefined;
 		this.lastFetchTime = now;
 		return this.lastQuota ?? null;
 	}
