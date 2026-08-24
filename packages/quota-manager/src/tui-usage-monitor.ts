@@ -63,6 +63,10 @@ const PROVIDER_PATTERNS = {
 		/zhipu.*(?:quota|limit|exhausted)/i,
 		/glm.*context.*(?:window|length)/i,
 		/glm.*rate.?limit/i,
+		/glm.*429/i,
+		/code.*1308/i, // GLM specific error code
+		/Usage limit reached/i,
+		/5 hour.*quota/i,
 	],
 	anthropic: [
 		/(?:^|\s)Claude(?:$|\s)/i,
@@ -79,6 +83,8 @@ const PROVIDER_PATTERNS = {
 };
 
 const RESET_TIME_PATTERNS = [
+	// GLM specific: "reset at 2026-08-25 01:47:16" or "reset at 2026-08-25T01:47:16"
+	/reset\s+(?:at\s+)?(\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i,
 	/reset(?:s)?\s+(?:at|in)\s+(\d{1,2}):(\d{2})/i,
 	/(?:at|in)\s+(\d{1,2}):(\d{2})/i,
 	/retry\s+after\s+(\d{1,2}):(\d{2})/i,
@@ -189,9 +195,9 @@ export class TUIUsageMonitor extends EventEmitter {
 
 		// Determine if exhausted
 		const exhausted =
-			usedPct !== undefined
-				? usedPct >= 100
-				: this.containsExhaustedKeywords(message);
+			usedPct === undefined
+				? this.containsExhaustedKeywords(message)
+				: usedPct >= 100;
 
 		if (!exhausted && !resetsAt) {
 			// Not a quota signal
@@ -202,7 +208,7 @@ export class TUIUsageMonitor extends EventEmitter {
 			provider,
 			timestamp: new Date().toISOString(),
 			usedPct,
-			remainingPct: usedPct !== undefined ? 100 - usedPct : 0,
+			remainingPct: usedPct === undefined ? 0 : 100 - usedPct,
 			exhausted,
 			resetsAt,
 			limitType,
@@ -275,6 +281,17 @@ export class TUIUsageMonitor extends EventEmitter {
 		for (const pattern of RESET_TIME_PATTERNS) {
 			const match = message.match(pattern);
 			if (match) {
+				// Check if this is the full datetime pattern (first in list)
+				if (pattern === RESET_TIME_PATTERNS[0] && match[1].includes("-")) {
+					// GLM full datetime format: "2026-08-25 01:47:16" or "2026-08-25T01:47:16"
+					const datetimeStr = match[1].replace(" ", "T");
+					const date = new Date(datetimeStr);
+					if (!isNaN(date.getTime())) {
+						return date.toISOString();
+					}
+				}
+
+				// Time-only patterns
 				let hour = parseInt(match[1], 10);
 				const minute = parseInt(match[2], 10);
 
