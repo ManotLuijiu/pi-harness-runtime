@@ -32,6 +32,61 @@ export function formatCountdownForDisplay(seconds: number): string {
 }
 
 /**
+ * Get a human-readable limit type label.
+ * Special cases for GLM's 5h quota limit.
+ */
+function getLimitTypeLabel(provider: string, limitType?: string): string {
+	// GLM specific: 5h quota limit
+	if (provider === "glm" && limitType === "rate_limit") {
+		return "5h quota";
+	}
+	return limitType ?? "tokens";
+}
+
+/**
+ * Format reset time for display.
+ * Converts ISO strings or human-readable times to a compact format.
+ */
+function formatResetTime(resetAt?: string): string {
+	if (!resetAt) return "soon";
+
+	// If it's already a short human-readable string, return as-is
+	if (/^\d+\s*(hr|min|day|d|h|m|s)/i.test(resetAt)) {
+		return resetAt;
+	}
+
+	// Try to parse as ISO datetime
+	const date = new Date(resetAt);
+	if (!isNaN(date.getTime())) {
+		// Format as "Aug 25 01:47" or similar
+		const now = new Date();
+		const sameYear = date.getFullYear() === now.getFullYear();
+		const sameDay = date.toDateString() === now.toDateString();
+
+		const timeStr = date.toLocaleTimeString("en-US", {
+			hour: "2-digit",
+			minute: "2-digit",
+			hour12: false,
+		});
+
+		if (sameDay) {
+			return `today ${timeStr}`;
+		}
+
+		const month = date.toLocaleString("en-US", { month: "short" });
+		const day = date.getDate();
+
+		if (sameYear) {
+			return `${month} ${day} ${timeStr}`;
+		}
+
+		return `${month} ${day} ${date.getFullYear()} ${timeStr}`;
+	}
+
+	return resetAt;
+}
+
+/**
  * Build a TUI-signal exhaustion status line with optional countdown.
  * This is used when a provider (like GLM) hits its limit.
  */
@@ -41,15 +96,15 @@ export function buildExhaustionStatusLine(
 	countdownSeconds?: number,
 ): string {
 	const label = providerDisplayName(provider);
-	const limitType = view.limitType ?? "tokens";
-	const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
+	const limitTypeLabel = getLimitTypeLabel(provider, view.limitType);
+	const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
 
 	if (countdownSeconds !== undefined && countdownSeconds > 0) {
 		const countdown = formatCountdownForDisplay(countdownSeconds);
-		return `${label}: ⏳ ${countdown} (${limitType} hit)`;
+		return `${label}: ⏳ ${countdown} (${limitTypeLabel})`;
 	}
 
-	return `${label}: limit hit (${limitType}), reset ${reset}`;
+	return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
 }
 import { getProviderLabel } from "./packages/types/src/ai-providers.js";
 import {
@@ -180,9 +235,9 @@ export function buildFooterStatusValue(
 			view.resets_at !== undefined ||
 			view.h5_resets_at !== undefined)
 	) {
-		const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
-		const limitType = view.limitType ?? "tokens";
-		return `${label}: limit hit (${limitType}), reset ${reset}`;
+		const limitTypeLabel = getLimitTypeLabel(provider, view.limitType ?? undefined);
+		const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
+		return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
 	}
 
 	// Continuous data path: providers with continuous scrape (MiniMax has 5h+weekly, OpenAI has weekly-only)
