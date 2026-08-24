@@ -284,3 +284,11 @@ export type {
 	AutoTestConfig,
 	AutoTestResult,
 } from "./e2e/auto-test-loop.js";
+
+// --- Skill SaaS Sync (RFC-0106) ----------------------------------------
+export {
+	syncSkillsFromSaaS,
+	getSkillFromSaaS,
+	isSkillSyncConfigured,
+	getSyncStatus,
+} from "./skill-sync.js";
