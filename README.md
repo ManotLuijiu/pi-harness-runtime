@@ -287,7 +287,7 @@ bun test   # ~1500+ tests across harness and packages
 Quota data is automatically surfaced per-provider:
 
 | Provider | Source | Notes |
-|---|---|---|
+| --- | --- | --- |
 | MiniMax | Live cookie-file watch + Playwright scrape | Drop folder: `~/.pi-harness-runtime/cookies/` |
 | OpenAI / OpenAI Codex | TUI message capture | Signal on first limit hit |
 | GLM (Z.ai / Zhipu) | TUI message capture | Signal on first limit hit |
@@ -323,7 +323,7 @@ When GLM 5h quota is exhausted (429 error), the runtime:
 #### Log Levels
 
 | Level | Events |
-|-------|--------|
+| ------- | -------- |
 | `INFO` | Countdown started, ticks, resume triggered, notifications sent |
 | `WARN` | Notification failed, mirror update failed, parse error |
 | `ERROR` | Auto-resume failed, critical errors |
@@ -426,7 +426,7 @@ Your local machine clipboard
 ### Files
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `config.toml.example` | Template for `~/.config/herdr/config.toml` |
 | `~/.herdr-clipboard` | Bridge file between herdr and clipboard |
 | `~/.config/herdr/plugins/moocoding.clipboard-bridge/` | herdr plugin |
@@ -485,7 +485,7 @@ Push notification sent to your LINE app
 #### Supported Events
 
 | Event | Emoji | Description |
-|-------|-------|-------------|
+| ------- | ------- | ------------- |
 | `JobStarted` | 🚀 | Job execution started |
 | `TaskCompleted` | ✅ | Task completed successfully |
 | `TaskFailed` | ❌ | Task failed with error |
@@ -547,7 +547,7 @@ MIT © 2026 MooCoding
 The project tracks 101 design documents:
 
 | RFC | Title | Status |
-|-----|-------|--------|
+| ----- | ------- | -------- |
 | 0001–0034 | Loop Runtime, Provider Adapter, Quota Manager, Playwright, Git Worktree, Checkpoint, Scheduler, Provider Router, Shared Context, Context Window Manager, Shared Blackboard, Agent Handoff, E2E Test Engine, Project Detector, Job State Machine, Task Graph, Master Planner, Repair Engine, Auto Compact & Continue, Output Token Limit, Partial Response Recovery, Notification Center, Local Browser Agent, Local Runtime Agent, Command Executor, Workspace Manager, Runtime API, Policy Engine, DeepAgents Adapter, Agent Worker Interface, Provider Adapter SDK, Checkpoint Engine, Session Manager | Proposed |
 | 0035–0100 | Observability, Roadmap V1, Code Review, Code Generation, Framework Detector, Test Data Generator, Framework Plugin SDK, Prompt Compiler, Context Compiler, Requirement Compiler, Task Compiler, Project Analyzer, Dependency Analyzer, Repo Knowledge Graph, Code Merge Engine, Conflict Resolution, Documentation Generator, Capability Registry, Skill Registry, Model Registry, Cost Optimizer, Performance Optimizer, Evaluation Engine, Learning Engine, Experience Replay, Memory Engine OKF, Frappe/Next.js/React/Django/Laravel/Generic Web Plugins, CLI Plugin SDK, MCP Adapter, A2A Adapter, Codex Adapter, Requirement Intake, Project Bootstrap, Architecture Generator, Sprint Planner, Milestone Manager, Backlog Manager, Human Approval Gate, Release Manager, Version Manager, Deployment Pipeline, Multi-User Runtime, RBAC, Audit Trail, Dashboard, Analytics, Distributed Runtime, Cluster Manager, Runtime Federation, High Availability, Disaster Recovery, + 17 Autonomous Architectures | Proposed |
 | 0101 | [Autonomous Operations Runtime](RFC/0101_AUTONOMOUS_OPERATIONS_RUNTIME.md) — durable Task Inbox, Background Worker, Task Lease protocol, Privilege Broker, Approval Class policy engine, abstract Scheduler, Notification pipeline, Recovery semantics | Proposed |
