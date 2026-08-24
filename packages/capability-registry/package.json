@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/capability-registry",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "description": "Capability Registry for pi-harness-runtime — tracks model capabilities and enables capability-based routing",
   "type": "module",
   "main": "./dist/index.js",
