@@ -5,5 +5,9 @@
  */
 
 export { SkillMCPClient, type SkillMCPClientConfig } from "./client.js";
-export { SkillAPIError, SkillCacheError, SkillValidationError } from "./errors.js";
+export {
+ SkillAPIError,
+ SkillCacheError,
+ SkillValidationError,
+} from "./errors.js";
 export * from "./types.js";

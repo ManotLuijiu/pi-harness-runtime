@@ -85,11 +85,7 @@ export class SkillMCPClient {
     const data = (await response.json()) as MCPResponse<T>;
 
     if (data.error) {
-      throw new SkillAPIError(
-        data.error.message,
-        data.error.code,
-        method,
-      );
+      throw new SkillAPIError(data.error.message, data.error.code, method);
     }
 
     if (!data.result) {
@@ -124,14 +120,20 @@ export class SkillMCPClient {
         "skills.get",
       );
     }
-    return this.request<GetSkillResult>("skills.get", params as Record<string, unknown>);
+    return this.request<GetSkillResult>(
+      "skills.get",
+      params as Record<string, unknown>,
+    );
   }
 
   /**
    * Sync all skills for the user's tier (bulk download)
    */
   async syncSkills(params?: SyncSkillsParams): Promise<SyncSkillsResult> {
-    return this.request<SyncSkillsResult>("skills.sync", (params ?? {}) as Record<string, unknown>);
+    return this.request<SyncSkillsResult>(
+      "skills.sync",
+      (params ?? {}) as Record<string, unknown>,
+    );
   }
 
   /**
@@ -150,7 +152,13 @@ export class SkillMCPClient {
   /**
    * List all categories
    */
-  async listCategories(): Promise<{ categories: Array<{ slug: string; displayName: string; skillCount: number }> }> {
+  async listCategories(): Promise<{
+    categories: Array<{
+      slug: string;
+      displayName: string;
+      skillCount: number;
+    }>;
+  }> {
     return this.request("categories.list");
   }
 
