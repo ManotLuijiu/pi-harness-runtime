@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/notification",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "description": "pi-harness-runtime — notification",
   "type": "module",
   "main": "./dist/index.js",

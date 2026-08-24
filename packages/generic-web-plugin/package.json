@@ -1,6 +1,6 @@
 {
   "name": "@pi/generic-web-plugin",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "description": "Generic web framework analysis — REST/GraphQL endpoints, OpenAPI, auth",
   "type": "module",
   "main": "./dist/index.js",
