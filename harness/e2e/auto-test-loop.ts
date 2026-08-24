@@ -95,7 +95,10 @@ export async function runAutoTestLoop(
 		toolsConfig.projectType,
 		toolsConfig.detectedTools,
 	);
-	logInfo(null, `Smart decision: ${decision.suggestedAction} (confidence: ${decision.confidence})`);
+	logInfo(
+		null,
+		`Smart decision: ${decision.suggestedAction} (confidence: ${decision.confidence})`,
+	);
 
 	// Handle decision
 	switch (decision.suggestedAction) {
@@ -128,7 +131,7 @@ export async function runAutoTestLoop(
 				logInfo(null, "Generating test stubs...");
 				await generateTestStubs(cfg.projectRoot, toolsConfig.projectType);
 			}
-			// Fall through to run tests
+		// Fall through to run tests
 
 		case "auto_run":
 		default:
@@ -165,18 +168,28 @@ async function runTestLoop(
 				testsPassed: true,
 				retriesAttempted,
 				escalatedToHuman: false,
-				output: lastResult && lastResult.output || "",
+				output: (lastResult && lastResult.output) || "",
 				duration: Date.now() - startTime,
 			};
 		}
 
 		// Tests failed
-		logWarn(null, `❌ E2E tests failed: ${lastResult && lastResult.errorMessage || " error"}`);
+		logWarn(
+			null,
+			`❌ E2E tests failed: ${(lastResult && lastResult.errorMessage) || " error"}`,
+		);
 		retriesAttempted++;
 
 		// Analyze failure
-		const analysis = analyzeFailure(lastResult!, cfg.projectRoot, toolsConfig.projectType);
-		logInfo(null, `Failure analysis: ${analysis.canFix ? "Can auto-fix" : "Needs manual intervention"}`);
+		const analysis = analyzeFailure(
+			lastResult!,
+			cfg.projectRoot,
+			toolsConfig.projectType,
+		);
+		logInfo(
+			null,
+			`Failure analysis: ${analysis.canFix ? "Can auto-fix" : "Needs manual intervention"}`,
+		);
 
 		if (analysis.canFix && cfg.autoFixEnabled) {
 			// Try to fix
@@ -197,7 +210,7 @@ async function runTestLoop(
 				retriesAttempted,
 				escalatedToHuman: true,
 				escalationReason: `Environment limitation: ${lastResult.errorMessage || "Unable to run tests in current environment"}`,
-				output: lastResult && lastResult.output || "",
+				output: (lastResult && lastResult.output) || "",
 				duration: Date.now() - startTime,
 			};
 		}
@@ -212,7 +225,7 @@ async function runTestLoop(
 				retriesAttempted,
 				escalatedToHuman: true,
 				escalationReason: `Failed after ${cfg.maxRetries} attempts. Last error: ${lastResult?.errorMessage ?? "Unknown"}`,
-				output: lastResult && lastResult.output || "",
+				output: (lastResult && lastResult.output) || "",
 				duration: Date.now() - startTime,
 			};
 		}
@@ -264,7 +277,8 @@ async function runTests(
 					output: "",
 					duration: 0,
 					failedTests: [],
-					errorMessage: "Native app testing requires manual setup. Run tests manually.",
+					errorMessage:
+						"Native app testing requires manual setup. Run tests manually.",
 				};
 
 			case "flutter":
@@ -347,7 +361,11 @@ function analyzeFailure(
 	// Check for common auto-fixable issues
 
 	// 1. Missing test file - can generate
-	if (failedTests.some((t: string) => t.includes("Cannot find") || t.includes("not found"))) {
+	if (
+		failedTests.some(
+			(t: string) => t.includes("Cannot find") || t.includes("not found"),
+		)
+	) {
 		return {
 			canFix: true,
 			reason: "Missing test file - can generate stubs",
@@ -358,7 +376,10 @@ function analyzeFailure(
 	}
 
 	// 2. Import errors - can fix
-	if (result.output.includes("Cannot find module") || result.output.includes("import error")) {
+	if (
+		result.output.includes("Cannot find module") ||
+		result.output.includes("import error")
+	) {
 		return {
 			canFix: true,
 			reason: "Import error - may need npm install",
@@ -369,7 +390,11 @@ function analyzeFailure(
 	}
 
 	// 3. Locator errors - can fix (re-generate selectors)
-	if (failedTests.some((t: string) => t.includes("locator") || t.includes("selector"))) {
+	if (
+		failedTests.some(
+			(t: string) => t.includes("locator") || t.includes("selector"),
+		)
+	) {
 		return {
 			canFix: true,
 			reason: "UI locator changed - need to update selectors",
@@ -380,7 +405,12 @@ function analyzeFailure(
 	}
 
 	// 4. Auth/session issues - might be environment
-	if (failedTests.some((t: string) => t.includes("auth") || t.includes("login") || t.includes("session"))) {
+	if (
+		failedTests.some(
+			(t: string) =>
+				t.includes("auth") || t.includes("login") || t.includes("session"),
+		)
+	) {
 		return {
 			canFix: false,
 			reason: "Authentication issue - may need test credentials",
@@ -438,7 +468,10 @@ async function attemptAutoFix(
 	}
 
 	// Fix 2: Run npm install
-	if (analysis.reason.includes("import error") || analysis.reason.includes("Missing dependencies")) {
+	if (
+		analysis.reason.includes("import error") ||
+		analysis.reason.includes("Missing dependencies")
+	) {
 		try {
 			execSync("npm install", { cwd: projectRoot, stdio: "ignore" });
 			return { fixed: true, description: "Ran npm install" };
@@ -448,7 +481,10 @@ async function attemptAutoFix(
 	}
 
 	// Fix 3: Start dev server (for web apps)
-	if (analysis.reason.includes("Timeout") || analysis.reason.includes("Server slow")) {
+	if (
+		analysis.reason.includes("Timeout") ||
+		analysis.reason.includes("Server slow")
+	) {
 		try {
 			// Check if dev server is already running
 			const port = 3000;
@@ -498,7 +534,9 @@ function isEnvironmentLimitation(result: E2ETestResult): boolean {
 		"ETIMEDOUT",
 	];
 
-	return envIssues.some((issue) => output.toLowerCase().includes(issue.toLowerCase()));
+	return envIssues.some((issue) =>
+		output.toLowerCase().includes(issue.toLowerCase()),
+	);
 }
 
 /**
@@ -630,7 +668,10 @@ function findSourceFiles(srcDir: string, projectType: ProjectType): string[] {
 		generic: [".ts", ".tsx", ".js", ".jsx"],
 	};
 
-	const exts = extensions[projectType as keyof typeof extensions] || [".ts", ".tsx"];
+	const exts = extensions[projectType as keyof typeof extensions] || [
+		".ts",
+		".tsx",
+	];
 	const files: string[] = [];
 
 	try {
@@ -666,13 +707,19 @@ function createTestFilePath(
 		generic: ".test.ts",
 	};
 
-	return join(testDir, `${base}${ext[projectType as keyof typeof ext] || ".test.ts"}`);
+	return join(
+		testDir,
+		`${base}${ext[projectType as keyof typeof ext] || ".test.ts"}`,
+	);
 }
 
 /**
  * Generate basic test content
  */
-function generateTestContent(sourceFile: string, projectType: ProjectType): string {
+function generateTestContent(
+	sourceFile: string,
+	projectType: ProjectType,
+): string {
 	const base = require("path").basename(sourceFile, extname(sourceFile));
 
 	switch (projectType) {

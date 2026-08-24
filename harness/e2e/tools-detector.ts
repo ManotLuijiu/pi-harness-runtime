@@ -27,8 +27,18 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { homedir } from "node:os";
 
-export type NativeAppType = "tauri" | "ios" | "android" | "electron" | "flutter";
-export type WebFramework = "nextjs" | "react_vite" | "django" | "laravel" | "generic";
+export type NativeAppType =
+	| "tauri"
+	| "ios"
+	| "android"
+	| "electron"
+	| "flutter";
+export type WebFramework =
+	| "nextjs"
+	| "react_vite"
+	| "django"
+	| "laravel"
+	| "generic";
 export type ProjectType = NativeAppType | WebFramework | "unknown";
 
 export interface TestingTool {
@@ -195,11 +205,7 @@ const TESTING_TOOLS_MAP: Record<
 		manualTools: [],
 	},
 	flutter: {
-		detectionSignals: [
-			"pubspec.yaml",
-			"lib/main.dart",
-			"test/*.dart",
-		],
+		detectionSignals: ["pubspec.yaml", "lib/main.dart", "test/*.dart"],
 		autoTools: [
 			{
 				name: "Flutter Test",
@@ -411,10 +417,7 @@ export function detectProjectType(projectRoot: string): ProjectType {
 	}
 
 	// Check for Django
-	if (
-		hasFile(projectRoot, "manage.py") ||
-		hasFile(projectRoot, "settings.py")
-	) {
+	if (hasFile(projectRoot, "manage.py") || hasFile(projectRoot, "settings.py")) {
 		return "django";
 	}
 
@@ -583,16 +586,15 @@ export function makeSmartDecision(
 	if (["django", "laravel"].includes(projectType)) {
 		const hasFrameworkTest =
 			installedAutoTools.some(
-				(t) =>
-					t.name.includes("Django") || t.name.includes("Laravel Dusk"),
-			) ||
-			installedAutoTools.some((t) => t.name.includes("Playwright"));
+				(t) => t.name.includes("Django") || t.name.includes("Laravel Dusk"),
+			) || installedAutoTools.some((t) => t.name.includes("Playwright"));
 
 		if (!hasFrameworkTest) {
 			return {
 				shouldAutoTest: false,
 				confidence: 0.3,
-				reason: "Backend framework detected. Install framework-specific test tools.",
+				reason:
+					"Backend framework detected. Install framework-specific test tools.",
 				suggestedAction: "ask_human",
 			};
 		}
@@ -609,7 +611,8 @@ export function makeSmartDecision(
 		return {
 			shouldAutoTest: false,
 			confidence: 0.5,
-			reason: "Backend project detected. Auto-tests skipped (manual review needed).",
+			reason:
+				"Backend project detected. Auto-tests skipped (manual review needed).",
 			suggestedAction: "skip",
 		};
 	}

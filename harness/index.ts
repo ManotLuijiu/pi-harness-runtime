@@ -278,9 +278,7 @@ export type {
 	ProjectType,
 	NativeAppType,
 } from "./e2e/tools-detector.js";
-export {
-	runAutoTestLoop,
-} from "./e2e/auto-test-loop.js";
+export { runAutoTestLoop } from "./e2e/auto-test-loop.js";
 export type {
 	E2ETestResult,
 	AutoTestConfig,
