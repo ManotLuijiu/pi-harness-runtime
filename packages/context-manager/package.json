@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/context-manager",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "Context Window Manager — prevents model context overflow via compaction and resume prompts (RFC-0010)",
   "type": "module",
   "main": "./dist/index.js",
