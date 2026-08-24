@@ -21,6 +21,24 @@ import type { JobStateMachine } from "./job-state-machine.js";
 import type { MirrorStore } from "../mirror.js";
 import type { NotificationCenter } from "../packages/notification/dist/notification-center.js";
 
+import {
+	logInfo,
+	logWarn,
+	logError,
+	logCountdownStarted,
+	logCountdownTick,
+	logCountdownComplete,
+	logAutoResumeSuccess,
+	logAutoResumeFailed,
+	logNotificationSent,
+	logNotificationFailed,
+	logMirrorUpdate,
+	logQuotaExhausted,
+	logCountdownCancelled,
+	logResetTimeParseError,
+	getLogFilePath,
+} from "./glm-quota-logger.js";
+
 /** Notification intervals before reset (in seconds) */
 const NOTIFICATION_INTERVALS = [
 	15 * 60, // 15 minutes
@@ -245,9 +263,7 @@ export class GLMQuotaCountdown {
 			isResetTime: totalSeconds <= 0,
 		});
 
-		console.log(
-			`[GLMQuotaCountdown] Started countdown for job ${jobId}: ${formatCountdown(totalSeconds)} until reset at ${resetAt}`,
-		);
+		logCountdownStarted(jobId, resetAt, totalSeconds);
 
 		return state;
 	}
@@ -263,9 +279,7 @@ export class GLMQuotaCountdown {
 	): Promise<GLMQuotaCountdownState | null> {
 		const resetAt = parseGLMResetTime(errorMessage);
 		if (!resetAt) {
-			console.warn(
-				`[GLMQuotaCountdown] Could not parse reset time from error for job ${jobId}`,
-			);
+			logResetTimeParseError(jobId);
 			return null;
 		}
 
@@ -282,7 +296,7 @@ export class GLMQuotaCountdown {
 			this.timers.delete(jobId);
 		}
 		this.activeCountdowns.delete(jobId);
-		console.log(`[GLMQuotaCountdown] Cancelled countdown for job ${jobId}`);
+		logCountdownCancelled(jobId);
 	}
 
 	/**
@@ -322,11 +336,10 @@ export class GLMQuotaCountdown {
 			};
 
 			mirrorStore.writeProvider("glm", updated);
-			console.log(
-				`[GLMQuotaCountdown] Updated mirror with reset time: ${resetAt}`,
-			);
+			logMirrorUpdate(jobId, true);
 		} catch (error) {
-			console.error(`[GLMQuotaCountdown] Failed to update mirror: ${error}`);
+			logMirrorUpdate(jobId, false);
+			logError(jobId, "Failed to update mirror", error);
 		}
 	}
 
@@ -476,7 +489,7 @@ export class GLMQuotaCountdown {
 	 * Get seconds until next notification
 	 */
 	private getNextNotificationIn(
-		state: GLMQuotaCountdownState,
+		_state: GLMQuotaCountdownState,
 		remainingSeconds: number,
 	): number | undefined {
 		for (const interval of NOTIFICATION_INTERVALS) {
@@ -496,13 +509,13 @@ export class GLMQuotaCountdown {
 		interval: number,
 	): Promise<void> {
 		if (!this.notificationCenter) {
-			console.log(
-				`[GLMQuotaCountdown] Notification: ${formatCountdown(remainingSeconds)} until GLM quota reset`,
+			logInfo(
+				jobId,
+				`Notification: ${formatCountdown(remainingSeconds)} until GLM quota reset`,
 			);
 			return;
 		}
 
-		const minutes = Math.floor(remainingSeconds / 60);
 		const label =
 			interval === 15 * 60
 				? "15 minutes"
@@ -516,11 +529,9 @@ export class GLMQuotaCountdown {
 				requirement: this.jobContext?.requirement ?? "GLM Quota",
 				error: `GLM quota reset in ${label} (${formatCountdown(remainingSeconds)}). Auto-resume pending.`,
 			});
-			console.log(
-				`[GLMQuotaCountdown] Sent ${label} notification for job ${jobId}`,
-			);
+			logNotificationSent(jobId, remainingSeconds);
 		} catch (error) {
-			console.error(`[GLMQuotaCountdown] Failed to send notification: ${error}`);
+			logNotificationFailed(jobId, String(error));
 		}
 	}
 
@@ -529,11 +540,11 @@ export class GLMQuotaCountdown {
 	 */
 	private async triggerAutoResume(
 		jobId: string,
-		state: GLMQuotaCountdownState,
+		_state: GLMQuotaCountdownState,
 		machine: JobStateMachine,
 		mirrorStore: MirrorStore,
 	): Promise<void> {
-		console.log(`[GLMQuotaCountdown] Triggering auto-resume for job ${jobId}`);
+		logCountdownComplete(jobId);
 
 		// Clear timers
 		this.cancelCountdown(jobId);
@@ -547,7 +558,7 @@ export class GLMQuotaCountdown {
 			if (checkpoint && checkpoint.status === "paused_quota") {
 				const result = await machine.transition("running");
 				if (result.success) {
-					console.log(`[GLMQuotaCountdown] Job ${jobId} auto-resumed successfully`);
+					logAutoResumeSuccess(jobId);
 
 					// Update mirror to clear exhaustion
 					const record = mirrorStore.readProvider("glm");
@@ -569,11 +580,11 @@ export class GLMQuotaCountdown {
 						isResetTime: true,
 					});
 				} else {
-					console.error(`[GLMQuotaCountdown] Auto-resume failed: ${result.error}`);
+					logAutoResumeFailed(jobId, result.error ?? "Unknown error");
 				}
 			}
 		} catch (error) {
-			console.error(`[GLMQuotaCountdown] Auto-resume error: ${error}`);
+			logError(jobId, "Auto-resume error", error);
 		}
 	}
 
@@ -585,7 +596,7 @@ export class GLMQuotaCountdown {
 			try {
 				callback(event);
 			} catch (error) {
-				console.error(`[GLMQuotaCountdown] Tick callback error: ${error}`);
+				logError(event.jobId, "Tick callback error", error);
 			}
 		}
 	}

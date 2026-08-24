@@ -235,7 +235,10 @@ export function buildFooterStatusValue(
 			view.resets_at !== undefined ||
 			view.h5_resets_at !== undefined)
 	) {
-		const limitTypeLabel = getLimitTypeLabel(provider, view.limitType ?? undefined);
+		const limitTypeLabel = getLimitTypeLabel(
+			provider,
+			view.limitType ?? undefined,
+		);
 		const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
 		return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
 	}

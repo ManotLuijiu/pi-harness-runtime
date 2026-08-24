@@ -222,6 +222,25 @@ export type {
 	CountdownTickEvent,
 } from "./glm-quota-countdown.js";
 
+// --- GLM Quota Logger ---------------------------------------------
+export {
+	logInfo,
+	logWarn,
+	logError,
+	logCountdownStarted,
+	logCountdownTick,
+	logCountdownComplete,
+	logAutoResumeSuccess,
+	logAutoResumeFailed,
+	logNotificationSent,
+	logNotificationFailed,
+	logMirrorUpdate,
+	logQuotaExhausted,
+	logCountdownCancelled,
+	logResetTimeParseError,
+	getLogFilePath,
+} from "./glm-quota-logger.js";
+
 // --- RFC-0059: Experience Replay ------------------------------------------
 export {
 	ExperienceReplay,
