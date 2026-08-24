@@ -408,6 +408,50 @@ export class GLMQuotaScraper {
 }
 
 /**
+ * Parse reset time from GLM 429 error message.
+ * Extracts the reset timestamp from messages like:
+ * '{"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-08-25 01:47:16"}'
+ */
+export function parseGLMErrorResetTime(errorMessage: string): string | null {
+	// Try to find the JSON object in the message
+	const jsonMatch = errorMessage.match(/\{[^{}]*\}/);
+	if (jsonMatch) {
+		try {
+			const json = JSON.parse(jsonMatch[0]);
+			if (json.code === 1308 && json.message) {
+				// Extract datetime from message
+				const datetimeMatch = json.message.match(
+					/reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i,
+				);
+				if (datetimeMatch) {
+					const datetimeStr = datetimeMatch[1].replace(" ", "T");
+					const date = new Date(datetimeStr);
+					if (!isNaN(date.getTime())) {
+						return date.toISOString();
+					}
+				}
+			}
+		} catch {
+			// Not JSON, try plain text parsing
+		}
+	}
+
+	// Fallback: try plain text parsing
+	const plainMatch = errorMessage.match(
+		/reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i,
+	);
+	if (plainMatch) {
+		const datetimeStr = plainMatch[1].replace(" ", "T");
+		const date = new Date(datetimeStr);
+		if (!isNaN(date.getTime())) {
+			return date.toISOString();
+		}
+	}
+
+	return null;
+}
+
+/**
  * Integration helper for index.ts
  */
 export class GLMQuotaManager {
