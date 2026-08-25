@@ -58,13 +58,34 @@ jobs:
         run: |
           bun run build
 
-      # Tests skipped — pre-existing failures in CI (pass locally).
-      # Run before tagging: bun test packages/*/test/*.test.ts test/*.test.mjs
-      # - name: Run tests
-      #   run: |
-      #     # Unit tests only — browser auth tests excluded
-      #     bun test packages/*/test/*.test.ts
-      #     bun test test/*.test.ts
+      - name: Bump version with standard-version
+        run: |
+          # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Tag version: $TAG_VERSION"
+          
+          # Update package.json to match the tag
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const newVersion = '$TAG_VERSION';
+            pkg.version = newVersion;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
+            console.log('Updated version to:', newVersion);
+          "
+          
+          # Update workspace packages to same version
+          for dir in packages/*/; do
+            if [ -f "$dir/package.json" ]; then
+              node -e "
+                const fs = require('fs');
+                const pkg = JSON.parse(fs.readFileSync('$dir/package.json', 'utf8'));
+                pkg.version = '$TAG_VERSION';
+                fs.writeFileSync('$dir/package.json', JSON.stringify(pkg, null, 2) + '\\n');
+                console.log('Updated $dir to:', '$TAG_VERSION');
+              "
+            fi
+          done
 
       - name: Compute release metadata
         id: meta
