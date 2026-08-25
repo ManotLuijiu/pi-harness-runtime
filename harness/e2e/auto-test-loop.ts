@@ -151,23 +151,26 @@ async function runTestLoop(
 	let lastResult: E2ETestResult | null = null;
 
 	while (retriesAttempted <= cfg.maxRetries) {
-			// Check global timeout
-			const elapsedMs = Date.now() - startTime;
-			if (elapsedMs > (cfg.globalTimeoutMs ?? 30 * 60 * 1000)) {
-				logWarn(null, `⏱️ Global timeout reached (${elapsedMs}ms). Escalating to human.`);
-				return {
-					success: false,
-					testsRun: true,
-					testsPassed: false,
-					retriesAttempted,
-					escalatedToHuman: true,
-					escalationReason: `Global timeout reached after ${Math.round(elapsedMs / 1000)}s`,
-					output: lastResult?.output || "",
-					duration: elapsedMs,
-				};
-			}
+		// Check global timeout
+		const elapsedMs = Date.now() - startTime;
+		if (elapsedMs > (cfg.globalTimeoutMs ?? 30 * 60 * 1000)) {
+			logWarn(
+				null,
+				`⏱️ Global timeout reached (${elapsedMs}ms). Escalating to human.`,
+			);
+			return {
+				success: false,
+				testsRun: true,
+				testsPassed: false,
+				retriesAttempted,
+				escalatedToHuman: true,
+				escalationReason: `Global timeout reached after ${Math.round(elapsedMs / 1000)}s`,
+				output: lastResult?.output || "",
+				duration: elapsedMs,
+			};
+		}
 
-			logInfo(
+		logInfo(
 			null,
 			`Running E2E tests (attempt ${retriesAttempted + 1}/${cfg.maxRetries + 1})...`,
 		);
@@ -224,7 +227,7 @@ async function runTestLoop(
 				testsPassed: false,
 				retriesAttempted,
 				escalatedToHuman: true,
-				escalationReason: `Environment limitation: ${lastResult && lastResult.errorMessage || "Unable to run tests in current environment"}`,
+				escalationReason: `Environment limitation: ${(lastResult && lastResult.errorMessage) || "Unable to run tests in current environment"}`,
 				output: (lastResult && lastResult.output) || "",
 				duration: Date.now() - startTime,
 			};

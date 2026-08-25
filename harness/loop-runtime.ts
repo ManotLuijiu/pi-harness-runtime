@@ -46,6 +46,9 @@ import {
 	createForkedSummarizer,
 } from "./forked-summarizer.js";
 
+// GLM quota error parsing for 429 responses
+import { parseGLMErrorResetTime } from "./e2e/glm-quota-scraper.js";
+
 // --- Constants ----------------------------------------------------------------
 
 const DEFAULT_MAX_COMPACT_RETRIES = 3;
@@ -447,14 +450,54 @@ export class LoopRuntime {
 					continue;
 				}
 
-				// Error without compact — surface it
-				throw new Error(result.error ?? "Unknown invoke error");
+				// Error without compact — check for GLM 429 quota error
+				const errMsg = result.error ?? "Unknown invoke error";
+				if (errMsg.includes("1308") || errMsg.includes("Usage limit")) {
+					const resetTime = parseGLMErrorResetTime(errMsg);
+					if (resetTime) {
+						const resetEpoch = new Date(resetTime).getTime();
+						this.mirrorStore.writeProvider("minimax", {
+							provider: "minimax",
+							synced_at: new Date().toISOString(),
+							source: "tui-signal",
+							h5_used_pct: 100,
+							h5_resets_at_epoch: resetEpoch,
+						});
+						console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
+					}
+					await this.handleQuotaPause();
+					return;
+				}
+				throw new Error(errMsg);
 			}
 
 			// Fallback: direct invoke without orchestrator
 			const result = await this.callbacks.onInvokeAgent?.(invokeOptions);
 			if (!result || !result.success) {
-				throw new Error(result?.error ?? "Invoke failed");
+				const errorMsg = result?.error ?? "Invoke failed";
+
+				// Check if this is a GLM 429 quota error with reset time
+				if (errorMsg.includes("1308") || errorMsg.includes("Usage limit")) {
+					const resetTime = parseGLMErrorResetTime(errorMsg);
+					if (resetTime) {
+						// Update mirror with reset epoch so auto-resume works
+						const resetEpoch = new Date(resetTime).getTime();
+						this.mirrorStore.writeProvider("minimax", {
+							provider: "minimax",
+							synced_at: new Date().toISOString(),
+							source: "tui-signal",
+							h5_used_pct: 100,
+							h5_resets_at_epoch: resetEpoch,
+						});
+						console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
+					}
+
+					// Handle quota pause instead of throwing
+					await this.handleQuotaPause();
+					return;
+				}
+
+				throw new Error(errorMsg);
 			}
 
 			const continued = await this.handleAutoContinuation(
