@@ -87,9 +87,7 @@ export interface LoopCallbacks {
 	/** Get current checkpoint (used by auto-resume to read resumeAt) */
 	onGetCheckpoint?: () => Promise<RuntimeCheckpoint | null>;
 	/** Check mirror for a provider (used by auto-resume to detect early reset) */
-	onCheckMirror?: (
-		provider: string,
-	) => Promise<{ h5_used_pct?: number } | null>;
+	onCheckMirror?: (provider: string) => Promise<{ h5_used_pct?: number } | null>;
 	/** Generic notify (used by auto-resume to tell user wait time) */
 	onNotify?: (msg: string, type?: string) => Promise<void>;
 	/** Save checkpoint (call persistence layer) */
@@ -247,11 +245,7 @@ export class LoopRuntime {
 					await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
 					// Re-check mirror — quota may have reset early
 					const fresh = await this.callbacks.onCheckMirror?.("minimax");
-					if (
-						fresh &&
-						fresh.h5_used_pct !== undefined &&
-						fresh.h5_used_pct < 100
-					) {
+					if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
 						break; // quota reset early, resume now
 					}
 				}
@@ -703,8 +697,7 @@ export class LoopRuntime {
 			// Append repair instruction
 			messages.push({
 				role: "user",
-				content:
-					"Tests failed. Please fix the issues and ensure all tests pass.",
+				content: "Tests failed. Please fix the issues and ensure all tests pass.",
 				timestamp: Date.now(),
 			});
 		}

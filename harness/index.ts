@@ -292,3 +292,14 @@ export {
 	isSkillSyncConfigured,
 	getSyncStatus,
 } from "./skill-sync.js";
+
+// --- SSH Hang Recovery (auto-recovery from SSH hangs) -------------------
+export {
+	sshWithRecovery,
+	pm2Restart,
+	getPM2Status,
+	safeSSHCommand,
+	pingServer,
+	type SSHConfig,
+	type SSHResult,
+} from "./ssh-hang-recovery.js";
