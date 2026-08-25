@@ -20,18 +20,14 @@
  *   Unknown Failure → Retry (max 3x) → Ask Human
  */
 
-import { existsSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
-import { join, extname, dirname } from "node:path";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { join, extname } from "node:path";
 import { execSync } from "child_process";
 import {
-	detectProjectType,
-	detectAvailableTools,
 	makeSmartDecision,
 	getE2EToolsConfig,
 	type ProjectType,
-	type TestingTool,
 	type E2EToolsConfig,
-	type SmartDecision,
 } from "./tools-detector.js";
 import { logInfo, logWarn, logError } from "../glm-quota-logger.js";
 
@@ -49,6 +45,8 @@ export interface AutoTestConfig {
 	autoFixEnabled: boolean;
 	generateStubs: boolean;
 	notifyOnEscalation: boolean;
+	/** Global timeout for entire test run (default: 30 minutes) */
+	globalTimeoutMs?: number;
 }
 
 export interface AutoTestResult {
@@ -68,6 +66,7 @@ const DEFAULT_CONFIG: AutoTestConfig = {
 	autoFixEnabled: true,
 	generateStubs: true,
 	notifyOnEscalation: true,
+	globalTimeoutMs: 30 * 60 * 1000, // 30 minutes
 };
 
 /**
@@ -152,7 +151,23 @@ async function runTestLoop(
 	let lastResult: E2ETestResult | null = null;
 
 	while (retriesAttempted <= cfg.maxRetries) {
-		logInfo(
+			// Check global timeout
+			const elapsedMs = Date.now() - startTime;
+			if (elapsedMs > (cfg.globalTimeoutMs ?? 30 * 60 * 1000)) {
+				logWarn(null, `⏱️ Global timeout reached (${elapsedMs}ms). Escalating to human.`);
+				return {
+					success: false,
+					testsRun: true,
+					testsPassed: false,
+					retriesAttempted,
+					escalatedToHuman: true,
+					escalationReason: `Global timeout reached after ${Math.round(elapsedMs / 1000)}s`,
+					output: lastResult?.output || "",
+					duration: elapsedMs,
+				};
+			}
+
+			logInfo(
 			null,
 			`Running E2E tests (attempt ${retriesAttempted + 1}/${cfg.maxRetries + 1})...`,
 		);
@@ -209,7 +224,7 @@ async function runTestLoop(
 				testsPassed: false,
 				retriesAttempted,
 				escalatedToHuman: true,
-				escalationReason: `Environment limitation: ${lastResult.errorMessage || "Unable to run tests in current environment"}`,
+				escalationReason: `Environment limitation: ${lastResult && lastResult.errorMessage || "Unable to run tests in current environment"}`,
 				output: (lastResult && lastResult.output) || "",
 				duration: Date.now() - startTime,
 			};
@@ -250,7 +265,7 @@ async function runTestLoop(
 async function runTests(
 	projectRoot: string,
 	toolsConfig: E2EToolsConfig,
-): Promise<TestResult> {
+): Promise<E2ETestResult> {
 	const startTime = Date.now();
 	const projectType = toolsConfig.projectType;
 
@@ -353,8 +368,8 @@ interface FailureAnalysis {
  */
 function analyzeFailure(
 	result: E2ETestResult,
-	projectRoot: string,
-	projectType: ProjectType,
+	_projectRoot: string,
+	_projectType: ProjectType,
 ): FailureAnalysis {
 	const failedTests = result.failedTests || [];
 
