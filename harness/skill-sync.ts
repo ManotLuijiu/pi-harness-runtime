@@ -33,7 +33,8 @@ async function getClient(): Promise<SkillMCPClient | null> {
 	try {
 		const mod = await import("../packages/skill-mcp-client/src/client.js");
 		const SkillMCPClientClass = mod.SkillMCPClient;
-		const serverUrl = process.env.SKILLS_SAAS_URL || "https://api.skills.bunchee.online";
+		const serverUrl =
+			process.env.SKILLS_SAAS_URL || "https://api.skills.bunchee.online";
 
 		clientInstance = new SkillMCPClientClass({
 			serverUrl,
@@ -121,7 +122,9 @@ async function fetchFromSaaS(): Promise<CacheData | null> {
 		return cacheData;
 	} catch (error) {
 		if (error instanceof SkillAPIError) {
-			console.warn(`[skill-sync] API error: ${error.message} (code: ${error.code})`);
+			console.warn(
+				`[skill-sync] API error: ${error.message} (code: ${error.code})`,
+			);
 		} else {
 			console.warn("[skill-sync] Failed to fetch from SaaS");
 		}
@@ -201,9 +204,10 @@ export async function syncSkillsFromSaaS(
  *
  * Returns null if skill not found or backend unavailable
  */
-export async function getSkillFromSaaS(
-	identifier: { slug?: string; id?: string },
-): Promise<GetSkillResult | null> {
+export async function getSkillFromSaaS(identifier: {
+	slug?: string;
+	id?: string;
+}): Promise<GetSkillResult | null> {
 	const client = await getClient();
 	if (!client) {
 		return null;
