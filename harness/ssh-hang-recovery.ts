@@ -265,7 +265,11 @@ function execAsync(command: string, timeoutMs: number): Promise<ExecResult> {
 
 		proc.on("exit", (code) => {
 			clearTimeout(timer);
-			resolve({ exitCode: code ?? 0, stdout: (proc.stdout || '').toString(), stderr: (proc.stderr || '').toString() });
+			resolve({
+				exitCode: code ?? 0,
+				stdout: (proc.stdout || "").toString(),
+				stderr: (proc.stderr || "").toString(),
+			});
 		});
 
 		proc.on("error", (err) => {
