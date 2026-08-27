@@ -466,13 +466,19 @@ export function parseGLMErrorResetTime(errorMessage: string): string | null {
  *
  * Returns epoch ms when the retry window expires (1-5 minutes, default to 2 min).
  */
-export function parseMinimaxOverloadResetTime(errorMessage: string): number | null {
+export function parseMinimaxOverloadResetTime(
+	errorMessage: string,
+): number | null {
 	const OVERLOADED_ERROR = "overloaded_error";
 	const RECOVERY_PATTERN = /recovers? within (\d+)[\u2013-](\d+) minutes/i;
 	const SIMPLE_DELAY_PATTERN = /retry after (\d+) (?:second|sec)/i;
 
 	// Check if this is a Minimax overloaded error
-	if (!errorMessage.includes(OVERLOADED_ERROR) && !errorMessage.includes("surge") && !errorMessage.includes("peak")) {
+	if (
+		!errorMessage.includes(OVERLOADED_ERROR) &&
+		!errorMessage.includes("surge") &&
+		!errorMessage.includes("peak")
+	) {
 		return null;
 	}
 
