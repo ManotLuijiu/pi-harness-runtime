@@ -68,6 +68,14 @@ const PROVIDER_PATTERNS = {
 		/Usage limit reached/i,
 		/5 hour.*quota/i,
 	],
+	minimax: [
+		/(?:^|\s)Minimax(?:$|\s)/i,
+		/minimax.*(?:overload|surge|busy)/i,
+		/overloaded_error/i,
+		/529.*minimax/i,
+		/peak.?hour.*surge/i,
+	],
+
 	anthropic: [
 		/(?:^|\s)Claude(?:$|\s)/i,
 		/(?:^|\s)Anthropic(?:$|\s)/i,
