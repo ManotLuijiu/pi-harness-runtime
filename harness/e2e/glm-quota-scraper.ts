@@ -460,6 +460,44 @@ export function parseGLMErrorResetTime(errorMessage: string): string | null {
 }
 
 /**
+ * Parse reset time from Minimax 529 overloaded error.
+ * Extracts retry delay from messages like:
+ * '{"type":"error","error":{"type":"overloaded_error","message":"The system is currently experiencing a peak-hour surge, and the server is temporarily busy. It usually recovers within 1–5 minutes. Please try again shortly (2064)"}}'
+ *
+ * Returns epoch ms when the retry window expires (1-5 minutes, default to 2 min).
+ */
+export function parseMinimaxOverloadResetTime(errorMessage: string): number | null {
+	const OVERLOADED_ERROR = "overloaded_error";
+	const RECOVERY_PATTERN = /recovers? within (\d+)[\u2013-](\d+) minutes/i;
+	const SIMPLE_DELAY_PATTERN = /retry after (\d+) (?:second|sec)/i;
+
+	// Check if this is a Minimax overloaded error
+	if (!errorMessage.includes(OVERLOADED_ERROR) && !errorMessage.includes("surge") && !errorMessage.includes("peak")) {
+		return null;
+	}
+
+	// Try to extract recovery time range (e.g., "1-5 minutes")
+	const rangeMatch = errorMessage.match(RECOVERY_PATTERN);
+	if (rangeMatch) {
+		const minMin = parseInt(rangeMatch[1], 10);
+		const maxMin = parseInt(rangeMatch[2], 10);
+		// Use midpoint for retry delay (e.g., 3 min for "1-5 minutes")
+		const retryMinutes = Math.round((minMin + maxMin) / 2);
+		return Date.now() + retryMinutes * 60 * 1000;
+	}
+
+	// Fallback: try simple delay pattern
+	const simpleMatch = errorMessage.match(SIMPLE_DELAY_PATTERN);
+	if (simpleMatch) {
+		const seconds = parseInt(simpleMatch[1], 10);
+		return Date.now() + seconds * 1000;
+	}
+
+	// Default: 2 minutes for overloaded error
+	return Date.now() + 2 * 60 * 1000;
+}
+
+/**
  * Integration helper for index.ts
  */
 export class GLMQuotaManager {

@@ -63,7 +63,7 @@ jobs:
           # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           echo "Tag version: $TAG_VERSION"
-          
+
           # Update package.json to match the tag
           node -e "
             const fs = require('fs');
@@ -73,7 +73,7 @@ jobs:
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
             console.log('Updated version to:', newVersion);
           "
-          
+
           # Update workspace packages to same version
           for dir in packages/*/; do
             if [ -f "$dir/package.json" ]; then

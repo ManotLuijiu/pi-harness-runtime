@@ -47,7 +47,7 @@ import {
 } from "./forked-summarizer.js";
 
 // GLM quota error parsing for 429 responses
-import { parseGLMErrorResetTime } from "./e2e/glm-quota-scraper.js";
+import { parseGLMErrorResetTime, parseMinimaxOverloadResetTime } from "./e2e/glm-quota-scraper.js";
 
 // --- Constants ----------------------------------------------------------------
 
@@ -484,6 +484,28 @@ export class LoopRuntime {
 							h5_resets_at_epoch: resetEpoch,
 						});
 						console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
+					}
+
+					// Handle quota pause instead of throwing
+					await this.handleQuotaPause();
+					return;
+				}
+
+				// Check if this is a Minimax 529 overloaded error
+				if (errorMsg.includes("529") && errorMsg.includes("overloaded_error")) {
+					const resetEpoch = parseMinimaxOverloadResetTime(errorMsg);
+					if (resetEpoch) {
+						// Update mirror with reset epoch so auto-resume works
+						this.mirrorStore.writeProvider("minimax", {
+							provider: "minimax",
+							synced_at: new Date().toISOString(),
+							source: "tui-signal",
+							h5_used_pct: 100,
+							h5_resets_at_epoch: resetEpoch,
+						});
+						console.log(
+							`[LoopRuntime] Minimax overloaded, auto-resume in ~2min`,
+						);
 					}
 
 					// Handle quota pause instead of throwing
