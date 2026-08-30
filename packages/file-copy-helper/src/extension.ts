@@ -3,7 +3,7 @@
  *
  * Injects "use cp instead of writing from scratch" reminder when user
  * asks to mimic, copy, clone, or replicate files/folders between locations.
- * 
+ *
  * DEBUG: All events and rule evaluations logged to /tmp/file-copy-helper-debug.log
  */
 
@@ -113,43 +113,61 @@ sudo cp /source/path/components/notifications-provider.tsx /dest/path/components
  * Check if text contains copy-related keywords
  * Requires: explicit intent (mimic/copy/clone/replicate) AND destination context
  */
-function shouldInjectCopyRule(text: string): { triggered: boolean; reason: string } {
+function shouldInjectCopyRule(text: string): {
+	triggered: boolean;
+	reason: string;
+} {
 	const lower = text.toLowerCase();
 
 	// Must have explicit mimic/copy/clone/replicate intent
 	const hasIntent = COPY_KEYWORDS.some((keyword) => lower.includes(keyword));
 	if (!hasIntent) {
-		return { triggered: false, reason: `No intent keyword found. Keywords: ${COPY_KEYWORDS.join(", ")}` };
+		return {
+			triggered: false,
+			reason: `No intent keyword found. Keywords: ${COPY_KEYWORDS.join(", ")}`,
+		};
 	}
 
 	// Must have destination context (avoids false positives on "copy this code" etc)
 	const hasDest = COPY_DEST_CONTEXT.some((ctx) => lower.includes(ctx));
 	if (!hasDest) {
-		return { triggered: false, reason: `No destination context found. Dest contexts: ${COPY_DEST_CONTEXT.join(", ")}` };
+		return {
+			triggered: false,
+			reason: `No destination context found. Dest contexts: ${COPY_DEST_CONTEXT.join(", ")}`,
+		};
 	}
 
 	// Should have source context for full mimic behavior
 	const hasSource = COPY_SOURCE_CONTEXT.some((ctx) => lower.includes(ctx));
 	if (!hasSource) {
-		return { triggered: false, reason: `No source context found. Source contexts: ${COPY_SOURCE_CONTEXT.join(", ")}` };
+		return {
+			triggered: false,
+			reason: `No source context found. Source contexts: ${COPY_SOURCE_CONTEXT.join(", ")}`,
+		};
 	}
 
-	return { triggered: true, reason: `All conditions met: hasIntent=${hasIntent}, hasDest=${hasDest}, hasSource=${hasSource}` };
+	return {
+		triggered: true,
+		reason: `All conditions met: hasIntent=${hasIntent}, hasDest=${hasDest}, hasSource=${hasSource}`,
+	};
 }
 
 /**
  * Check if text contains import error triggers
  * Requires BOTH: import error context + copy/deploy context
  */
-function shouldInjectImportErrorRule(text: string): { triggered: boolean; reason: string } {
+function shouldInjectImportErrorRule(text: string): {
+	triggered: boolean;
+	reason: string;
+} {
 	const lower = text.toLowerCase();
-	
+
 	// Must have import error context
 	const hasImportError = IMPORT_ERROR_TRIGGERS.some((t) => lower.includes(t));
 	if (!hasImportError) {
 		return { triggered: false, reason: "No import error triggers found" };
 	}
-	
+
 	// Must have copy/deploy context
 	const hasCopyContext = COPY_CONTEXT.some((ctx) => lower.includes(ctx));
 	if (!hasCopyContext) {
@@ -164,7 +182,10 @@ function shouldInjectImportErrorRule(text: string): { triggered: boolean; reason
  */
 export function registerFileCopyHelper(pi: ExtensionAPI): void {
 	// Clear debug log on startup
-	fs.writeFileSync(DEBUG_LOG, `[${new Date().toISOString()}] === DEBUG SESSION STARTED ===\n`);
+	fs.writeFileSync(
+		DEBUG_LOG,
+		`[${new Date().toISOString()}] === DEBUG SESSION STARTED ===\n`,
+	);
 
 	pi.on("input", (event: InputEvent): InputEventResult | undefined => {
 		// DEBUG: Log what we receive
@@ -198,9 +219,15 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 		debugLog("COPY_RULE_CHECK", {
 			triggered: copyCheck.triggered,
 			reason: copyCheck.reason,
-			matchingKeywords: COPY_KEYWORDS.filter(k => text.toLowerCase().includes(k)),
-			matchingDest: COPY_DEST_CONTEXT.filter(ctx => text.toLowerCase().includes(ctx)),
-			matchingSource: COPY_SOURCE_CONTEXT.filter(ctx => text.toLowerCase().includes(ctx)),
+			matchingKeywords: COPY_KEYWORDS.filter((k) =>
+				text.toLowerCase().includes(k),
+			),
+			matchingDest: COPY_DEST_CONTEXT.filter((ctx) =>
+				text.toLowerCase().includes(ctx),
+			),
+			matchingSource: COPY_SOURCE_CONTEXT.filter((ctx) =>
+				text.toLowerCase().includes(ctx),
+			),
 		});
 
 		if (copyCheck.triggered) {
@@ -216,12 +243,17 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 		debugLog("IMPORT_ERROR_CHECK", {
 			triggered: importCheck.triggered,
 			reason: importCheck.reason,
-			hasImportError: IMPORT_ERROR_TRIGGERS.some(t => text.toLowerCase().includes(t)),
-			hasCopyContext: COPY_CONTEXT.some(ctx => text.toLowerCase().includes(ctx)),
+			hasImportError: IMPORT_ERROR_TRIGGERS.some((t) =>
+				text.toLowerCase().includes(t),
+			),
+			hasCopyContext: COPY_CONTEXT.some((ctx) => text.toLowerCase().includes(ctx)),
 		});
 
 		if (importCheck.triggered) {
-			debugLog("INJECT", { rule: "IMPORT_ERROR_RULE", reason: importCheck.reason });
+			debugLog("INJECT", {
+				rule: "IMPORT_ERROR_RULE",
+				reason: importCheck.reason,
+			});
 			return {
 				action: "transform",
 				text: text + IMPORT_ERROR_RULE,
