@@ -34,20 +34,24 @@ const COPY_DEST_CONTEXT = ["to ", "into ", "/dest/", "/target/", "over to"];
 const COPY_SOURCE_CONTEXT = ["from ", "source", "/source/", "orig"];
 
 // When agent sees import/module errors (needs to copy those files too)
+// MUST have: import/module error context + copy/deploy context
 const IMPORT_ERROR_TRIGGERS = [
-	"import error",
-	"import errors",
+	// Import error indicators (must have these)
 	"cannot find module",
-	"cannot resolve",
+	"cannot resolve module",
 	"module not found",
 	"missing import",
-	"missing file",
-	"does not exist",
-	"@repo/",
-	"error one by one",
-	"fix errors one by one",
-	"fix imports one by one",
-	"roll back",
+];
+
+// Copy/deploy context indicators (must have at least one)
+const COPY_CONTEXT = [
+	"sudo cp",
+	"copy.*to",
+	"deploy",
+	"sync",
+	"after copying",
+	"after deploy",
+	"after sync",
 ];
 
 // Extract source and destination from user request
