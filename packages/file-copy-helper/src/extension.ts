@@ -34,20 +34,24 @@ const COPY_DEST_CONTEXT = ["to ", "into ", "/dest/", "/target/", "over to"];
 const COPY_SOURCE_CONTEXT = ["from ", "source", "/source/", "orig"];
 
 // When agent sees import/module errors (needs to copy those files too)
+// MUST have: import/module error context + copy/deploy context
 const IMPORT_ERROR_TRIGGERS = [
-	"import error",
-	"import errors",
+	// Import error indicators (must have these)
 	"cannot find module",
-	"cannot resolve",
+	"cannot resolve module",
 	"module not found",
 	"missing import",
-	"missing file",
-	"does not exist",
-	"@repo/",
-	"error one by one",
-	"fix errors one by one",
-	"fix imports one by one",
-	"roll back",
+];
+
+// Copy/deploy context indicators (must have at least one)
+const COPY_CONTEXT = [
+	"sudo cp",
+	"copy.*to",
+	"deploy",
+	"sync",
+	"after copying",
+	"after deploy",
+	"after sync",
 ];
 
 // Extract source and destination from user request
@@ -135,16 +139,24 @@ function shouldInjectCopyRule(text: string): { triggered: boolean; reason: strin
 
 /**
  * Check if text contains import error triggers
+ * Requires BOTH: import error context + copy/deploy context
  */
 function shouldInjectImportErrorRule(text: string): { triggered: boolean; reason: string } {
 	const lower = text.toLowerCase();
-	const matchingTriggers = IMPORT_ERROR_TRIGGERS.filter((t) => lower.includes(t));
 	
-	if (matchingTriggers.length === 0) {
+	// Must have import error context
+	const hasImportError = IMPORT_ERROR_TRIGGERS.some((t) => lower.includes(t));
+	if (!hasImportError) {
 		return { triggered: false, reason: "No import error triggers found" };
 	}
+	
+	// Must have copy/deploy context
+	const hasCopyContext = COPY_CONTEXT.some((ctx) => lower.includes(ctx));
+	if (!hasCopyContext) {
+		return { triggered: false, reason: "No copy/deploy context found" };
+	}
 
-	return { triggered: true, reason: `Matched triggers: ${matchingTriggers.join(", ")}` };
+	return { triggered: true, reason: "Has import error + copy context" };
 }
 
 /**
@@ -204,7 +216,8 @@ export function registerFileCopyHelper(pi: ExtensionAPI): void {
 		debugLog("IMPORT_ERROR_CHECK", {
 			triggered: importCheck.triggered,
 			reason: importCheck.reason,
-			matchingTriggers: IMPORT_ERROR_TRIGGERS.filter(t => text.toLowerCase().includes(t)),
+			hasImportError: IMPORT_ERROR_TRIGGERS.some(t => text.toLowerCase().includes(t)),
+			hasCopyContext: COPY_CONTEXT.some(ctx => text.toLowerCase().includes(ctx)),
 		});
 
 		if (importCheck.triggered) {
