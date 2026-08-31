@@ -29,7 +29,6 @@
 import { randomUUID } from "node:crypto";
 import {
 	existsSync,
-	mkdirSync,
 	readdirSync,
 	readFileSync,
 	writeFileSync,
@@ -107,6 +106,16 @@ export interface DaemonConfig {
 		ntfyTopic?: string;
 		webhookUrl?: string;
 	};
+	/**
+	 * Path to a tunnel-start script (e.g. tailscale-tunnel.sh).
+	 * If set, the daemon health-checks the tunnel before each task and
+	 * auto-restarts it if the target port is unreachable.
+	 *
+	 * Set to "auto" to search for scripts/tailscale-tunnel.sh in the
+	 * project root, or give an absolute path.
+	 * Default: none (no tunnel management)
+	 */
+	tunnelCommand?: string;
 }
 
 // ─── TriggeredTask ──────────────────────────────────────────────────────────
@@ -507,7 +516,135 @@ class BdTasksWatcher {
 	}
 }
 
-// ─── Loop Daemon ────────────────────────────────────────────────────────────
+// ─── Tunnel Health Monitor ───────────────────────────────────────────────────
+
+/**
+ * Monitors the health of a SSH tunnel (e.g. tailscale-tunnel.sh) and
+ * auto-restarts it if the target port becomes unreachable.
+ *
+ * This prevents the daemon from freezing when the tunnel drops silently —
+ * a common cause of tasks that appear to hang forever.
+ */
+class TunnelMonitor {
+	private readonly scriptPath: string;
+	private readonly checkIntervalMs: number;
+	private readonly targetHost: string;
+	private readonly targetPort: number;
+	private running = false;
+	private timer?: ReturnType<typeof setTimeout>;
+	private consecutiveFailures = 0;
+	private readonly maxConsecutiveFailures = 2;
+
+	constructor(scriptPath: string, opts: {
+		checkIntervalMs?: number;
+		targetHost?: string;
+		targetPort?: number;
+	} = {}) {
+		this.scriptPath = scriptPath;
+		this.checkIntervalMs = opts.checkIntervalMs ?? 30_000; // 30s default
+		this.targetHost = opts.targetHost ?? "127.0.0.1";
+		this.targetPort = opts.targetPort ?? 5433;
+	}
+
+	start(): void {
+		this.running = true;
+		console.log(
+			`[tunnel-monitor] Starting — script=${this.scriptPath}, check every ${this.checkIntervalMs / 1000}s, target=${this.targetHost}:${this.targetPort}`,
+		);
+		this._check();
+	}
+
+	stop(): void {
+		this.running = false;
+		if (this.timer) {
+			clearTimeout(this.timer);
+			this.timer = undefined;
+		}
+		console.log("[tunnel-monitor] Stopped.");
+	}
+
+	/**
+	 * Run a health check and restart if the port is down.
+	 * Returns true if the tunnel is healthy.
+	 */
+	async checkAndFix(): Promise<boolean> {
+		const healthy = await this._isPortOpen();
+		if (healthy) {
+			this.consecutiveFailures = 0;
+			return true;
+		}
+
+		this.consecutiveFailures++;
+		console.warn(
+			`[tunnel-monitor] Port ${this.targetHost}:${this.targetPort} unreachable (failure #${this.consecutiveFailures})`,
+		);
+
+		if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+			console.warn(`[tunnel-monitor] Tunnel appears down — restarting...`);
+			await this._restartTunnel();
+			this.consecutiveFailures = 0;
+		}
+
+		return false;
+	}
+
+	private async _check(): Promise<void> {
+		if (!this.running) return;
+		await this.checkAndFix();
+		this.timer = setTimeout(() => this._check(), this.checkIntervalMs);
+	}
+
+	private async _isPortOpen(): Promise<boolean> {
+		const { createConnection } = await import("node:net");
+		return new Promise((resolve) => {
+			const socket = createConnection({
+				host: this.targetHost,
+				port: this.targetPort,
+				timeout: 2_000, // 2s timeout — just checking reachability
+			});
+			socket.on("connect", () => {
+				socket.destroy();
+				resolve(true);
+			});
+			socket.on("timeout", () => {
+				socket.destroy();
+				resolve(false);
+			});
+			socket.on("error", () => {
+				resolve(false);
+			});
+		});
+	}
+
+	private async _restartTunnel(): Promise<void> {
+		const { exec } = await import("node:child_process");
+		const { promisify } = await import("node:util");
+		const execAsync = promisify(exec);
+
+		try {
+			// Stop first
+			await execAsync(`bash "${this.scriptPath}" stop 2>/dev/null`, {
+				timeout: 10_000,
+			}).catch(() => {}); // ignore errors on stop
+
+			// Small delay before restart
+			await new Promise((r) => setTimeout(r, 1_000));
+
+			// Start
+			const { stdout, stderr } = await execAsync(
+				`bash "${this.scriptPath}" start 2>&1`,
+				{ timeout: 30_000 },
+			);
+			console.log(`[tunnel-monitor] Restart output: ${stdout.trim() || stderr.trim() || "ok"}`);
+		} catch (err) {
+			console.error(
+				`[tunnel-monitor] Restart failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+}
+
+// ─── Loop Daemon ───────────────────────────────────────────────────────────
 
 /**
  * The main daemon class. Coordinates watchers, leasing, loop execution, and
@@ -530,6 +667,7 @@ export class LoopDaemon {
 	private readonly inboxWatcher: InboxWatcher;
 	private readonly busWatcher: BusWatcher;
 	private readonly bdWatcher: BdTasksWatcher;
+	private readonly tunnelMonitor: TunnelMonitor | null;
 
 	/** Currently running tasks (taskId → RunningTask) */
 	private readonly running = new Map<string, RunningTask>();
@@ -546,10 +684,13 @@ export class LoopDaemon {
 			approvalPolicy: config.approvalPolicy ?? "never",
 			dryRun: config.dryRun ?? false,
 			costCapUsd: config.costCapUsd ?? undefined,
+			surgePolicy: config.surgePolicy,
+			taskTimeoutMs: config.taskTimeoutMs,
+			checkpointer: config.checkpointer,
 			sources: config.sources ?? ["inbox", "bus"],
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
-			checkpointer: config.checkpointer,
+			tunnelCommand: config.tunnelCommand,
 		} as Required<DaemonConfig>;
 
 		this.agentId = this.config.agentId;
@@ -579,6 +720,13 @@ export class LoopDaemon {
 		this.inboxWatcher = new InboxWatcher(this.inboxDir, this.config.pollMs);
 		this.busWatcher = new BusWatcher(this.bus, this.config.pollMs);
 		this.bdWatcher = new BdTasksWatcher(this.config.pollMs);
+
+		// Tunnel monitor — only active when a tunnel script is configured
+		if (this.config.tunnelCommand) {
+			this.tunnelMonitor = new TunnelMonitor(this.config.tunnelCommand);
+		} else {
+			this.tunnelMonitor = null;
+		}
 
 		// Reap stale leases from previous runs
 		const reclaimed = this.leaseManager.recoverOnStartup();
@@ -613,6 +761,8 @@ export class LoopDaemon {
 			this.bdWatcher.start((t) => this._onTriggered(t));
 		}
 
+		this.tunnelMonitor?.start();
+
 		console.log("[daemon] Started.");
 	}
 
@@ -624,6 +774,7 @@ export class LoopDaemon {
 		this.inboxWatcher.stop();
 		this.busWatcher.stop();
 		this.bdWatcher.stop();
+		this.tunnelMonitor?.stop();
 
 		// Release all held leases
 		for (const [taskId, _runningTask] of this.running) {
@@ -688,6 +839,14 @@ export class LoopDaemon {
 		const log = (msg: string) => console.log(`[${loopId}] ${msg}`);
 
 		try {
+			// ── Tunnel health check — self-heal before running a task ───────────────
+			if (this.tunnelMonitor) {
+				const tunnelOk = await this.tunnelMonitor.checkAndFix();
+				if (!tunnelOk) {
+					log("Tunnel health check failed — waiting for tunnel restart...");
+				}
+			}
+
 			// ── Gate check (I7) ──────────────────────────────────────────────
 			const policy = effectivePolicy(task, this.config);
 			if (policy === "always" || policy === "on_blocked") {
@@ -731,17 +890,17 @@ export class LoopDaemon {
 			log(
 				`Starting write-review loop (maxIterations=${this.config.maxIterations})`,
 			);
-			const checkpointer =
-				this.config.checkpointer === false
-					? false
-					: this.config.checkpointer === true ||
-							typeof this.config.checkpointer === "string"
-						? createLoopCheckpointer(
-								this.config.checkpointer === true
-									? this.bus.getWorkspace()
-									: (this.config.checkpointer as string),
-							)
-						: undefined; // default MemorySaver
+			const checkpointer = (() => {
+				if (this.config.checkpointer === false) return false;
+				if (this.config.checkpointer === true || typeof this.config.checkpointer === "string") {
+					return createLoopCheckpointer(
+						this.config.checkpointer === true
+							? this.bus.getWorkspace()
+						: (this.config.checkpointer as string),
+					);
+				}
+				return undefined; // default MemorySaver
+			})();
 			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
 
 			const invokeTask = (signal?: AbortSignal) =>
