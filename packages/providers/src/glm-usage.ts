@@ -61,9 +61,16 @@ const GLM_QUOTA_PATTERNS = [
 		pattern: /ZhipuAI|GLM.*(?:exhausted|limit|quota)/i,
 		limitType: "tokens" as const,
 	},
+	// MiniMax 429: "Usage limit reached for N hour. Your limit will reset at 2026-08-31 19:17:01"
+	{
+		pattern: /Usage limit.*reset/i,
+		limitType: "tokens" as const,
+	},
 ];
 
 const RESET_TIME_PATTERNS = [
+	// "reset at 2026-08-31 19:17:01" (MiniMax 429 format)
+	/reset\s+(?:at\s+)?(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})/i,
 	/reset(?:s)?\s+(?:at|in)\s+(\d{1,2}):(\d{2})/i,
 	/(?:at|in)\s+(\d{1,2}):(\d{2})/i,
 	/retry\s+after\s+(\d{1,2}):(\d{2})/i,
@@ -120,23 +127,27 @@ export class GLMUsageProvider extends EventEmitter {
 		for (const pattern of RESET_TIME_PATTERNS) {
 			const match = message.match(pattern);
 			if (match) {
+				// Pattern 0: "reset at YYYY-MM-DD HH:MM" — 4 groups: date, hour, minute (+ full match = 4)
+				if (match.length === 4) {
+					const resetTime = new Date(
+						`${match[1].trim()}T${match[2]}:${match[3]}:00.000Z`,
+					);
+					if (resetTime.getTime() > Date.now()) {
+						return resetTime.toISOString();
+					}
+				}
+				// Patterns 1-3: HH:MM only — construct date for today or tomorrow
 				const hour = parseInt(match[1], 10);
 				const minute = parseInt(match[2], 10);
-
-				// Convert to ISO string for today or tomorrow
 				const now = new Date();
 				const resetTime = new Date(now);
 				resetTime.setHours(hour, minute, 0, 0);
-
-				// If time has passed today, assume tomorrow
 				if (resetTime <= now) {
 					resetTime.setDate(resetTime.getDate() + 1);
 				}
-
 				return resetTime.toISOString();
 			}
 		}
-
 		return undefined;
 	}
 
