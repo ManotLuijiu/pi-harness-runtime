@@ -90,7 +90,9 @@ function parseArgs(argv: string[]): CliArgs {
 		}
 	}
 	if (!args.request && !args.daemon) {
-		throw new Error('A request is required: --request="..." or a bare string (or use --daemon to start the watcher)');
+		throw new Error(
+			'A request is required: --request="..." or a bare string (or use --daemon to start the watcher)',
+		);
 	}
 	return args;
 }
