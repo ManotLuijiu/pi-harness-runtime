@@ -27,12 +27,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-	existsSync,
-	readdirSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { LeaseManager } from "../../packages/autonomous-runtime/src/lease.js";
@@ -535,11 +530,14 @@ class TunnelMonitor {
 	private consecutiveFailures = 0;
 	private readonly maxConsecutiveFailures = 2;
 
-	constructor(scriptPath: string, opts: {
-		checkIntervalMs?: number;
-		targetHost?: string;
-		targetPort?: number;
-	} = {}) {
+	constructor(
+		scriptPath: string,
+		opts: {
+			checkIntervalMs?: number;
+			targetHost?: string;
+			targetPort?: number;
+		} = {},
+	) {
 		this.scriptPath = scriptPath;
 		this.checkIntervalMs = opts.checkIntervalMs ?? 30_000; // 30s default
 		this.targetHost = opts.targetHost ?? "127.0.0.1";
@@ -635,7 +633,9 @@ class TunnelMonitor {
 				`bash "${this.scriptPath}" start 2>&1`,
 				{ timeout: 30_000 },
 			);
-			console.log(`[tunnel-monitor] Restart output: ${stdout.trim() || stderr.trim() || "ok"}`);
+			console.log(
+				`[tunnel-monitor] Restart output: ${stdout.trim() || stderr.trim() || "ok"}`,
+			);
 		} catch (err) {
 			console.error(
 				`[tunnel-monitor] Restart failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -892,11 +892,14 @@ export class LoopDaemon {
 			);
 			const checkpointer = (() => {
 				if (this.config.checkpointer === false) return false;
-				if (this.config.checkpointer === true || typeof this.config.checkpointer === "string") {
+				if (
+					this.config.checkpointer === true ||
+					typeof this.config.checkpointer === "string"
+				) {
 					return createLoopCheckpointer(
 						this.config.checkpointer === true
 							? this.bus.getWorkspace()
-						: (this.config.checkpointer as string),
+							: (this.config.checkpointer as string),
 					);
 				}
 				return undefined; // default MemorySaver
