@@ -133,7 +133,7 @@ function routeAfterReview(
 
 export function buildWriteReviewLoop(
 	deps: LoopDeps,
-	opts: { checkpointer?: boolean } = {},
+	opts: { checkpointer?: boolean | unknown } = {},
 ) {
 	// Node names must not collide with state channel names (LangGraph rule),
 	// hence the "*Step" suffixes.
@@ -153,9 +153,16 @@ export function buildWriteReviewLoop(
 		)
 		.addEdge("finishStep", END);
 
-	return builder.compile({
-		checkpointer: opts.checkpointer === false ? undefined : new MemorySaver(),
-	});
+	// Resolve checkpointer: false=disabled, object=use it, true/undefined=default MemorySaver
+	const cp = opts.checkpointer;
+	const checkpointerToUse =
+		cp === false
+			? undefined
+			: cp != null && cp !== true
+				? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+				  (cp as any)
+				: new MemorySaver();
+	return builder.compile({ checkpointer: checkpointerToUse });
 }
 
 /** Inferred compiled-graph type (do not hand-roll langgraph generics). */
