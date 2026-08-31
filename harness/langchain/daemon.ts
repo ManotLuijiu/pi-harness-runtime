@@ -725,11 +725,12 @@ export class LoopDaemon {
 			const checkpointer =
 				this.config.checkpointer === false
 					? false
-					: this.config.checkpointer === true || typeof this.config.checkpointer === "string"
+					: this.config.checkpointer === true ||
+							typeof this.config.checkpointer === "string"
 						? createLoopCheckpointer(
 								this.config.checkpointer === true
 									? this.bus.getWorkspace()
-									: this.config.checkpointer as string,
+									: (this.config.checkpointer as string),
 							)
 						: undefined; // default MemorySaver
 			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });

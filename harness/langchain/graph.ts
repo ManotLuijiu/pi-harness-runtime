@@ -160,7 +160,7 @@ export function buildWriteReviewLoop(
 			? undefined
 			: cp != null && cp !== true
 				? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-				  (cp as any)
+					(cp as any)
 				: new MemorySaver();
 	return builder.compile({ checkpointer: checkpointerToUse });
 }

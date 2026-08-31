@@ -11,10 +11,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import {
-	FileCheckpointSaver,
-	createLoopCheckpointer,
-} from "./checkpointer.js";
+import { FileCheckpointSaver, createLoopCheckpointer } from "./checkpointer.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -53,10 +50,7 @@ describe("T9 — put and get basic checkpoint", () => {
 		};
 
 		const updatedConfig = await saver.put(CONFIG, checkpoint, metadata, {});
-		assert.equal(
-			updatedConfig.configurable?.checkpoint_id,
-			"cp-001",
-		);
+		assert.equal(updatedConfig.configurable?.checkpoint_id, "cp-001");
 
 		// Retrieve it
 		const tuple = await saver.getTuple(CONFIG_WITH_CPID);
@@ -111,12 +105,7 @@ describe("T10 — parent chain", () => {
 			versions_seen: {},
 		};
 
-		await saver.put(
-			CONFIG,
-			root,
-			{ source: "input", step: -1, parents: {} },
-			{},
-		);
+		await saver.put(CONFIG, root, { source: "input", step: -1, parents: {} }, {});
 		await saver.put(
 			CONFIG,
 			child,
@@ -130,10 +119,7 @@ describe("T10 — parent chain", () => {
 		});
 		assert.ok(tuple);
 		assert.ok(tuple?.parentConfig);
-		assert.equal(
-			tuple?.parentConfig?.configurable?.checkpoint_id,
-			"root",
-		);
+		assert.equal(tuple?.parentConfig?.configurable?.checkpoint_id, "root");
 
 		// getTuple without checkpoint_id returns the latest
 		const latest = await saver.getTuple(CONFIG);
@@ -157,12 +143,7 @@ describe("T11 — list and deleteThread", () => {
 				channel_versions: {},
 				versions_seen: {},
 			};
-			await saver.put(
-				CONFIG,
-				cp,
-				{ source: "loop", step: i, parents: {} },
-				{},
-			);
+			await saver.put(CONFIG, cp, { source: "loop", step: i, parents: {} }, {});
 		}
 
 		const all: string[] = [];
@@ -186,12 +167,7 @@ describe("T11 — list and deleteThread", () => {
 				channel_versions: {},
 				versions_seen: {},
 			};
-			await saver.put(
-				CONFIG,
-				cp,
-				{ source: "loop", step: i, parents: {} },
-				{},
-			);
+			await saver.put(CONFIG, cp, { source: "loop", step: i, parents: {} }, {});
 		}
 
 		const limited: string[] = [];
@@ -212,12 +188,7 @@ describe("T11 — list and deleteThread", () => {
 			channel_versions: {},
 			versions_seen: {},
 		};
-		await saver.put(
-			CONFIG,
-			cp,
-			{ source: "input", step: -1, parents: {} },
-			{},
-		);
+		await saver.put(CONFIG, cp, { source: "input", step: -1, parents: {} }, {});
 
 		assert.ok(await saver.getTuple(CONFIG), "checkpoint should exist");
 
@@ -255,7 +226,10 @@ describe("T11 — list and deleteThread", () => {
 		);
 
 		const threads = saver.listThreads();
-		assert.ok(threads.includes(tid), `Expected ${tid} in ${JSON.stringify(threads)}`);
+		assert.ok(
+			threads.includes(tid),
+			`Expected ${tid} in ${JSON.stringify(threads)}`,
+		);
 	});
 });
 
