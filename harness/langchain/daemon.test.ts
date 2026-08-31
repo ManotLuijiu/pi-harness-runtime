@@ -351,3 +351,48 @@ describe("T7 — crash resilience", () => {
 		}
 	});
 });
+
+// ─── T13: Persistent checkpointer (M5) ──────────────────────────────────────
+
+describe("T13 — persistent checkpointer (M5)", () => {
+	it("loop checkpoints survive daemon stop and resume from last checkpoint", async () => {
+		cleanEvents();
+		// Use persistent checkpointer (true = use workspace root for checkpoints)
+		const daemon1 = new LoopDaemon(
+			testConfig({ sources: ["inbox"], checkpointer: true }),
+		);
+		daemon1.start();
+
+		const filename = `test-T13-${randomUUID().slice(0, 6)}.md`;
+		writeFileSync(join(WORKSPACE, filename), "Persistent checkpoint test", "utf8");
+
+		// Let the loop run for one iteration
+		await new Promise((r) => setTimeout(r, 500));
+		daemon1.stop();
+
+		// Verify checkpoints exist on disk
+		const { createLoopCheckpointer } = await import("./checkpointer.js");
+		const saver = createLoopCheckpointer(WORKSPACE);
+		const threads = saver.listThreads();
+		assert.ok(
+			threads.length > 0,
+			`Expected checkpoint threads, got: ${JSON.stringify(threads)}`,
+		);
+
+		// Resume with new daemon — should pick up from checkpoint
+		const daemon2 = new LoopDaemon(
+			testConfig({ sources: ["inbox"], checkpointer: true }),
+		);
+		daemon2.start();
+		try {
+			await waitForEvent("loop.finished", 15_000);
+			assert.ok(
+				countEvents("loop.finished") >= 1,
+				"Expected loop.finished after resume",
+			);
+		} finally {
+			daemon2.stop();
+			saver.clearAll();
+		}
+	});
+});

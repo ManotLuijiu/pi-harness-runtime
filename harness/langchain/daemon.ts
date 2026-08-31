@@ -20,7 +20,8 @@
  *   M1 — Daemon skeleton + inbox/bus watchers
  *   M2 — Runner integration: LeaseManager → buildWriteReviewLoop → publish
  *   M3 — Gates & notifications
- *   M4 — Robustness: retry/backoff, heartbeats, stale-lease, bd-tasks watcher
+ *   M4 — Robustness: surge/529 auto-resume + retry backoff, stale-lease, bd-tasks
+ *          watcher (worker heartbeats: still TODO)
  *
  * Wiki: wiki/auto-trigger-multi-agent.md
  */
@@ -51,6 +52,9 @@ import {
 	publishReviewCompleted,
 } from "../../packages/event-bus/src/herdr-bus.js";
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
+
+import { invokeWithSurgeRetry, type SurgePolicy } from "./surge.js";
+import { createLoopCheckpointer } from "./checkpointer.js";
 
 import {
 	buildDryRunDeps,
@@ -84,6 +88,12 @@ export interface DaemonConfig {
 	dryRun?: boolean;
 	/** Abort loop if cumulative cost exceeds this. Default: no cap */
 	costCapUsd?: number;
+	/** Surge (529/overloaded) retry policy. Default: 3→6→12 min, max 5 pauses */
+	surgePolicy?: Partial<SurgePolicy>;
+	/** Use persistent file-based checkpointer for crash-resume. Default: false (MemorySaver). */
+	checkpointer?: boolean | string;
+	/** @internal Test injection — overrides dryRun/real deps entirely */
+	deps?: LoopDeps;
 	/** Which watchers to enable. Default: ["inbox", "bus"] */
 	sources?: TriggerSource[];
 	/** Herdr workspace override. Default: from herdr-bus */
@@ -530,6 +540,7 @@ export class LoopDaemon {
 			sources: config.sources ?? ["inbox", "bus"],
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
+			checkpointer: config.checkpointer,
 		} as Required<DaemonConfig>;
 
 		this.agentId = this.config.agentId;
@@ -692,9 +703,13 @@ export class LoopDaemon {
 			}
 
 			// ── Build loop deps ───────────────────────────────────────────────
-			const deps: LoopDeps = this.config.dryRun
-				? buildDryRunDeps({ maxIterations: this.config.maxIterations })
-				: await buildRealLoopDeps({ maxIterations: this.config.maxIterations });
+			const deps: LoopDeps =
+				this.config.deps ??
+				(this.config.dryRun
+					? buildDryRunDeps({ maxIterations: this.config.maxIterations })
+					: await buildRealLoopDeps({
+							maxIterations: this.config.maxIterations,
+						}));
 
 			// Inject transition publishing into onStep
 			const originalOnStep = deps.onStep;
@@ -703,15 +718,41 @@ export class LoopDaemon {
 				this._publishTransition(loopId, step, state);
 			};
 
-			// ── Run the graph ─────────────────────────────────────────────────
+			// ── Run the graph (surge-aware: 529/overloaded pauses auto-resume) ──
 			log(
 				`Starting write-review loop (maxIterations=${this.config.maxIterations})`,
 			);
-			const loop: WriteReviewLoop = buildWriteReviewLoop(deps);
+			const checkpointer =
+				this.config.checkpointer === false
+					? false
+					: this.config.checkpointer === true || typeof this.config.checkpointer === "string"
+						? createLoopCheckpointer(
+								this.config.checkpointer === true
+									? this.bus.getWorkspace()
+									: this.config.checkpointer as string,
+							)
+						: undefined; // default MemorySaver
+			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
 
-			const finalState = await loop.invoke(
-				{ request: task.request },
-				{ configurable: { thread_id: loopId } },
+			const finalState = await invokeWithSurgeRetry(
+				() =>
+					loop.invoke(
+						{ request: task.request },
+						{ configurable: { thread_id: loopId } },
+					),
+				{
+					policy: this.config.surgePolicy,
+					onSurge: ({ attempt, delayMs }) =>
+						log(
+							`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
+						),
+					onExhausted: () => {
+						this._notifyHumanReviewNeeded(
+							task,
+							"Provider surged past max surge attempts — task failed",
+						);
+					},
+				},
 			);
 
 			const verdict = finalState.review?.verdict ?? "blocked";
