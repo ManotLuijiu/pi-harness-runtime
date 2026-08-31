@@ -14,6 +14,7 @@ export type Topic =
 	| "task.started"
 	| "task.completed"
 	| "task.failed"
+	| "task.proposed"
 	| "review.requested"
 	| "review.completed"
 	| "decision.made"
