@@ -364,7 +364,11 @@ describe("T13 — persistent checkpointer (M5)", () => {
 		daemon1.start();
 
 		const filename = `test-T13-${randomUUID().slice(0, 6)}.md`;
-		writeFileSync(join(WORKSPACE, filename), "Persistent checkpoint test", "utf8");
+		writeFileSync(
+			join(WORKSPACE, filename),
+			"Persistent checkpoint test",
+			"utf8",
+		);
 
 		// Let the loop run for one iteration
 		await new Promise((r) => setTimeout(r, 500));

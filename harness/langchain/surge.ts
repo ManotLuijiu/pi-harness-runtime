@@ -109,7 +109,7 @@ export interface SurgePolicy {
 	maxAttempts: number;
 }
 
-export const DEFAULT_SURGE_POLICY: SurgePolicy = {
+const DEFAULT_SURGE_POLICY: SurgePolicy = {
 	multiplier: 2,
 	minDelayMs: 30_000,
 	maxDelayMs: 15 * 60_000,

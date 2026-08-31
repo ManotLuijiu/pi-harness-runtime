@@ -41,10 +41,7 @@ const jsonSerializer = {
 	async dumpsTyped(data: unknown): Promise<[string, Uint8Array]> {
 		return ["application/json", new TextEncoder().encode(JSON.stringify(data))];
 	},
-	async loadsTyped(
-		_type: string,
-		data: Uint8Array | string,
-	): Promise<unknown> {
+	async loadsTyped(_type: string, data: Uint8Array | string): Promise<unknown> {
 		try {
 			const bytes: Uint8Array =
 				typeof data === "string" ? new TextEncoder().encode(data) : data;
@@ -126,12 +123,12 @@ function atomicWrite(path: string, content: string): void {
  * On daemon restart, pass the same root — checkpoints persist across restarts.
  */
 export class FileCheckpointSaver extends BaseCheckpointSaver {
-private readonly root: string;
+	private readonly root: string;
 
-constructor(opts: { root: string }) {
-super(jsonSerializer);
-this.root = opts.root;
-}
+	constructor(opts: { root: string }) {
+		super(jsonSerializer);
+		this.root = opts.root;
+	}
 
 	// ─── BaseCheckpointSaver ─────────────────────────────────────────────
 
@@ -140,9 +137,7 @@ this.root = opts.root;
 		return tuple?.checkpoint;
 	}
 
-	async getTuple(
-		config: RunnableConfig,
-	): Promise<CheckpointTuple | undefined> {
+	async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
 		const threadId = String(config.configurable?.thread_id ?? "");
 		if (!threadId) return undefined;
 
@@ -169,9 +164,7 @@ this.root = opts.root;
 
 		try {
 			const raw = readFileSync(path);
-			const data = JSON.parse(
-				new TextDecoder().decode(raw),
-			) as {
+			const data = JSON.parse(new TextDecoder().decode(raw)) as {
 				checkpoint: Checkpoint;
 				metadata: CheckpointMetadata;
 				parentConfig?: RunnableConfig;
@@ -182,10 +175,7 @@ this.root = opts.root;
 			const parentId = entry?.parentId;
 
 			let parentConfig: RunnableConfig | undefined;
-			if (
-				parentId &&
-				existsSync(checkpointPath(dir, parentId))
-			) {
+			if (parentId && existsSync(checkpointPath(dir, parentId))) {
 				parentConfig = {
 					configurable: {
 						thread_id: config.configurable?.thread_id,
@@ -201,7 +191,7 @@ this.root = opts.root;
 				parentConfig: parentConfig ?? data.parentConfig,
 			};
 		} catch {
-				return undefined;
+			return undefined;
 		}
 	}
 
@@ -215,9 +205,7 @@ this.root = opts.root;
 		const dir = threadDir(this.root, threadId);
 		if (!existsSync(dir)) return;
 
-		const index = [...readIndex(dir)].sort((a, b) =>
-			b.ts.localeCompare(a.ts),
-		);
+		const index = [...readIndex(dir)].sort((a, b) => b.ts.localeCompare(a.ts));
 
 		const limit = options?.limit ?? 100;
 		let count = 0;
@@ -240,7 +228,9 @@ this.root = opts.root;
 		if (!threadId) throw new Error("thread_id is required for checkpointing");
 
 		const dir = ensureThreadDir(this.root, threadId);
-		const parentId = (metadata.parents as Record<string, string | undefined>)?.[""];
+		const parentId = (metadata.parents as Record<string, string | undefined>)?.[
+			""
+		];
 
 		const path = checkpointPath(dir, checkpoint.id);
 		atomicWrite(
