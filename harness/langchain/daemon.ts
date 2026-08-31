@@ -90,6 +90,8 @@ export interface DaemonConfig {
 	costCapUsd?: number;
 	/** Surge (529/overloaded) retry policy. Default: 3→6→12 min, max 5 pauses */
 	surgePolicy?: Partial<SurgePolicy>;
+	/** Kill a task if it runs longer than this (ms). Prevents permanent freezes. Default: no timeout */
+	taskTimeoutMs?: number;
 	/** Use persistent file-based checkpointer for crash-resume. Default: false (MemorySaver). */
 	checkpointer?: boolean | string;
 	/** @internal Test injection — overrides dryRun/real deps entirely */
@@ -197,6 +199,13 @@ function effectivePolicy(
 		return "never";
 	}
 	return policy;
+}
+
+/** Rejects after `ms` milliseconds — used to time-box task execution. */
+function timeoutPromise(ms: number): Promise<never> {
+	return new Promise<never>((_, reject) =>
+		setTimeout(() => reject(new Error(`Task timed out after ${ms}ms`)), ms),
+	);
 }
 
 /** Wait (poll) for a human ack file or bus event. Returns true if approved. */
@@ -735,26 +744,46 @@ export class LoopDaemon {
 						: undefined; // default MemorySaver
 			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
 
-			const finalState = await invokeWithSurgeRetry(
-				() =>
-					loop.invoke(
-						{ request: task.request },
-						{ configurable: { thread_id: loopId } },
-					),
-				{
-					policy: this.config.surgePolicy,
-					onSurge: ({ attempt, delayMs }) =>
-						log(
-							`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
+			const invokeTask = (signal?: AbortSignal) =>
+				invokeWithSurgeRetry(
+					() =>
+						loop.invoke(
+							{ request: task.request },
+							{ configurable: { thread_id: loopId }, signal },
 						),
-					onExhausted: () => {
-						this._notifyHumanReviewNeeded(
-							task,
-							"Provider surged past max surge attempts — task failed",
-						);
+					{
+						policy: this.config.surgePolicy,
+						onSurge: ({ attempt, delayMs }) =>
+							log(
+								`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
+							),
+						onExhausted: () => {
+							this._notifyHumanReviewNeeded(
+								task,
+								"Provider surged past max surge attempts — task failed",
+							);
+						},
 					},
-				},
-			);
+				);
+
+			let finalState: Awaited<ReturnType<typeof invokeTask>>;
+			if (this.config.taskTimeoutMs) {
+				const ac = new AbortController();
+				const timeout = setTimeout(() => {
+					log(`Task timed out after ${this.config.taskTimeoutMs}ms — aborting`);
+					ac.abort();
+				}, this.config.taskTimeoutMs);
+				try {
+					finalState = await Promise.race([
+						invokeTask(ac.signal),
+						timeoutPromise(this.config.taskTimeoutMs),
+					]);
+				} finally {
+					clearTimeout(timeout);
+				}
+			} else {
+				finalState = await invokeTask();
+			}
 
 			const verdict = finalState.review?.verdict ?? "blocked";
 			const iterations = finalState.iteration ?? 0;
