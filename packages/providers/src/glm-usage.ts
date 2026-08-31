@@ -173,7 +173,7 @@ export class GLMUsageProvider extends EventEmitter {
 			provider: "glm",
 			timestamp: new Date().toISOString(),
 			usedPct,
-			remainingPct: usedPct !== undefined ? 100 - usedPct : 0,
+			remainingPct: usedPct === undefined ? 0 : 100 - usedPct,
 			exhausted: true,
 			resetsAt,
 			limitType,
