@@ -24,6 +24,7 @@ import {
 	type ReviewVerdict,
 	ReviewVerdictSchema,
 } from "./agents.js";
+import type { LoopWidget } from "./widget.js";
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,8 @@ export interface LoopDeps {
 	review: (plan: string, code: string) => Promise<ReviewVerdict>;
 	maxIterations: number;
 	onStep?: (step: string, state: LoopState) => void;
+	/** Optional widget for TUI / status-line display (mirrors pi-lens footer style). */
+	widget?: LoopWidget;
 }
 
 // ─── Node implementations ───────────────────────────────────────────────────
