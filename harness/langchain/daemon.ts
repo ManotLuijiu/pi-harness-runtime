@@ -48,6 +48,7 @@ import {
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
 
 import { invokeWithSurgeRetry, type SurgePolicy } from "./surge.js";
+import type { LoopWidget } from "./widget.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
 import {
@@ -111,6 +112,12 @@ export interface DaemonConfig {
 	 * Default: none (no tunnel management)
 	 */
 	tunnelCommand?: string;
+	/**
+	 * Optional widget for TUI / status-line display.
+	 * When set, the daemon updates the widget at each loop transition
+	 * (mirrors pi-lens footer style: !NW ●ME).
+	 */
+	widget?: LoopWidget;
 }
 
 // ─── TriggeredTask ──────────────────────────────────────────────────────────
@@ -668,6 +675,7 @@ export class LoopDaemon {
 	private readonly busWatcher: BusWatcher;
 	private readonly bdWatcher: BdTasksWatcher;
 	private readonly tunnelMonitor: TunnelMonitor | null;
+	private readonly widget: LoopWidget | null;
 
 	/** Currently running tasks (taskId → RunningTask) */
 	private readonly running = new Map<string, RunningTask>();
@@ -691,6 +699,7 @@ export class LoopDaemon {
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
 			tunnelCommand: config.tunnelCommand,
+			widget: config.widget,
 		} as Required<DaemonConfig>;
 
 		this.agentId = this.config.agentId;
@@ -718,6 +727,7 @@ export class LoopDaemon {
 		}
 
 		this.inboxWatcher = new InboxWatcher(this.inboxDir, this.config.pollMs);
+		this.widget = this.config.widget ?? null;
 		this.busWatcher = new BusWatcher(this.bus, this.config.pollMs);
 		this.bdWatcher = new BdTasksWatcher(this.config.pollMs);
 
@@ -879,11 +889,12 @@ export class LoopDaemon {
 							maxIterations: this.config.maxIterations,
 						}));
 
-			// Inject transition publishing into onStep
+			// Inject transition publishing into onStep (also drives the widget)
 			const originalOnStep = deps.onStep;
 			deps.onStep = (step, state) => {
 				originalOnStep?.(step, state);
 				this._publishTransition(loopId, step, state);
+				this._updateWidget(step, state);
 			};
 
 			// ── Run the graph (surge-aware: 529/overloaded pauses auto-resume) ──
@@ -951,6 +962,17 @@ export class LoopDaemon {
 			const iterations = finalState.iteration ?? 0;
 
 			log(`Loop finished: ${verdict} after ${iterations} iteration(s)`);
+
+			// Update widget on loop completion
+			if (this.widget) {
+				this.widget.setComplete(
+					verdict === "approved"
+						? "approved"
+						: verdict === "blocked"
+							? "rejected"
+							: "max_iterations",
+					);
+			}
 
 			// ── Gate check after blocked verdict ────────────────────────────────
 			if (
@@ -1031,6 +1053,57 @@ export class LoopDaemon {
 					this._reviewReportPath(loopId, state.iteration),
 				);
 				break;
+		}
+	}
+
+	/**
+	 * Drive the TUI widget through loop transitions.
+	 * Called from onStep within _runTask.
+	 */
+	private _updateWidget(step: string, state: LoopState): void {
+		const w = this.widget;
+		if (!w) return;
+
+		switch (step) {
+			case "plan": {
+				w.setPhase("planning", "GPT planning");
+				break;
+			}
+			case "write": {
+				w.setPhase("writing", "MiniMax coding");
+				// After a write step, bump the iteration counter
+				w.startIteration(state.iteration, this.config.maxIterations);
+				break;
+			}
+			case "review": {
+				w.setPhase("reviewing", "GPT reviewing");
+				// Process review comments — one record per file
+				const comments = state.review?.comments ?? [];
+				if (comments.length === 0) break;
+
+				// Group blocking comments by file (severity: "critical" = blocking)
+				const byFile = new Map<string, number>();
+				for (const c of comments) {
+					if (c.severity === "critical") {
+						const prev = byFile.get(c.file ?? "") ?? 0;
+						byFile.set(c.file ?? "", prev + 1);
+					}
+				}
+				for (const [file, count] of byFile) {
+					if (count > 0) {
+						w.recordBlockers(file, count);
+					}
+				}
+				// Files with no blocking comments pass
+				const blockingFiles = new Set(byFile.keys());
+				for (const c of comments) {
+					const f = c.file ?? "";
+					if (!blockingFiles.has(f) && f) {
+						w.recordReviewPass(f);
+					}
+				}
+				break;
+			}
 		}
 	}
 
