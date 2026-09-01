@@ -33,11 +33,14 @@ function visibleWidth(s: string): number {
 			// Skip CSI sequences: \x1b[ <params> <final>
 			// Valid final bytes: m (SGR), H (CUP), J (ED), A/B/C/D (CUU/CUD/CUF/CUB)
 			i++;
-		while (i < s.length && !/[a-zA-Z@]/.test(s[i])) i++;
+			while (i < s.length && !/[a-zA-Z@]/.test(s[i])) i++;
 			if (i < s.length) i++; // skip final byte
 			continue;
 		}
-		if (cp <= 0x1f || cp === 0x7f) { i++; continue; } // C0 + DEL = 0
+		if (cp <= 0x1f || cp === 0x7f) {
+			i++;
+			continue;
+		} // C0 + DEL = 0
 		w += cp > 0xffff ? 2 : 1;
 		i += cp > 0xffff ? 2 : 1; // advance by code point, not UTF-16 code unit
 	}
@@ -170,7 +173,7 @@ export class LoopWidget {
 		const labels = {
 			approved: "✓ loop complete",
 			rejected: "✗ loop rejected",
-			"max_iterations": `⚠ max iterations (${this.maxIterations})`,
+			max_iterations: `⚠ max iterations (${this.maxIterations})`,
 		};
 		this.stepLabel = labels[verdict];
 		this.render();
@@ -197,7 +200,10 @@ export class LoopWidget {
 	 * Line 2: `  surge pause — resets 19:17`           — surge detail (when applicable)
 	 * Line 3: `  ●surge.ts  ✍2  🔍3  !1`             — file rows (up to 5)
 	 */
-	renderWidget(width: number, theme: { fg: (color: ColorKey, s: string) => string }): string[] {
+	renderWidget(
+		width: number,
+		theme: { fg: (color: ColorKey, s: string) => string },
+	): string[] {
 		const dim = (s: string) => theme.fg("dim", s);
 		const red = (s: string) => theme.fg("error", s);
 		const yellow = (s: string) => theme.fg("warning", s);
@@ -208,21 +214,18 @@ export class LoopWidget {
 		const lines: string[] = [];
 
 		// ── Header ──────────────────────────────────────────────────────────────
-		const iterStr = this.iteration > 0
-			? dim(`iter ${this.iteration}/${this.maxIterations}`)
-			: "";
+		const iterStr =
+			this.iteration > 0
+				? dim(`iter ${this.iteration}/${this.maxIterations}`)
+				: "";
 		// Use stepLabel if set (custom phase label, surge detail, error message)
-	const phaseStr = this.stepLabel
-		? this.phaseIcon(this.phase) + " " + this.stepLabel
-		: this.phaseIcon(this.phase) + " " + this.phaseLabel(this.phase);
+		const phaseStr = this.stepLabel
+			? this.phaseIcon(this.phase) + " " + this.stepLabel
+			: this.phaseIcon(this.phase) + " " + this.phaseLabel(this.phase);
 
 		// Summary chunks (matches pi-lens style: !NW ●ME)
-		const errorChunk = this.errors > 0
-			? red(`●${this.errors}E`)
-			: "";
-		const warningChunk = this.warnings > 0
-			? yellow(`!${this.warnings}W`)
-			: "";
+		const errorChunk = this.errors > 0 ? red(`●${this.errors}E`) : "";
+		const warningChunk = this.warnings > 0 ? yellow(`!${this.warnings}W`) : "";
 		const summary = errorChunk
 			? errorChunk + (warningChunk ? " " + warningChunk : "")
 			: warningChunk
@@ -231,12 +234,9 @@ export class LoopWidget {
 					? green("✓")
 					: dim("…");
 
-		const parts = [
-			cyan("harness"),
-			iterStr,
-			phaseStr,
-			summary,
-		].filter(Boolean).join("  ");
+		const parts = [cyan("harness"), iterStr, phaseStr, summary]
+			.filter(Boolean)
+			.join("  ");
 
 		lines.push(this.fitLine(` ${parts}`, w));
 
@@ -257,11 +257,12 @@ export class LoopWidget {
 
 		for (const rec of sorted) {
 			const tier = this.classifyFileTier(rec);
-			const dot = tier === "blocking"
-				? red("●")
-				: tier === "warning"
-					? yellow("!")
-					: dim("·");
+			const dot =
+				tier === "blocking"
+					? red("●")
+					: tier === "warning"
+						? yellow("!")
+						: dim("·");
 			const base = this.fileBasename(rec.filePath);
 			const steps = rec.writeSteps > 0 ? dim(` ✍${rec.writeSteps}`) : "";
 			const reviews = rec.reviewsPassed > 0 ? dim(` 🔍${rec.reviewsPassed}`) : "";
@@ -276,25 +277,24 @@ export class LoopWidget {
 	/** Console fallback (standalone mode). */
 	toConsoleString(): string {
 		const phase = this.phaseIcon(this.phase) + " " + this.stepLabel;
-		const iter = this.iteration > 0 ? ` [iter ${this.iteration}/${this.maxIterations}]` : "";
+		const iter =
+			this.iteration > 0 ? ` [iter ${this.iteration}/${this.maxIterations}]` : "";
 		const err = this.errors > 0 ? ` ●${this.errors}E` : "";
 		const warn = this.warnings > 0 ? ` !${this.warnings}W` : "";
 		const files = [...this.files.values()]
-			.filter(r => r.writeSteps > 0 || r.blockers > 0)
+			.filter((r) => r.writeSteps > 0 || r.blockers > 0)
 			.sort((a, b) => b.touchedAt - a.touchedAt)
 			.slice(0, 3)
-			.map(r => `${this.fileBasename(r.filePath)}(${r.writeSteps}w/${r.blockers}b)`)
+			.map(
+				(r) => `${this.fileBasename(r.filePath)}(${r.writeSteps}w/${r.blockers}b)`,
+			)
 			.join(", ");
 
-		const parts = [
-			`harness${iter}`,
-			phase,
-		].filter(Boolean).join("  ");
+		const parts = [`harness${iter}`, phase].filter(Boolean).join("  ");
 
-		return [
-			parts + err + warn,
-			files ? `  files: ${files}` : "",
-		].filter(Boolean).join("\n");
+		return [parts + err + warn, files ? `  files: ${files}` : ""]
+			.filter(Boolean)
+			.join("\n");
 	}
 
 	// ─── Pi host widget factory (used by index.ts / ExtensionUIContext) ────────
@@ -315,7 +315,10 @@ export class LoopWidget {
 	 * on every frame; `invalidate` is called by the harness to trigger a re-render.
 	 */
 	makeRenderer(): {
-		factory: (tui: TUI, theme: Theme) => {
+		factory: (
+			tui: TUI,
+			theme: Theme,
+		) => {
 			render: (width: number) => string[];
 			invalidate: () => void;
 			dispose: () => void;
@@ -323,7 +326,9 @@ export class LoopWidget {
 		invalidate: () => void;
 	} {
 		// Shared invalidate trigger — both the harness and the pi-tui component call this
-		const invalidate = () => { /* mark dirty for next frame */ };
+		const invalidate = () => {
+			/* mark dirty for next frame */
+		};
 
 		const factory = (_tui: TUI, theme: Theme) => {
 			type ColorKey = "dim" | "error" | "warning" | "success" | "accent";
@@ -334,12 +339,16 @@ export class LoopWidget {
 			};
 
 			// Called by harness to signal the widget needs to re-render
-			const widgetInvalidate = () => { /* trigger invalidate */ };
+			const widgetInvalidate = () => {
+				/* trigger invalidate */
+			};
 
 			return {
 				render,
 				invalidate: widgetInvalidate,
-				dispose: () => { /* clean up */ },
+				dispose: () => {
+					/* clean up */
+				},
 			};
 		};
 
@@ -371,7 +380,9 @@ export class LoopWidget {
 		return segs[segs.length - 1] ?? filePath;
 	}
 
-	private classifyFileTier(rec: FileStepRecord): "blocking" | "warning" | "clean" {
+	private classifyFileTier(
+		rec: FileStepRecord,
+	): "blocking" | "warning" | "clean" {
 		if (rec.blockers > 0) return "blocking";
 		if (rec.writeSteps > 0 || rec.reviewsPassed > 0) return "warning";
 		return "clean";
@@ -434,7 +445,13 @@ export class LoopWidget {
 			const cp = line.codePointAt(i)!;
 			if (cp === 0x1b) {
 				// Skip ANSI sequences (don't count toward width)
-				while (i < line.length && line[i] !== "m" && line[i] !== "H" && line[i] !== "J") i++;
+				while (
+					i < line.length &&
+					line[i] !== "m" &&
+					line[i] !== "H" &&
+					line[i] !== "J"
+				)
+					i++;
 				continue;
 			}
 			const charW = cp > 0xffff ? 2 : 1;

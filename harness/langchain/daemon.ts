@@ -971,7 +971,7 @@ export class LoopDaemon {
 						: verdict === "blocked"
 							? "rejected"
 							: "max_iterations",
-					);
+				);
 			}
 
 			// ── Gate check after blocked verdict ────────────────────────────────

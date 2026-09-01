@@ -25,7 +25,6 @@ const stubTheme = {
 };
 
 describe("T14 — LoopWidget", () => {
-
 	let widget: LoopWidget;
 
 	beforeEach(() => {
@@ -58,14 +57,14 @@ describe("T14 — LoopWidget", () => {
 		widget.setSurgePause(new Date(Date.now() + 30 * 60_000)); // 30 min
 		const lines = widget.renderWidget(80, stubTheme);
 		// Label is "surge (in 30m)"
-		assert.ok(lines.some(l => l.includes("surge") && l.includes("in 30m")));
+		assert.ok(lines.some((l) => l.includes("surge") && l.includes("in 30m")));
 	});
 
 	it("setError shows error detail", () => {
 		widget.setError("model timeout");
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("error")));
-		assert.ok(lines.some(l => l.includes("model timeout")));
+		assert.ok(lines.some((l) => l.includes("error")));
+		assert.ok(lines.some((l) => l.includes("model timeout")));
 	});
 
 	it("setComplete approved shows ✓ loop complete", () => {
@@ -101,10 +100,13 @@ describe("T14 — LoopWidget", () => {
 		// Files accumulate across iterations (same codebase); only counters reset.
 		// After reset, a.ts shows with 0 write steps and 0 blockers.
 		const lines = widget.renderWidget(80, stubTheme);
-		const fileLines = lines.filter(l => l.includes("a.ts"));
+		const fileLines = lines.filter((l) => l.includes("a.ts"));
 		assert.ok(fileLines.length > 0, "file should still appear");
 		// No blocker count in the file row (reset to 0)
-		assert.ok(!fileLines.some(l => l.includes("!2")), "blocker count should be reset");
+		assert.ok(
+			!fileLines.some((l) => l.includes("!2")),
+			"blocker count should be reset",
+		);
 	});
 
 	// ─── File record tracking ──────────────────────────────────────────────
@@ -112,29 +114,33 @@ describe("T14 — LoopWidget", () => {
 	it("recordWrite shows file in widget", () => {
 		widget.recordWrite("src/foo.ts");
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("foo.ts")));
+		assert.ok(lines.some((l) => l.includes("foo.ts")));
 	});
 
 	it("recordWrite accumulates across calls", () => {
 		widget.recordWrite("src/bar.ts");
 		widget.recordWrite("src/bar.ts");
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("bar.ts") && l.includes("✍2")));
+		assert.ok(lines.some((l) => l.includes("bar.ts") && l.includes("✍2")));
 	});
 
 	it("recordBlockers shows blocker count", () => {
 		widget.recordBlockers("src/bad.ts", 2);
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("bad.ts") && l.includes("!2")));
+		assert.ok(lines.some((l) => l.includes("bad.ts") && l.includes("!2")));
 	});
 
 	it("recordReviewPass clears blockers and increments passes", () => {
 		widget.recordBlockers("src/ok.ts", 1);
 		widget.recordReviewPass("src/ok.ts");
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("ok.ts") && l.includes("🔍1")));
+		assert.ok(lines.some((l) => l.includes("ok.ts") && l.includes("🔍1")));
 		// No blocker count
-		assert.ok(!lines.some(l => l.includes("ok.ts") && l.includes("!") && !l.includes("🔍")));
+		assert.ok(
+			!lines.some(
+				(l) => l.includes("ok.ts") && l.includes("!") && !l.includes("🔍"),
+			),
+		);
 	});
 
 	// ─── Summary counts ────────────────────────────────────────────────────
@@ -147,7 +153,7 @@ describe("T14 — LoopWidget", () => {
 	it("errors shown as ●NE", () => {
 		widget.recordBlockers("src/err.ts", 3);
 		const lines = widget.renderWidget(80, stubTheme);
-		assert.ok(lines.some(l => l.includes("●3E")));
+		assert.ok(lines.some((l) => l.includes("●3E")));
 	});
 
 	// ─── Surge pause ──────────────────────────────────────────────────────
@@ -156,7 +162,7 @@ describe("T14 — LoopWidget", () => {
 		const resetAt = new Date(Date.now() + 90 * 60_000); // 90 minutes → "in 1h 30m"
 		widget.setSurgePause(resetAt);
 		const lines = widget.renderWidget(80, stubTheme);
-		const surgeLine = lines.find(l => l.includes("surge"));
+		const surgeLine = lines.find((l) => l.includes("surge"));
 		assert.ok(surgeLine !== undefined);
 		assert.match(surgeLine, /\(in \d+h/); // "in 1h 30m" matches
 	});
@@ -166,7 +172,7 @@ describe("T14 — LoopWidget", () => {
 		widget.setSurgePause(resetAt);
 		const lines = widget.renderWidget(80, stubTheme);
 		// Label format: "surge (now)"
-		assert.ok(lines.some(l => l.includes("surge") && l.includes("(now)")));
+		assert.ok(lines.some((l) => l.includes("surge") && l.includes("(now)")));
 	});
 
 	// ─── Console fallback ─────────────────────────────────────────────────
@@ -185,7 +191,9 @@ describe("T14 — LoopWidget", () => {
 	// ─── Width / truncation ───────────────────────────────────────────────
 
 	it("truncates long file names with …", () => {
-		widget.recordWrite("/very/long/path/to/a/very/long/file/name/that/exceeds/width.ts");
+		widget.recordWrite(
+			"/very/long/path/to/a/very/long/file/name/that/exceeds/width.ts",
+		);
 		const lines = widget.renderWidget(40, stubTheme);
 		for (const line of lines) {
 			const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
@@ -202,7 +210,7 @@ describe("T14 — LoopWidget", () => {
 		widget.reset();
 		const lines = widget.renderWidget(80, stubTheme);
 		assert.match(lines[0], /idle/);
-		assert.ok(!lines.some(l => l.includes("a.ts")));
+		assert.ok(!lines.some((l) => l.includes("a.ts")));
 	});
 
 	// ─── makeRenderer ─────────────────────────────────────────────────────
@@ -234,11 +242,10 @@ describe("T14 — LoopWidget", () => {
 
 	it("getLoopWidget returns the same instance", () => {
 		// Dynamic import to avoid module caching issues
-		import("./widget.js").then(m => {
+		import("./widget.js").then((m) => {
 			const a = m.getLoopWidget();
 			const b = m.getLoopWidget();
 			assert.strictEqual(a, b);
 		});
 	});
-
 });
