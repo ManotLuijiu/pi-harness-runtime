@@ -9,7 +9,7 @@
  *
  * The status line shows two tiers of information:
  *   [loop status]  [API quota]
- *   🧭 planning   MiniMax: 5h: 89% left · week: 90% left
+ *   [P] planning  |  MiniMax: 5h: 89% left · week: 90% left
  *
  * API quota is read from ~/.pi-harness/quota.json (written by the pi host
  * process that has access to the TUI quota signals).  The daemon polls this
@@ -95,12 +95,12 @@ function fmtResetAt(iso?: string): string {
  * Format: "MiniMax: 5h: 89% left (resets in 2h) · week: 90% left"
  */
 export function formatQuotaLine(q: QuotaData): string {
-	const fiveHour = q.fiveHourPercent === undefined
-		? null
-		: `5h: ${fmtPercent(q.fiveHourPercent)}${fmtResetAt(q.fiveHourResetAt)}`;
-	const weekly = q.weeklyPercent === undefined
-		? null
-		: `week: ${fmtPercent(q.weeklyPercent)}`;
+	const fiveHour =
+		q.fiveHourPercent === undefined
+			? null
+			: `5h: ${fmtPercent(q.fiveHourPercent)}${fmtResetAt(q.fiveHourResetAt)}`;
+	const weekly =
+		q.weeklyPercent === undefined ? null : `week: ${fmtPercent(q.weeklyPercent)}`;
 
 	const parts = [fiveHour, weekly].filter(Boolean);
 	if (parts.length === 0) return "MiniMax: quota unknown";
