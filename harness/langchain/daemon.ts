@@ -884,9 +884,13 @@ export class LoopDaemon {
 			const deps: LoopDeps =
 				this.config.deps ??
 				(this.config.dryRun
-					? buildDryRunDeps({ maxIterations: this.config.maxIterations })
-					: await buildRealLoopDeps({
+					? buildDryRunDeps({
 							maxIterations: this.config.maxIterations,
+							blackboardDir: this.bus.getWorkspace(),
+						})
+						: await buildRealLoopDeps({
+							maxIterations: this.config.maxIterations,
+							blackboardDir: this.bus.getWorkspace(),
 						}));
 
 			// Inject transition publishing into onStep (also drives the widget)

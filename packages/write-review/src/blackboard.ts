@@ -200,35 +200,79 @@ export class WriteReviewBlackboard {
 	}
 
 	/**
-	 * Export status as markdown for display
+	 * Export status as markdown for display.
+	 * Injected into every agent prompt so each agent sees the shared scoreboard.
+	 * Matches the pi-lens pattern: persistent artifact encountered naturally.
 	 */
 	toMarkdown(): string {
 		if (!this.status) return "No active write-review session.";
 
-		const { phase, iteration, verdict, verdictMessage, codeFiles } =
-			this.status;
-		const lines = [
-			`## Write-Review Status`,
+		const {
+			phase,
+			iteration,
+			verdict,
+			verdictMessage,
+			codeFiles,
+			changesRequested,
+		} = this.status;
+
+		const verdictIcon =
+			verdict === "approved"
+				? "✅"
+				: verdict === "blocked"
+					? "⛔"
+				: verdict === "changes_requested"
+					? "🔄"
+					: "⏳";
+
+		const lines: string[] = [
+			`## Write-Review Scoreboard`,
 			``,
 			`| Field | Value |`,
 			`|-------|-------|`,
-			`| Phase | ${phase} |`,
+			`| Phase | ${verdictIcon} ${phase} |`,
 			`| Iteration | ${iteration} |`,
-			`| Verdict | ${verdict ?? "pending"} |`,
+			`| Verdict | ${verdict ?? "(none yet)"} |`,
 		];
 
 		if (verdictMessage) {
-			lines.push(`| Message | ${verdictMessage} |`);
+			lines.push(`| Summary | ${verdictMessage} |`);
 		}
 
 		if (codeFiles && codeFiles.length > 0) {
-			lines.push(``, `### Code Files`);
+			lines.push(``, `### Code Files Written`);
 			for (const file of codeFiles) {
 				lines.push(`- ${file}`);
 			}
 		}
 
+		if (changesRequested && changesRequested.length > 0) {
+			lines.push(``, `### Changes Requested (${changesRequested.length})`);
+			for (const change of changesRequested) {
+				lines.push(`- ${change}`);
+			}
+		}
+
 		return lines.join("\n");
+	}
+
+	/**
+	 * Extract file paths from a fenced code block string.
+	 * Looks for common patterns: ```path/to/file
+	 */
+	extractFilePaths(code: string): string[] {
+		const files = new Set<string>();
+		// Match ```<whitespace>path (with optional language tag)
+		const fencedRe = /^```(?:\w+)?\s+([^\n]+)/gm;
+		let match;
+		while ((match = fencedRe.exec(code)) !== null) {
+			const path = match[1]!.trim();
+			// Skip if it looks like a filename with spaces (not a path)
+			if (path && !path.includes(" ") && (path.includes("/") || path.includes("\\") || path.endsWith(".ts") || path.endsWith(".js") || path.endsWith(".tsx") || path.endsWith(".json") || path.endsWith(".md"))) {
+				files.add(path);
+			}
+		}
+		return [...files];
 	}
 }
 
@@ -240,10 +284,10 @@ export function createBlackboard(
 	dir?: string,
 ): WriteReviewBlackboard {
 	const bb = new WriteReviewBlackboard(projectPath, dir);
-	if (!bb.exists()) {
-		bb.init();
-	} else {
+	if (bb.exists()) {
 		bb.load();
+	} else {
+		bb.init();
 	}
 	return bb;
 }

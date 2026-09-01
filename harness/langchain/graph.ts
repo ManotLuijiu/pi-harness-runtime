@@ -24,6 +24,8 @@ import {
 	type ReviewVerdict,
 	ReviewVerdictSchema,
 } from "./agents.js";
+import { WriteReviewBlackboard } from "../../packages/write-review/src/blackboard.js";
+import type { Verdict } from "../../packages/write-review/src/types.js";
 import type { LoopWidget } from "./widget.js";
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -176,6 +178,8 @@ export type WriteReviewLoop = ReturnType<typeof buildWriteReviewLoop>;
 export interface RealLoopOptions {
 	maxIterations?: number;
 	onStep?: (step: string, state: LoopState) => void;
+	/** Directory for .write-review/blackboard. Defaults to process.cwd(). */
+	blackboardDir?: string;
 	importAgents?: () => Promise<{
 		createPlannerAgent: () => {
 			invoke: (input: { messages: unknown[] }) => Promise<{
@@ -199,6 +203,10 @@ export interface RealLoopOptions {
 /**
  * Build LoopDeps backed by the real GPT/MiniMax agents from agents.ts.
  * Kept lazy (dynamic import) so dry-run mode never touches API keys.
+ *
+ * The WriteReviewBlackboard is updated at each step and its markdown is
+ * injected into every agent prompt — so each agent sees the shared scoreboard
+ * naturally, without explicit prompt injection.
  */
 export async function buildRealLoopDeps(
 	options: RealLoopOptions = {},
@@ -208,13 +216,67 @@ export async function buildRealLoopDeps(
 	const coder = mod.createCoderAgent();
 	const reviewer = mod.createReviewerAgent();
 
+	// Create and init the shared blackboard
+	const blackboard = new WriteReviewBlackboard(
+		options.blackboardDir ?? process.cwd(),
+	);
+	if (blackboard.exists()) {
+		blackboard.load();
+	} else {
+		blackboard.init();
+	}
+
+	/** Inject scoreboard markdown into a user message. */
+	const withScoreboard = (msg: string) => {
+		const scoreboard = blackboard.toMarkdown();
+		return msg + "\n\n## Current Progress\n" + scoreboard;
+	};
+
+	// Wrap onStep to also update the blackboard
+	const originalOnStep = options.onStep;
+	const onStep = (step: string, state: LoopState) => {
+		originalOnStep?.(step, state);
+
+		switch (step) {
+			case "plan": {
+				blackboard.init();
+				blackboard.startWriting(); // phase = "writing", iteration++
+				break;
+			}
+			case "write": {
+				// Extract file paths from the code output
+				const files = blackboard.extractFilePaths(state.code ?? "");
+				if (files.length > 0) {
+					blackboard.setCodeFiles(files);
+				}
+				blackboard.save();
+				break;
+			}
+			case "review": {
+				const verdict = state.review?.verdict as Verdict | undefined;
+				if (verdict) {
+					blackboard.setVerdict(verdict, state.review?.summary);
+				}
+				if (state.review?.comments && state.review.comments.length > 0) {
+					blackboard.setChangesRequested(
+						state.review.comments.map((c) =>
+							`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
+						),
+					);
+				}
+				blackboard.save();
+				break;
+			}
+		}
+	};
+
 	return {
 		maxIterations: options.maxIterations ?? 3,
-		onStep: options.onStep,
+		onStep,
 		plan: async (request) =>
 			lastMessage(
 				await planner.invoke({
-					messages: [{ role: "user", content: request }],
+					messages: [{ role: "user", content: withScoreboard(request) }],
 				}),
 			),
 		write: async (plan, review) => {
@@ -224,7 +286,9 @@ export async function buildRealLoopDeps(
 						.join("\n")}`
 				: `## Plan\n${plan}`;
 			return lastMessage(
-				await coder.invoke({ messages: [{ role: "user", content: userMsg }] }),
+				await coder.invoke({
+					messages: [{ role: "user", content: withScoreboard(userMsg) }],
+				}),
 			);
 		},
 		review: async (plan, code) => {
@@ -232,7 +296,9 @@ export async function buildRealLoopDeps(
 				messages: [
 					{
 						role: "user",
-						content: `## Plan\n${plan}\n\n## Code to review\n${code}`,
+						content: withScoreboard(
+							`## Plan\n${plan}\n\n## Code to review\n${code}`,
+						),
 					},
 				],
 			});
@@ -255,20 +321,78 @@ export async function buildRealLoopDeps(
 
 /** Deterministic stubs: iteration 1 requests changes, iteration 2 approves. */
 export function buildDryRunDeps(
-	options: { maxIterations?: number; onStep?: LoopDeps["onStep"] } = {},
+	options: {
+		maxIterations?: number;
+		onStep?: LoopDeps["onStep"];
+		/** Directory for .write-review/blackboard. Defaults to process.cwd(). */
+		blackboardDir?: string;
+	} = {},
 ): LoopDeps {
 	let writeCount = 0;
-	return {
+
+	// Create and init the shared blackboard (even in dry-run, so widget can read it)
+	const blackboard = new WriteReviewBlackboard(
+		options.blackboardDir ?? process.cwd(),
+	);
+	if (blackboard.exists()) {
+		blackboard.load();
+	} else {
+		blackboard.init();
+	}
+
+	const withScoreboard = (msg: string) => {
+		const scoreboard = blackboard.toMarkdown();
+		return msg + "\n\n## Current Progress\n" + scoreboard;
+	};
+
+	// Wrap onStep to also update the blackboard
+	const originalOnStep = options.onStep;
+	const onStep = (step: string, state: LoopState) => {
+		originalOnStep?.(step, state);
+
+		switch (step) {
+			case "plan": {
+				blackboard.init();
+				blackboard.startWriting();
+				break;
+			}
+			case "write": {
+				const files = blackboard.extractFilePaths(state.code ?? "");
+				if (files.length > 0) blackboard.setCodeFiles(files);
+				blackboard.save();
+				break;
+			}
+			case "review": {
+				const verdict = state.review?.verdict as Verdict | undefined;
+				if (verdict) blackboard.setVerdict(verdict, state.review?.summary);
+				if (state.review?.comments && state.review.comments.length > 0) {
+					blackboard.setChangesRequested(
+						state.review.comments.map((c) =>
+							`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
+						),
+					);
+				}
+				blackboard.save();
+				break;
+			}
+		}
+	};
+
+		return {
 		maxIterations: options.maxIterations ?? 3,
-		onStep: options.onStep,
+		onStep,
 		plan: async (request) =>
-			`# Plan (dry-run)\n\nRequest: ${request}\n\n1. Stub step one\n2. Stub step two`,
+			withScoreboard(
+				`# Plan (dry-run)\n\nRequest: ${request}\n\n1. Stub step one\n2. Stub step two`,
+			),
 		write: async (plan, review) => {
 			writeCount += 1;
 			const fixNote = review
 				? `\n// addressing: ${review.comments.map((c) => c.comment).join("; ")}`
 				: "";
-			return `\`\`\`ts\n// stub code, iteration ${writeCount}\nexport const plan = ${JSON.stringify(plan.slice(0, 60))};${fixNote}\n\`\`\``;
+			return withScoreboard(
+				`\`\`\`ts\n// stub code, iteration ${writeCount}\nexport const plan = ${JSON.stringify(plan.slice(0, 60))};${fixNote}\n\`\`\``,
+			);
 		},
 		review: async (_plan, _code) => {
 			if (writeCount < 2) {
