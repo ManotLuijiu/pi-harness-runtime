@@ -46,6 +46,40 @@ export const ReviewVerdictSchema = z.object({
 
 export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
 
+// ─── Autonomy Signal Detection ────────────────────────────────────────────
+//
+// When these phrases appear in the user request, the agents activate full
+// autonomous mode: no waiting, no "Next Steps", no confirmation prompts.
+// The directive is injected into every system prompt when a signal is detected.
+//
+// Human says: "You are free to write code until finish without my permission"
+// → Agents interpret this as: autonomy unlocked, write freely
+
+const AUTONOMY_SIGNALS = [
+	/free to (write|code|implement|build|create)/i,
+	/until (finish|complete|done)/i,
+	/without (my )?permission/i,
+	/\bautonomous(ly)?( mode)?\b/i,
+	/self[- ]?directed/i,
+	/no (need (to|for)|waiting for) (human|confirmation|approval|permission)/i,
+	/proceed without (me|human|my |approval)/i,
+];
+
+export function isAutonomyRequest(request: string): boolean {
+	return AUTONOMY_SIGNALS.some((re) => re.test(request));
+}
+
+/** Directive injected into every system prompt when autonomy signal is detected. */
+export function autonomyDirective(): string {
+	return `\n\n[AUTONOMY MODE ACTIVE]
+You are operating in full autonomous mode. The human has explicitly granted
+permission to write code until finish without waiting for confirmation.
+- Do NOT ask for permission to proceed
+- Do NOT output "Next Steps" or waiting-for-human signals
+- Do NOT wait for human review — the loop routes automatically
+- Write the code and output the result; the loop handles the rest`;
+}
+
 // ─── Prompts ────────────────────────────────────────────────────────────────
 //
 // PROMPTS ARE WRITTEN FOR DAEMON AUDIENCE, NOT HUMAN READERS.
@@ -56,7 +90,6 @@ export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
 // - NEVER "stop and summarize" — the loop routes automatically
 // - If stuck, fail with a clear error, do not wait silently
 // - Output is consumed by the loop, not a human reading for guidance
-
 
 const PLANNER_PROMPT = `You are the Planning Agent (GPT) in an autonomous daemon loop.
 
@@ -78,7 +111,6 @@ IMPORTANT:
 - Do NOT ask for confirmation or permission — write and finish
 - If you cannot proceed, fail with a clear error message
 - Your output is consumed by the loop, not read by a human for guidance`;
-
 
 const REVIEWER_PROMPT = `You are the Code Review Agent (GPT) in an autonomous daemon loop.
 

@@ -20,6 +20,8 @@ import {
 	StateGraph,
 } from "@langchain/langgraph";
 import {
+	autonomyDirective,
+	isAutonomyRequest,
 	lastMessage,
 	type ReviewVerdict,
 	ReviewVerdictSchema,
@@ -226,6 +228,11 @@ export async function buildRealLoopDeps(
 		blackboard.init();
 	}
 
+	// Autonomy mode: computed inside plan(), stored for write()/review()
+	const _autonomous = false;
+	const _directive = "";
+
+
 	/** Inject scoreboard markdown into a user message. */
 	const withScoreboard = (msg: string) => {
 		const scoreboard = blackboard.toMarkdown();
@@ -259,8 +266,9 @@ export async function buildRealLoopDeps(
 				}
 				if (state.review?.comments && state.review.comments.length > 0) {
 					blackboard.setChangesRequested(
-						state.review.comments.map((c) =>
-							`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
+						state.review.comments.map(
+							(c) =>
+								`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
 						),
 					);
 				}
@@ -270,13 +278,13 @@ export async function buildRealLoopDeps(
 		}
 	};
 
-	return {
+		return {
 		maxIterations: options.maxIterations ?? 3,
 		onStep,
 		plan: async (request) =>
 			lastMessage(
 				await planner.invoke({
-					messages: [{ role: "user", content: withScoreboard(request) }],
+					messages: [{ role: "user", content: _directive + withScoreboard(request) }],
 				}),
 			),
 		write: async (plan, review) => {
@@ -287,7 +295,7 @@ export async function buildRealLoopDeps(
 				: `## Plan\n${plan}`;
 			return lastMessage(
 				await coder.invoke({
-					messages: [{ role: "user", content: withScoreboard(userMsg) }],
+					messages: [{ role: "user", content: _directive + withScoreboard(userMsg) }],
 				}),
 			);
 		},
@@ -296,9 +304,7 @@ export async function buildRealLoopDeps(
 				messages: [
 					{
 						role: "user",
-						content: withScoreboard(
-							`## Plan\n${plan}\n\n## Code to review\n${code}`,
-						),
+						content: _directive + withScoreboard(`## Plan\n${plan}\n\n## Code to review\n${code}`),
 					},
 				],
 			});
@@ -367,8 +373,9 @@ export function buildDryRunDeps(
 				if (verdict) blackboard.setVerdict(verdict, state.review?.summary);
 				if (state.review?.comments && state.review.comments.length > 0) {
 					blackboard.setChangesRequested(
-						state.review.comments.map((c) =>
-							`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
+						state.review.comments.map(
+							(c) =>
+								`[${c.severity ?? "minor"}] ${c.file ? `${c.file}: ` : ""}${c.comment}`,
 						),
 					);
 				}
@@ -378,7 +385,7 @@ export function buildDryRunDeps(
 		}
 	};
 
-		return {
+	return {
 		maxIterations: options.maxIterations ?? 3,
 		onStep,
 		plan: async (request) =>
