@@ -135,26 +135,9 @@ bun add -d typescript
 
 **This is a Node.js CLI daemon — do NOT add React as a dependency for icons.**
 
-Options (best to worst):
+Options (use in this order):
 
-### 1. Unicode emoji (preferred for status lines)
-
-```typescript
-🧭 planning   ✍️  coding   🔍 reviewing   ✅ finished   ⛔ blocked   🔄 retry
-```
-
-- Works in terminals, TUI, and plain-text status files
-- Rendering varies by terminal font (CJK terminals show wider glyphs)
-
-### 2. ASCII/box-drawing alternatives
-
-```typescript
-[>>>] [==>] [###] [---] [OK!]   // stage indicators
-> write   ✓ review   ✗ blocked   ~ retry  // status
-[P] [W] [R] [F]   // plan/write/review/finish (compact)
-```
-
-### 3. Lucide (SVG icons, no React required)
+### 1. Lucide (SVG icons, no React required)
 
 Use `lucide` for SVG icons — it has a **pure string API**, no DOM/React needed:
 
@@ -175,21 +158,33 @@ const icon = await readFile('./node_modules/lucide-static/icons/file-code.svg', 
 
 **Never use `react-icons`** — it pulls in React as a dependency.
 
-### 4. Keep status files plain text
+### 2. ASCII/box-drawing alternatives
 
-The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output icon-free or emoji-only:
+Use if Lucide is not possible (no npm install, minimal deps, etc.).
+
+```typescript
+// Stage indicators
+[>>>] [==>] [###] [---] [OK!]
+
+// Status icons
+> write   ✓ review   ✗ blocked   ~ retry
+
+// Compact flags (preferred)
+[P] [W] [R] [F]  // plan/write/review/finish
+```
+
+**Never use emoji** — they render inconsistently across terminals and fonts, and CJK terminals display them at double width which breaks layout alignment.
+
+### 3. Keep status files plain text
+
+The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain text:
 
 ```
-# ✅ Good — emoji + plain text
-planning  |  MiniMax: 5h: 89% left
-coding    |  MiniMax: 5h: 89% left
-
-# ✅ Good — plain text only
+# ✅ Good — plain text with compact flags
 [P] planning  |  MiniMax: 5h: 89% left
 [W] coding    |  MiniMax: 5h: 89% left
 
-# ❌ Bad — ASCII art in a machine-readable file
-╔═══════════╗
-║  PLANNING  ║
-╚═══════════╝
+# ❌ Bad — emoji in machine-readable files (CJK alignment issues)
+🧭 planning  |  MiniMax: 5h: 89% left
+✍️  coding   |  MiniMax: 5h: 89% left
 ```
