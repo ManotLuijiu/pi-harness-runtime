@@ -135,11 +135,26 @@ bun add -d typescript
 
 **This is a Node.js CLI daemon — do NOT add React as a dependency for icons.**
 
-Options (use in this order):
+### Default: ASCII (no extra deps, keeps bundle small)
 
-### 1. Lucide (SVG icons, no React required)
+ASCII is the default choice for regular cases — it keeps the bundle small and works everywhere.
 
-Use `lucide` for SVG icons — it has a **pure string API**, no DOM/React needed:
+```typescript
+// Stage indicators
+[>>>] [==>] [###] [---] [OK!]
+
+// Status icons
+> write   ✓ review   ✗ blocked   ~ retry
+
+// Compact flags (preferred for status lines)
+[P] [W] [R] [F]  // plan/write/review/finish
+```
+
+**Never use emoji** — they render inconsistently across terminals and fonts, and CJK terminals display them at double width which breaks layout alignment.
+
+### Nice/beautiful icons: Lucide (SVG, no React)
+
+Use `lucide` only when you need polished SVG icons for display in a UI (not terminal output).
 
 ```typescript
 import { FileCode, CheckCircle, XCircle, AlertTriangle } from 'lucide';
@@ -158,29 +173,12 @@ const icon = await readFile('./node_modules/lucide-static/icons/file-code.svg', 
 
 **Never use `react-icons`** — it pulls in React as a dependency.
 
-### 2. ASCII/box-drawing alternatives
+### Status files
 
-Use if Lucide is not possible (no npm install, minimal deps, etc.).
-
-```typescript
-// Stage indicators
-[>>>] [==>] [###] [---] [OK!]
-
-// Status icons
-> write   ✓ review   ✗ blocked   ~ retry
-
-// Compact flags (preferred)
-[P] [W] [R] [F]  // plan/write/review/finish
-```
-
-**Never use emoji** — they render inconsistently across terminals and fonts, and CJK terminals display them at double width which breaks layout alignment.
-
-### 3. Keep status files plain text
-
-The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain text:
+The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain ASCII:
 
 ```
-# ✅ Good — plain text with compact flags
+# ✅ Good — plain ASCII with compact flags
 [P] planning  |  MiniMax: 5h: 89% left
 [W] coding    |  MiniMax: 5h: 89% left
 
