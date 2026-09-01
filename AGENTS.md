@@ -130,3 +130,66 @@ ls packages/notification/dist/
 ```bash
 bun add -d typescript
 ```
+
+## Icon Usage
+
+**This is a Node.js CLI daemon — do NOT add React as a dependency for icons.**
+
+Options (best to worst):
+
+### 1. Unicode emoji (preferred for status lines)
+
+```typescript
+🧭 planning   ✍️  coding   🔍 reviewing   ✅ finished   ⛔ blocked   🔄 retry
+```
+
+- Works in terminals, TUI, and plain-text status files
+- Rendering varies by terminal font (CJK terminals show wider glyphs)
+
+### 2. ASCII/box-drawing alternatives
+
+```typescript
+[>>>] [==>] [###] [---] [OK!]   // stage indicators
+> write   ✓ review   ✗ blocked   ~ retry  // status
+[P] [W] [R] [F]   // plan/write/review/finish (compact)
+```
+
+### 3. Lucide (SVG icons, no React required)
+
+Use `lucide` for SVG icons — it has a **pure string API**, no DOM/React needed:
+
+```typescript
+import { FileCode, CheckCircle, XCircle, AlertTriangle } from 'lucide';
+
+// Render to SVG string (no React, no DOM)
+const svg = FileCode({ size: 16, strokeWidth: 2 });
+// svg is an HTML string like '<svg width="16" height="16" ...>...</svg>'
+```
+
+Or use `lucide-static` for pre-built SVG strings — no runtime import:
+
+```typescript
+// No React, just static SVG strings
+const icon = await readFile('./node_modules/lucide-static/icons/file-code.svg', 'utf8');
+```
+
+**Never use `react-icons`** — it pulls in React as a dependency.
+
+### 4. Keep status files plain text
+
+The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output icon-free or emoji-only:
+
+```
+# ✅ Good — emoji + plain text
+planning  |  MiniMax: 5h: 89% left
+coding    |  MiniMax: 5h: 89% left
+
+# ✅ Good — plain text only
+[P] planning  |  MiniMax: 5h: 89% left
+[W] coding    |  MiniMax: 5h: 89% left
+
+# ❌ Bad — ASCII art in a machine-readable file
+╔═══════════╗
+║  PLANNING  ║
+╚═══════════╝
+```
