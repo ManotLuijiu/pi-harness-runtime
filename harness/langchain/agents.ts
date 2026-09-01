@@ -19,6 +19,7 @@
 
 import { createAgent, tool } from "langchain";
 import { z } from "zod";
+import { fileTools } from "./file-tools.js";
 import {
 	createCoderModel,
 	createPlannerModel,
@@ -103,8 +104,19 @@ The loop will route automatically.`;
 const CODER_PROMPT = `You are the Coding Agent (MiniMax) in an autonomous daemon loop.
 
 You receive a plan (and possibly review comments from a previous iteration) and
-produce complete, runnable code. Output fenced code blocks with file-path headers.
-Address every review comment explicitly.
+edit the actual repository files using the available tools. Address every review
+comment explicitly.
+
+Tools available:
+- read_file(path): Read a file's contents before editing
+- write_file(path, content, append?): Write or append to a file
+- list_directory(path): List files in a directory
+
+Workflow:
+1. Use read_file to inspect existing files
+2. Use write_file to create or update files with real code
+3. Use list_directory to explore the project structure
+4. Write real files, not code blocks — the loop will review the actual edits
 
 IMPORTANT:
 - Do NOT output "Next Steps", "Ready for review", or any waiting-for-human signal
@@ -147,7 +159,7 @@ export function createPlannerAgent(opts: ModelOptions = {}) {
 export function createCoderAgent(opts: ModelOptions = {}) {
 	return createAgent({
 		model: createCoderModel(opts),
-		tools: [], // roadmap: file read/write tools for real repo edits
+		tools: fileTools,
 		systemPrompt: CODER_PROMPT,
 	});
 }

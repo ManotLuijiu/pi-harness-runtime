@@ -232,7 +232,6 @@ export async function buildRealLoopDeps(
 	const _autonomous = false;
 	const _directive = "";
 
-
 	/** Inject scoreboard markdown into a user message. */
 	const withScoreboard = (msg: string) => {
 		const scoreboard = blackboard.toMarkdown();
@@ -278,13 +277,15 @@ export async function buildRealLoopDeps(
 		}
 	};
 
-		return {
+	return {
 		maxIterations: options.maxIterations ?? 3,
 		onStep,
 		plan: async (request) =>
 			lastMessage(
 				await planner.invoke({
-					messages: [{ role: "user", content: _directive + withScoreboard(request) }],
+					messages: [
+						{ role: "user", content: _directive + withScoreboard(request) },
+					],
 				}),
 			),
 		write: async (plan, review) => {
@@ -295,7 +296,9 @@ export async function buildRealLoopDeps(
 				: `## Plan\n${plan}`;
 			return lastMessage(
 				await coder.invoke({
-					messages: [{ role: "user", content: _directive + withScoreboard(userMsg) }],
+					messages: [
+						{ role: "user", content: _directive + withScoreboard(userMsg) },
+					],
 				}),
 			);
 		},
@@ -304,7 +307,9 @@ export async function buildRealLoopDeps(
 				messages: [
 					{
 						role: "user",
-						content: _directive + withScoreboard(`## Plan\n${plan}\n\n## Code to review\n${code}`),
+						content:
+							_directive +
+							withScoreboard(`## Plan\n${plan}\n\n## Code to review\n${code}`),
 					},
 				],
 			});

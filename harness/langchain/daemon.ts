@@ -49,6 +49,7 @@ import { NotificationCenter } from "../../packages/notification/dist/notificatio
 
 import { invokeWithSurgeRetry, type SurgePolicy } from "./surge.js";
 import type { LoopWidget } from "./widget.js";
+import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
 import {
@@ -518,6 +519,117 @@ class BdTasksWatcher {
 	}
 }
 
+// ─── Cron Source ──────────────────────────────────────────────────────────────
+
+/**
+ * Watches a cron-tasks directory and fires tasks on a configurable schedule.
+ *
+ * Storage layout:
+ *   <workspace>/.cron-tasks/
+ *   ├── every-5m/
+ *   │   ├── task-1.json   {"request": "...", "enabled": true}
+ *   │   └── task-2.json
+ *   ├── hourly/
+ *   │   └── task-3.json
+ *   └── daily/
+ *       └── task-4.json
+ *
+ * Schedule buckets: "every-5m", "every-10m", "every-30m", "hourly", "daily", "weekly"
+ * Drop a JSON file into the right bucket to schedule a task.
+ * Set "enabled": false to pause without deleting.
+ */
+class CronWatcher {
+  private readonly workspace: string;
+  private readonly scheduleMs: Record<string, number>;
+  private readonly seen: Map<string, Set<string>> = new Map();
+  private readonly timers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private running = false;
+
+  constructor(workspace: string) {
+    this.workspace = workspace;
+    this.scheduleMs = {
+      "every-5m": 5 * 60_000,
+      "every-10m": 10 * 60_000,
+      "every-30m": 30 * 60_000,
+      hourly: 3_600_000,
+      daily: 86_400_000,
+      weekly: 7 * 86_400_000,
+    };
+  }
+
+  start(onTask: (task: TriggeredTask) => void): void {
+    this.running = true;
+    const cronDir = `${this.workspace}/.cron-tasks`;
+    import("node:fs").then(({ mkdirSync, existsSync }) => {
+      if (!existsSync(cronDir)) mkdirSync(cronDir, { recursive: true });
+    });
+    // Fire once at start
+    this._tickAll(onTask);
+    // Schedule each bucket
+    for (const [schedule, ms] of Object.entries(this.scheduleMs)) {
+      this._scheduleNext(schedule, ms, onTask);
+    }
+  }
+
+  stop(): void {
+    this.running = false;
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
+
+  private _scheduleNext(
+    schedule: string,
+    ms: number,
+    onTask: (task: TriggeredTask) => void,
+  ): void {
+    const timer = setTimeout(async () => {
+      if (!this.running) return;
+      await this._tickSchedule(schedule, onTask);
+      this._scheduleNext(schedule, ms, onTask);
+    }, ms);
+    this.timers.set(schedule, timer);
+  }
+
+  private async _tickAll(onTask: (task: TriggeredTask) => void): Promise<void> {
+    for (const schedule of Object.keys(this.scheduleMs)) {
+      await this._tickSchedule(schedule, onTask);
+    }
+  }
+
+  private async _tickSchedule(
+    schedule: string,
+    onTask: (task: TriggeredTask) => void,
+  ): Promise<void> {
+    if (!this.running) return;
+    const { readdirSync, readFileSync, existsSync } = await import("node:fs");
+    const cronDir = `${this.workspace}/.cron-tasks/${schedule}`;
+    if (!existsSync(cronDir)) return;
+
+    let seen = this.seen.get(schedule);
+    if (!seen) { seen = new Set(); this.seen.set(schedule, seen); }
+
+    let files: string[];
+    try { files = readdirSync(cronDir).filter((f) => f.endsWith(".json")); }
+    catch { return; }
+
+    for (const file of files) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      let taskData: { request?: string; enabled?: boolean };
+      try { taskData = JSON.parse(readFileSync(`${cronDir}/${file}`, "utf8")); }
+      catch { continue; }
+      if (taskData.enabled === false) continue;
+      if (!taskData.request) continue;
+      onTask({
+        taskId: `cron:${schedule}:${file.replace(".json", "")}`,
+        request: taskData.request,
+        source: "cron",
+        triggeredAt: new Date().toISOString(),
+      });
+    }
+  }
+}
+
 // ─── Tunnel Health Monitor ───────────────────────────────────────────────────
 
 /**
@@ -674,7 +786,9 @@ export class LoopDaemon {
 	private readonly inboxWatcher: InboxWatcher;
 	private readonly busWatcher: BusWatcher;
 	private readonly bdWatcher: BdTasksWatcher;
+	private readonly cronWatcher: CronWatcher | null;
 	private readonly tunnelMonitor: TunnelMonitor | null;
+	private readonly statusLine: StatusLineManager | null;
 	private readonly widget: LoopWidget | null;
 
 	/** Currently running tasks (taskId → RunningTask) */
@@ -730,6 +844,12 @@ export class LoopDaemon {
 		this.widget = this.config.widget ?? null;
 		this.busWatcher = new BusWatcher(this.bus, this.config.pollMs);
 		this.bdWatcher = new BdTasksWatcher(this.config.pollMs);
+		this.cronWatcher = this.config.sources.includes("cron")
+			? new CronWatcher(this.bus.getWorkspace())
+			: null;
+		this.statusLine = isPiLensAvailable()
+			? null
+			: new StatusLineManager(this.bus.getWorkspace());
 
 		// Tunnel monitor — only active when a tunnel script is configured
 		if (this.config.tunnelCommand) {
@@ -772,6 +892,7 @@ export class LoopDaemon {
 		}
 
 		this.tunnelMonitor?.start();
+		this.statusLine?.start();
 
 		console.log("[daemon] Started.");
 	}
@@ -784,6 +905,8 @@ export class LoopDaemon {
 		this.inboxWatcher.stop();
 		this.busWatcher.stop();
 		this.bdWatcher.stop();
+		this.cronWatcher?.stop();
+		this.statusLine?.stop();
 		this.tunnelMonitor?.stop();
 
 		// Release all held leases
@@ -888,7 +1011,7 @@ export class LoopDaemon {
 							maxIterations: this.config.maxIterations,
 							blackboardDir: this.bus.getWorkspace(),
 						})
-						: await buildRealLoopDeps({
+					: await buildRealLoopDeps({
 							maxIterations: this.config.maxIterations,
 							blackboardDir: this.bus.getWorkspace(),
 						}));
@@ -977,6 +1100,8 @@ export class LoopDaemon {
 							: "max_iterations",
 				);
 			}
+			const loopDone = verdict === "approved" ? "✅ finished" : verdict === "blocked" ? "⛔ blocked" : "🔄 max_iter";
+			this.statusLine?.updateLoopStatus(loopDone);
 
 			// ── Gate check after blocked verdict ────────────────────────────────
 			if (
