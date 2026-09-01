@@ -9,7 +9,11 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { StatusLineManager, isPiLensAvailable, formatQuotaLine } from "./status-line.js";
+import {
+	StatusLineManager,
+	isPiLensAvailable,
+	formatQuotaLine,
+} from "./status-line.js";
 
 describe("isPiLensAvailable", () => {
 	it("returns false when no PI_LENS env vars are set", () => {
@@ -47,13 +51,19 @@ describe("formatQuotaLine", () => {
 
 	it("shows reset countdown when resetAt is provided", () => {
 		const future = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2h from now
-		const line = formatQuotaLine({ fiveHourPercent: 89, fiveHourResetAt: future });
+		const line = formatQuotaLine({
+			fiveHourPercent: 89,
+			fiveHourResetAt: future,
+		});
 		assert.ok(line.includes("resets in"), line);
 	});
 });
 
 describe("StatusLineManager", () => {
-	const tmpDir = join(process.env.TMPDIR ?? "/tmp", `harness-status-test-${Date.now()}`);
+	const tmpDir = join(
+		process.env.TMPDIR ?? "/tmp",
+		`harness-status-test-${Date.now()}`,
+	);
 	let manager: StatusLineManager;
 
 	beforeEach(() => {
@@ -63,11 +73,15 @@ describe("StatusLineManager", () => {
 
 	afterEach(() => {
 		manager.stop();
-		try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+		try {
+			rmSync(tmpDir, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
 	});
 
 	it("getLine returns combined loop + quota status", () => {
-		manager.updateLoopStatus("🧭 planning");
+		manager.updateLoopStatus("[P] planning");
 		const line = manager.getLine();
 		assert.ok(line.includes("planning"), line);
 	});
@@ -78,7 +92,7 @@ describe("StatusLineManager", () => {
 	});
 
 	it("writes .harness-status file when pi-lens is not available", () => {
-		manager.updateLoopStatus("✍️  coding");
+		manager.updateLoopStatus("[W] coding");
 		const statusFile = join(tmpDir, ".harness-status");
 		assert.ok(existsSync(statusFile), ".harness-status should exist");
 		const content = readFileSync(statusFile, "utf8");

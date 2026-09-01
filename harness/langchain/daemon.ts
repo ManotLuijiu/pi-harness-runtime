@@ -539,95 +539,105 @@ class BdTasksWatcher {
  * Set "enabled": false to pause without deleting.
  */
 class CronWatcher {
-  private readonly workspace: string;
-  private readonly scheduleMs: Record<string, number>;
-  private readonly seen: Map<string, Set<string>> = new Map();
-  private readonly timers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-  private running = false;
+	private readonly workspace: string;
+	private readonly scheduleMs: Record<string, number>;
+	private readonly seen: Map<string, Set<string>> = new Map();
+	private readonly timers: Map<string, ReturnType<typeof setTimeout>> =
+		new Map();
+	private running = false;
 
-  constructor(workspace: string) {
-    this.workspace = workspace;
-    this.scheduleMs = {
-      "every-5m": 5 * 60_000,
-      "every-10m": 10 * 60_000,
-      "every-30m": 30 * 60_000,
-      hourly: 3_600_000,
-      daily: 86_400_000,
-      weekly: 7 * 86_400_000,
-    };
-  }
+	constructor(workspace: string) {
+		this.workspace = workspace;
+		this.scheduleMs = {
+			"every-5m": 5 * 60_000,
+			"every-10m": 10 * 60_000,
+			"every-30m": 30 * 60_000,
+			hourly: 3_600_000,
+			daily: 86_400_000,
+			weekly: 7 * 86_400_000,
+		};
+	}
 
-  start(onTask: (task: TriggeredTask) => void): void {
-    this.running = true;
-    const cronDir = `${this.workspace}/.cron-tasks`;
-    import("node:fs").then(({ mkdirSync, existsSync }) => {
-      if (!existsSync(cronDir)) mkdirSync(cronDir, { recursive: true });
-    });
-    // Fire once at start
-    this._tickAll(onTask);
-    // Schedule each bucket
-    for (const [schedule, ms] of Object.entries(this.scheduleMs)) {
-      this._scheduleNext(schedule, ms, onTask);
-    }
-  }
+	start(onTask: (task: TriggeredTask) => void): void {
+		this.running = true;
+		const cronDir = `${this.workspace}/.cron-tasks`;
+		import("node:fs").then(({ mkdirSync, existsSync }) => {
+			if (!existsSync(cronDir)) mkdirSync(cronDir, { recursive: true });
+		});
+		// Fire once at start
+		this._tickAll(onTask);
+		// Schedule each bucket
+		for (const [schedule, ms] of Object.entries(this.scheduleMs)) {
+			this._scheduleNext(schedule, ms, onTask);
+		}
+	}
 
-  stop(): void {
-    this.running = false;
-    for (const t of this.timers.values()) clearTimeout(t);
-    this.timers.clear();
-  }
+	stop(): void {
+		this.running = false;
+		for (const t of this.timers.values()) clearTimeout(t);
+		this.timers.clear();
+	}
 
-  private _scheduleNext(
-    schedule: string,
-    ms: number,
-    onTask: (task: TriggeredTask) => void,
-  ): void {
-    const timer = setTimeout(async () => {
-      if (!this.running) return;
-      await this._tickSchedule(schedule, onTask);
-      this._scheduleNext(schedule, ms, onTask);
-    }, ms);
-    this.timers.set(schedule, timer);
-  }
+	private _scheduleNext(
+		schedule: string,
+		ms: number,
+		onTask: (task: TriggeredTask) => void,
+	): void {
+		const timer = setTimeout(async () => {
+			if (!this.running) return;
+			await this._tickSchedule(schedule, onTask);
+			this._scheduleNext(schedule, ms, onTask);
+		}, ms);
+		this.timers.set(schedule, timer);
+	}
 
-  private async _tickAll(onTask: (task: TriggeredTask) => void): Promise<void> {
-    for (const schedule of Object.keys(this.scheduleMs)) {
-      await this._tickSchedule(schedule, onTask);
-    }
-  }
+	private async _tickAll(onTask: (task: TriggeredTask) => void): Promise<void> {
+		for (const schedule of Object.keys(this.scheduleMs)) {
+			await this._tickSchedule(schedule, onTask);
+		}
+	}
 
-  private async _tickSchedule(
-    schedule: string,
-    onTask: (task: TriggeredTask) => void,
-  ): Promise<void> {
-    if (!this.running) return;
-    const { readdirSync, readFileSync, existsSync } = await import("node:fs");
-    const cronDir = `${this.workspace}/.cron-tasks/${schedule}`;
-    if (!existsSync(cronDir)) return;
+	private async _tickSchedule(
+		schedule: string,
+		onTask: (task: TriggeredTask) => void,
+	): Promise<void> {
+		if (!this.running) return;
+		const { readdirSync, readFileSync, existsSync } = await import("node:fs");
+		const cronDir = `${this.workspace}/.cron-tasks/${schedule}`;
+		if (!existsSync(cronDir)) return;
 
-    let seen = this.seen.get(schedule);
-    if (!seen) { seen = new Set(); this.seen.set(schedule, seen); }
+		let seen = this.seen.get(schedule);
+		if (!seen) {
+			seen = new Set();
+			this.seen.set(schedule, seen);
+		}
 
-    let files: string[];
-    try { files = readdirSync(cronDir).filter((f) => f.endsWith(".json")); }
-    catch { return; }
+		let files: string[];
+		try {
+			files = readdirSync(cronDir).filter((f) => f.endsWith(".json"));
+		} catch {
+			return;
+		}
 
-    for (const file of files) {
-      if (seen.has(file)) continue;
-      seen.add(file);
-      let taskData: { request?: string; enabled?: boolean };
-      try { taskData = JSON.parse(readFileSync(`${cronDir}/${file}`, "utf8")); }
-      catch { continue; }
-      if (taskData.enabled === false) continue;
-      if (!taskData.request) continue;
-      onTask({
-        taskId: `cron:${schedule}:${file.replace(".json", "")}`,
-        request: taskData.request,
-        source: "cron",
-        triggeredAt: new Date().toISOString(),
-      });
-    }
-  }
+		for (const file of files) {
+			if (seen.has(file)) continue;
+			seen.add(file);
+			let taskData: { request?: string; enabled?: boolean };
+			try {
+				taskData = JSON.parse(readFileSync(`${cronDir}/${file}`, "utf8"));
+			} catch {
+				continue;
+			}
+			if (taskData.enabled === false) continue;
+			if (!taskData.request) continue;
+			onTask({
+				taskId: `cron:${schedule}:${file.replace(".json", "")}`,
+				request: taskData.request,
+				source: "cron",
+				triggeredAt: new Date().toISOString(),
+			});
+		}
+	}
 }
 
 // ─── Tunnel Health Monitor ───────────────────────────────────────────────────
@@ -1100,7 +1110,12 @@ export class LoopDaemon {
 							: "max_iterations",
 				);
 			}
-			const loopDone = verdict === "approved" ? "✅ finished" : verdict === "blocked" ? "⛔ blocked" : "🔄 max_iter";
+			const loopDone =
+				verdict === "approved"
+					? "[F] finished"
+					: verdict === "blocked"
+						? "[!] blocked"
+						: "[~] max_iter";
 			this.statusLine?.updateLoopStatus(loopDone);
 
 			// ── Gate check after blocked verdict ────────────────────────────────
@@ -1196,16 +1211,19 @@ export class LoopDaemon {
 		switch (step) {
 			case "plan": {
 				w.setPhase("planning", "GPT planning");
+				this.statusLine?.updateLoopStatus("[P] planning");
 				break;
 			}
 			case "write": {
 				w.setPhase("writing", "MiniMax coding");
+				this.statusLine?.updateLoopStatus("[W] coding");
 				// After a write step, bump the iteration counter
 				w.startIteration(state.iteration, this.config.maxIterations);
 				break;
 			}
 			case "review": {
 				w.setPhase("reviewing", "GPT reviewing");
+				this.statusLine?.updateLoopStatus("[R] reviewing");
 				// Process review comments — one record per file
 				const comments = state.review?.comments ?? [];
 				if (comments.length === 0) break;
