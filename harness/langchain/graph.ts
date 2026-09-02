@@ -20,8 +20,6 @@ import {
 	StateGraph,
 } from "@langchain/langgraph";
 import {
-	autonomyDirective,
-	isAutonomyRequest,
 	lastMessage,
 	type ReviewVerdict,
 	ReviewVerdictSchema,
@@ -50,6 +48,11 @@ const LoopState = Annotation.Root({
 	log: Annotation<string[]>({
 		reducer: (prev, next) => [...(prev ?? []), ...(next ?? [])],
 		default: () => [],
+	}),
+	/** File that received comments in the previous review. Used for smart-stop. */
+	lastCommentedFile: Annotation<string | undefined>({
+		reducer: (_prev, next) => next,
+		default: () => undefined,
 	}),
 });
 
@@ -102,8 +105,11 @@ function reviewNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
 		const review = await deps.review(state.plan, state.code);
 		deps.onStep?.("review", state);
+		const commentedFile =
+			review.comments.length > 0 ? (review.comments[0].file ?? "") : undefined;
 		return {
 			review,
+			lastCommentedFile: commentedFile,
 			log: [`[review:${state.iteration}] GPT verdict: ${review.verdict}`],
 		};
 	};
@@ -112,12 +118,23 @@ function reviewNode(deps: LoopDeps) {
 function finishNode() {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
 		const verdict = state.review?.verdict ?? "blocked";
-		const reason =
-			verdict === "approved"
-				? "reviewer approved"
-				: verdict === "changes_requested"
-					? `max iterations (${state.iteration}) reached with changes still requested`
-					: "reviewer blocked the task";
+		const comments = state.review?.comments ?? [];
+		let reason: string;
+		if (verdict === "approved") {
+			reason = "reviewer approved";
+		} else if (verdict === "blocked") {
+			reason = "reviewer blocked the task";
+		} else if (state.iteration >= 3) {
+			reason = `max iterations (${state.iteration}) reached with changes still requested`;
+		} else if (
+			comments.length > 0 &&
+			comments.every((c) => c.severity === "minor" || !c.severity)
+		) {
+			reason = `converged: only minor comments (${state.iteration})`;
+		} else {
+			const file = state.lastCommentedFile ?? "unknown";
+			reason = `stuck: same file (${file}) flagged for ${comments.length} comment(s) across iterations`;
+		}
 		return {
 			log: [`[finish] ${state.iteration} iteration(s) — ${reason}`],
 		};
@@ -126,13 +143,22 @@ function finishNode() {
 
 // ─── Routing ────────────────────────────────────────────────────────────────
 
+/** Smart stop: loop terminates early when quality criteria are met. */
 function routeAfterReview(
 	state: LoopState,
 	maxIterations: number,
 ): "write" | "finish" {
 	const verdict = state.review?.verdict;
+	const comments = state.review?.comments ?? [];
+	// 1. Always finish on approved or blocked
 	if (verdict === "approved" || verdict === "blocked") return "finish";
+	// 2. Hard cap
 	if (state.iteration >= maxIterations) return "finish";
+	// 3. SMART STOP: only minor comments (≤2) — converge fast
+	const hasOnlyMinor = comments.every(
+		(c) => c.severity === "minor" || !c.severity,
+	);
+	if (hasOnlyMinor && comments.length <= 2) return "finish";
 	return "write";
 }
 
@@ -229,7 +255,6 @@ export async function buildRealLoopDeps(
 	}
 
 	// Autonomy mode: computed inside plan(), stored for write()/review()
-	const _autonomous = false;
 	const _directive = "";
 
 	/** Inject scoreboard markdown into a user message. */
@@ -415,7 +440,7 @@ export function buildDryRunDeps(
 						{
 							file: "index.ts",
 							comment: "dry-run: rename the exported constant",
-							severity: "minor",
+							severity: "major",
 						},
 					],
 				};

@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 
 import { LoopDaemon, writeAck } from "./daemon.js";
 import type { DaemonConfig } from "./daemon.js";
+import type { LoopDeps } from "./graph.js";
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -301,21 +302,75 @@ describe("T5 — single-writer (exactly one lease winner)", () => {
 describe("T6 — maxIterations cap", () => {
 	it("with maxIterations=2, exactly 2 code.written events appear", async () => {
 		cleanEvents();
+		// Mock reviewer: always changes_requested with a rotating file to avoid smart-stop.
+		// Use a mutable ref so review() sees the CURRENT writeCount (after increment).
+		const counter = { n: 0 };
+		const mockDeps: LoopDeps = {
+			maxIterations: 2,
+			onStep: undefined,
+			plan: async () => "# Stub plan\n1. Do thing",
+			write: async () => {
+				counter.n++;
+				return `// code pass ${counter.n}`;
+			},
+			review: async () => ({
+				verdict: "changes_requested" as const,
+				summary: "need changes",
+				comments: [{ file: `file${counter.n}.ts`, comment: "fix this", severity: "major" }],
+			}),
+		};
 		const daemon = new LoopDaemon(
-			testConfig({ sources: ["inbox"], maxIterations: 2 }),
+			testConfig({ sources: ["inbox"], maxIterations: 2, deps: mockDeps }),
 		);
 		daemon.start();
 		try {
 			const filename = `test-T6-${randomUUID().slice(0, 6)}.md`;
 			writeFileSync(join(WORKSPACE, filename), "Test iteration cap", "utf8");
 			await waitForEvent("loop.finished", 15_000);
-			// Dry-run: writeCount=1 → changes_requested → writeCount=2 → approved
-			// With maxIterations=2, loop exits after iteration 2
+			// Mock: writeCount=1 → review(changes, file1.ts) → writeCount=2 → review(changes, file2.ts)
+			// With maxIterations=2, the hard cap kicks in after iteration 2 → loop exits
+			// Smart-stop: different files (file1 vs file2) → no stuck-file trigger
 			assert.strictEqual(
-				countEvents("code.written"),
+				counter.n,
 				2,
-				`Expected exactly 2 code.written`,
+				`Expected exactly 2 writes (maxIterations=2, smart-stop overridden by different files)`,
 			);
+		} finally {
+			daemon.stop();
+		}
+	});
+
+	it("smart-stop: converged (only minor comments) terminates early", async () => {
+		cleanEvents();
+		let writeCount = 0;
+		// Reviewer returns only minor comments → smart-stop should trigger at iteration 1
+		const mockDeps: LoopDeps = {
+			maxIterations: 5,
+			onStep: undefined,
+			plan: async () => "# Stub plan",
+			write: async () => {
+				writeCount++;
+				return `// code ${writeCount}`;
+			},
+			review: async () => ({
+				verdict: "changes_requested" as const,
+				summary: "minor",
+				comments: [
+					{ file: "a.ts", comment: "nitpick", severity: "minor" },
+					{ file: "b.ts", comment: "typo", severity: "minor" },
+				],
+			}),
+		};
+		const daemon = new LoopDaemon(
+			testConfig({ sources: ["inbox"], maxIterations: 5, deps: mockDeps }),
+		);
+		daemon.start();
+		try {
+			const filename = `test-T6b-${randomUUID().slice(0, 6)}.md`;
+			writeFileSync(join(WORKSPACE, filename), "Test smart-stop", "utf8");
+			await waitForEvent("loop.finished", 15_000);
+			// Smart-stop: hasOnlyMinor=true (2 minor comments) → stop at iteration 1
+			assert.strictEqual(writeCount, 1, "converged: should stop after 1 write");
 		} finally {
 			daemon.stop();
 		}

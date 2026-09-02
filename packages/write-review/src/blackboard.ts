@@ -221,9 +221,9 @@ export class WriteReviewBlackboard {
 				? "✅"
 				: verdict === "blocked"
 					? "⛔"
-				: verdict === "changes_requested"
-					? "🔄"
-					: "⏳";
+					: verdict === "changes_requested"
+						? "🔄"
+						: "⏳";
 
 		const lines: string[] = [
 			`## Write-Review Scoreboard`,
@@ -268,7 +268,17 @@ export class WriteReviewBlackboard {
 		while ((match = fencedRe.exec(code)) !== null) {
 			const path = match[1]!.trim();
 			// Skip if it looks like a filename with spaces (not a path)
-			if (path && !path.includes(" ") && (path.includes("/") || path.includes("\\") || path.endsWith(".ts") || path.endsWith(".js") || path.endsWith(".tsx") || path.endsWith(".json") || path.endsWith(".md"))) {
+			if (
+				path &&
+				!path.includes(" ") &&
+				(path.includes("/") ||
+					path.includes("\\") ||
+					path.endsWith(".ts") ||
+					path.endsWith(".js") ||
+					path.endsWith(".tsx") ||
+					path.endsWith(".json") ||
+					path.endsWith(".md"))
+			) {
 				files.add(path);
 			}
 		}

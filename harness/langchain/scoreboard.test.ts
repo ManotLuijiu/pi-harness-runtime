@@ -19,7 +19,6 @@ import { buildDryRunDeps } from "./graph.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
 describe("T15 — Scoreboard blackboard wiring", () => {
-
 	const tmpDir = `/tmp/scoreboard-test-${Date.now()}`;
 	const blackboardDir = join(tmpDir, ".write-review");
 
@@ -128,7 +127,7 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			request: "test",
 			plan: "# plan",
 			iteration: 1,
-			code: '```harness/langchain/surge.ts\nconst x = 1;\n```',
+			code: "```harness/langchain/surge.ts\nconst x = 1;\n```",
 			review: null as any,
 			log: [],
 		});
@@ -153,7 +152,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 		);
 		assert.equal(content.phase, "changes_requested");
 		assert.equal(content.verdict, "changes_requested");
-		assert.ok(content.changesRequested?.length > 0, "changesRequested should be set");
+		assert.ok(
+			content.changesRequested?.length > 0,
+			"changesRequested should be set",
+		);
 	});
 
 	it("dry-run plan prompt includes scoreboard markdown", async () => {
@@ -218,5 +220,4 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 		assert.equal(content.phase, "approved");
 		assert.equal(content.iteration, 1);
 	});
-
 });
