@@ -52,6 +52,8 @@ import type { LoopWidget } from "./widget.js";
 import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
+import { getTrajectoryStore } from "../../packages/trajectory/src/store.js";
+
 import {
 	buildDryRunDeps,
 	buildRealLoopDeps,
@@ -1035,6 +1037,11 @@ export class LoopDaemon {
 				this._updateWidget(step, state);
 			};
 
+			// ── Trajectory capture (M7a) ──────────────────────────────────────────
+			const store = getTrajectoryStore();
+			const trajId = store.start(task.request);
+			const trajStartMs = Date.now();
+
 			// ── Run the graph (surge-aware: 529/overloaded pauses auto-resume) ──
 			log(
 				`Starting write-review loop (maxIterations=${this.config.maxIterations})`,
@@ -1100,6 +1107,39 @@ export class LoopDaemon {
 			const iterations = finalState.iteration ?? 0;
 
 			log(`Loop finished: ${verdict} after ${iterations} iteration(s)`);
+
+			// ── Trajectory append (M7a) ───────────────────────────────────────────
+			const rawComments = finalState.review?.comments ?? [];
+			const comments = rawComments.map((c) => ({
+				file: c.file ?? undefined,
+				comment: c.comment,
+				severity: (c.severity ?? "minor") as "minor" | "major" | "critical",
+			}));
+			const files = [...new Set(rawComments.map((c) => c.file).filter(Boolean) as string[])];
+			const reason = verdict === "approved"
+				? "reviewer approved"
+				: verdict === "blocked"
+					? "reviewer blocked the task"
+				: iterations >= 3
+						? `max iterations (${iterations}) reached with changes still requested`
+					: comments.length > 0 && comments.every((c) => c.severity === "minor")
+						? `converged: only minor comments (${comments.length})`
+						: `stuck: ${files[0] ?? "unknown"} flagged for ${comments.length} comment(s)`;
+			store.append({
+				id: trajId,
+				taskRequest: task.request,
+				createdAt: new Date(trajStartMs).toISOString(),
+				durationMs: Date.now() - trajStartMs,
+				iterations,
+				verdict: verdict as "approved" | "blocked" | "changes_requested",
+				reason,
+				plan: finalState.plan ?? "",
+				code: finalState.code ?? "",
+				files,
+				comments,
+				summary: finalState.review?.summary ?? "",
+				classified: false,
+			});
 
 			// Update widget on loop completion
 			if (this.widget) {
