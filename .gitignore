@@ -37,3 +37,30 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 .write-review/
 .pi/
 .pi-glla/
+
+# Harness generated type/sourcemap files (JS is committed; type files are build artifacts)
+harness/*.d.ts
+harness/*.d.ts.map
+harness/*.js.map
+harness/e2e/*.d.ts
+harness/e2e/*.d.ts.map
+harness/e2e/*.js.map
+cli.d.ts
+cli.d.ts.map
+cli.js.map
+
+# Build outputs for harness non-langchain dirs (langchain/*.js IS committed)
+harness/*.js
+!harness/langchain/
+harness/langchain/*.js
+harness/e2e/*.js
+
+# Root mirror build artifacts
+mirror.d.ts
+mirror.d.ts.map
+mirror.js.map
+
+# Project detector build artifacts
+harness/project-detector/*.d.ts
+harness/project-detector/*.d.ts.map
+harness/project-detector/*.js.map
