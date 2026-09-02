@@ -64,3 +64,5 @@ mirror.js.map
 harness/project-detector/*.d.ts
 harness/project-detector/*.d.ts.map
 harness/project-detector/*.js.map
+cli.js
+mirror.js
