@@ -316,7 +316,9 @@ describe("T6 — maxIterations cap", () => {
 			review: async () => ({
 				verdict: "changes_requested" as const,
 				summary: "need changes",
-				comments: [{ file: `file${counter.n}.ts`, comment: "fix this", severity: "major" }],
+				comments: [
+					{ file: `file${counter.n}.ts`, comment: "fix this", severity: "major" },
+				],
 			}),
 		};
 		const daemon = new LoopDaemon(
