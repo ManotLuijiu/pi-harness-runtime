@@ -25,6 +25,7 @@ import {
 	ReviewVerdictSchema,
 } from "./agents.js";
 import { WriteReviewBlackboard } from "../../packages/write-review/src/blackboard.js";
+import { getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
 import type { Verdict } from "../../packages/write-review/src/types.js";
 import type { LoopWidget } from "./widget.js";
 
@@ -49,10 +50,17 @@ const LoopState = Annotation.Root({
 		reducer: (prev, next) => [...(prev ?? []), ...(next ?? [])],
 		default: () => [],
 	}),
-	/** File that received comments in the previous review. Used for smart-stop. */
+	/** File that received comments in the previous review. Kept for debugging. */
 	lastCommentedFile: Annotation<string | undefined>({
 		reducer: (_prev, next) => next,
 		default: () => undefined,
+	}),
+	/** Hashes of (file + comment) pairs seen across all review iterations.
+	 *  Used by M7c convergence classifier: if the same pair repeats, the loop
+	 *  is stuck and should terminate early instead of burning another iteration. */
+	seenCommentPairs: Annotation<string[]>({
+		reducer: (prev, next) => [...(prev ?? []), ...(next ?? [])],
+		default: () => [],
 	}),
 });
 
@@ -101,15 +109,30 @@ function writeNode(deps: LoopDeps) {
 	};
 }
 
+/** Fast non-crypto hash for comment-pair deduplication (M7c). */
+function pairHash(file: string, comment: string): string {
+	let h = 0;
+	const s = `${file}\x00${comment}`;
+	for (let i = 0; i < s.length; i++) {
+		h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+	}
+	return (h >>> 0).toString(36);
+}
+
 function reviewNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
 		const review = await deps.review(state.plan, state.code);
 		deps.onStep?.("review", state);
 		const commentedFile =
 			review.comments.length > 0 ? (review.comments[0].file ?? "") : undefined;
+		// M7c: hash every (file, comment) pair so routeAfterReview can detect repeats
+		const newPairs = review.comments.map((c) =>
+			pairHash(c.file ?? "_", c.comment),
+		);
 		return {
 			review,
 			lastCommentedFile: commentedFile,
+			seenCommentPairs: newPairs,
 			log: [`[review:${state.iteration}] GPT verdict: ${review.verdict}`],
 		};
 	};
@@ -154,11 +177,21 @@ function routeAfterReview(
 	if (verdict === "approved" || verdict === "blocked") return "finish";
 	// 2. Hard cap
 	if (state.iteration >= maxIterations) return "finish";
-	// 3. SMART STOP: only minor comments (≤2) — converge fast
+		// 3. SMART STOP: only minor comments (≤2) — converge fast
 	const hasOnlyMinor = comments.every(
 		(c) => c.severity === "minor" || !c.severity,
 	);
 	if (hasOnlyMinor && comments.length <= 2) return "finish";
+	// 4. M7c STUCK DETECTION: if the same (file, comment) pair repeats across
+	//    iterations the loop is going in circles — terminate early
+	const prevPairs = state.seenCommentPairs ?? [];
+	const curPairs = comments.map((c) => pairHash(c.file ?? "_", c.comment));
+	if (curPairs.length > 0 && prevPairs.length > 0) {
+		const repeats = curPairs.filter((p) => prevPairs.includes(p));
+		if (repeats.length > 0) {
+				return "finish";
+			}
+	}
 	return "write";
 }
 
@@ -263,6 +296,16 @@ export async function buildRealLoopDeps(
 		return msg + "\n\n## Current Progress\n" + scoreboard;
 	};
 
+	/** Inject scoreboard + approved patterns into a user message (for the reviewer). */
+	const withReviewContext = (msg: string) => {
+		const scoreboard = blackboard.toMarkdown();
+		const patterns = getApprovedPatternStore().toMarkdown();
+		const parts = [msg];
+		if (scoreboard) parts.push("\n\n## Current Progress\n" + scoreboard);
+		if (patterns) parts.push("\n\n" + patterns);
+		return parts.join("");
+	};
+
 	// Wrap onStep to also update the blackboard
 	const originalOnStep = options.onStep;
 	const onStep = (step: string, state: LoopState) => {
@@ -334,7 +377,7 @@ export async function buildRealLoopDeps(
 						role: "user",
 						content:
 							_directive +
-							withScoreboard(`## Plan\n${plan}\n\n## Code to review\n${code}`),
+								withReviewContext(`## Plan\n${plan}\n\n## Code to review\n${code}`),
 					},
 				],
 			});

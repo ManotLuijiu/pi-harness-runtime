@@ -47,6 +47,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		const statusPath = join(blackboardDir, "status.json");
@@ -66,6 +68,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		const content = JSON.parse(
@@ -88,6 +92,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		deps.onStep?.("write", {
@@ -97,6 +103,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "``` harness/langchain/surge.ts\nconst x = 1;\n```",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		const content = JSON.parse(
@@ -121,6 +129,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		deps.onStep?.("write", {
@@ -130,6 +140,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```harness/langchain/surge.ts\nconst x = 1;\n```",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		deps.onStep?.("review", {
@@ -145,6 +157,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 				],
 			},
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		const content = JSON.parse(
@@ -172,10 +186,12 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		// Call plan() — the stub returns a string that includes scoreboard context
-		const result = await deps.plan("implement X");
+		const _result = await deps.plan("implement X");
 
 		// The stub output should include the plan text; the scoreboard is in the
 		// agent context, not the stub return value. Verify status.json was written.
@@ -196,6 +212,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 		deps.onStep?.("write", {
 			request: "test",
@@ -204,6 +222,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```a.ts\n1\n```",
 			review: null as any,
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 		deps.onStep?.("review", {
 			request: "test",
@@ -212,6 +232,8 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```a.ts\n1\n```",
 			review: { verdict: "approved", summary: "ok", comments: [] },
 			log: [],
+			lastCommentedFile: undefined,
+			seenCommentPairs: [],
 		});
 
 		const content = JSON.parse(
