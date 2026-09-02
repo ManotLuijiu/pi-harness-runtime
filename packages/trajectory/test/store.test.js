@@ -37,7 +37,9 @@ describe("TrajectoryStore", () => {
             plan: "# Plan\n1. Fix it",
             code: "// fixed",
             files: ["auth.ts"],
-            comments: [{ file: "auth.ts", comment: "looks good", severity: "minor" }],
+            comments: [
+                { file: "auth.ts", comment: "looks good", severity: "minor" },
+            ],
             summary: "looks good",
             classified: false,
         });
@@ -48,7 +50,10 @@ describe("TrajectoryStore", () => {
         const monthDir = files[0];
         const monthFiles = readdirSync(join(TEST_DIR, monthDir));
         assert.ok(monthFiles.length > 0, "should create daily ndjson file");
-        const content = readFileSync(join(TEST_DIR, monthDir, monthFiles[0]), "utf8");
+        const content = readFileSync(
+            join(TEST_DIR, monthDir, monthFiles[0]),
+            "utf8",
+        );
         const record = JSON.parse(content.split("\n").find((l) => l.trim()));
         assert.strictEqual(record.id, id);
         assert.strictEqual(record.verdict, "approved");

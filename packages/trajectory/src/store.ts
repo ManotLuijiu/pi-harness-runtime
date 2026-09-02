@@ -17,7 +17,13 @@
  *       2025-07-15.ndjson
  */
 
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -45,7 +51,10 @@ function getTrajDir(dir?: string): string {
 	return join(homedir(), base);
 }
 
-function getDatePath(dir: string, timestamp: Date = new Date()): { dir: string; file: string } {
+function getDatePath(
+	dir: string,
+	timestamp: Date = new Date(),
+): { dir: string; file: string } {
 	const y = timestamp.getFullYear();
 	const m = String(timestamp.getMonth() + 1).padStart(2, "0");
 	const d = String(timestamp.getDate()).padStart(2, "0");
@@ -176,8 +185,17 @@ export class TrajectoryStore {
 			};
 		}
 
-		const byVerdict: TrajectoryStats["byVerdict"] = { approved: 0, blocked: 0, changes_requested: 0 };
-		const byLabel: TrajectoryStats["byLabel"] = { converged: 0, stuck: 0, blocked: 0, "max-iterations": 0 };
+		const byVerdict: TrajectoryStats["byVerdict"] = {
+			approved: 0,
+			blocked: 0,
+			changes_requested: 0,
+		};
+		const byLabel: TrajectoryStats["byLabel"] = {
+			converged: 0,
+			stuck: 0,
+			blocked: 0,
+			"max-iterations": 0,
+		};
 		const byFile = {} as Record<string, number>;
 		let totalIterations = 0;
 		let totalDuration = 0;
@@ -231,7 +249,13 @@ export class TrajectoryStore {
 			recommendation = "Reviewer blocked — escalate to human.";
 		}
 
-		return { trajectoryId: trajectory.id, label, confidence, pattern, recommendation };
+		return {
+			trajectoryId: trajectory.id,
+			label,
+			confidence,
+			pattern,
+			recommendation,
+		};
 	}
 
 	/** Get trajectories by verdict (for training set building). */

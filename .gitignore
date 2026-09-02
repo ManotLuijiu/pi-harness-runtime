@@ -21,6 +21,9 @@ harness/skills-staging/reports/
 
 # Source JS files (should be in dist/, not src/)
 packages/*/src/*.js
+packages/*/src/*.d.ts
+packages/*/src/*.d.ts.map
+packages/*/src/*.js.map
 
 # Build outputs
 packages/*/dist/

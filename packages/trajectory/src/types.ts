@@ -58,7 +58,11 @@ export interface TrajectorySummary {
 }
 
 /** Classification label applied by the trajectory classifier. */
-export type TrajectoryLabel = "converged" | "stuck" | "blocked" | "max-iterations";
+export type TrajectoryLabel =
+	| "converged"
+	| "stuck"
+	| "blocked"
+	| "max-iterations";
 
 /** Classification result for a trajectory. */
 export interface TrajectoryClassification {
