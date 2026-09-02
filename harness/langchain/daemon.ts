@@ -824,6 +824,7 @@ export class LoopDaemon {
 			notificationConfig: config.notificationConfig ?? undefined,
 			tunnelCommand: config.tunnelCommand,
 			widget: config.widget,
+			deps: config.deps,
 		} as Required<DaemonConfig>;
 
 		this.agentId = this.config.agentId;

@@ -46,7 +46,9 @@ export const readFile = tool(
 			}
 			const stats = statSync(resolved);
 			if (stats.isDirectory()) {
-				return JSON.stringify({ error: `Path is a directory, not a file: ${resolved}` });
+				return JSON.stringify({
+					error: `Path is a directory, not a file: ${resolved}`,
+				});
 			}
 			const content = readFileSync(resolved, encoding as BufferEncoding);
 			return JSON.stringify({
@@ -70,7 +72,9 @@ export const readFile = tool(
 			"Use this before editing a file so you know its current contents. " +
 			"Returns JSON with path, size, lines, and content fields.",
 		schema: z.object({
-			path: z.string().describe("Absolute path or path relative to the repository root"),
+			path: z
+				.string()
+				.describe("Absolute path or path relative to the repository root"),
 			encoding: z
 				.enum(["utf-8", "utf-16", "ascii", "base64"])
 				.optional()
@@ -126,12 +130,16 @@ export const writeFile = tool(
 			"Set append=true to add to the end of an existing file. " +
 			"Returns JSON with ok, path, size, and action fields.",
 		schema: z.object({
-			path: z.string().describe("Absolute path or path relative to the repository root"),
+			path: z
+				.string()
+				.describe("Absolute path or path relative to the repository root"),
 			content: z.string().describe("File content. Use \\n for newlines."),
 			append: z
 				.boolean()
 				.optional()
-				.describe("Append to existing file instead of overwriting (default: false)"),
+				.describe(
+					"Append to existing file instead of overwriting (default: false)",
+				),
 		}),
 	},
 );
@@ -169,7 +177,9 @@ export const listDir = tool(
 			"List the contents of a directory (files and subdirectories, non-recursive). " +
 			"Returns JSON with path and entries array (each entry has name, type, path).",
 		schema: z.object({
-			path: z.string().describe("Absolute path or path relative to the repository root"),
+			path: z
+				.string()
+				.describe("Absolute path or path relative to the repository root"),
 		}),
 	},
 );
