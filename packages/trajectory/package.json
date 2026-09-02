@@ -3,14 +3,14 @@
 	"version": "1.1.50",
 	"description": "Trajectory capture for the write-review loop — persists cycle records for learning",
 	"type": "module",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
+	"main": "./dist/src/index.js",
+	"types": "./dist/src/index.d.ts",
 	"exports": {
 		".": {
-			"import": "./dist/index.js",
-			"types": "./dist/index.d.ts"
-		}
-	},
+				"import": "./dist/src/index.js",
+				"types": "./dist/src/index.d.ts"
+			}
+		},
 	"scripts": {
 		"build": "tsc",
 		"test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js",

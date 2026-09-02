@@ -56,10 +56,7 @@ describe("TrajectoryStore", () => {
 		const monthFiles = readdirSync(join(TEST_DIR, monthDir));
 		assert.ok(monthFiles.length > 0, "should create daily ndjson file");
 
-		const content = readFileSync(
-			join(TEST_DIR, monthDir, monthFiles[0]),
-			"utf8",
-		);
+		const content = readFileSync(join(TEST_DIR, monthDir, monthFiles[0]), "utf8");
 		const record = JSON.parse(content.split("\n").find((l) => l.trim())!);
 		assert.strictEqual(record.id, id);
 		assert.strictEqual(record.verdict, "approved");

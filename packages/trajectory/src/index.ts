@@ -9,13 +9,18 @@
  */
 
 export {
-	TrajectoryStore,
-	getTrajectoryStore,
+ TrajectoryStore,
+ getTrajectoryStore,
 } from "./store.js";
+export {
+ ApprovedPatternStore,
+ getApprovedPatternStore,
+ resetApprovedPatternStore,
+} from "./approved-patterns.js";
 export type {
-	Trajectory,
-	TrajectorySummary,
-	TrajectoryStats,
-	TrajectoryClassification,
-	TrajectoryLabel,
+ Trajectory,
+ TrajectorySummary,
+ TrajectoryStats,
+ TrajectoryClassification,
+ TrajectoryLabel,
 } from "./types.js";
