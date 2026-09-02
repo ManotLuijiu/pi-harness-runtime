@@ -52,7 +52,7 @@ import type { LoopWidget } from "./widget.js";
 import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
-import { getTrajectoryStore } from "../../packages/trajectory/src/store.js";
+import { getTrajectoryStore, getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
 
 import {
 	buildDryRunDeps,
@@ -1115,17 +1115,22 @@ export class LoopDaemon {
 				comment: c.comment,
 				severity: (c.severity ?? "minor") as "minor" | "major" | "critical",
 			}));
-			const files = [...new Set(rawComments.map((c) => c.file).filter(Boolean) as string[])];
-			const reason = verdict === "approved"
-				? "reviewer approved"
-				: verdict === "blocked"
-					? "reviewer blocked the task"
-				: iterations >= 3
-						? `max iterations (${iterations}) reached with changes still requested`
-					: comments.length > 0 && comments.every((c) => c.severity === "minor")
-						? `converged: only minor comments (${comments.length})`
-						: `stuck: ${files[0] ?? "unknown"} flagged for ${comments.length} comment(s)`;
-			store.append({
+			const files = [
+				...new Set(rawComments.map((c) => c.file).filter(Boolean) as string[]),
+			];
+			const reason =
+				verdict === "approved"
+					? "reviewer approved"
+					: verdict === "blocked"
+						? "reviewer blocked the task"
+						: iterations >= 3
+							? `max iterations (${iterations}) reached with changes still requested`
+						: comments.length > 0 && comments.every((c) => c.severity === "minor")
+							? `converged: only minor comments (${comments.length})`
+							: `stuck: ${files[0] ?? "unknown"} flagged for ${comments.length} comment(s)`;
+
+			// M7c: Build the trajectory record and classify convergence
+			const trajRecord = {
 				id: trajId,
 				taskRequest: task.request,
 				createdAt: new Date(trajStartMs).toISOString(),
@@ -1138,8 +1143,24 @@ export class LoopDaemon {
 				files,
 				comments,
 				summary: finalState.review?.summary ?? "",
-				classified: false,
-			});
+				classified: false as boolean,
+			};
+			const classification = store.classify(trajRecord);
+			log(
+				`[M7c] Trajectory "${classification.label}" ` +
+				`(confidence ${Math.round(classification.confidence * 100)}%) — ` +
+				classification.recommendation,
+			);
+
+			// Persist the trajectory record
+			store.append(trajRecord);
+
+			// M7b: Record approved patterns so the reviewer learns from success
+			if (verdict === "approved") {
+				const approvedPatterns = getApprovedPatternStore();
+				approvedPatterns.approve(comments);
+				log(`[M7b] Recorded ${comments.length} approved pattern(s)`);
+			}
 
 			// Update widget on loop completion
 			if (this.widget) {

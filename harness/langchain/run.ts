@@ -26,6 +26,8 @@ interface CliArgs {
 	maxIterations: number;
 	dryRun: boolean;
 	daemon: boolean;
+	/** If true, remaining args are passed to the cron subcommand handler. */
+	cronArgs?: string[];
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -51,6 +53,13 @@ function parseArgs(argv: string[]): CliArgs {
 			normalized.push(arg);
 		}
 	}
+	// Detect "cron" subcommand before processing other flags
+	const cronIndex = normalized.indexOf("cron");
+	if (cronIndex !== -1) {
+		args.cronArgs = normalized.slice(cronIndex + 1);
+		return args;
+	}
+
 	for (const arg of normalized) {
 		if (arg.startsWith("--mode=")) {
 			const mode = arg.slice("--mode=".length);
@@ -89,9 +98,9 @@ function parseArgs(argv: string[]): CliArgs {
 			if (!args.request) args.request = arg;
 		}
 	}
-	if (!args.request && !args.daemon) {
+	if (!args.request && !args.daemon && !args.cronArgs) {
 		throw new Error(
-			'A request is required: --request="..." or a bare string (or use --daemon to start the watcher)',
+			'A request is required: --request="..." or a bare string (or use --daemon or --cron to start the watcher)',
 		);
 	}
 	return args;
@@ -190,7 +199,10 @@ async function runDaemon(args: CliArgs): Promise<void> {
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
-	if (args.daemon) {
+	if (args.cronArgs !== undefined) {
+		const { runCron } = await import("./cron-cli.js");
+		await runCron(args.cronArgs);
+	} else if (args.daemon) {
 		await runDaemon(args);
 	} else if (args.mode === "supervisor") {
 		await runSupervisor(args);
