@@ -10,8 +10,8 @@
 
 import { tool } from "langchain";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
-import { join, isAbsolute, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
+import { dirname, join, isAbsolute, resolve } from "node:path";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -104,9 +104,11 @@ export const writeFile = tool(
 	}) => {
 		try {
 			const resolved = resolvePath(path, process.cwd());
+			// P1-4: create parent directories before writing (fixes ENOENT on nested paths)
+			mkdirSync(dirname(resolved), { recursive: true });
 			const mode = append ? "a" : "w";
-			// Normalize content: convert literal \n sequences to actual newlines
-			const normalized = content.replace(/\\n/g, "\n");
+			// P1-4: stop corrupting literal \\n sequences in code files
+			const normalized = content; // drop the replace(); agents use actual \n in strings
 			writeFileSync(resolved, normalized, { encoding: "utf-8", flag: mode });
 			const stats = statSync(resolved);
 			return JSON.stringify({
@@ -125,8 +127,8 @@ export const writeFile = tool(
 	{
 		name: "write_file",
 		description:
-			"Write or overwrite a file on disk. Creates parent directories if needed. " +
-			"Use literal \\n in the content string for newlines. " +
+			"Write or overwrite a file on disk. Creates parent directories automatically. " +
+			"Use actual newline characters in the content string. " +
 			"Set append=true to add to the end of an existing file. " +
 			"Returns JSON with ok, path, size, and action fields.",
 		schema: z.object({
