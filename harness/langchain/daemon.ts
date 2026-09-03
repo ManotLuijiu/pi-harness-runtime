@@ -1123,11 +1123,11 @@ export class LoopDaemon {
 					? "reviewer approved"
 					: verdict === "blocked"
 						? "reviewer blocked the task"
-						: iterations >= 3
-							? `max iterations (${iterations}) reached with changes still requested`
-						: comments.length > 0 && comments.every((c) => c.severity === "minor")
-							? `converged: only minor comments (${comments.length})`
-							: `stuck: ${files[0] ?? "unknown"} flagged for ${comments.length} comment(s)`;
+				: iterations >= this.config.maxIterations
+						? `max iterations (${iterations}) reached with changes still requested`
+					: comments.length > 0 && comments.every((c) => c.severity === "minor")
+						? `converged: only minor comments (${comments.length})`
+					: `stuck: changes still requested after ${iterations} iteration(s)`;
 
 			// M7c: Build the trajectory record and classify convergence
 			const trajRecord = {

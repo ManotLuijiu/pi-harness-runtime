@@ -20,10 +20,13 @@ import {
 	StateGraph,
 } from "@langchain/langgraph";
 import {
+	isAutonomyRequest,
+	autonomyDirective,
 	lastMessage,
 	type ReviewVerdict,
 	ReviewVerdictSchema,
 } from "./agents.js";
+import { readFileSync } from "node:fs";
 import { WriteReviewBlackboard } from "../../packages/write-review/src/blackboard.js";
 import { getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
 import type { Verdict } from "../../packages/write-review/src/types.js";
@@ -50,17 +53,16 @@ const LoopState = Annotation.Root({
 		reducer: (prev, next) => [...(prev ?? []), ...(next ?? [])],
 		default: () => [],
 	}),
-	/** File that received comments in the previous review. Kept for debugging. */
-	lastCommentedFile: Annotation<string | undefined>({
+	/** Code from the previous iteration. Used for stuck detection (P0-2). */
+	prevCode: Annotation<string | undefined>({
 		reducer: (_prev, next) => next,
 		default: () => undefined,
 	}),
-	/** Hashes of (file + comment) pairs seen across all review iterations.
-	 *  Used by M7c convergence classifier: if the same pair repeats, the loop
-	 *  is stuck and should terminate early instead of burning another iteration. */
-	seenCommentPairs: Annotation<string[]>({
-		reducer: (prev, next) => [...(prev ?? []), ...(next ?? [])],
-		default: () => [],
+	/** Actual file contents written in the most recent write step.
+	 *  P1-1: used to pass real file contents to the reviewer instead of a summary. */
+	writtenFiles: Annotation<Record<string, string>>({
+		reducer: (_prev, next) => next,
+		default: () => ({}),
 	}),
 });
 
@@ -71,7 +73,7 @@ export type LoopState = typeof LoopState.State;
 export interface LoopDeps {
 	plan: (request: string) => Promise<string>;
 	write: (plan: string, review: ReviewVerdict | null) => Promise<string>;
-	review: (plan: string, code: string) => Promise<ReviewVerdict>;
+	review: (plan: string, code: string, writtenFiles?: Record<string, string>) => Promise<ReviewVerdict>;
 	maxIterations: number;
 	onStep?: (step: string, state: LoopState) => void;
 	/** Optional widget for TUI / status-line display (mirrors pi-lens footer style). */
@@ -92,53 +94,69 @@ function planNode(deps: LoopDeps) {
 	};
 }
 
+/** Extract file paths from a code string (mirrors blackboard.extractFilePaths). */
+function extractFilePaths(code: string): string[] {
+	const files = new Set<string>();
+	const lines = code.split("\n");
+	for (const line of lines) {
+		const match = line.match(/^```(?:typescript|ts|javascript|js|tsx|jsx|text)?\s*\/([^\s`]+)\s*$/);
+		if (match) {
+			const path = match[1].trim();
+			if (path && !path.includes(" ")) files.add(path);
+		}
+		const mdMatch = line.match(/^\*\*([^:*]+):\*\*/);
+		if (mdMatch) {
+			const path = mdMatch[1].trim();
+			if (path && !path.includes(" ") && (path.includes("/") || path.endsWith(".ts") || path.endsWith(".js"))) {
+				files.add(path);
+			}
+		}
+	}
+	return [...files];
+}
+
 function writeNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
 		const code = await deps.write(state.plan, state.review ?? null);
 		const iter = state.iteration + 1;
 		deps.onStep?.("write", { ...state, iteration: iter });
+		// P1-1: read actual file contents so the reviewer sees real code, not a summary
+		const paths = extractFilePaths(code);
+		const writtenFiles: Record<string, string> = {};
+		for (const p of paths) {
+			try {
+				writtenFiles[p] = readFileSync(p, "utf8");
+			} catch {
+				// File may not exist yet (mkdir was pending); skip
+			}
+		}
 		const reviewNote = state.review
 			? ` (addressing ${state.review.comments.length} review comment(s))`
 			: "";
-		// Note: previous `review` stays in state on purpose — the coder reads its comments.
 		return {
 			code,
+			writtenFiles,
 			iteration: iter,
 			log: [`[write:${iter}] MiniMax wrote code${reviewNote}`],
 		};
 	};
 }
 
-/** Fast non-crypto hash for comment-pair deduplication (M7c). */
-function pairHash(file: string, comment: string): string {
-	let h = 0;
-	const s = `${file}\x00${comment}`;
-	for (let i = 0; i < s.length; i++) {
-		h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-	}
-	return (h >>> 0).toString(36);
-}
-
 function reviewNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
-		const review = await deps.review(state.plan, state.code);
+		const review = await deps.review(state.plan, state.code, state.writtenFiles ?? {});
 		deps.onStep?.("review", state);
-		const commentedFile =
-			review.comments.length > 0 ? (review.comments[0].file ?? "") : undefined;
-		// M7c: hash every (file, comment) pair so routeAfterReview can detect repeats
-		const newPairs = review.comments.map((c) =>
-			pairHash(c.file ?? "_", c.comment),
-		);
 		return {
 			review,
-			lastCommentedFile: commentedFile,
-			seenCommentPairs: newPairs,
+			// P0-2: snapshot the code we just reviewed so routeAfterReview can detect
+			// if the coder produced identical output in consecutive iterations
+			prevCode: state.code,
 			log: [`[review:${state.iteration}] GPT verdict: ${review.verdict}`],
 		};
 	};
 }
 
-function finishNode() {
+function finishNode(maxIterations: number) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
 		const verdict = state.review?.verdict ?? "blocked";
 		const comments = state.review?.comments ?? [];
@@ -147,7 +165,7 @@ function finishNode() {
 			reason = "reviewer approved";
 		} else if (verdict === "blocked") {
 			reason = "reviewer blocked the task";
-		} else if (state.iteration >= 3) {
+		} else if (state.iteration >= maxIterations) {
 			reason = `max iterations (${state.iteration}) reached with changes still requested`;
 		} else if (
 			comments.length > 0 &&
@@ -155,8 +173,7 @@ function finishNode() {
 		) {
 			reason = `converged: only minor comments (${state.iteration})`;
 		} else {
-			const file = state.lastCommentedFile ?? "unknown";
-			reason = `stuck: same file (${file}) flagged for ${comments.length} comment(s) across iterations`;
+			reason = `stuck: changes still requested after ${state.iteration} iteration(s)`;
 		}
 		return {
 			log: [`[finish] ${state.iteration} iteration(s) — ${reason}`],
@@ -177,20 +194,16 @@ function routeAfterReview(
 	if (verdict === "approved" || verdict === "blocked") return "finish";
 	// 2. Hard cap
 	if (state.iteration >= maxIterations) return "finish";
-		// 3. SMART STOP: only minor comments (≤2) — converge fast
+	// 3. SMART STOP: only minor comments (≤2) — converge fast
 	const hasOnlyMinor = comments.every(
 		(c) => c.severity === "minor" || !c.severity,
 	);
 	if (hasOnlyMinor && comments.length <= 2) return "finish";
-	// 4. M7c STUCK DETECTION: if the same (file, comment) pair repeats across
-	//    iterations the loop is going in circles — terminate early
-	const prevPairs = state.seenCommentPairs ?? [];
-	const curPairs = comments.map((c) => pairHash(c.file ?? "_", c.comment));
-	if (curPairs.length > 0 && prevPairs.length > 0) {
-		const repeats = curPairs.filter((p) => prevPairs.includes(p));
-		if (repeats.length > 0) {
-				return "finish";
-			}
+	// 4. P0-2 STUCK DETECTION: if the coder produced identical output in consecutive
+	//    iterations, no progress is being made — terminate early instead of wasting
+	//    another review cycle
+	if (state.prevCode !== undefined && state.code === state.prevCode) {
+		return "finish";
 	}
 	return "write";
 }
@@ -207,7 +220,7 @@ export function buildWriteReviewLoop(
 		.addNode("planStep", planNode(deps))
 		.addNode("writeStep", writeNode(deps))
 		.addNode("reviewStep", reviewNode(deps))
-		.addNode("finishStep", finishNode())
+		.addNode("finishStep", finishNode(deps.maxIterations))
 		.addEdge(START, "planStep")
 		.addEdge("planStep", "writeStep")
 		.addEdge("writeStep", "reviewStep")
@@ -287,8 +300,8 @@ export async function buildRealLoopDeps(
 		blackboard.init();
 	}
 
-	// Autonomy mode: computed inside plan(), stored for write()/review()
-	const _directive = "";
+	// Autonomy mode: set in plan() based on request content, reused by write()/review()
+	let _directive = "";
 
 	/** Inject scoreboard markdown into a user message. */
 	const withScoreboard = (msg: string) => {
@@ -348,14 +361,17 @@ export async function buildRealLoopDeps(
 	return {
 		maxIterations: options.maxIterations ?? 3,
 		onStep,
-		plan: async (request) =>
-			lastMessage(
+		plan: async (request) => {
+			// P1-2: detect autonomy signal in the request and unlock full autonomous mode
+			_directive = isAutonomyRequest(request) ? autonomyDirective() : "";
+			return lastMessage(
 				await planner.invoke({
 					messages: [
 						{ role: "user", content: _directive + withScoreboard(request) },
 					],
 				}),
-			),
+			);
+		},
 		write: async (plan, review) => {
 			const userMsg = review
 				? `## Plan\n${plan}\n\n## Review comments to address\n${review.comments
@@ -370,17 +386,24 @@ export async function buildRealLoopDeps(
 				}),
 			);
 		},
-		review: async (plan, code) => {
+		review: async (plan, _code, writtenFiles = {}) => {
+			// P1-1: build a code-to-review section from actual file contents
+			const codeSection =
+				Object.keys(writtenFiles).length > 0
+					? Object.entries(writtenFiles)
+							.map(([path, content]) => `## ${path}\n\n\`\`\`\n${content}\n\`\`\``)
+							.join("\n\n")
+					: `## Code\n\n\`\`\`\n${_code}\n\`\`\``;
 			const result = await reviewer.invoke({
 				messages: [
 					{
 						role: "user",
 						content:
 							_directive +
-								withReviewContext(`## Plan\n${plan}\n\n## Code to review\n${code}`),
-					},
-				],
-			});
+								withReviewContext(`## Plan\n${plan}\n\n${codeSection}`),
+						},
+					],
+				});
 			if (result.structuredResponse) return result.structuredResponse;
 			// Fallback: try to parse the last message as JSON
 			try {
@@ -474,7 +497,7 @@ export function buildDryRunDeps(
 				`\`\`\`ts\n// stub code, iteration ${writeCount}\nexport const plan = ${JSON.stringify(plan.slice(0, 60))};${fixNote}\n\`\`\``,
 			);
 		},
-		review: async (_plan, _code) => {
+		review: async (_plan, _code, _writtenFiles = {}) => {
 			if (writeCount < 2) {
 				return {
 					verdict: "changes_requested",

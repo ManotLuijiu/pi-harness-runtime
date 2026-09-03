@@ -1,7 +1,7 @@
 {
   "name": "pi-harness-runtime",
   "version": "1.1.18",
-  "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
+  "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready \u2014 expect breaking changes.",
   "type": "module",
   "scripts": {
     "test": "node --test",
@@ -17,7 +17,9 @@
     "skills:sync": "bun scripts/skills-sync.ts",
     "skills:sync:check": "bun scripts/skills-sync.ts --check-only",
     "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck > /dev/null 2>&1 || true; done",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "test:harness": "bun test harness/langchain/",
+    "test:all": "node --test && bun test harness/langchain/"
   },
   "bin": {
     "harness-auth": "packages/auth/src/run-minimax-auth.ts"
