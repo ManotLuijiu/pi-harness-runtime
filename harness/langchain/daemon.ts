@@ -28,6 +28,7 @@
 
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join } from "node:path";
 
 import { LeaseManager } from "../../packages/autonomous-runtime/src/lease.js";
@@ -52,7 +53,10 @@ import type { LoopWidget } from "./widget.js";
 import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 
-import { getTrajectoryStore, getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
+import {
+	getTrajectoryStore,
+	getApprovedPatternStore,
+} from "../../packages/trajectory/src/index.js";
 
 import {
 	buildDryRunDeps,
@@ -821,7 +825,7 @@ export class LoopDaemon {
 			surgePolicy: config.surgePolicy,
 			taskTimeoutMs: config.taskTimeoutMs,
 			checkpointer: config.checkpointer,
-			sources: config.sources ?? ["inbox", "bus"],
+			sources: config.sources ?? ["inbox", "bus", "bd-tasks"],
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
 			tunnelCommand: config.tunnelCommand,
@@ -1123,11 +1127,11 @@ export class LoopDaemon {
 					? "reviewer approved"
 					: verdict === "blocked"
 						? "reviewer blocked the task"
-				: iterations >= this.config.maxIterations
-						? `max iterations (${iterations}) reached with changes still requested`
-					: comments.length > 0 && comments.every((c) => c.severity === "minor")
-						? `converged: only minor comments (${comments.length})`
-					: `stuck: changes still requested after ${iterations} iteration(s)`;
+						: iterations >= this.config.maxIterations
+							? `max iterations (${iterations}) reached with changes still requested`
+							: comments.length > 0 && comments.every((c) => c.severity === "minor")
+								? `converged: only minor comments (${comments.length})`
+								: `stuck: changes still requested after ${iterations} iteration(s)`;
 
 			// M7c: Build the trajectory record and classify convergence
 			const trajRecord = {
@@ -1148,8 +1152,8 @@ export class LoopDaemon {
 			const classification = store.classify(trajRecord);
 			log(
 				`[M7c] Trajectory "${classification.label}" ` +
-				`(confidence ${Math.round(classification.confidence * 100)}%) — ` +
-				classification.recommendation,
+					`(confidence ${Math.round(classification.confidence * 100)}%) — ` +
+					classification.recommendation,
 			);
 
 			// Persist the trajectory record
@@ -1221,6 +1225,11 @@ export class LoopDaemon {
 			} else {
 				// approved
 				this._notifyReadyForClient(task);
+			}
+
+			// ── Close bd issue on loop completion ───────────────────────────────
+			if (task.source === "bd-tasks") {
+				this._closeBdIssue(task.taskId, verdict);
 			}
 		} finally {
 			this._releaseLease(task.taskId);
@@ -1343,6 +1352,27 @@ export class LoopDaemon {
 			.catch((err) => {
 				console.warn(`[daemon] Notification failed: ${err}`);
 			});
+	}
+
+	private _closeBdIssue(taskId: string, verdict: string): void {
+		// Close the bd issue when the loop finishes.
+		// approved → close as done. changes_requested (exhausted) → close as done.
+		// blocked → leave open for human review.
+		const reason =
+			verdict === "approved"
+				? "approved"
+				: verdict === "blocked"
+					? undefined // leave blocked issues open
+					: "completed";
+		if (!reason) return;
+		try {
+			execSync(`bd close ${taskId} --reason "${reason}" 2>/dev/null`, {
+				encoding: "utf8",
+				timeout: 5_000,
+			});
+		} catch {
+			// best-effort — don't fail the task over a missing bd
+		}
 	}
 
 	private _notifyReadyForClient(task: TriggeredTask): void {
