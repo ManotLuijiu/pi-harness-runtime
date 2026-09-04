@@ -1,14 +1,14 @@
 /**
- * Multi-Agent definitions — GPT (planner/reviewer/supervisor) + MiniMax (coder).
+ * Multi-Agent definitions — GPT (planner) + GLM (master reviewer) + MiniMax (coder).
  *
- * This is a TypeScript port of the "supervisor + agents-as-tools" pattern from
- * Mohamad-Hachem/MultiAgent_Wedding_Planner_With_Langchain (agents.py):
+ * Ping-pong loop:
+ *   Planner (GPT)  →  plan
+ *   Coder (MiniMax)  →  code
+ *   Reviewer (GLM)   →  verdict: approved | changes_requested | blocked
  *
- *   Python (agents.py)              →  TypeScript (this file)
- *   ------------------------------------------------------------------
- *   subagent1 = create_agent(...)   →  coderAgent = createAgent({ model: minimax ... })
- *   @tool delegate_to_subagent1     →  delegateToCoder = tool(... { name: "delegate_to_coder" })
- *   main_agent(tools=[delegates])   →  supervisor = createAgent({ tools: [delegateToCoder, ...] })
+ * The GLM reviewer is the master. If GLM approves → loop ends.  If GLM requests
+ * changes → MiniMax addresses them → GLM reviews again.  After maxIterations or
+ * smart-stop, the loop terminates.
  *
  * Verdict values intentionally match the existing harness LoopVerdict type
  * ("approved" | "changes_requested" | "blocked") so this module can feed the
@@ -95,8 +95,8 @@ permission to write code until finish without waiting for confirmation.
 const PLANNER_PROMPT = `You are the Planning Agent (GPT) in an autonomous daemon loop.
 
 Given a feature request, produce a concise implementation plan: goals, non-goals,
-ordered steps, files to touch, risks, and a definition-of-done the reviewer can
-check against.
+ordered steps, files to touch, risks, and a definition-of-done the GLM reviewer
+can check against.
 
 Output markdown only. Do NOT ask for confirmation. Do NOT output "Next Steps".
 The loop will route automatically.`;
@@ -124,10 +124,11 @@ IMPORTANT:
 - If you cannot proceed, fail with a clear error message
 - Your output is consumed by the loop, not read by a human for guidance`;
 
-const REVIEWER_PROMPT = `You are the Code Review Agent (GPT) in an autonomous daemon loop.
+const REVIEWER_PROMPT = `You are the Master Code Review Agent (GLM) in an autonomous daemon loop.
 
-You review the coder's output against the plan. Be strict: request changes only
-for real problems. Output a structured verdict — the loop reads it automatically.
+You are the master reviewer. You review the MiniMax coder's output against the plan.
+Be strict: request changes only for real problems.  Output a structured verdict —
+the loop reads it automatically and routes MiniMax back to fix or approves.
 
 IMPORTANT:
 - Do NOT output "Next Steps" or "Looks good, waiting for approval"

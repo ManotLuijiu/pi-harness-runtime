@@ -825,7 +825,7 @@ export class LoopDaemon {
 			surgePolicy: config.surgePolicy,
 			taskTimeoutMs: config.taskTimeoutMs,
 			checkpointer: config.checkpointer,
-			sources: config.sources ?? ["inbox", "bus"],  // bd-tasks is opt-in: add it only for harness-managed bd issues
+			sources: config.sources ?? ["inbox", "bus"], // bd-tasks is opt-in: add it only for harness-managed bd issues
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
 			tunnelCommand: config.tunnelCommand,
@@ -1031,6 +1031,7 @@ export class LoopDaemon {
 					: await buildRealLoopDeps({
 							maxIterations: this.config.maxIterations,
 							blackboardDir: this.bus.getWorkspace(),
+							request: task.request,
 						}));
 
 			// Inject transition publishing into onStep (also drives the widget)

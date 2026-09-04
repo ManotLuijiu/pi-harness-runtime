@@ -73,7 +73,11 @@ export type LoopState = typeof LoopState.State;
 export interface LoopDeps {
 	plan: (request: string) => Promise<string>;
 	write: (plan: string, review: ReviewVerdict | null) => Promise<string>;
-	review: (plan: string, code: string, writtenFiles?: Record<string, string>) => Promise<ReviewVerdict>;
+	review: (
+		plan: string,
+		code: string,
+		writtenFiles?: Record<string, string>,
+	) => Promise<ReviewVerdict>;
 	maxIterations: number;
 	onStep?: (step: string, state: LoopState) => void;
 	/** Optional widget for TUI / status-line display (mirrors pi-lens footer style). */
@@ -99,7 +103,9 @@ function extractFilePaths(code: string): string[] {
 	const files = new Set<string>();
 	const lines = code.split("\n");
 	for (const line of lines) {
-		const match = line.match(/^```(?:typescript|ts|javascript|js|tsx|jsx|text)?\s*\/([^\s`]+)\s*$/);
+		const match = line.match(
+			/^```(?:typescript|ts|javascript|js|tsx|jsx|text)?\s*\/([^\s`]+)\s*$/,
+		);
 		if (match) {
 			const path = match[1].trim();
 			if (path && !path.includes(" ")) files.add(path);
@@ -107,7 +113,11 @@ function extractFilePaths(code: string): string[] {
 		const mdMatch = line.match(/^\*\*([^:*]+):\*\*/);
 		if (mdMatch) {
 			const path = mdMatch[1].trim();
-			if (path && !path.includes(" ") && (path.includes("/") || path.endsWith(".ts") || path.endsWith(".js"))) {
+			if (
+				path &&
+				!path.includes(" ") &&
+				(path.includes("/") || path.endsWith(".ts") || path.endsWith(".js"))
+			) {
 				files.add(path);
 			}
 		}
@@ -149,7 +159,11 @@ function writeNode(deps: LoopDeps) {
 
 function reviewNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
-		const review = await deps.review(state.plan, state.code, state.writtenFiles ?? {});
+		const review = await deps.review(
+			state.plan,
+			state.code,
+			state.writtenFiles ?? {},
+		);
 		deps.onStep?.("review", state);
 		return {
 			review,
@@ -256,6 +270,15 @@ export interface RealLoopOptions {
 	onStep?: (step: string, state: LoopState) => void;
 	/** Directory for .write-review/blackboard. Defaults to process.cwd(). */
 	blackboardDir?: string;
+	/**
+	 * The request string. Used by the smart model router to determine which
+	 * models to use for planner / reviewer / coder roles.  Supports per-request
+	 * directives in the prompt:
+	 *   [planner: gpt]      [reviewer: GLM]     [coder: MiniMax]
+	 *   "Use GPT as master reviewer" is also recognised.
+	 * If omitted, defaults to env vars (PLANNER_*, GLM_*, MINIMAX_*).
+	 */
+	request?: string;
 	importAgents?: () => Promise<{
 		createPlannerAgent: () => {
 			invoke: (input: { messages: unknown[] }) => Promise<{
@@ -288,9 +311,20 @@ export async function buildRealLoopDeps(
 	options: RealLoopOptions = {},
 ): Promise<LoopDeps> {
 	const mod = await import("./agents.js");
-	const planner = mod.createPlannerAgent();
-	const coder = mod.createCoderAgent();
-	const reviewer = mod.createReviewerAgent();
+
+	// Smart model routing — parses [role: family] directives in the request.
+	// Falls back to env defaults if no directives present.
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	const { routeRequestSmart } = require("./model-router.js");
+	const route = options.request ? routeRequestSmart(options.request) : undefined;
+
+	const plannerModelOpts = route?.planner;
+	const reviewerModelOpts = route?.reviewer;
+	const coderModelOpts = route?.coder;
+
+	const planner = mod.createPlannerAgent(plannerModelOpts);
+	const coder = mod.createCoderAgent(coderModelOpts);
+	const reviewer = mod.createReviewerAgent(reviewerModelOpts);
 
 	// Create and init the shared blackboard
 	const blackboard = new WriteReviewBlackboard(
@@ -401,11 +435,10 @@ export async function buildRealLoopDeps(
 					{
 						role: "user",
 						content:
-							_directive +
-								withReviewContext(`## Plan\n${plan}\n\n${codeSection}`),
-						},
-					],
-				});
+							_directive + withReviewContext(`## Plan\n${plan}\n\n${codeSection}`),
+					},
+				],
+			});
 			if (result.structuredResponse) return result.structuredResponse;
 			// Fallback: try to parse the last message as JSON
 			try {
