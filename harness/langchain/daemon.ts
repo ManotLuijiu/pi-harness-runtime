@@ -48,7 +48,7 @@ import {
 } from "../../packages/event-bus/src/herdr-bus.js";
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
 
-import { invokeWithSurgeRetry, type SurgePolicy } from "./surge.js";
+import { invokeWithSurgeRetry, invokeWithGLMRetry, type SurgePolicy, type GLMQuotaSignal } from "./surge.js";
 import type { LoopWidget } from "./widget.js";
 import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
@@ -1067,27 +1067,51 @@ export class LoopDaemon {
 			})();
 			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
 
-			const invokeTask = (signal?: AbortSignal) =>
-				invokeWithSurgeRetry(
-					() =>
-						loop.invoke(
-							{ request: task.request },
-							{ configurable: { thread_id: loopId }, signal },
-						),
-					{
-						policy: this.config.surgePolicy,
-						onSurge: ({ attempt, delayMs }) =>
-							log(
-								`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
+				const invokeTask = (signal?: AbortSignal) =>
+					invokeWithSurgeRetry(
+						() =>
+							invokeWithGLMRetry(
+								() =>
+									loop.invoke(
+										{ request: task.request },
+										{ configurable: { thread_id: loopId }, signal },
+									),
+								{
+									tickMs: 30_000,
+									onGLMQuota: (signal) => {
+										const secs = Math.max(
+										0,
+										Math.round((signal.resetAtEpoch - Date.now()) / 1000),
+									);
+									const mins = Math.floor(secs / 60);
+									const remSecs = secs % 60;
+									const countdown =
+										mins > 0 ? ` (resets in ${mins}m ${remSecs}s)` : ` (resets in ${remSecs}s)`;
+									log(`GLM quota exhausted${countdown}`);
+									this.widget?.setSurgePause(new Date(signal.resetAt));
+									this.statusLine?.updateLoopStatus(
+										`[Q] GLM quota — resets${countdown}`,
+									);
+								},
+								onGLMRetry: () => {
+									log("GLM quota window reached — retrying loop");
+								},
+							},
 							),
-						onExhausted: () => {
-							this._notifyHumanReviewNeeded(
-								task,
-								"Provider surged past max surge attempts — task failed",
-							);
+						{
+							policy: this.config.surgePolicy,
+							onSurge: ({ attempt, delayMs }) =>
+								log(
+									`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
+								),
+							onExhausted: () => {
+								this._notifyHumanReviewNeeded(
+									task,
+									"Provider surged past max surge attempts — task failed",
+								);
+							},
 						},
-					},
-				);
+					);
 
 			let finalState: Awaited<ReturnType<typeof invokeTask>>;
 			if (this.config.taskTimeoutMs) {
@@ -1293,9 +1317,16 @@ export class LoopDaemon {
 				w.startIteration(state.iteration, this.config.maxIterations);
 				break;
 			}
+		case "glmq": {
+				// GLM quota hit — show countdown to reset
+				const resetAt = state.iteration > 0
+					? new Date(state.iteration)  // passthrough from onGLMQuota
+					: undefined;
+				w.setSurgePause(resetAt);
+				break;
+			}
 			case "review": {
-				w.setPhase("reviewing", "GPT reviewing");
-				this.statusLine?.updateLoopStatus("[R] reviewing");
+				w.setPhase("reviewing", "GLM reviewing");
 				// Process review comments — one record per file
 				const comments = state.review?.comments ?? [];
 				if (comments.length === 0) break;

@@ -1,15 +1,10 @@
 /**
- * Surge auto-resume — 529 / overloaded_error detection, escalation backoff,
- * and a retry wrapper for the daemon's graph invocations.
+ * Surge auto-resume — 529 / overloaded_error (MiniMax) + 1308 (GLM quota) detection,
+ * escalation backoff, and retry wrappers for the daemon's graph invocations.
  *
- * Implements S2 + S4 of wiki/peak-hour-surge-auto-resume.md:
- * seconds-scale blits stay in the provider client; minutes-scale surges are
- * handled HERE with scheduled pauses (3 → 6 → 12 min, jittered, capped).
- *
- * Verdict vocabulary and patterns intentionally match:
- *   - harness/loop-runtime.ts 529 path (commit 9ae0ffd)
- *   - harness/e2e/glm-quota-scraper.ts parseMinimaxOverloadResetTime()
- *   - packages/providers/src/adapters.ts isOverloaded
+ * Two wrappers:
+ *   invokeWithSurgeRetry     — MiniMax 529/overload; exponential backoff
+ *   invokeWithGLMRetry       — GLM 1308 quota; waits until reset time
  *
  * Wiki: wiki/peak-hour-surge-auto-resume.md
  */
@@ -37,7 +32,7 @@ const SIMPLE_DELAY = /retry (?:after|in) (\d+)\s*(seconds?|secs?|s)\b/i;
 const RETRY_AFTER_MS = /retry.?after[^0-9]{0,12}(\d{4,})\s*ms/i;
 
 /**
- * Classify an unknown error as a transient provider surge.
+ * Classify an unknown error as a transient provider surge (MiniMax).
  * Returns null for anything that is not a 529/overload-class failure.
  */
 export function classifySurge(err: unknown): SurgeSignal | null {
@@ -90,6 +85,67 @@ export function classifySurge(err: unknown): SurgeSignal | null {
 
 	// Overload-class error without a stated delay → conservative default
 	return { retryAfterMs: 120_000, explicit: false, sourceText };
+}
+
+// ─── GLM Quota Classification ─────────────────────────────────────────────────
+
+/** Matches the reset-at timestamp from a GLM 1308 error. */
+const GLM_RESET_AT = /reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i;
+
+/**
+ * Classify a GLM 1308 quota exhaustion error.
+ * Returns the reset-at ISO timestamp, or null if not a GLM quota error.
+ */
+export function classifyGLMQuota(err: unknown): GLMQuotaSignal | null {
+	const sourceText =
+		err instanceof Error
+			? err.message
+			: typeof err === "string"
+				? err
+				: String(err);
+
+	// Detect GLM 1308 — quota exhaustion
+	const has1308 = /"code"\s*:\s*"1308"|code.*1308/i.test(sourceText);
+	const hasReset = GLM_RESET_AT.test(sourceText);
+	if (!has1308 && !hasReset) return null;
+
+	// Extract reset timestamp
+	const match = sourceText.match(GLM_RESET_AT);
+	if (!match) {
+		// 1308 without a reset time — use a conservative default (5 min)
+		return {
+			resetAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+			resetAtEpoch: Date.now() + 5 * 60_000,
+			sourceText,
+		};
+	}
+
+	// Normalise: space → T, then ensure HH:MM:SS (append :00 if only HH:MM)
+	const normalised = match[1].replace(" ", "T");
+	// "2026-09-04T20:29:24" (19 chars, with seconds) → use as-is
+	// "2026-09-04T20:29"    (16 chars, no seconds)   → append :00
+	const resetAt = normalised.length === 16 ? `${normalised}:00` : normalised;
+	const resetAtEpoch = new Date(resetAt).getTime();
+	const now = Date.now();
+
+	// If the parsed time is in the past, add 1 day (next occurrence)
+	const adjustedEpoch =
+		resetAtEpoch <= now ? resetAtEpoch + 24 * 60 * 60 * 1000 : resetAtEpoch;
+
+	return {
+		resetAt: new Date(adjustedEpoch).toISOString(),
+		resetAtEpoch: adjustedEpoch,
+		sourceText,
+	};
+}
+
+export interface GLMQuotaSignal {
+	/** ISO timestamp when the quota resets */
+	resetAt: string;
+	/** Epoch ms when the quota resets */
+	resetAtEpoch: number;
+	/** Raw error text for logs */
+	sourceText: string;
 }
 
 // ─── Policy ─────────────────────────────────────────────────────────────────
@@ -163,7 +219,7 @@ export class SurgeScheduler {
 	}
 }
 
-// ─── Retry wrapper ──────────────────────────────────────────────────────────
+// ─── Retry wrappers ─────────────────────────────────────────────────────────
 
 export interface SurgeRetryOptions {
 	policy?: Partial<SurgePolicy>;
@@ -182,9 +238,8 @@ export interface SurgeRetryOptions {
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Run `fn`, retrying only on surge-classified failures with escalated,
- * jittered pauses. Non-surge errors rethrow immediately. On exhaustion the
- * last error is rethrown after `onExhausted`.
+ * Run `fn`, retrying only on surge-classified failures (MiniMax 529/overload)
+ * with exponential backoff. Non-surge errors rethrow immediately.
  */
 export async function invokeWithSurgeRetry<T>(
 	fn: () => Promise<T>,
@@ -212,6 +267,82 @@ export async function invokeWithSurgeRetry<T>(
 			);
 			opts.onSurge?.({ attempt, delayMs, signal });
 			await sleep(delayMs);
+		}
+	}
+}
+
+// ─── GLM Quota Retry ────────────────────────────────────────────────────────
+
+export interface GLMRetryOptions {
+	/** Called when GLM quota exhaustion is detected (for status-line countdown) */
+	onGLMQuota?: (signal: GLMQuotaSignal) => void;
+	/** Called after the countdown expires and the loop retries */
+	onGLMRetry?: (signal: GLMQuotaSignal) => void;
+	/** Called when the GLM quota error is non-retryable (e.g., no reset time) */
+	onGLMExhausted?: (signal: GLMQuotaSignal) => void;
+	/** Injectable sleep for tests. Default: real setTimeout */
+	sleep?: (ms: number) => Promise<void>;
+	/** How often to tick the countdown callback (default: 30s) */
+	tickMs?: number;
+}
+
+/**
+ * Run `fn`, retrying on GLM 1308 quota errors.
+ * After the first 1308, waits until the reset time before retrying.
+ * Subsequent 1308s within the same wait window are silently ignored.
+ * Non-GLM-quota errors rethrow immediately.
+ */
+export async function invokeWithGLMRetry<T>(
+	fn: () => Promise<T>,
+	opts: GLMRetryOptions = {},
+): Promise<T> {
+	const sleep = opts.sleep ?? realSleep;
+	const tickMs = opts.tickMs ?? 30_000;
+	
+	let waitingForReset = false;
+
+	while (true) {
+		try {
+			return await fn();
+		} catch (err) {
+			const signal = classifyGLMQuota(err);
+
+			if (!signal) throw err; // not a GLM quota error — fail fast
+
+			// If we are already waiting for a reset and get another 1308,
+			// ignore it — the existing wait is already in progress.
+			if (waitingForReset) {
+				// Just log and continue waiting (the sleep loop handles the timeout)
+				await sleep(tickMs);
+				continue;
+			}
+
+			const delayMs = Math.max(0, signal.resetAtEpoch - Date.now());
+
+			opts.onGLMQuota?.(signal);
+			waitingForReset = true;
+
+			if (delayMs <= 0) {
+				// Reset time already passed — retry immediately
+				waitingForReset = false;
+				opts.onGLMRetry?.(signal);
+				continue;
+			}
+
+			// Wait in chunks so onGLMQuota fires periodically (drives countdown display)
+			const startMs = Date.now();
+			while (Date.now() - startMs < delayMs) {
+				await sleep(tickMs);
+				// Re-fire the callback to refresh the countdown display
+				opts.onGLMQuota?.({
+					...signal,
+					resetAtEpoch: signal.resetAtEpoch, // unchanged
+				});
+			}
+
+			// Countdown expired — retry
+			waitingForReset = false;
+			opts.onGLMRetry?.(signal);
 		}
 	}
 }

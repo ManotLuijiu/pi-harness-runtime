@@ -212,3 +212,166 @@ describe("T8 — loop deps surviving a mid-graph 529", () => {
 		assert.deepEqual(sleeps, [100]);
 	});
 });
+
+// ─── GLM Quota Tests ─────────────────────────────────────────────────────────
+
+import {
+	classifyGLMQuota,
+	invokeWithGLMRetry,
+} from "./surge.js";
+
+describe("classifyGLMQuota", () => {
+	it("parses GLM 1308 error with reset timestamp", () => {
+		const err = new Error(
+			'429: {"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-09-04 20:29:24"}',
+		);
+		const sig = classifyGLMQuota(err);
+		assert.ok(sig, "should be classified as GLM quota");
+		assert.ok(sig!.resetAt.includes("2026-09-04"), "resetAt contains the date");
+		assert.ok(sig!.resetAtEpoch > Date.now(), "resetAtEpoch is in the future");
+	});
+
+	it("parses 1308 from plain string error", () => {
+		const err = '{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04 20:29:24"}';
+		const sig = classifyGLMQuota(err);
+		assert.ok(sig, "should be classified as GLM quota");
+	});
+
+	it("parses reset time with T separator", () => {
+		const err = new Error(
+			'{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04T20:29:24"}',
+		);
+		const sig = classifyGLMQuota(err);
+		assert.ok(sig, "should be classified as GLM quota");
+		assert.ok(sig!.resetAt.includes("2026-09-04T20:29:24"), "T separator parsed");
+	});
+
+	it("returns null for non-GLM errors", () => {
+		const err = new Error("529: overloaded error");
+		assert.equal(classifyGLMQuota(err), null);
+	});
+
+	it("returns null for plain errors without 1308", () => {
+		const err = new Error("Something went wrong");
+		assert.equal(classifyGLMQuota(err), null);
+	});
+
+	it("1308 without reset time uses 5-min fallback", () => {
+		const err = new Error('{"code":"1308","message":"Usage limit reached"}');
+		const sig = classifyGLMQuota(err);
+		assert.ok(sig, "should be classified");
+		const diffMs = sig!.resetAtEpoch - Date.now();
+		// Should be approximately 5 minutes
+		assert.ok(diffMs >= 4 * 60_000 && diffMs <= 6 * 60_000, "5-min fallback");
+	});
+});
+
+describe("invokeWithGLMRetry", () => {
+	it("succeeds immediately when fn succeeds", async () => {
+		const result = await invokeWithGLMRetry(() => Promise.resolve("ok"));
+		assert.equal(result, "ok");
+	});
+
+	it("throws non-GLM errors immediately", async () => {
+		await assert.rejects(
+			() =>
+				invokeWithGLMRetry(() => {
+					throw new Error("not a GLM error");
+				}),
+			/not a GLM error/,
+		);
+	});
+
+	it("waits until reset time before retry", async () => {
+		const sleeps: number[] = [];
+		const sleep = async (ms: number) => void sleeps.push(ms);
+		// Use a reset time 100ms in the future
+		const resetIn = 100;
+		const resetAt = new Date(Date.now() + resetIn).toISOString();
+
+		let attempts = 0;
+		const result = await invokeWithGLMRetry(
+			async () => {
+				attempts++;
+				if (attempts === 1) {
+					throw new Error(
+						`{"code":"1308","message":"Usage limit. Reset at ${resetAt}"}`,
+					);
+				}
+				return "success after retry";
+			},
+			{ sleep, tickMs: 10 },
+		);
+
+		assert.equal(result, "success after retry");
+		assert.equal(attempts, 2, "retried after wait");
+		assert.ok(sleeps.length >= 1, "slept at least once during countdown");
+		assert.ok(
+			sleeps.every((ms) => ms === 10),
+			"tick interval used",
+		);
+	});
+
+	it("fires onGLMQuota callback during countdown", async () => {
+		const ticks: string[] = [];
+		const sleep = async (ms: number) => void ticks.push(`sleep:${ms}`);
+		const resetAt = new Date(Date.now() + 50).toISOString();
+
+		let attempts = 0;
+		await invokeWithGLMRetry(
+			async () => {
+				attempts++;
+				if (attempts === 1) {
+					throw new Error(
+						`{"code":"1308","message":"Usage limit. Reset at ${resetAt}"}`,
+					);
+				}
+				return "done";
+			},
+			{
+				sleep,
+				tickMs: 10,
+				onGLMQuota: (sig) =>
+					ticks.push(`quota:${sig.resetAtEpoch}`),
+			},
+		);
+
+		assert.ok(
+			ticks.some((t) => t.startsWith("quota:")),
+			"onGLMQuota was called at least once",
+		);
+	});
+
+	it("fires onGLMRetry callback after countdown expires", async () => {
+		const events: string[] = [];
+		const sleep = async (_ms: number) => void null;
+		const resetAt = new Date(Date.now() + 20).toISOString();
+
+		let attempts = 0;
+		await invokeWithGLMRetry(
+			async () => {
+				attempts++;
+				if (attempts === 1) {
+					throw new Error(
+						`{"code":"1308","message":"Usage limit. Reset at ${resetAt}"}`,
+					);
+				}
+				return "done";
+			},
+			{
+				sleep,
+				tickMs: 10,
+				onGLMQuota: () => events.push("quota"),
+				onGLMRetry: () => events.push("retry"),
+			},
+		);
+
+		assert.ok(events.includes("quota"), "quota fired");
+		assert.ok(events.includes("retry"), "retry fired");
+		// retry fires AFTER quota
+		assert.ok(
+			events.indexOf("retry") > events.indexOf("quota"),
+			"retry after quota",
+		);
+	});
+});
