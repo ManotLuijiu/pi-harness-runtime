@@ -825,7 +825,7 @@ export class LoopDaemon {
 			surgePolicy: config.surgePolicy,
 			taskTimeoutMs: config.taskTimeoutMs,
 			checkpointer: config.checkpointer,
-			sources: config.sources ?? ["inbox", "bus", "bd-tasks"],
+			sources: config.sources ?? ["inbox", "bus"],  // bd-tasks is opt-in: add it only for harness-managed bd issues
 			workspace: config.workspace ?? getHerdrWorkspace(),
 			notificationConfig: config.notificationConfig ?? undefined,
 			tunnelCommand: config.tunnelCommand,
