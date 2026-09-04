@@ -137,6 +137,11 @@ function writeNode(deps: LoopDeps) {
 			code,
 			writtenFiles,
 			iteration: iter,
+			// Snapshot the code from the previous iteration (before it was
+			// overwritten).  routeAfterReview uses this to detect stuck: if the
+			// coder outputs identical content in two consecutive iterations, the
+			// loop terminates early instead of wasting another review cycle.
+			prevCode: state.code,
 			log: [`[write:${iter}] MiniMax wrote code${reviewNote}`],
 		};
 	};
@@ -148,9 +153,6 @@ function reviewNode(deps: LoopDeps) {
 		deps.onStep?.("review", state);
 		return {
 			review,
-			// P0-2: snapshot the code we just reviewed so routeAfterReview can detect
-			// if the coder produced identical output in consecutive iterations
-			prevCode: state.code,
 			log: [`[review:${state.iteration}] GPT verdict: ${review.verdict}`],
 		};
 	};
