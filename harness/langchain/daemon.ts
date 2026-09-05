@@ -27,9 +27,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 import { LeaseManager } from "../../packages/autonomous-runtime/src/lease.js";
 import type { ApprovalClass } from "../../packages/autonomous-runtime/src/types.js";
@@ -48,7 +49,11 @@ import {
 } from "../../packages/event-bus/src/herdr-bus.js";
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
 
-import { invokeWithSurgeRetry, invokeWithGLMRetry, type SurgePolicy, type GLMQuotaSignal } from "./surge.js";
+import {
+	invokeWithSurgeRetry,
+	invokeWithGLMRetry,
+	type SurgePolicy,
+} from "./surge.js";
 import type { LoopWidget } from "./widget.js";
 import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
@@ -1067,26 +1072,28 @@ export class LoopDaemon {
 			})();
 			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
 
-				const invokeTask = (signal?: AbortSignal) =>
-					invokeWithSurgeRetry(
-						() =>
-							invokeWithGLMRetry(
-								() =>
-									loop.invoke(
-										{ request: task.request },
-										{ configurable: { thread_id: loopId }, signal },
-									),
-								{
-									tickMs: 30_000,
-									onGLMQuota: (signal) => {
-										const secs = Math.max(
+			const invokeTask = (signal?: AbortSignal) =>
+				invokeWithSurgeRetry(
+					() =>
+						invokeWithGLMRetry(
+							() =>
+								loop.invoke(
+									{ request: task.request },
+									{ configurable: { thread_id: loopId }, signal },
+								),
+							{
+								tickMs: 30_000,
+								onGLMQuota: (signal) => {
+									const secs = Math.max(
 										0,
 										Math.round((signal.resetAtEpoch - Date.now()) / 1000),
 									);
 									const mins = Math.floor(secs / 60);
 									const remSecs = secs % 60;
 									const countdown =
-										mins > 0 ? ` (resets in ${mins}m ${remSecs}s)` : ` (resets in ${remSecs}s)`;
+										mins > 0
+											? ` (resets in ${mins}m ${remSecs}s)`
+											: ` (resets in ${remSecs}s)`;
 									log(`GLM quota exhausted${countdown}`);
 									this.widget?.setSurgePause(new Date(signal.resetAt));
 									this.statusLine?.updateLoopStatus(
@@ -1097,21 +1104,21 @@ export class LoopDaemon {
 									log("GLM quota window reached — retrying loop");
 								},
 							},
+						),
+					{
+						policy: this.config.surgePolicy,
+						onSurge: ({ attempt, delayMs }) =>
+							log(
+								`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
 							),
-						{
-							policy: this.config.surgePolicy,
-							onSurge: ({ attempt, delayMs }) =>
-								log(
-									`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
-								),
-							onExhausted: () => {
-								this._notifyHumanReviewNeeded(
-									task,
-									"Provider surged past max surge attempts — task failed",
-								);
-							},
+						onExhausted: () => {
+							this._notifyHumanReviewNeeded(
+								task,
+								"Provider surged past max surge attempts — task failed",
+							);
 						},
-					);
+					},
+				);
 
 			let finalState: Awaited<ReturnType<typeof invokeTask>>;
 			if (this.config.taskTimeoutMs) {
@@ -1252,6 +1259,9 @@ export class LoopDaemon {
 				this._notifyReadyForClient(task);
 			}
 
+			// ── Notify agent of loop completion (TUI todo count) ───────────────
+			this._writeLoopCompletion(task, verdict, iterations);
+
 			// ── Close bd issue on loop completion ───────────────────────────────
 			if (task.source === "bd-tasks") {
 				this._closeBdIssue(task.taskId, verdict);
@@ -1317,11 +1327,12 @@ export class LoopDaemon {
 				w.startIteration(state.iteration, this.config.maxIterations);
 				break;
 			}
-		case "glmq": {
+			case "glmq": {
 				// GLM quota hit — show countdown to reset
-				const resetAt = state.iteration > 0
-					? new Date(state.iteration)  // passthrough from onGLMQuota
-					: undefined;
+				const resetAt =
+					state.iteration > 0
+						? new Date(state.iteration) // passthrough from onGLMQuota
+						: undefined;
 				w.setSurgePause(resetAt);
 				break;
 			}
@@ -1419,6 +1430,40 @@ export class LoopDaemon {
 			.catch((err) => {
 				console.warn(`[daemon] Notification failed: ${err}`);
 			});
+	}
+
+	/**
+	 * Write a loop-completion event to ~/.pi-harness-runtime/loop-completions/.
+	 * The harness extension (pi-harness-runtime package in the pi-coding-agent process)
+	 * watches this directory and calls pi.sendUserMessage() to update the TUI todo count.
+	 *
+	 * File format:
+	 *   <taskId>.json  {"taskId","request","verdict","iterations","finishedAt"}
+	 */
+	private _writeLoopCompletion(
+		task: TriggeredTask,
+		verdict: string,
+		iterations: number,
+	): void {
+		const dir = join(homedir(), ".pi-harness-runtime", "loop-completions");
+		try {
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true });
+			}
+			const payload = JSON.stringify({
+				taskId: task.taskId,
+				request: task.request,
+				verdict,
+				iterations,
+				finishedAt: new Date().toISOString(),
+		});
+			// Use taskId as filename; .json extension so it reads as JSON
+			const safeId = task.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+			writeFileSync(join(dir, `${safeId}.json`), payload, "utf8");
+		} catch (err) {
+			// Best-effort: never fail the loop over a notification write
+			console.warn(`[daemon] Failed to write loop completion: ${err}`);
+		}
 	}
 
 	private _buildChannels(cfg: NonNullable<DaemonConfig["notificationConfig"]>) {

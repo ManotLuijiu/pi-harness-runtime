@@ -1,6 +1,10 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { routeRequest, routeRequestSmart, resolveModel } from "./model-router.js";
+import {
+	routeRequest,
+	routeRequestSmart,
+	resolveModel,
+} from "./model-router.js";
 
 const TEST_ENV = {
 	PLANNER_API_KEY: "pk-test-planner",
@@ -152,9 +156,7 @@ describe("routeRequestSmart — natural language hints", () => {
 	});
 
 	it("'use GPT as reviewer' → reviewer→PLANNER", () => {
-		const r = routeRequestSmart(
-			"Implement a rate limiter. Use GPT as reviewer.",
-		);
+		const r = routeRequestSmart("Implement a rate limiter. Use GPT as reviewer.");
 		assert.equal(r.reviewer.model, "gpt-5.6");
 	});
 

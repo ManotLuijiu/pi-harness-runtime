@@ -116,6 +116,102 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 		// file-copy-helper not available
 	}
 }
+
+// --- loop-completions: Watch daemon loop completions → update TUI todos ---------
+// When the daemon loop finishes, it writes a completion event to
+// ~/.pi-harness-runtime/loop-completions/. The harness extension watches this
+// dir and sends a steer message to the agent so the TUI todo count updates.
+async function initLoopCompletions(pi: ExtensionAPI): Promise<void> {
+	const { existsSync, mkdirSync, watch } =
+		await import("node:fs");
+	const { join: joinPath } = await import("node:path");
+	const { homedir: getHomeDir } = await import("node:os");
+
+	const COMPLETION_DIR = joinPath(
+		getHomeDir(),
+		".pi-harness-runtime",
+		"loop-completions",
+	);
+
+	try {
+		if (!existsSync(COMPLETION_DIR)) {
+			mkdirSync(COMPLETION_DIR, { recursive: true });
+		}
+	} catch {
+		return; // can't create dir — skip
+	}
+
+	// Process any pre-existing files (e.g. from a previous session)
+	try {
+		const { readdirSync } = await import("node:fs");
+		const files = readdirSync(COMPLETION_DIR).filter(
+			(f) => f.endsWith(".json"),
+		);
+		for (const file of files) {
+			processCompletionFile(joinPath(COMPLETION_DIR, file), pi);
+		}
+	} catch {
+		// ignore — best-effort
+	}
+
+	// Watch for new completion files
+	try {
+		const watcher = watch(
+			COMPLETION_DIR,
+			{ persistent: false },
+			(event, filename) => {
+				if (event !== "rename") return;
+				if (!filename || !filename.endsWith(".json")) return;
+				const filePath = joinPath(COMPLETION_DIR, filename);
+				// Delay so the write finishes before we read
+				setTimeout(() => processCompletionFile(filePath, pi), 500);
+			},
+		);
+		watcher.on("error", () => {});
+	} catch {
+		// fs.watch not available — skip
+	}
+}
+
+interface LoopCompletion {
+	taskId: string;
+	request: string;
+	verdict: string;
+	iterations: number;
+	finishedAt: string;
+}
+
+function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
+	const { existsSync, readFileSync, unlinkSync } = require("node:fs");
+	try {
+		if (!existsSync(filePath)) return;
+		const raw = readFileSync(filePath, "utf8");
+		const completion = JSON.parse(raw) as LoopCompletion;
+
+		const tag =
+			completion.verdict === "approved"
+				? "[ok]"
+				: completion.verdict === "blocked"
+					? "[blocked]"
+					: "[done]";
+
+		const message =
+			`Loop completed ${tag}: ${completion.taskId}\n` +
+			`  verdict: ${completion.verdict}\n` +
+			`  iterations: ${completion.iterations}\n` +
+			`  task: ${completion.request.slice(0, 80)}${completion.request.length > 80 ? "..." : ""}\n\n` +
+			`Run \`bd close ${completion.taskId} --reason "${completion.verdict}"\` if not already closed.`;
+
+		try {
+			pi.sendUserMessage(message, { deliverAs: "steer" });
+		} catch {
+			// ignore — best-effort
+		}
+		unlinkSync(filePath);
+	} catch {
+		// ignore — best-effort
+	}
+}
 import { homedir } from "node:os";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -131,7 +227,7 @@ try {
 }
 
 // Write harness runtime logs to file only (NOT to TUI stdout)
-function _debugLog(...args: unknown[]): void {
+function _debugLog_(...args: unknown[]): void {
 	try {
 		const line =
 			new Date().toISOString() +
@@ -210,6 +306,7 @@ async function getCheckpointManager(): Promise<CheckpointManager> {
 	const { JsonCheckpointManager } = await import(
 		"./packages/checkpoint/src/checkpoint-manager.ts"
 	);
+	// SAFETY: JsonCheckpointManager implements CheckpointManager via structural typing
 	return new JsonCheckpointManager(
 		HARNESS_ROOT_DIR,
 	) as unknown as CheckpointManager;
@@ -259,6 +356,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
+
+	// --- loop-completions: Watch daemon completions → agent TUI todos --------
+	void initLoopCompletions(pi);
 
 	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
 	// This makes the todo overlay ALWAYS activate at session start
@@ -458,9 +558,10 @@ Run \`bd ready\` to see current tasks.
 				// );
 				tuiMonitor.processMessage(text);
 			}
-		} catch (e) {
-			// console.error("[DEBUG message_end] TUI processMessage error:", e);
-		}
+				// message_end: no-op on parse error (already logged upstream)
+				} catch {
+					// ignore — the message was already logged by the TUI layer
+				}
 	});
 
 	// --- Smart quota fetch for MiniMax status ------------------------

@@ -93,6 +93,22 @@ export function classifySurge(err: unknown): SurgeSignal | null {
 const GLM_RESET_AT = /reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i;
 
 /**
+ * Add 1 calendar day to an ISO date string "YYYY-MM-DDTHH:MM:SS".
+ * Used to shift the reset date when it has already passed.
+ */
+function _shiftDateByOneDay(isoDateTime: string): string {
+	const d = new Date(isoDateTime + "Z");
+	d.setUTCDate(d.getUTCDate() + 1);
+	// Re-format: YYYY-MM-DDTHH:MM:SS  (always 19 chars, seconds included)
+	const yyyy = d.getUTCFullYear();
+	const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+	const dd = String(d.getUTCDate()).padStart(2, "0");
+	// Preserve the time part from the original string
+	const timePart = isoDateTime.slice(11); // "HH:MM:SS"
+	return `${yyyy}-${mm}-${dd}T${timePart}`;
+}
+
+/**
  * Classify a GLM 1308 quota exhaustion error.
  * Returns the reset-at ISO timestamp, or null if not a GLM quota error.
  */
@@ -125,15 +141,19 @@ export function classifyGLMQuota(err: unknown): GLMQuotaSignal | null {
 	// "2026-09-04T20:29:24" (19 chars, with seconds) → use as-is
 	// "2026-09-04T20:29"    (16 chars, no seconds)   → append :00
 	const resetAt = normalised.length === 16 ? `${normalised}:00` : normalised;
-	const resetAtEpoch = new Date(resetAt).getTime();
+	// Parse as UTC so the date string is preserved exactly (no TZ shift).
+	const resetAtEpoch = new Date(resetAt + "Z").getTime();
 	const now = Date.now();
 
-	// If the parsed time is in the past, add 1 day (next occurrence)
+	// If the parsed time is in the past, the date is already "next occurrence".
+	// Preserve the original resetAt string so callers can include it verbatim.
+	const adjustedResetAt =
+		resetAtEpoch <= now ? _shiftDateByOneDay(resetAt) : resetAt;
 	const adjustedEpoch =
 		resetAtEpoch <= now ? resetAtEpoch + 24 * 60 * 60 * 1000 : resetAtEpoch;
 
 	return {
-		resetAt: new Date(adjustedEpoch).toISOString(),
+		resetAt: adjustedResetAt,
 		resetAtEpoch: adjustedEpoch,
 		sourceText,
 	};
@@ -298,7 +318,7 @@ export async function invokeWithGLMRetry<T>(
 ): Promise<T> {
 	const sleep = opts.sleep ?? realSleep;
 	const tickMs = opts.tickMs ?? 30_000;
-	
+
 	let waitingForReset = false;
 
 	while (true) {
