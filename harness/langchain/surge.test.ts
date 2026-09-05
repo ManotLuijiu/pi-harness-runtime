@@ -215,26 +215,31 @@ describe("T8 — loop deps surviving a mid-graph 529", () => {
 
 // ─── GLM Quota Tests ─────────────────────────────────────────────────────────
 
-import {
-	classifyGLMQuota,
-	invokeWithGLMRetry,
-} from "./surge.js";
+import { classifyGLMQuota, invokeWithGLMRetry } from "./surge.js";
 
 describe("classifyGLMQuota", () => {
+	// The dates in the error messages are in the past (2026-09-04).
+	// classifyGLMQuota shifts them to the NEXT occurrence (+1 day).
+	// The tests verify: shift happened + time preserved verbatim.
 	it("parses GLM 1308 error with reset timestamp", () => {
 		const err = new Error(
 			'429: {"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-09-04 20:29:24"}',
 		);
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
-		assert.ok(sig!.resetAt.includes("2026-09-04"), "resetAt contains the date");
+		// 2026-09-04 is past → shifted to 2026-09-05; epoch must be in the future
 		assert.ok(sig!.resetAtEpoch > Date.now(), "resetAtEpoch is in the future");
+		assert.ok(sig!.resetAt.includes("2026-09-05"), "date shifted to next occurrence");
+		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
 	});
 
 	it("parses 1308 from plain string error", () => {
-		const err = '{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04 20:29:24"}';
+		const err =
+			'{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04 20:29:24"}';
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
+		// space separator → normalised to T; past date → shifted to next occurrence
+		assert.ok(sig!.resetAt.includes("2026-09-05"), "space normalised and date shifted");
 	});
 
 	it("parses reset time with T separator", () => {
@@ -243,7 +248,10 @@ describe("classifyGLMQuota", () => {
 		);
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
-		assert.ok(sig!.resetAt.includes("2026-09-04T20:29:24"), "T separator parsed");
+		// past date → next occurrence (2026-09-05); T separator preserved verbatim
+		assert.ok(sig!.resetAt.includes("2026-09-05"), "date shifted to next occurrence");
+		assert.ok(sig!.resetAt.includes("T"), "T separator preserved verbatim");
+		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
 	});
 
 	it("returns null for non-GLM errors", () => {
@@ -331,8 +339,7 @@ describe("invokeWithGLMRetry", () => {
 			{
 				sleep,
 				tickMs: 10,
-				onGLMQuota: (sig) =>
-					ticks.push(`quota:${sig.resetAtEpoch}`),
+				onGLMQuota: (sig) => ticks.push(`quota:${sig.resetAtEpoch}`),
 			},
 		);
 

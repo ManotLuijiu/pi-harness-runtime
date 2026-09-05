@@ -61,11 +61,13 @@ function readEnv(prefix: string, env: typeof process.env): ModelEnv {
 	}
 	return {
 		apiKey,
-		model: env[`${prefix}_MODEL`] ?? (() => {
-			throw new Error(
-				`${prefix}_MODEL is not set. Set it in .env (e.g. ${prefix}_MODEL="GLM-5.2").`,
-			);
-		})(),
+		model:
+			env[`${prefix}_MODEL`] ??
+			(() => {
+				throw new Error(
+					`${prefix}_MODEL is not set. Set it in .env (e.g. ${prefix}_MODEL="GLM-5.2").`,
+				);
+			})(),
 		baseURL:
 			env[`${prefix}_BASE_URL`] ??
 			(() => {
@@ -93,9 +95,7 @@ function readEnv(prefix: string, env: typeof process.env): ModelEnv {
 export function createPlannerModel(
 	opts: ModelOptions | ResolvedModelOptions = {},
 ): ChatOpenAI {
-	const resolved = "baseURL" in opts
-		? opts
-		: readEnv("PLANNER", process.env);
+	const resolved = "baseURL" in opts ? opts : readEnv("PLANNER", process.env);
 	// resolved.baseURL is always a string (readEnv throws if absent); cast is safe
 	const baseURL = (opts.baseURL ?? resolved.baseURL) as string;
 	return new ChatOpenAI({
@@ -146,9 +146,7 @@ export function createReviewerModel(
 export function createCoderModel(
 	opts: ModelOptions | ResolvedModelOptions = {},
 ): ChatOpenAI {
-	const resolved = "baseURL" in opts
-		? opts
-		: readEnv("MINIMAX", process.env);
+	const resolved = "baseURL" in opts ? opts : readEnv("MINIMAX", process.env);
 	const baseURL = (opts.baseURL ?? resolved.baseURL) as string;
 	return new ChatOpenAI({
 		model: opts.model ?? resolved.model,
