@@ -187,6 +187,7 @@ bd create "Replace Film icon with themed icon" -p 2
 ```
 
 **Rule**: If you write something like:
+
 - "There are 3 issues: ..."
 - "I found several problems: ..."
 - "Let me fix these: 1) X 2) Y 3) Z"

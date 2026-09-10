@@ -18,6 +18,7 @@ bd create "Replace Film icon with themed icon" -p 2
 ```
 
 **Rule**: If you write something like:
+
 - "There are 3 issues: ..."
 - "I found several problems: ..."
 - "Let me fix these: 1) X 2) Y 3) Z"
@@ -54,7 +55,7 @@ Human Requirement
 ### Usage Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/usage` | Show full status (local tracking + provider mirror) |
 | `/usage refresh` | Force refresh quota from MiniMax console |
 | `/usage today` | Today's usage + 5h window |
@@ -64,7 +65,7 @@ Human Requirement
 ### Harness Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/harness start <requirement>` | Start a new harness job |
 | `/harness status` | Show current job status |
 | `/harness tasks` | List all tasks |
@@ -75,7 +76,7 @@ Human Requirement
 ### Authentication Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/harness auth minimax` | Authenticate with MiniMax (opens browser) |
 | `/harness auth check` | Check MiniMax auth status |
 | `/harness auth scrape` | Scrape MiniMax usage (silent, uses saved profile) |
@@ -109,7 +110,7 @@ cancelled  blocked   waiting_human  repairing  ready_for_client
 ### State Transitions
 
 | From | Valid Transitions |
-|------|-----------------|
+| ------ | ----------------- |
 | created | planning |
 | planning | queued, cancelled |
 | queued | running, cancelled, waiting_human |
