@@ -2,14 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [1.1.18](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.18) (2026-08-24)
+### [1.1.19](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.61...v1.1.19) (2026-09-10)
 
+### Features
+
+* add ping-pong intent middleware ([c2b4f4b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c2b4f4b86fdd22c151dd1dee1cab5fa3dbcfdcd5))
+
+### Bug Fixes
+
+* improve langchain daemon and surge test ([42245b4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/42245b4364c3516c70df82fedbfe63e1b0cadd8e))
+
+### [1.1.18](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.18) (2026-08-24)
 
 ### Features
 
 * **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
 * **glm:** add structured logging for GLM quota events ([09e692e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/09e692ec17b9c21a448c72f081d18fb35b8636ae))
-
 
 ### Bug Fixes
 
@@ -17,12 +25,10 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.17](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.17) (2026-08-24)
 
-
 ### Features
 
 * **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
 * **glm:** add structured logging for GLM quota events ([09e692e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/09e692ec17b9c21a448c72f081d18fb35b8636ae))
-
 
 ### Bug Fixes
 
@@ -30,12 +36,10 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.16](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.16) (2026-08-24)
 
-
 ### Features
 
 * **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
 * **glm:** add structured logging for GLM quota events ([09e692e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/09e692ec17b9c21a448c72f081d18fb35b8636ae))
-
 
 ### Bug Fixes
 
@@ -43,18 +47,15 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [1.1.15](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.15) (2026-08-24)
 
-
 ### Features
 
 * **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
-
 
 ### Bug Fixes
 
 * **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
 
 ### [1.1.14](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.14) (2026-08-24)
-
 
 ### Features
 
