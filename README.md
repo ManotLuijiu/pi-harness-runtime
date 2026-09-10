@@ -155,6 +155,121 @@ bd --version
 # Tasks: 4/4 done [x]
 ```
 
+## LangChain Multi-Agent Loop (Autonomous Write-Review)
+
+A **human-on-the-loop** autonomous system where multiple AI agents collaborate on code:
+- **GPT** → writes the plan
+- **MiniMax** → writes the code
+- **GPT/GLM** → reviews the code
+- Loop repeats until approved or max iterations hit
+
+### Quick Start
+
+```bash
+# One-shot (human triggers once)
+bun harness/langchain/run.ts --mode graph --request "implement feature X"
+
+# Dry-run (no API keys, uses stubs)
+bun harness/langchain/run.ts --mode graph --request "fix bug Y" --dry-run
+
+# Daemon mode (auto-triggers on new tasks — stays running)
+bun harness/langchain/run.ts --daemon
+```
+
+### Daemon Mode (Auto-Trigger)
+
+The daemon runs as a **standalone long-running process** and watches for new tasks:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Terminal 1: pi-coding-agent (GPT/MiniMax/GLM — your coding agent) │
+│  Terminal 2: bun harness/langchain/run.ts --daemon                 │
+│  Terminal 3: (optional) second agent                             │
+│  Terminal N: (optional) more agents                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**How it works:**
+1. You interact with coding agents in their terminals
+2. Agents create tasks via `bd create ...` or inbox files
+3. Daemon detects new pending tasks automatically
+4. Loop runs: plan → write → review → fix (autonomous, no human relay)
+5. Human is notified only at approval gates or when blocked
+
+**Stop the daemon:** `Ctrl+C` or `kill $(pid)`
+
+### Multi-Agent Roles
+
+Request format in task or inbox file:
+```
+[planner: gpt] [reviewer: GLM] [coder: MiniMax] implement feature X
+```
+
+Default (from env vars):
+| Role | Default | Env Var |
+|------|---------|---------|
+| Planner | GPT | `PLANNER_*` |
+| Coder | MiniMax | `MINIMAX_*` |
+| Reviewer | GPT | `GLM_*` |
+
+### Architecture
+
+```
+Triggers:
+  bd tasks ─┐
+  inbox ────┼──► Daemon ──► LeaseManager ──► LangGraph Loop
+  bus event ─┤         (watchers)              │
+  cron ──────┘                                    │
+                                                 │
+Loop (LangGraph):                           publish
+  START → plan(GPT) → write(MiniMax) → review(GPT) ──► HerdrEventBus
+                                ↓                              │
+                         changes_requested?                    │
+                              ↓ yes              no         │
+                        fix(MiniMax)            approved ──► Notification
+                              ↓                              │
+                         review(GPT) ─────────────────────────►
+```
+
+### Key Design Invariants
+
+| # | Invariant |
+|---|---|
+| I1 | No step waits for a human unless an approval gate fires |
+| I2 | Agents talk directly via graph state + events (no human relay) |
+| I3 | Exactly one daemon processes a task at a time (lease-based) |
+| I4 | Every transition is observable via HerdrEventBus |
+| I5 | Loop always terminates: maxIterations, blocked verdict, or error |
+| I6 | Crash-safe: loop state survives daemon restarts (checkpointer) |
+| I7 | Human gates are config-driven, default to "notify don't block" |
+
+### Files
+
+```
+harness/langchain/
+├── run.ts              # CLI entry point (modes: graph, supervisor, daemon)
+├── daemon.ts           # Core daemon: watchers + lease + loop orchestration
+├── graph.ts            # LangGraph state machine (plan→write→review→fix)
+├── agents.ts           # Agent factory (planner, reviewer, coder)
+├── model-router.ts     # Smart model routing per request tags
+├── ping-pong-middleware.ts  # Decision engine: complex? → loop. simple? → one-shot
+├── checkpointer.ts     # Crash-safe state persistence
+├── inbox-watcher.ts    # Watches inbox dir for new task files
+├── bus-watcher.ts     # Watches HerdrEventBus for task.proposed events
+├── cron-watcher.ts    # Stub for scheduled task triggers
+├── status-line.ts     # Real-time loop status display
+├── surge.ts           # Peak-hour surge detection
+└── widget.ts          # TUI widget for loop progress
+```
+
+### Wiki Docs
+
+| Doc | Description |
+|-----|-------------|
+| `wiki/auto-trigger-multi-agent.md` | Full daemon spec, event contracts, acceptance tests |
+| `wiki/multi-agent-langchain.md` | LangChain/LangGraph design notes |
+| `wiki/ping-pong-shared-state.md` | Shared state between agents |
+
 ## Architecture
 
 ```
