@@ -197,6 +197,41 @@ bd create "Replace Film icon with themed icon" -p 2
 
 **Why**: Agents often identify issues verbally but forget to track them. This rule ensures nothing slips through.
 
+## Remote Server Commands (SSH)
+
+**ALWAYS use detached SSH pattern to prevent long hangs.**
+
+### Anti-Pattern (blocks SSH, hangs ~2000s)
+```bash
+# WRONG - SSH blocks waiting for background process
+ssh user@host "kill old; sleep 2; uvicorn ... &"
+# SSH never returns because it waits for uvicorn
+```
+
+### Correct Pattern (fast exit, process stays on server)
+```bash
+# CORRECT - SSH exits fast, process continues on server
+ssh -o BatchMode=yes user@host \
+  "kill -9 917094 970065 2>/dev/null; sleep 1; \
+   cd /home/frappe/amos-saas/backend/services/api && \
+   nohup .venv/bin/uvicorn amos_api.main:app --host 0.0.0.0 --port 8100 \
+   > /tmp/uvicorn.log 2>&1 & \
+   echo 'UVICORN_STARTED'"
+```
+
+**Key changes:**
+- `nohup ... &` — detaches from SSH session
+- `> /tmp/uvicorn.log 2>&1` — captures output to file
+- `echo 'UVICORN_STARTED'` — SSH exits fast with confirmation
+- `-o BatchMode=yes` — non-interactive, fails fast on auth issues
+
+**Why this matters**: A bare `&` in SSH keeps the shell open. `nohup` + redirect + `echo` ensures SSH exits immediately while the process runs on the server.
+
+**For long-running commands**, add a timeout guard:
+```bash
+timeout 60s ssh -o BatchMode=yes user@host "long-command; echo DONE"
+```
+
 ### Status files
 
 The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain ASCII:
