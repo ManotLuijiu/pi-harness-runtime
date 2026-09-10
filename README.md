@@ -158,6 +158,7 @@ bd --version
 ## LangChain Multi-Agent Loop (Autonomous Write-Review)
 
 A **human-on-the-loop** autonomous system where multiple AI agents collaborate on code:
+
 - **GPT** → writes the plan
 - **MiniMax** → writes the code
 - **GPT/GLM** → reviews the code
@@ -190,6 +191,7 @@ The daemon runs as a **standalone long-running process** and watches for new tas
 ```
 
 **How it works:**
+
 1. You interact with coding agents in their terminals
 2. Agents create tasks via `bd create ...` or inbox files
 3. Daemon detects new pending tasks automatically
@@ -201,13 +203,15 @@ The daemon runs as a **standalone long-running process** and watches for new tas
 ### Multi-Agent Roles
 
 Request format in task or inbox file:
+
 ```
 [planner: gpt] [reviewer: GLM] [coder: MiniMax] implement feature X
 ```
 
 Default (from env vars):
+
 | Role | Default | Env Var |
-|------|---------|---------|
+| ------ | --------- | --------- |
 | Planner | GPT | `PLANNER_*` |
 | Coder | MiniMax | `MINIMAX_*` |
 | Reviewer | GPT | `GLM_*` |
@@ -234,7 +238,7 @@ Loop (LangGraph):                           publish
 ### Key Design Invariants
 
 | # | Invariant |
-|---|---|
+| --- | --- |
 | I1 | No step waits for a human unless an approval gate fires |
 | I2 | Agents talk directly via graph state + events (no human relay) |
 | I3 | Exactly one daemon processes a task at a time (lease-based) |
@@ -265,7 +269,7 @@ harness/langchain/
 ### Wiki Docs
 
 | Doc | Description |
-|-----|-------------|
+| ----- | ------------- |
 | `wiki/auto-trigger-multi-agent.md` | Full daemon spec, event contracts, acceptance tests |
 | `wiki/multi-agent-langchain.md` | LangChain/LangGraph design notes |
 | `wiki/ping-pong-shared-state.md` | Shared state between agents |
