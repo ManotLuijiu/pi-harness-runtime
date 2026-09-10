@@ -16,30 +16,42 @@ function stripTrailingNoise(value) {
 export function parseMiniMaxQuotaText(text) {
     const data = {};
     const normalized = text.replace(/\r/g, "");
-    const h5Match = normalized.match(/5h(?:\s+limit)?[\s\S]{0,200}?Used\s*(\d+(?:\.\d+)?)\s*%/i);
+    const h5Match = normalized.match(
+        /5h(?:\s+limit)?[\s\S]{0,200}?Used\s*(\d+(?:\.\d+)?)\s*%/i,
+    );
     if (h5Match) {
         data.h5UsedPct = parseFloat(h5Match[1]);
     }
-    const h5ResetMatch = normalized.match(/5h(?:\s+limit)?[\s\S]{0,200}?Resets?\s+in\s+([^\n%]+)/i);
+    const h5ResetMatch = normalized.match(
+        /5h(?:\s+limit)?[\s\S]{0,200}?Resets?\s+in\s+([^\n%]+)/i,
+    );
     if (h5ResetMatch) {
         data.h5ResetsAt = stripTrailingNoise(h5ResetMatch[1]);
     }
-    const weeklyMatch = normalized.match(/week(?:ly)?(?:\s+limit)?[\s\S]{0,200}?Used\s*(\d+(?:\.\d+)?)\s*%/i);
+    const weeklyMatch = normalized.match(
+        /week(?:ly)?(?:\s+limit)?[\s\S]{0,200}?Used\s*(\d+(?:\.\d+)?)\s*%/i,
+    );
     if (weeklyMatch) {
         data.weeklyUsedPct = parseFloat(weeklyMatch[1]);
     }
-    const weeklyResetMatch = normalized.match(/week(?:ly)?(?:\s+limit)?[\s\S]{0,200}?Resets?\s+in\s+([^\n%]+)/i);
+    const weeklyResetMatch = normalized.match(
+        /week(?:ly)?(?:\s+limit)?[\s\S]{0,200}?Resets?\s+in\s+([^\n%]+)/i,
+    );
     if (weeklyResetMatch) {
         data.weeklyResetsAt = stripTrailingNoise(weeklyResetMatch[1]);
     }
-    const creditMatch = normalized.match(/credit(?:\s+balance)?[^:\n]*:\s*([^\n]+)/i);
+    const creditMatch = normalized.match(
+        /credit(?:\s+balance)?[^:\n]*:\s*([^\n]+)/i,
+    );
     if (creditMatch) {
         const cleaned = stripTrailingNoise(creditMatch[1]);
         if (cleaned) {
             data.creditBalance = cleaned;
         }
     }
-    const tokenSectionMatch = normalized.match(/token[^:]*:?\s*([\d.,]+\s*(?:M|B|K)?\s*tokens?)/gi);
+    const tokenSectionMatch = normalized.match(
+        /token[^:]*:?\s*([\d.,]+\s*(?:M|B|K)?\s*tokens?)/gi,
+    );
     if (tokenSectionMatch) {
         data.tokenUsage = {
             currentMonth: tokenSectionMatch[0] || "",
@@ -50,3 +62,4 @@ export function parseMiniMaxQuotaText(text) {
     }
     return data;
 }
+//# sourceMappingURL=minimax-quota-parser.js.map

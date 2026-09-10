@@ -27,7 +27,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 const DEFAULT_COOKIE_FILE = join(homedir(), ".config", "openai-cookies.txt");
 const USAGE_API = "https://chatgpt.com/backend-api/wham/usage";
-const ANALYTICS_URL = "https://chatgpt.com/codex/cloud/settings/analytics#usage";
+const ANALYTICS_URL =
+    "https://chatgpt.com/codex/cloud/settings/analytics#usage";
 /**
  * Load Netscape-format cookies from file
  */
@@ -48,8 +49,7 @@ function loadNetscapeCookies(path) {
             trimmed = trimmed.slice("#HttpOnly_".length);
         }
         const parts = trimmed.split("\t");
-        if (parts.length < 7)
-            continue;
+        if (parts.length < 7) continue;
         const [domain, _flag, cookiePath, secure, expires, name, value] = parts;
         cookies.push({
             name,
@@ -67,18 +67,14 @@ function loadNetscapeCookies(path) {
  * Format remaining seconds into human-readable string
  */
 function formatRemainsSeconds(seconds) {
-    if (seconds <= 0)
-        return "soon";
+    if (seconds <= 0) return "soon";
     const days = Math.floor(seconds / 86400);
     const hr = Math.floor((seconds % 86400) / 3600);
     const min = Math.floor((seconds % 3600) / 60);
     const parts = [];
-    if (days > 0)
-        parts.push(`${days} days`);
-    if (hr > 0)
-        parts.push(`${hr} hr`);
-    if (min > 0 && days === 0)
-        parts.push(`${min} min`);
+    if (days > 0) parts.push(`${days} days`);
+    if (hr > 0) parts.push(`${hr} hr`);
+    if (min > 0 && days === 0) parts.push(`${min} min`);
     return parts.join(" ") || "0 min";
 }
 /**
@@ -145,18 +141,21 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
         const context = await browser.newContext({
             locale: "en-US",
             viewport: { width: 1440, height: 900 },
-            userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            userAgent:
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         });
         // Inject cookies
-        await context.addCookies(cookies.map((c) => ({
-            name: c.name,
-            value: c.value,
-            domain: c.domain,
-            path: c.path,
-            secure: c.secure,
-            httpOnly: c.httpOnly,
-            expires: c.expires,
-        })));
+        await context.addCookies(
+            cookies.map((c) => ({
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path,
+                secure: c.secure,
+                httpOnly: c.httpOnly,
+                expires: c.expires,
+            })),
+        );
         const page = await context.newPage();
         // Capture API responses
         let usageData = null;
@@ -165,8 +164,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
             if (url.includes("/wham/usage")) {
                 try {
                     usageData = await response.json().catch(() => null);
-                }
-                catch {
+                } catch {
                     // Ignore parse errors
                 }
             }
@@ -174,7 +172,9 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
         try {
             // Navigate to analytics page
             if (!this.config.quiet) {
-                console.log("[DEBUG OpenAIQuotaScraper] Navigating to analytics page...");
+                console.log(
+                    "[DEBUG OpenAIQuotaScraper] Navigating to analytics page...",
+                );
             }
             await page.goto(ANALYTICS_URL, {
                 waitUntil: "domcontentloaded",
@@ -185,14 +185,14 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
             // Wait for network to settle
             try {
                 await page.waitForLoadState("networkidle", { timeout: 10000 });
-            }
-            catch {
+            } catch {
                 // Network idle might not be achievable
             }
             // Check if redirected to login
             const currentUrl = page.url();
             if (currentUrl.includes("login") || currentUrl.includes("auth")) {
-                const msg = "OpenAI cookies are expired or insufficient. Please re-export cookies from chatgpt.com.";
+                const msg =
+                    "OpenAI cookies are expired or insufficient. Please re-export cookies from chatgpt.com.";
                 if (!this.config.quiet)
                     console.error("[DEBUG OpenAIQuotaScraper] " + msg);
                 throw new Error(msg);
@@ -212,22 +212,27 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
             const weeklyResetsAt = formatRemainsSeconds(resetAfterSeconds);
             // Extract credits if available
             const credits = usageData?.credits;
-            const creditBalance = credits?.has_credits ? credits.balance : undefined;
+            const creditBalance = credits?.has_credits
+                ? credits.balance
+                : undefined;
             if (!this.config.quiet) {
-                console.log(`[DEBUG OpenAIQuotaScraper] Weekly usage: ${weeklyUsedPct}%, resets in ${weeklyResetsAt}`);
+                console.log(
+                    `[DEBUG OpenAIQuotaScraper] Weekly usage: ${weeklyUsedPct}%, resets in ${weeklyResetsAt}`,
+                );
             }
             return {
                 provider: "openai",
                 weeklyUsedPct,
                 weeklyResetsAt,
-                weeklyResetsAtEpoch: resetAtEpoch ? resetAtEpoch * 1000 : undefined,
+                weeklyResetsAtEpoch: resetAtEpoch
+                    ? resetAtEpoch * 1000
+                    : undefined,
                 resetAfterSeconds,
                 creditBalance,
                 apiEndpoint: USAGE_API,
                 scrapedAt: new Date().toISOString(),
             };
-        }
-        finally {
+        } finally {
             await browser.close();
         }
     }
@@ -236,8 +241,7 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
      */
     async scrapeDirect() {
         const cookies = loadNetscapeCookies(this.config.cookieFile);
-        if (cookies.length === 0)
-            return null;
+        if (cookies.length === 0) return null;
         const cookieHeader = cookies
             .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
             .join("; ");
@@ -246,17 +250,21 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
                 headers: {
                     Cookie: cookieHeader,
                     Accept: "application/json",
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-                    Referer: "https://chatgpt.com/codex/cloud/settings/analytics",
+                    "User-Agent":
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+                    Referer:
+                        "https://chatgpt.com/codex/cloud/settings/analytics",
                 },
             });
             if (!response.ok) {
                 if (!this.config.quiet) {
-                    console.log(`[DEBUG OpenAIQuotaScraper] Direct API failed: ${response.status}`);
+                    console.log(
+                        `[DEBUG OpenAIQuotaScraper] Direct API failed: ${response.status}`,
+                    );
                 }
                 return null;
             }
-            const data = (await response.json());
+            const data = await response.json();
             const primaryWindow = data?.rate_limit?.primary_window;
             const weeklyUsedPct = primaryWindow?.used_percent ?? 0;
             const resetAfterSeconds = primaryWindow?.reset_after_seconds ?? 0;
@@ -266,15 +274,19 @@ Then run: bun run packages/cookie-sanitizer/src/sync.ts`;
                 provider: "openai",
                 weeklyUsedPct,
                 weeklyResetsAt,
-                weeklyResetsAtEpoch: resetAtEpoch ? resetAtEpoch * 1000 : undefined,
+                weeklyResetsAtEpoch: resetAtEpoch
+                    ? resetAtEpoch * 1000
+                    : undefined,
                 resetAfterSeconds,
                 apiEndpoint: USAGE_API,
                 scrapedAt: new Date().toISOString(),
             };
-        }
-        catch (error) {
+        } catch (error) {
             if (!this.config.quiet) {
-                console.warn("[DEBUG OpenAIQuotaScraper] Direct API error:", error instanceof Error ? error.message : String(error));
+                console.warn(
+                    "[DEBUG OpenAIQuotaScraper] Direct API error:",
+                    error instanceof Error ? error.message : String(error),
+                );
             }
             return null;
         }
@@ -297,9 +309,11 @@ export class OpenAIQuotaManager {
      */
     async getQuota(forceRefresh = false) {
         const now = Date.now();
-        if (!forceRefresh &&
+        if (
+            !forceRefresh &&
             this.lastQuota &&
-            now - this.lastFetchTime < this.cacheDurationMs) {
+            now - this.lastFetchTime < this.cacheDurationMs
+        ) {
             return this.lastQuota;
         }
         // Try direct API first (faster)
@@ -314,8 +328,7 @@ export class OpenAIQuotaManager {
             this.lastQuota = await this.scraper.scrape();
             this.lastFetchTime = now;
             return this.lastQuota;
-        }
-        catch (error) {
+        } catch (error) {
             // Return cached value if available
             if (this.lastQuota) {
                 return this.lastQuota;
@@ -330,3 +343,4 @@ export class OpenAIQuotaManager {
         return this.scraper.hasCookieFile();
     }
 }
+//# sourceMappingURL=openai-quota-scraper.js.map

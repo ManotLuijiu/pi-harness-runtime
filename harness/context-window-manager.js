@@ -9,7 +9,10 @@
  * - Circuit breaker for consecutive compact failures
  * - Buffer-aware token estimation
  */
-import { roughTokenCount, roughMessagesTokens, } from "../packages/token-estimation/src/index.ts";
+import {
+    roughTokenCount,
+    roughMessagesTokens,
+} from "../packages/token-estimation/src/index.ts";
 // --- Constants ----------------------------------------------------------------
 /** Proactive compact triggers at this many tokens before limit */
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
@@ -84,16 +87,12 @@ export class ContextWindowManager {
      */
     getUtilizationStatus(provider, model) {
         const stats = this.getStats(provider, model);
-        if (!stats)
-            return "unknown";
+        if (!stats) return "unknown";
         const config = this.configs.get(provider);
-        if (!config)
-            return "ok";
+        if (!config) return "ok";
         const pct = stats.utilizationPct;
-        if (pct >= config.criticalThreshold)
-            return "critical";
-        if (pct >= config.warningThreshold)
-            return "warning";
+        if (pct >= config.criticalThreshold) return "critical";
+        if (pct >= config.warningThreshold) return "warning";
         return "ok";
     }
     /**
@@ -129,8 +128,7 @@ export class ContextWindowManager {
      */
     estimateRemainingRequests(provider, model, avgTokensPerRequest) {
         const stats = this.getStats(provider, model);
-        if (!stats)
-            return null;
+        if (!stats) return null;
         return Math.floor(stats.availableTokens / avgTokensPerRequest);
     }
     /**
@@ -139,15 +137,21 @@ export class ContextWindowManager {
     estimateTokensWithBuffer(opts) {
         const { messages, tools, systemPrompt, provider, model } = opts;
         // Calculate message tokens
-        const messageTokens = roughMessagesTokens(messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-        })));
+        const messageTokens = roughMessagesTokens(
+            messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+            })),
+        );
         // Calculate tool tokens
-        const toolTokens = (tools ?? []).reduce((sum, tool) => sum +
-            roughTokenCount(tool.name) +
-            roughTokenCount(tool.description ?? "") +
-            roughTokenCount(JSON.stringify(tool.input_schema ?? {})), 0);
+        const toolTokens = (tools ?? []).reduce(
+            (sum, tool) =>
+                sum +
+                roughTokenCount(tool.name) +
+                roughTokenCount(tool.description ?? "") +
+                roughTokenCount(JSON.stringify(tool.input_schema ?? {})),
+            0,
+        );
         // Calculate system prompt tokens
         const systemTokens = systemPrompt ? roughTokenCount(systemPrompt) : 0;
         const total = messageTokens + toolTokens + systemTokens;
@@ -155,7 +159,8 @@ export class ContextWindowManager {
         const bufferRemaining = effectiveWindow - total;
         // Determine if we should compact or block
         const autoCompactTokens = effectiveWindow - AUTOCOMPACT_BUFFER_TOKENS;
-        const blockingTokens = effectiveWindow - BLOCKING_THRESHOLD_BUFFER_TOKENS;
+        const blockingTokens =
+            effectiveWindow - BLOCKING_THRESHOLD_BUFFER_TOKENS;
         const shouldCompact = total >= autoCompactTokens;
         const shouldBlock = total >= blockingTokens;
         return {
@@ -222,7 +227,10 @@ export class ContextWindowManager {
      */
     prepareMessages(messages, maxTokens, strategy = "truncate") {
         const estimateTokens = (text) => Math.ceil(text.length / 4);
-        let totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+        let totalTokens = messages.reduce(
+            (sum, m) => sum + estimateTokens(m.content),
+            0,
+        );
         if (totalTokens <= maxTokens) {
             return messages;
         }
@@ -261,21 +269,32 @@ export class ContextWindowManager {
         for (const [, stats] of this.stats.entries()) {
             const config = this.configs.get(stats.provider);
             const bar = this.renderBar(stats.utilizationPct);
-            const status = this.getUtilizationStatus(stats.provider, stats.model);
+            const status = this.getUtilizationStatus(
+                stats.provider,
+                stats.model,
+            );
             lines.push(`${stats.provider}/${stats.model}`);
             lines.push(`  ${bar} ${(stats.utilizationPct * 100).toFixed(1)}%`);
-            lines.push(`  Used: ${stats.usedTokens.toLocaleString()} / ${stats.maxTokens.toLocaleString()} tokens`);
-            lines.push(`  Available: ${stats.availableTokens.toLocaleString()} tokens`);
+            lines.push(
+                `  Used: ${stats.usedTokens.toLocaleString()} / ${stats.maxTokens.toLocaleString()} tokens`,
+            );
+            lines.push(
+                `  Available: ${stats.availableTokens.toLocaleString()} tokens`,
+            );
             lines.push(`  Status: ${status.toUpperCase()}`);
             if (config) {
-                lines.push(`  Thresholds: warning=${(config.warningThreshold * 100).toFixed(0)}%, critical=${(config.criticalThreshold * 100).toFixed(0)}%`);
+                lines.push(
+                    `  Thresholds: warning=${(config.warningThreshold * 100).toFixed(0)}%, critical=${(config.criticalThreshold * 100).toFixed(0)}%`,
+                );
             }
             lines.push("");
         }
         // Add circuit breaker status
         lines.push("Circuit Breaker Status", "-".repeat(20));
         lines.push(`Consecutive failures: ${this.consecutiveFailures}`);
-        lines.push(`Circuit broken: ${this.shouldCircuitBreak() ? "YES ⚠️" : "No"}`);
+        lines.push(
+            `Circuit broken: ${this.shouldCircuitBreak() ? "YES ⚠️" : "No"}`,
+        );
         return lines.join("\n");
     }
     renderBar(pct, width = 20) {
@@ -295,10 +314,11 @@ export function microcompactToolResults(messages, options = {}) {
     const now = Date.now();
     let freedTokens = 0;
     for (const msg of messages) {
-        if (msg.role !== "assistant" || !msg.toolResults)
-            continue;
+        if (msg.role !== "assistant" || !msg.toolResults) continue;
         // Sort by timestamp, newest first
-        const sorted = [...msg.toolResults].sort((a, b) => b.timestamp - a.timestamp);
+        const sorted = [...msg.toolResults].sort(
+            (a, b) => b.timestamp - a.timestamp,
+        );
         // Keep IDs of recent tool results
         const keepIds = new Set(sorted.slice(0, keepRecent).map((r) => r.id));
         // Prune old ones
@@ -319,7 +339,9 @@ export function microcompactToolResults(messages, options = {}) {
  */
 export function parseTokenGapFromError(errorMessage) {
     // Match patterns like: "137500 tokens > 135000 maximum"
-    const match = errorMessage.match(/prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i);
+    const match = errorMessage.match(
+        /prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i,
+    );
     if (match) {
         const actual = parseInt(match[1], 10);
         const limit = parseInt(match[2], 10);
@@ -328,3 +350,4 @@ export function parseTokenGapFromError(errorMessage) {
     }
     return undefined;
 }
+//# sourceMappingURL=context-window-manager.js.map

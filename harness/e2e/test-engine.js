@@ -56,21 +56,25 @@ export class E2ETestEngine {
                     const success = await this.executeStep(step, context);
                     if (success) {
                         stepsPassed++;
-                    }
-                    else {
+                    } else {
                         stepsFailed++;
                         failedStep = i;
                         if (this.config.screenshotOnFailure) {
-                            screenshotPath = await this.captureScreenshot(scenario.id, i);
+                            screenshotPath = await this.captureScreenshot(
+                                scenario.id,
+                                i,
+                            );
                         }
                         break; // Stop on first failure
                     }
-                }
-                catch (error) {
+                } catch (error) {
                     stepsFailed++;
                     failedStep = i;
                     if (this.config.screenshotOnFailure) {
-                        screenshotPath = await this.captureScreenshot(scenario.id, i);
+                        screenshotPath = await this.captureScreenshot(
+                            scenario.id,
+                            i,
+                        );
                     }
                     break;
                 }
@@ -87,8 +91,7 @@ export class E2ETestEngine {
                 executedAt: new Date().toISOString(),
                 failedStep,
             };
-        }
-        catch (error) {
+        } catch (error) {
             return this.createErrorResult(scenario.id, String(error));
         }
     }
@@ -99,28 +102,32 @@ export class E2ETestEngine {
         const results = [];
         let totalDuration = 0;
         for (const scenario of scenarios) {
-            if (!scenario.required) {
-                // Skip non-required scenarios on failure of required ones
-                const result = await this.runScenario(scenario, context);
-                results.push(result);
-                totalDuration += result.duration;
-            }
-            else {
+            if (scenario.required) {
                 const result = await this.runScenario(scenario, context);
                 results.push(result);
                 totalDuration += result.duration;
                 // Stop on first required failure
                 if (result.status === "failed") {
                     // Run remaining non-required scenarios
-                    for (const nextScenario of scenarios.slice(scenarios.indexOf(scenario) + 1)) {
+                    for (const nextScenario of scenarios.slice(
+                        scenarios.indexOf(scenario) + 1,
+                    )) {
                         if (!nextScenario.required) {
-                            const nextResult = await this.runScenario(nextScenario, context);
+                            const nextResult = await this.runScenario(
+                                nextScenario,
+                                context,
+                            );
                             results.push(nextResult);
                             totalDuration += nextResult.duration;
                         }
                     }
                     break;
                 }
+            } else {
+                // Skip non-required scenarios on failure of required ones
+                const result = await this.runScenario(scenario, context);
+                results.push(result);
+                totalDuration += result.duration;
             }
         }
         const report = {
@@ -168,12 +175,13 @@ export class E2ETestEngine {
      * Execute a single step
      */
     async executeStep(step, context) {
-        if (!this.runner)
-            return false;
+        if (!this.runner) return false;
         const timeout = step.timeout ?? this.config.timeout ?? 30000;
         switch (step.action) {
             case "navigate":
-                await this.runner.navigate(this.resolveValue(step.value ?? "", context));
+                await this.runner.navigate(
+                    this.resolveValue(step.value ?? "", context),
+                );
                 return true;
             case "click":
                 await this.runner.wait(step.selector, timeout);
@@ -181,18 +189,27 @@ export class E2ETestEngine {
                 return true;
             case "type":
                 await this.runner.wait(step.selector, timeout);
-                await this.runner.type(step.selector, this.resolveValue(step.value ?? "", context));
+                await this.runner.type(
+                    step.selector,
+                    this.resolveValue(step.value ?? "", context),
+                );
                 return true;
             case "wait":
                 await this.runner.wait(step.selector, timeout);
                 return true;
             case "screenshot": {
-                const path = this.resolveValue(step.value ?? "screenshot.png", context);
+                const path = this.resolveValue(
+                    step.value ?? "screenshot.png",
+                    context,
+                );
                 await this.runner.screenshot(path);
                 return true;
             }
             case "assert":
-                return await this.runner.assert(step.assertCondition ?? "true", `Assertion failed: ${step.assertCondition}`);
+                return await this.runner.assert(
+                    step.assertCondition ?? "true",
+                    `Assertion failed: ${step.assertCondition}`,
+                );
             case "hover":
                 await this.runner.wait(step.selector, timeout);
                 // await this.runner.hover(step.selector!);
@@ -214,7 +231,14 @@ export class E2ETestEngine {
      * Capture screenshot
      */
     async captureScreenshot(scenarioId, stepIndex) {
-        const path = join(this.rootDir, "harness", "e2e", "artifacts", "screenshots", `${scenarioId}-step-${stepIndex}.png`);
+        const path = join(
+            this.rootDir,
+            "harness",
+            "e2e",
+            "artifacts",
+            "screenshots",
+            `${scenarioId}-step-${stepIndex}.png`,
+        );
         if (this.runner) {
             await this.runner.screenshot(path);
         }
@@ -239,18 +263,29 @@ export class E2ETestEngine {
      * Save report to file
      */
     saveReport(report) {
-        const reportPath = join(this.rootDir, "harness", "e2e", "reports", `${report.jobId}-${Date.now()}.json`);
+        const reportPath = join(
+            this.rootDir,
+            "harness",
+            "e2e",
+            "reports",
+            `${report.jobId}-${Date.now()}.json`,
+        );
         writeJson(reportPath, report);
         // Also append to a log
-        const logPath = join(this.rootDir, "harness", "e2e", "reports", `${report.jobId}.jsonl`);
+        const logPath = join(
+            this.rootDir,
+            "harness",
+            "e2e",
+            "reports",
+            `${report.jobId}.jsonl`,
+        );
         appendJsonl(logPath, report);
     }
     /**
      * Resolve variables in values
      */
     resolveValue(value, context) {
-        if (!context)
-            return value;
+        if (!context) return value;
         let result = value;
         for (const [key, val] of Object.entries(context)) {
             result = result.replace(new RegExp(`{{${key}}}`, "g"), String(val));
@@ -288,3 +323,4 @@ export const CommonSteps = {
         return steps;
     },
 };
+//# sourceMappingURL=test-engine.js.map

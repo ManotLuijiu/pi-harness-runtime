@@ -83,15 +83,19 @@ export class JobStateMachine {
             createdAt: now,
             updatedAt: now,
         };
-        const event = this.createEvent(jobId, "JobCreated", `Job ${jobId} created with requirement`, { requirement });
+        const event = this.createEvent(
+            jobId,
+            "JobCreated",
+            `Job ${jobId} created with requirement`,
+            { requirement },
+        );
         try {
             await this.options.checkpointManager.save(checkpoint);
             await this.options.checkpointManager.appendEvent(jobId, event);
             this.currentCheckpoint = checkpoint;
             this.eventLog.push(event);
             return { success: true, checkpoint };
-        }
-        catch (error) {
+        } catch (error) {
             return { success: false, error: String(error) };
         }
     }
@@ -101,7 +105,10 @@ export class JobStateMachine {
     async resumeJob(jobId) {
         const checkpoint = await this.options.checkpointManager.load(jobId);
         if (!checkpoint) {
-            return { success: false, error: `No checkpoint found for job ${jobId}` };
+            return {
+                success: false,
+                error: `No checkpoint found for job ${jobId}`,
+            };
         }
         this.currentCheckpoint = checkpoint;
         return { success: true, checkpoint };
@@ -132,15 +139,22 @@ export class JobStateMachine {
             ...data,
         };
         // Create event
-        const event = this.createEvent(this.currentCheckpoint.jobId, `StateTransition:${from}->${to}`, `Transitioned from ${from} to ${to}`, { from, to, ...data });
+        const event = this.createEvent(
+            this.currentCheckpoint.jobId,
+            `StateTransition:${from}->${to}`,
+            `Transitioned from ${from} to ${to}`,
+            { from, to, ...data },
+        );
         try {
             await this.options.checkpointManager.save(updated);
-            await this.options.checkpointManager.appendEvent(this.currentCheckpoint.jobId, event);
+            await this.options.checkpointManager.appendEvent(
+                this.currentCheckpoint.jobId,
+                event,
+            );
             this.currentCheckpoint = updated;
             this.eventLog.push(event);
             return { success: true, checkpoint: updated };
-        }
-        catch (error) {
+        } catch (error) {
             return { success: false, error: String(error) };
         }
     }
@@ -154,8 +168,7 @@ export class JobStateMachine {
      * Get available next states from current state
      */
     getAvailableTransitions() {
-        if (!this.currentCheckpoint)
-            return [];
+        if (!this.currentCheckpoint) return [];
         return VALID_TRANSITIONS[this.currentCheckpoint.status] ?? [];
     }
     /**
@@ -196,8 +209,7 @@ export class JobStateMachine {
         try {
             await this.options.checkpointManager.save(this.currentCheckpoint);
             return { success: true, checkpoint: this.currentCheckpoint };
-        }
-        catch (error) {
+        } catch (error) {
             return { success: false, error: String(error) };
         }
     }
@@ -213,8 +225,7 @@ export class JobStateMachine {
         try {
             await this.options.checkpointManager.save(this.currentCheckpoint);
             return { success: true, checkpoint: this.currentCheckpoint };
-        }
-        catch (error) {
+        } catch (error) {
             return { success: false, error: String(error) };
         }
     }
@@ -222,25 +233,26 @@ export class JobStateMachine {
      * Check if job is in a terminal state
      */
     isTerminal() {
-        if (!this.currentCheckpoint)
-            return false;
-        return ["ready_for_client", "cancelled", "archived"].includes(this.currentCheckpoint.status);
+        if (!this.currentCheckpoint) return false;
+        return ["ready_for_client", "cancelled", "archived"].includes(
+            this.currentCheckpoint.status,
+        );
     }
     /**
      * Check if job can be resumed
      */
     canResume() {
-        if (!this.currentCheckpoint)
-            return false;
-        return (this.currentCheckpoint.status === "paused_quota" ||
-            this.currentCheckpoint.status === "blocked");
+        if (!this.currentCheckpoint) return false;
+        return (
+            this.currentCheckpoint.status === "paused_quota" ||
+            this.currentCheckpoint.status === "blocked"
+        );
     }
     /**
      * Get job status summary
      */
     getStatusSummary() {
-        if (!this.currentCheckpoint)
-            return null;
+        if (!this.currentCheckpoint) return null;
         return {
             jobId: this.currentCheckpoint.jobId,
             status: this.currentCheckpoint.status,
@@ -262,7 +274,9 @@ export class JobStateMachine {
  * Factory to create a state machine with a JsonCheckpointManager
  */
 export async function createJobStateMachine(rootDir, jobId) {
-    const { JsonCheckpointManager } = await import("../packages/checkpoint/src/checkpoint-manager.ts");
+    const { JsonCheckpointManager } = await import(
+        "../packages/checkpoint/src/checkpoint-manager.ts"
+    );
     const manager = new JsonCheckpointManager(rootDir);
     if (jobId) {
         const checkpoint = await manager.load(jobId);
@@ -275,3 +289,4 @@ export async function createJobStateMachine(rootDir, jobId) {
     const machine = new JobStateMachine({ checkpointManager: manager });
     return { machine, checkpoint: null };
 }
+//# sourceMappingURL=job-state-machine.js.map

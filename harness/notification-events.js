@@ -173,11 +173,12 @@ export class HarnessNotificationEvents {
             // Log results (but don't fail if notification fails)
             for (const result of results) {
                 if (!result.success) {
-                    console.warn(`[NotificationEvents] Failed to send ${event} to ${result.channel}: ${result.error}`);
+                    console.warn(
+                        `[NotificationEvents] Failed to send ${event} to ${result.channel}: ${result.error}`,
+                    );
                 }
             }
-        }
-        catch (error) {
+        } catch (error) {
             // Never crash the runtime due to notification failure
             console.error(`[NotificationEvents] Notification error: ${error}`);
         }
@@ -231,3 +232,4 @@ export function createNotificationConfigFromEnv() {
     }
     return { channels, enabled: true };
 }
+//# sourceMappingURL=notification-events.js.map
