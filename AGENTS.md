@@ -173,6 +173,29 @@ const icon = await readFile('./node_modules/lucide-static/icons/file-code.svg', 
 
 **Never use `react-icons`** — it pulls in React as a dependency.
 
+## Todo List Rule (CRITICAL)
+
+**When you identify 2+ tasks, issues, or jobs — add ALL of them to the Todo list immediately.**
+
+Do NOT just list them in text. Use the `todo` tool to create tracked tasks:
+
+```bash
+# Creating multiple tasks at once
+bd create "Fix initialRemotionData not defined" -p 2
+bd create "Fix dictionary.title undefined" -p 2
+bd create "Replace Film icon with themed icon" -p 2
+```
+
+**Rule**: If you write something like:
+- "There are 3 issues: ..."
+- "I found several problems: ..."
+- "Let me fix these: 1) X 2) Y 3) Z"
+- "Here are the tasks to do: ..."
+
+**Then you MUST create Todo items for each one.** Single-issue fixes don't need tracking.
+
+**Why**: Agents often identify issues verbally but forget to track them. This rule ensures nothing slips through.
+
 ### Status files
 
 The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain ASCII:
