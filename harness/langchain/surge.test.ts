@@ -229,7 +229,10 @@ describe("classifyGLMQuota", () => {
 		assert.ok(sig, "should be classified as GLM quota");
 		// 2026-09-04 is past → shifted to 2026-09-05; epoch must be in the future
 		assert.ok(sig!.resetAtEpoch > Date.now(), "resetAtEpoch is in the future");
-		assert.ok(sig!.resetAt.includes("2026-09-05"), "date shifted to next occurrence");
+		assert.ok(
+			sig!.resetAt.includes("2026-09-05"),
+			"date shifted to next occurrence",
+		);
 		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
 	});
 
@@ -239,7 +242,10 @@ describe("classifyGLMQuota", () => {
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
 		// space separator → normalised to T; past date → shifted to next occurrence
-		assert.ok(sig!.resetAt.includes("2026-09-05"), "space normalised and date shifted");
+		assert.ok(
+			sig!.resetAt.includes("2026-09-05"),
+			"space normalised and date shifted",
+		);
 	});
 
 	it("parses reset time with T separator", () => {
@@ -249,7 +255,10 @@ describe("classifyGLMQuota", () => {
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
 		// past date → next occurrence (2026-09-05); T separator preserved verbatim
-		assert.ok(sig!.resetAt.includes("2026-09-05"), "date shifted to next occurrence");
+		assert.ok(
+			sig!.resetAt.includes("2026-09-05"),
+			"date shifted to next occurrence",
+		);
 		assert.ok(sig!.resetAt.includes("T"), "T separator preserved verbatim");
 		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
 	});

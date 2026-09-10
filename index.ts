@@ -122,8 +122,7 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 // ~/.pi-harness-runtime/loop-completions/. The harness extension watches this
 // dir and sends a steer message to the agent so the TUI todo count updates.
 async function initLoopCompletions(pi: ExtensionAPI): Promise<void> {
-	const { existsSync, mkdirSync, watch } =
-		await import("node:fs");
+	const { existsSync, mkdirSync, watch } = await import("node:fs");
 	const { join: joinPath } = await import("node:path");
 	const { homedir: getHomeDir } = await import("node:os");
 
@@ -144,9 +143,7 @@ async function initLoopCompletions(pi: ExtensionAPI): Promise<void> {
 	// Process any pre-existing files (e.g. from a previous session)
 	try {
 		const { readdirSync } = await import("node:fs");
-		const files = readdirSync(COMPLETION_DIR).filter(
-			(f) => f.endsWith(".json"),
-		);
+		const files = readdirSync(COMPLETION_DIR).filter((f) => f.endsWith(".json"));
 		for (const file of files) {
 			processCompletionFile(joinPath(COMPLETION_DIR, file), pi);
 		}
@@ -558,10 +555,10 @@ Run \`bd ready\` to see current tasks.
 				// );
 				tuiMonitor.processMessage(text);
 			}
-				// message_end: no-op on parse error (already logged upstream)
-				} catch {
-					// ignore — the message was already logged by the TUI layer
-				}
+			// message_end: no-op on parse error (already logged upstream)
+		} catch {
+			// ignore — the message was already logged by the TUI layer
+		}
 	});
 
 	// --- Smart quota fetch for MiniMax status ------------------------
@@ -569,7 +566,10 @@ Run \`bd ready\` to see current tasks.
 	const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
 	const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
 	const quotaScraper = process.env.QUOTA_COOKIE_FILE
-		? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE, quiet: true })
+		? new MiniMaxQuotaScraper({
+				cookieFile: process.env.QUOTA_COOKIE_FILE,
+				quiet: true,
+			})
 		: new MiniMaxQuotaScraper({ quiet: true });
 
 	// --- Smart quota fetch for OpenAI status -------------------------
@@ -597,7 +597,6 @@ Run \`bd ready\` to see current tasks.
 			return false;
 		}
 	};
-
 
 	// --- TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) --
 	// The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
@@ -690,8 +689,7 @@ Run \`bd ready\` to see current tasks.
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
 	let providerOverloadResumeAttempts = 0;
-	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null =
-		null;
+	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// --- Context-usage escalating warning tiers -----------------------------
 	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
@@ -1051,8 +1049,7 @@ Run \`bd ready\` to see current tasks.
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const autoFetchAvailable =
-				hasCookieSource() ||
-				(await hasBrowserProfileAutoFetchSource());
+				hasCookieSource() || (await hasBrowserProfileAutoFetchSource());
 			if (!autoFetchAvailable) {
 				ctx.ui.notify(
 					"MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.",
@@ -1532,7 +1529,9 @@ Run \`bd ready\` to see current tasks.
 		}
 	}
 
-	function scheduleProviderOverloadResume(hasPendingMessages: () => boolean): void {
+	function scheduleProviderOverloadResume(
+		hasPendingMessages: () => boolean,
+	): void {
 		clearProviderOverloadResume();
 		const delayMs = getProviderOverloadResumeDelayMs();
 		const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
