@@ -33,6 +33,7 @@ bd create "Replace Film icon with themed icon" -p 2
 **ALWAYS use detached SSH pattern to prevent long hangs.**
 
 ### Anti-Pattern (blocks SSH, hangs indefinitely)
+
 ```bash
 # WRONG - SSH blocks waiting for background process
 ssh user@host "kill old; sleep 2; uvicorn ... &"
@@ -40,6 +41,7 @@ ssh user@host "kill old; sleep 2; uvicorn ... &"
 ```
 
 ### Correct Pattern (fast exit, process stays on server)
+
 ```bash
 # CORRECT - SSH exits fast, process continues on server
 ssh -o BatchMode=yes user@host \
@@ -51,6 +53,7 @@ ssh -o BatchMode=yes user@host \
 ```
 
 **Key changes:**
+
 - `nohup ... &` — detaches from SSH session
 - `> /tmp/uvicorn.log 2>&1` — captures output to file
 - `echo 'UVICORN_STARTED'` — SSH exits fast with confirmation
@@ -59,6 +62,7 @@ ssh -o BatchMode=yes user@host \
 **Why this matters**: A bare `&` in SSH keeps the shell open. `nohup` + redirect + `echo` ensures SSH exits immediately while the process runs on the server.
 
 **For long-running commands**, add a timeout guard:
+
 ```bash
 timeout 60s ssh -o BatchMode=yes user@host "long-command; echo DONE"
 ```

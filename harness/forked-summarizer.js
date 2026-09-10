@@ -210,3 +210,4 @@ export function createForkedSummarizer(model, invokeAgent, config) {
         ...config,
     }, invokeAgent);
 }
+//# sourceMappingURL=forked-summarizer.js.map

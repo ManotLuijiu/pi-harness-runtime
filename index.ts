@@ -117,6 +117,37 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+// --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
+// Prevents 2000+ second hangs when SSH background commands aren't detached.
+// Intercepts every bash tool call before execution and rewrites risky SSH commands.
+async function initSshDetachInterceptor(pi: ExtensionAPI): Promise<void> {
+	try {
+		const { registerSshDetachInterceptor } = await import(
+			"./harness/ssh-detach-interceptor.js"
+		);
+		// Register on tool_call with default priority (100)
+		pi.on("tool_call", (event, _api) => {
+			if (event.toolName !== "bash") return {};
+			const command = (event.input as { command?: string }).command ?? "";
+			const { isSshCommand, isDetachedPattern, hasBareAmpersand } = require("./harness/ssh-detach-interceptor.js");
+
+			if (!isSshCommand(command)) return {};
+			if (isDetachedPattern(command)) return {};
+			if (!hasBareAmpersand(command)) return {};
+
+			// Transform to detached pattern
+			const { transformToDetached } = require("./harness/ssh-detach-interceptor.js");
+			const transformed = transformToDetached(command);
+			if (transformed !== command) {
+				(event.input as { command: string }).command = transformed;
+			}
+			return {};
+		});
+	} catch {
+		// ssh-detach-interceptor not available
+	}
+}
+
 // --- loop-completions: Watch daemon loop completions → update TUI todos ---------
 // When the daemon loop finishes, it writes a completion event to
 // ~/.pi-harness-runtime/loop-completions/. The harness extension watches this
@@ -353,6 +384,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
+
+	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
+	void initSshDetachInterceptor(pi);
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);

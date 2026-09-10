@@ -138,3 +138,4 @@ export function createQuotaStatusManagerFromEnv(provider = process.env.QUOTA_PRO
         refreshIntervalMs: parseInt(process.env.QUOTA_REFRESH_MS ?? "300000", 10),
     });
 }
+//# sourceMappingURL=quota-status.js.map
