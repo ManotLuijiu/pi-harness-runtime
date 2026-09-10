@@ -27,7 +27,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -1456,7 +1462,7 @@ export class LoopDaemon {
 				verdict,
 				iterations,
 				finishedAt: new Date().toISOString(),
-		});
+			});
 			// Use taskId as filename; .json extension so it reads as JSON
 			const safeId = task.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
 			writeFileSync(join(dir, `${safeId}.json`), payload, "utf8");
