@@ -7,7 +7,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { WriteReviewStatus, ReviewPhase, Verdict } from "./types.js";
+import type {
+	WriteReviewStatus,
+	ReviewPhase,
+	Verdict,
+	PingPongDecisionSnapshot,
+} from "./types.js";
 
 const DEFAULT_DIR = ".write-review";
 const STATUS_FILE = "status.json";
@@ -70,6 +75,24 @@ export class WriteReviewBlackboard {
 	 */
 	getStatus(): WriteReviewStatus | null {
 		return this.status;
+	}
+
+	/**
+	 * Record the automatic decision that selected or skipped PING-PONG.
+	 * This is the durable middleware state shared by separate agent terminals.
+	 */
+	recordPingPongDecision(snapshot: PingPongDecisionSnapshot): void {
+		if (!this.status) this.init();
+		this.status!.mode = "ping_pong";
+		this.status!.pingPong = snapshot;
+		this.status!.writerMessage = snapshot.request;
+		if (snapshot.decision === "run_ping_pong") {
+			this.status!.phase = "writing";
+			this.status!.writerDone = false;
+		} else {
+			this.status!.phase = "idle";
+		}
+		this.save();
 	}
 
 	/**

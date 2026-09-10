@@ -21,6 +21,17 @@ export type ReviewPhase =
  */
 export type Verdict = "approved" | "changes_requested" | "blocked";
 
+export interface PingPongDecisionSnapshot {
+	decision: "run_ping_pong" | "suggest_ping_pong" | "handle_inline";
+	score: number;
+	runThreshold: number;
+	suggestThreshold: number;
+	reasons: string[];
+	request: string;
+	taskId?: string;
+	createdAt: string;
+}
+
 /**
  * Blackboard status record
  */
@@ -37,6 +48,8 @@ export interface WriteReviewStatus {
 	changesRequested?: string[]; // Changes needed
 	approvedAt?: string; // ISO timestamp
 	blockedAt?: string; // ISO timestamp
+	mode?: "manual" | "ping_pong";
+	pingPong?: PingPongDecisionSnapshot;
 	updatedAt: string;
 	createdAt: string;
 }
