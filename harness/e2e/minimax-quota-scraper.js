@@ -473,3 +473,4 @@ export class MiniMaxQuotaManager {
         return this.scraper.hasCookieFile();
     }
 }
+//# sourceMappingURL=minimax-quota-scraper.js.map

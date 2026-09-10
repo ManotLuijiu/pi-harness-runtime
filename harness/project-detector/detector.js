@@ -281,3 +281,4 @@ export class ProjectDetector {
         return lines.join("\n");
     }
 }
+//# sourceMappingURL=detector.js.map

@@ -291,3 +291,4 @@ export class SessionMemoryManager {
 export function createSessionMemoryManager(jobId, rootDir) {
     return new SessionMemoryManager(jobId, rootDir);
 }
+//# sourceMappingURL=session-memory.js.map

@@ -48,7 +48,19 @@ export { PerformanceOptimizer, createPerformanceOptimizer, } from "../packages/p
 export { EvaluationEngine, createEvaluationEngine, } from "../packages/evaluation-engine/src/index.js";
 // --- RFC-0058: Learning Engine ---------------------------------------------
 export { LearningEngine, createLearningEngine, } from "../packages/learning-engine/src/index.js";
+// --- GLM Quota Countdown -----------------------------------------------
+export { GLMQuotaCountdown, getGLMQuotaCountdown, parseGLMResetTime, formatCountdown, } from "./glm-quota-countdown.js";
+// --- GLM Quota Logger ---------------------------------------------
+export { logInfo, logWarn, logError, logCountdownStarted, logCountdownTick, logCountdownComplete, logAutoResumeSuccess, logAutoResumeFailed, logNotificationSent, logNotificationFailed, logMirrorUpdate, logQuotaExhausted, logCountdownCancelled, logResetTimeParseError, getLogFilePath, } from "./glm-quota-logger.js";
 // --- RFC-0059: Experience Replay ------------------------------------------
 export { ExperienceReplay, createExperienceReplay, } from "../packages/experience-replay/src/index.js";
 // --- RFC-0060: Memory Engine -----------------------------------------------
 export { MemoryEngine, createMemoryEngine, } from "../packages/memory-engine/src/index.js";
+// --- E2E Testing (RFC-0101) -----------------------------------------------
+export { detectProjectType, detectAvailableTools, getRecommendedTools, makeSmartDecision, generateToolsPresentation, getE2EToolsConfig, } from "./e2e/tools-detector.js";
+export { runAutoTestLoop } from "./e2e/auto-test-loop.js";
+// --- Skill SaaS Sync (RFC-0106) ----------------------------------------
+export { syncSkillsFromSaaS, getSkillFromSaaS, isSkillSyncConfigured, getSyncStatus, } from "./skill-sync.js";
+// --- SSH Hang Recovery (auto-recovery from SSH hangs) -------------------
+export { sshWithRecovery, pm2Restart, getPM2Status, safeSSHCommand, pingServer, } from "./ssh-hang-recovery.js";
+//# sourceMappingURL=index.js.map

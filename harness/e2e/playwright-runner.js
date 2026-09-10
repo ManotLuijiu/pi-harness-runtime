@@ -131,7 +131,7 @@ export class PlaywrightE2ERunner {
             throw new Error("Browser not started");
         const result = await this.page.evaluate((cond) => {
             // eslint-disable-next-line no-eval
-            return eval(String(cond)); // eslint-disable-line
+            return (new Function("cond", `return ${cond}`))();
         }, condition);
         if (!result && message) {
             throw new Error(message);
@@ -163,3 +163,4 @@ export class PlaywrightE2ERunner {
         await this.page.context().tracing.stop({ path: outputPath });
     }
 }
+//# sourceMappingURL=playwright-runner.js.map

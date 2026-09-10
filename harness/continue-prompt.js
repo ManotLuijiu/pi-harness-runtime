@@ -157,8 +157,9 @@ export class ContinuePromptGenerator {
     truncateContent(content, maxLength) {
         if (content.length <= maxLength)
             return content;
-        return content.substring(0, maxLength) + "... [truncated]";
+        return `${content.substring(0, maxLength)}... [truncated]`;
     }
 }
 // --- Singleton Instance ------------------------------------------------------
 export const continuePromptGenerator = new ContinuePromptGenerator();
+//# sourceMappingURL=continue-prompt.js.map

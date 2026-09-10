@@ -109,7 +109,8 @@ export class AutoCompactEngine {
         this.ensureDir();
         // Append to events log
         const eventsPath = join(this.rootDir, "compaction_events.jsonl");
-        appendFileSync(eventsPath, JSON.stringify(event) + "\n", "utf-8");
+        appendFileSync(eventsPath, `${JSON.stringify(event)}
+`, "utf-8");
         // Write latest summary
         const summaryPath = join(this.rootDir, "latest_compaction_summary.md");
         const summary = this.generateSummary(event);
@@ -241,3 +242,4 @@ Continue attempts: ${this.continueAttempts}/${this.maxAttempts}
         }
     }
 }
+//# sourceMappingURL=auto-compact.js.map

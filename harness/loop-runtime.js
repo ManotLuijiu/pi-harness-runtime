@@ -20,6 +20,8 @@ import { createSessionMemoryManager, } from "./session-memory.js";
 import { AutoCompactEngine } from "./auto-compact.js";
 import { OutputLimitHandler } from "./output-limit-handler.js";
 import { createForkedSummarizer, } from "./forked-summarizer.js";
+// GLM quota error parsing for 429 responses
+import { parseGLMErrorResetTime, parseMinimaxOverloadResetTime, } from "./e2e/glm-quota-scraper.js";
 // --- Constants ----------------------------------------------------------------
 const DEFAULT_MAX_COMPACT_RETRIES = 3;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
@@ -124,9 +126,7 @@ export class LoopRuntime {
                     await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
                     // Re-check mirror — quota may have reset early
                     const fresh = await this.callbacks.onCheckMirror?.("minimax");
-                    if (fresh &&
-                        fresh.h5_used_pct !== undefined &&
-                        fresh.h5_used_pct < 100) {
+                    if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
                         break; // quota reset early, resume now
                     }
                 }
@@ -284,13 +284,68 @@ export class LoopRuntime {
                     }
                     continue;
                 }
-                // Error without compact — surface it
-                throw new Error(result.error ?? "Unknown invoke error");
+                // Error without compact — check for GLM 429 quota error
+                const errMsg = result.error ?? "Unknown invoke error";
+                if (errMsg.includes("1308") || errMsg.includes("Usage limit")) {
+                    const resetTime = parseGLMErrorResetTime(errMsg);
+                    if (resetTime) {
+                        const resetEpoch = new Date(resetTime).getTime();
+                        this.mirrorStore.writeProvider("minimax", {
+                            provider: "minimax",
+                            synced_at: new Date().toISOString(),
+                            source: "tui-signal",
+                            h5_used_pct: 100,
+                            h5_resets_at_epoch: resetEpoch,
+                        });
+                        console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
+                    }
+                    await this.handleQuotaPause();
+                    return;
+                }
+                throw new Error(errMsg);
             }
             // Fallback: direct invoke without orchestrator
             const result = await this.callbacks.onInvokeAgent?.(invokeOptions);
             if (!result || !result.success) {
-                throw new Error(result?.error ?? "Invoke failed");
+                const errorMsg = result?.error ?? "Invoke failed";
+                // Check if this is a GLM 429 quota error with reset time
+                if (errorMsg.includes("1308") || errorMsg.includes("Usage limit")) {
+                    const resetTime = parseGLMErrorResetTime(errorMsg);
+                    if (resetTime) {
+                        // Update mirror with reset epoch so auto-resume works
+                        const resetEpoch = new Date(resetTime).getTime();
+                        this.mirrorStore.writeProvider("minimax", {
+                            provider: "minimax",
+                            synced_at: new Date().toISOString(),
+                            source: "tui-signal",
+                            h5_used_pct: 100,
+                            h5_resets_at_epoch: resetEpoch,
+                        });
+                        console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
+                    }
+                    // Handle quota pause instead of throwing
+                    await this.handleQuotaPause();
+                    return;
+                }
+                // Check if this is a Minimax 529 overloaded error
+                if (errorMsg.includes("529") && errorMsg.includes("overloaded_error")) {
+                    const resetEpoch = parseMinimaxOverloadResetTime(errorMsg);
+                    if (resetEpoch) {
+                        // Update mirror with reset epoch so auto-resume works
+                        this.mirrorStore.writeProvider("minimax", {
+                            provider: "minimax",
+                            synced_at: new Date().toISOString(),
+                            source: "tui-signal",
+                            h5_used_pct: 100,
+                            h5_resets_at_epoch: resetEpoch,
+                        });
+                        console.log(`[LoopRuntime] Minimax overloaded, auto-resume in ~2min`);
+                    }
+                    // Handle quota pause instead of throwing
+                    await this.handleQuotaPause();
+                    return;
+                }
+                throw new Error(errorMsg);
             }
             const continued = await this.handleAutoContinuation(compactMessages, result, task, outputLimitHandler);
             if (continued) {
@@ -529,3 +584,4 @@ export class LoopRuntime {
         return this.run();
     }
 }
+//# sourceMappingURL=loop-runtime.js.map
