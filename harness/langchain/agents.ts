@@ -147,6 +147,176 @@ IMPORTANT:
 - Do NOT output a summary for a human — the loop reads the verdict
 - Keep iterating until approved or truly blocked, then output a verdict`;
 
+// ─── ADK ParallelAgent Pattern: Specialist Reviewers ─────────────────────────
+// ADK equivalent: ParallelAgent([SecurityAuditor, StyleEnforcer, PerfAnalyst])
+// This runs 3 specialist reviews in parallel via Promise.all.
+// Each specialist focuses on one dimension — faster and more thorough than
+// one monolithic reviewer.
+
+export type SpecialistType = "security" | "style" | "performance";
+
+const SPECIALIST_PROMPTS: Record<SpecialistType, string> = {
+	security: `You are a Security Auditor in an autonomous code review loop.
+
+FOCUS: Find real security vulnerabilities only. Do NOT flag style, formatting, or performance issues.
+
+Check for:
+- SQL injection, command injection, path traversal
+- Hardcoded secrets, API keys, passwords in code
+- Insecure deserialization, XXE, SSRF
+- Authentication/authorization bypass patterns
+- Unsafe eval/Function/exec with user input
+- Missing input validation on security-sensitive operations
+- Insecure file operations, TOCTOU
+- Weak crypto, improper SSL/TLS usage
+
+Output a structured verdict. Do NOT say "looks good overall" — give a precise security assessment.`,
+
+	style: `You are a Code Style and Maintainability Auditor in an autonomous code review loop.
+
+FOCUS: Check style, readability, and maintainability only. Do NOT flag security vulnerabilities or performance issues.
+
+Check for:
+- Consistent naming conventions (camelCase vs snake_case)
+- Missing or inconsistent JSDoc/type annotations
+- Overly complex functions (cyclomatic complexity)
+- Magic numbers without named constants
+- Deeply nested callbacks / callback hell
+- Missing error handling or empty catch blocks
+- Unused imports or variables
+- Inconsistent error handling patterns
+
+Output a structured verdict. Focus on real maintainability problems, not personal preferences.`,
+
+	performance: `You are a Performance Analyst in an autonomous code review loop.
+
+FOCUS: Find real performance and scalability problems only. Do NOT flag style or security (unless it causes a performance issue).
+
+Check for:
+- N+1 query patterns (DB, HTTP, file I/O)
+- Synchronous blocking operations in async code
+- Memory leaks (unbounded arrays, missing cleanup)
+- Expensive operations in hot paths (loops, regex in loops)
+- Missing pagination or cursor-based iteration
+- Unbounded recursion without memoization
+- Inefficient data structures (array search vs Map/Set)
+- Missing caching where repeated computation occurs
+
+Output a structured verdict. Flag only real performance problems, not premature optimizations.`,
+};
+
+/** Create a specialist reviewer agent for parallel review. */
+export function createSpecialistReviewer(
+	type: SpecialistType,
+	opts: ModelOptions = {},
+) {
+	return createAgent({
+		model: createReviewerModel(opts),
+		tools: [],
+		systemPrompt: SPECIALIST_PROMPTS[type],
+		responseFormat: ReviewVerdictSchema,
+	});
+}
+
+/**
+ * ADK ParallelAgent equivalent: run multiple specialist reviews in parallel.
+ * Returns aggregated verdict — approved only if ALL specialists pass.
+ */
+export async function parallelReview(
+	specialists: {
+		security: ReturnType<typeof createSpecialistReviewer>;
+		style: ReturnType<typeof createSpecialistReviewer>;
+		performance: ReturnType<typeof createSpecialistReviewer>;
+	},
+	plan: string,
+	code: string,
+	writtenFiles: Record<string, string>,
+): Promise<ReviewVerdict> {
+	const codeSection =
+		Object.keys(writtenFiles).length > 0
+			? Object.entries(writtenFiles)
+					.map(
+						([path, content]) =>
+							`## ${path}\n\n\`\`\`\n${content}\n\`\`\`\n`,
+					)
+					.join("\n\n")
+			: `## Code\n\n\`\`\`\n${code}\n\`\`\`\n`;
+
+	const prompt = `## Plan\n${plan}\n\n${codeSection}`;
+
+	// ── ADK ParallelAgent: fan-out 3 specialists simultaneously ──
+	const [secResult, styleResult, perfResult] = await Promise.all([
+		specialists.security.invoke({
+			messages: [{ role: "user", content: prompt }],
+		}),
+		specialists.style.invoke({
+			messages: [{ role: "user", content: prompt }],
+		}),
+		specialists.performance.invoke({
+			messages: [{ role: "user", content: prompt }],
+		}),
+	]);
+
+	// Parse each specialist result
+	const parseResult = (
+		r: unknown,
+		_specialist: SpecialistType,
+	): { verdict: string; summary: string; comments: unknown[] } => {
+		if (typeof r === "object" && r !== null && "structuredResponse" in r) {
+			const sr = (r as { structuredResponse: { verdict: string; summary: string; comments: unknown[] } })
+				.structuredResponse;
+			return { verdict: sr.verdict, summary: sr.summary, comments: sr.comments };
+		}
+		return { verdict: "approved", summary: "", comments: [] };
+	};
+
+	const sec = parseResult(secResult, "security");
+	const style = parseResult(styleResult, "style");
+	const perf = parseResult(perfResult, "performance");
+
+	// ── ADK ParallelAgent: gather results and synthesize ──
+	const buildLabeledComments = (
+		comments: unknown[],
+		type: SpecialistType,
+	): { file?: string; comment: string; severity: "critical" | "major" | "minor" }[] =>
+		(comments ?? []).map((c) => {
+			const comment = c as { file?: string; comment: string; severity?: "critical" | "major" | "minor" };
+			return {
+				file: comment.file,
+				comment: `[${type}] ${comment.comment}`,
+				severity: comment.severity ?? "minor",
+			};
+		});
+
+	const labeledComments = [
+		...buildLabeledComments(sec.comments, "security"),
+		...buildLabeledComments(style.comments, "style"),
+		...buildLabeledComments(perf.comments, "performance"),
+	];
+
+	// Only approve if ALL specialists approve
+	let finalVerdict: ReviewVerdict["verdict"] = "approved";
+	if (
+		sec.verdict === "blocked" ||
+		style.verdict === "blocked" ||
+		perf.verdict === "blocked"
+	) {
+		finalVerdict = "blocked";
+	} else if (
+		sec.verdict === "changes_requested" ||
+		style.verdict === "changes_requested" ||
+		perf.verdict === "changes_requested"
+	) {
+		finalVerdict = "changes_requested";
+	}
+
+	return {
+		verdict: finalVerdict,
+		summary: `[security] ${sec.summary} | [style] ${style.summary} | [perf] ${perf.summary}`,
+		comments: labeledComments,
+	};
+}
+
 // ─── Agents ─────────────────────────────────────────────────────────────────
 
 export function createPlannerAgent(opts: ModelOptions = {}) {
