@@ -131,6 +131,38 @@ export function hasBareAmpersand(command: string): boolean {
 }
 
 /**
+ * Check if an SSH command has a `&& ... &` or `; ... &` pattern INSIDE
+ * the quoted remote command. This means: "run A, then run B, then background B".
+ *
+ * This is risky because SSH waits for the WHOLE quoted command chain to complete.
+ * If B hangs (import error, DB timeout, port conflict), SSH never exits.
+ *
+ * RISKY: ssh ... "cd X && python uvicorn ... &"
+ * RISKY: ssh ... "cmd1; cmd2 &".
+ * SAFE:  ssh ... "cmd &" (just backgrounds one command)
+ */
+export function hasCommandChainWithAmpersand(command: string): boolean {
+	if (!isSshCommand(command)) return false;
+	if (isDetachedPattern(command)) return false;
+
+	const sshRange = findLastSshCommand(command);
+	if (!sshRange) return false;
+	const sshPart = command.slice(sshRange.start, sshRange.end);
+
+	// Find the quoted remote command
+	const quoteMatch = sshPart.match(/['"](.+?)['"]\s*$/s);
+	if (!quoteMatch) return false;
+
+	const quotedContent = quoteMatch[1];
+	// Risky: command chain followed by &
+	// e.g. "cd /path && python uvicorn 2>&1 &"  or "cmd1 && cmd2 &"
+	// Safe: just one command with & ("cmd &") or detached ("cmd > log 2>&1 & echo DONE")
+	const trimmed = quotedContent.trim();
+	// Detect && or ; followed by anything, then &
+	return /&&.+\s+&\s*$/.test(trimmed) || /;.+\s+&\s*$/.test(trimmed);
+}
+
+/**
  * Transform a command to use detached SSH pattern.
  * Removes trailing unquoted & and appends nohup wrapper.
  *
@@ -154,46 +186,95 @@ export function transformToDetached(
 	const sshPart = command.slice(sshRange.start, sshRange.end);
 	const afterSsh = command.slice(sshRange.end);
 
-	// Find where the remote command argument ends (last closing quote)
-	let remoteCmdEnd = sshPart.length;
-	for (let i = sshPart.length - 1; i >= 0; i--) {
-		if (sshPart[i] === "\\" && i > 0) {
-			i--;
-			continue;
-		}
-		if (sshPart[i] === '"' || sshPart[i] === "'") {
-			const closeQuote = sshPart[i];
-			let found = false;
-			for (let j = i - 1; j >= 0; j--) {
-				if (sshPart[j] === "\\") {
-					j--;
-					continue;
+	// Helper: find the position AFTER the closing quote of the last quoted arg
+	// Returns position AFTER the closing quote, or s.length if no quotes found.
+	function findClosingQuotePos(s: string): number {
+		for (let i = s.length - 1; i >= 0; i--) {
+			if (s[i] === "\\" && i > 0) { i--; continue; }
+			if (s[i] === '"' || s[i] === "'") {
+				const cq = s[i];
+				let found = false;
+				for (let j = i - 1; j >= 0; j--) {
+					if (s[j] === "\\") { j--; continue; }
+					if (s[j] === cq) { found = true; break; }
 				}
-				if (sshPart[j] === closeQuote) {
-					found = true;
-					break;
-				}
-			}
-			if (found) {
-				remoteCmdEnd = i + 1;
-				break;
+				if (found) return i + 1; // AFTER closing quote
 			}
 		}
+		return s.length;
 	}
 
-	const sshPrefix = sshPart.slice(0, remoteCmdEnd).trimEnd();
-	const afterRemoteCmd = sshPart.slice(remoteCmdEnd);
+	// Helper: find the position OF the closing quote (excluding the quote itself)
+	function findClosingQuotePosExcl(s: string): number {
+		for (let i = s.length - 1; i >= 0; i--) {
+			if (s[i] === "\\" && i > 0) { i--; continue; }
+			if (s[i] === '"' || s[i] === "'") {
+				const cq = s[i];
+				let found = false;
+				for (let j = i - 1; j >= 0; j--) {
+					if (s[j] === "\\") { j--; continue; }
+					if (s[j] === cq) { found = true; break; }
+				}
+				if (found) return i; // AT (not after) closing quote
+			}
+		}
+		return s.length;
+	}
 
-	// Only transform if there's a trailing bare & OUTSIDE the quoted part
-	if (!/^\s*&\s*$/.test(afterRemoteCmd.trim())) return command;
+	// Pattern 1: bare & OUTSIDE the quoted remote command
+	// e.g. ssh host 'kill 123' &
+	// remoteCmdEnd1 includes the closing quote in sshPrefix
+	const remoteCmdEnd1 = findClosingQuotePos(sshPart);
+	const sshPrefix = sshPart.slice(0, remoteCmdEnd1).trimEnd();
+	const afterRemoteCmd = sshPart.slice(remoteCmdEnd1);
+	if (/^\s*&\s*$/.test(afterRemoteCmd.trim())) {
+		return (
+			beforeSsh +
+			sshPrefix +
+			` nohup '' > ${logFile} 2>&1 & echo 'SSH_DETACHED'` +
+			afterSsh
+		);
+	}
 
-	// Remove the trailing & and rebuild with nohup
-	return (
-		beforeSsh +
-		sshPrefix +
-		` nohup '' > ${logFile} 2>&1 & echo 'SSH_DETACHED'` +
-		afterSsh
-	);
+	// Pattern 2: command chain with & INSIDE the quoted part
+	// e.g. ssh host "cmd1 && cmd2 &"  or  ssh host "cmd1 && cmd2 2>&1 &"
+	// Find opening quote to exclude closing quote from beforeQuote (needed for chain regex)
+	let openQuotePos = -1;
+	for (let i = 0; i < sshPart.length; i++) {
+		if (sshPart[i] === "'" || sshPart[i] === '"') {
+			openQuotePos = i;
+			break;
+		}
+	}
+	if (openQuotePos < 0) return command;
+
+	// Exclude closing quote so chain regex can match the & that precedes it
+	const remoteCmdEnd2 = findClosingQuotePosExcl(sshPart);
+	const beforeQuote = sshPart.slice(0, remoteCmdEnd2);
+
+	// Chain with 2>&1 redirect first
+	const chainMatch2 = beforeQuote.match(/(.+?)(&&|;)\s*(.+?)\s+(2>&1)\s*&\s*$/);
+	if (chainMatch2) {
+		return (
+			beforeSsh +
+			chainMatch2[1] +
+			chainMatch2[2] +
+			` nohup ${chainMatch2[3]} ${chainMatch2[4]} & echo 'SSH_DETACHED'"`
+		);
+	}
+
+	// Chain without 2>&1
+	const chainMatch = beforeQuote.match(/(.+?)(&&|;)\s*(.+?)\s*&\s*$/);
+	if (chainMatch) {
+		return (
+			beforeSsh +
+			chainMatch[1] +
+			chainMatch[2] +
+			` nohup ${chainMatch[3]} > ${logFile} 2>&1 & echo 'SSH_DETACHED'"`
+		);
+	}
+
+	return command;
 }
 
 /**
