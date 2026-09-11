@@ -48,8 +48,7 @@ function loadNetscapeCookies(path) {
             trimmed = trimmed.slice("#HttpOnly_".length);
         }
         const parts = trimmed.split("\t");
-        if (parts.length < 7)
-            continue;
+        if (parts.length < 7) continue;
         const [domain, _flag, cookiePath, secure, expires, name, value] = parts;
         cookies.push({
             name,
@@ -68,16 +67,21 @@ function loadNetscapeCookies(path) {
  */
 function redact(text) {
     return text
-        .replace(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/g, "[JWT_REDACTED]")
-        .replace(/api[_ -]?key|access[_ -]?token|refresh[_ -]?token|authorization|cookie|session|secret/gi, (match) => `${match}=[REDACTED]`)
+        .replace(
+            /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/g,
+            "[JWT_REDACTED]",
+        )
+        .replace(
+            /api[_ -]?key|access[_ -]?token|refresh[_ -]?token|authorization|cookie|session|secret/gi,
+            (match) => `${match}=[REDACTED]`,
+        )
         .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
 }
 /**
  * Parse a percentage string like "50%" or "2%" into a number.
  */
 function parsePctStr(value) {
-    if (typeof value !== "string")
-        return undefined;
+    if (typeof value !== "string") return undefined;
     const m = value.match(/(\d+(?:\.\d+)?)/);
     return m ? parseFloat(m[1]) : undefined;
 }
@@ -85,22 +89,17 @@ function parsePctStr(value) {
  * Format remaining time until an epoch-ms deadline (e.g. "4 hr 37 min").
  */
 function formatRemainsMs(epochMs) {
-    if (typeof epochMs !== "number" || epochMs <= 0)
-        return undefined;
+    if (typeof epochMs !== "number" || epochMs <= 0) return undefined;
     const ms = epochMs - Date.now();
-    if (ms <= 0)
-        return "soon";
+    if (ms <= 0) return "soon";
     const totalMin = Math.floor(ms / 60000);
     const days = Math.floor(totalMin / 1440);
     const hr = Math.floor((totalMin % 1440) / 60);
     const min = totalMin % 60;
     const parts = [];
-    if (days > 0)
-        parts.push(`${days} day${days > 1 ? "s" : ""}`);
-    if (hr > 0)
-        parts.push(`${hr} hr`);
-    if (min > 0)
-        parts.push(`${min} min`);
+    if (days > 0) parts.push(`${days} day${days > 1 ? "s" : ""}`);
+    if (hr > 0) parts.push(`${hr} hr`);
+    if (min > 0) parts.push(`${min} min`);
     return parts.join(" ") || "0 min";
 }
 /**
@@ -160,10 +159,12 @@ export class MiniMaxQuotaScraper {
                 // 	"[MiniMaxQuotaScraper] direct API unavailable, falling back to browser",
                 // );
             }
-        }
-        catch (error) {
+        } catch (error) {
             if (!this.config.quiet) {
-                console.warn("[MiniMaxQuotaScraper] direct API failed:", error instanceof Error ? error.message : String(error));
+                console.warn(
+                    "[MiniMaxQuotaScraper] direct API failed:",
+                    error instanceof Error ? error.message : String(error),
+                );
             }
         }
         return this.scrapeViaBrowser();
@@ -175,8 +176,7 @@ export class MiniMaxQuotaScraper {
      */
     async scrapeViaDirectApi() {
         const cookies = loadNetscapeCookies(this.config.cookieFile);
-        if (cookies.length === 0)
-            return null;
+        if (cookies.length === 0) return null;
         const cookieHeader = cookies
             .map((c) => `${c.name}=${String(c.value).trim()}`)
             .join("; ");
@@ -190,22 +190,25 @@ export class MiniMaxQuotaScraper {
         // Primary: remains_percent gives 5h + weekly used % and reset times
         let general = null;
         try {
-            const resp = await fetch(`${base}/backend/account/token_plan/remains_percent`, { headers });
+            const resp = await fetch(
+                `${base}/backend/account/token_plan/remains_percent`,
+                { headers },
+            );
             if (resp.ok) {
-                const json = (await resp.json());
+                const json = await resp.json();
                 const arr = json?.model_remains;
                 if (Array.isArray(arr)) {
                     general =
-                        arr.find((m) => m.model_name === "general") ?? arr[0] ?? null;
+                        arr.find((m) => m.model_name === "general") ??
+                        arr[0] ??
+                        null;
                 }
             }
-        }
-        catch {
+        } catch {
             /* fall through to null */
         }
         // Not authenticated (or request failed) → no data
-        if (!general)
-            return null;
+        if (!general) return null;
         const h5UsedPct = parsePctStr(general.current_interval_used_percent);
         const weeklyUsedPct = parsePctStr(general.current_weekly_used_percent);
         const h5ResetsAtEpoch = general.end_time;
@@ -215,9 +218,12 @@ export class MiniMaxQuotaScraper {
         // Best-effort: token usage summary
         let tokenUsage;
         try {
-            const resp = await fetch(`${base}/backend/account/token_plan/usage_summary`, { headers });
+            const resp = await fetch(
+                `${base}/backend/account/token_plan/usage_summary`,
+                { headers },
+            );
             if (resp.ok) {
-                const json = (await resp.json());
+                const json = await resp.json();
                 if (json?.total_token_consumed) {
                     tokenUsage = {
                         total: json.total_token_consumed,
@@ -227,26 +233,29 @@ export class MiniMaxQuotaScraper {
                     };
                 }
             }
-        }
-        catch {
+        } catch {
             /* best-effort */
         }
         // Best-effort: credit balance. NOTE: the API response includes an
         // `api_key` field — we deliberately do NOT read or persist it.
         let creditBalance;
         try {
-            const resp = await fetch(`${base}/backend/account/token_plan_credit`, {
-                headers,
-            });
+            const resp = await fetch(
+                `${base}/backend/account/token_plan_credit`,
+                {
+                    headers,
+                },
+            );
             if (resp.ok) {
-                const json = (await resp.json());
-                if (typeof json?.remaining_credits === "number" &&
-                    typeof json?.total_credits === "number") {
+                const json = await resp.json();
+                if (
+                    typeof json?.remaining_credits === "number" &&
+                    typeof json?.total_credits === "number"
+                ) {
                     creditBalance = `${json.remaining_credits} / ${json.total_credits}`;
                 }
             }
-        }
-        catch {
+        } catch {
             /* best-effort */
         }
         return {
@@ -275,9 +284,9 @@ export class MiniMaxQuotaScraper {
         let playwright = null;
         try {
             playwright = await import("playwright");
-        }
-        catch {
-            const msg = "Playwright not installed. Install with: bun add playwright\nThen install browsers: bunx playwright install chromium";
+        } catch {
+            const msg =
+                "Playwright not installed. Install with: bun add playwright\nThen install browsers: bunx playwright install chromium";
             if (!this.config.quiet)
                 console.error("[DEBUG MiniMaxQuotaScraper] " + msg);
             throw new Error(msg);
@@ -331,14 +340,15 @@ Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:
             // Wait for content to load
             try {
                 await page.waitForLoadState("networkidle", { timeout: 45000 });
-            }
-            catch {
+            } catch {
                 // Network idle might not be achievable
             }
             // Additional wait for JS rendering
             await page.waitForTimeout(5000);
             // Extract visible text
-            const visibleText = redact(await page.locator("body").innerText({ timeout: 10000 }));
+            const visibleText = redact(
+                await page.locator("body").innerText({ timeout: 10000 }),
+            );
             // Parse the visible text
             const quotaData = parseMiniMaxQuotaText(visibleText);
             // Capture API endpoint URLs
@@ -357,8 +367,7 @@ Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:
                 scrapedAt: new Date().toISOString(),
             };
             return result;
-        }
-        finally {
+        } finally {
             await browser.close();
         }
     }
@@ -375,31 +384,26 @@ Drop your platform.minimax.io cookies (Netscape or EditThisCookie JSON) into:
      */
     hasCookieFile() {
         // Canonical cache present?
-        if (existsSync(this.config.cookieFile))
-            return true;
+        if (existsSync(this.config.cookieFile)) return true;
         // Drop folder has anything readable? (Sync would normalize it on the next trigger.)
         try {
             const dropDir = join(homedir(), ".pi-harness-runtime", "cookies");
             if (existsSync(dropDir)) {
                 const entries = readdirSync(dropDir);
-                if (entries.length > 0)
-                    return true;
+                if (entries.length > 0) return true;
                 // One-level walk into subfolders.
                 for (const name of entries) {
                     try {
                         if (statSync(join(dropDir, name)).isDirectory()) {
                             const sub = readdirSync(join(dropDir, name));
-                            if (sub.length > 0)
-                                return true;
+                            if (sub.length > 0) return true;
                         }
-                    }
-                    catch {
+                    } catch {
                         // ignore unreadable sub-entry
                     }
                 }
             }
-        }
-        catch {
+        } catch {
             // best-effort; treat as no
         }
         return false;
@@ -448,17 +452,18 @@ export class MiniMaxQuotaManager {
      */
     async getQuota(forceRefresh = false) {
         const now = Date.now();
-        if (!forceRefresh &&
+        if (
+            !forceRefresh &&
             this.lastQuota &&
-            now - this.lastFetchTime < this.cacheDurationMs) {
+            now - this.lastFetchTime < this.cacheDurationMs
+        ) {
             return this.lastQuota;
         }
         try {
             this.lastQuota = await this.scraper.scrape();
             this.lastFetchTime = now;
             return this.lastQuota;
-        }
-        catch (error) {
+        } catch (error) {
             // Return cached value if available
             if (this.lastQuota) {
                 return this.lastQuota;
