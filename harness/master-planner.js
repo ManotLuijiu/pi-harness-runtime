@@ -40,20 +40,28 @@ export class MasterPlanner {
             let taskList;
             if (this.options.planningProvider) {
                 // Use LLM to generate task list
-                const response = await this.options.planningProvider.call(userPrompt, DEFAULT_SYSTEM_PROMPT);
+                const response = await this.options.planningProvider.call(
+                    userPrompt,
+                    DEFAULT_SYSTEM_PROMPT,
+                );
                 const parsed = this.parsePlanningResponse(response);
                 if (!parsed) {
-                    return { success: false, error: "Failed to parse planning response" };
+                    return {
+                        success: false,
+                        error: "Failed to parse planning response",
+                    };
                 }
                 taskList = parsed;
-            }
-            else {
+            } else {
                 // Use heuristic planner for simple requirements
                 taskList = this.heuristicPlan(requirement);
             }
             // Validate the task list
             if (taskList.length === 0) {
-                return { success: false, error: "No tasks generated from requirement" };
+                return {
+                    success: false,
+                    error: "No tasks generated from requirement",
+                };
             }
             // Validate dependencies (no cycles, all deps exist)
             const taskIds = new Set(taskList.map((t) => t.id));
@@ -70,14 +78,19 @@ export class MasterPlanner {
             // Create task graph
             const graphManager = new TaskGraphManager({ jobId });
             for (const task of taskList) {
-                graphManager.addTask(task.id, task.title, task.description, task.dependencies, task.acceptanceCriteria);
+                graphManager.addTask(
+                    task.id,
+                    task.title,
+                    task.description,
+                    task.dependencies,
+                    task.acceptanceCriteria,
+                );
             }
             const graph = graphManager.getGraph();
             // Save the graph
             await graphManager.save(rootDir);
             return { success: true, graph };
-        }
-        catch (error) {
+        } catch (error) {
             return { success: false, error: String(error) };
         }
     }
@@ -86,7 +99,8 @@ export class MasterPlanner {
      */
     parsePlanningResponse(response) {
         // Try to extract JSON from response
-        const jsonMatch = response.match(/```json\n([\s\S]*?)\n```/) ??
+        const jsonMatch =
+            response.match(/```json\n([\s\S]*?)\n```/) ??
             response.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
         if (!jsonMatch) {
             console.error("Failed to extract JSON from planning response");
@@ -96,8 +110,7 @@ export class MasterPlanner {
         try {
             const parsed = JSON.parse(jsonStr);
             return parsed.tasks ?? [];
-        }
-        catch {
+        } catch {
             console.error("Failed to parse JSON from planning response");
             return null;
         }
@@ -122,9 +135,11 @@ export class MasterPlanner {
             ],
         });
         // Task 2: Implementation
-        if (req.includes("api") ||
+        if (
+            req.includes("api") ||
             req.includes("endpoint") ||
-            req.includes("backend")) {
+            req.includes("backend")
+        ) {
             tasks.push({
                 id: "task-002",
                 title: "Implement API endpoints",
@@ -137,9 +152,11 @@ export class MasterPlanner {
                 ],
             });
         }
-        if (req.includes("database") ||
+        if (
+            req.includes("database") ||
             req.includes("model") ||
-            req.includes("schema")) {
+            req.includes("schema")
+        ) {
             tasks.push({
                 id: "task-003",
                 title: "Implement database schema",
@@ -152,10 +169,12 @@ export class MasterPlanner {
                 ],
             });
         }
-        if (req.includes("ui") ||
+        if (
+            req.includes("ui") ||
             req.includes("frontend") ||
             req.includes("page") ||
-            req.includes("component")) {
+            req.includes("component")
+        ) {
             tasks.push({
                 id: "task-004",
                 title: "Implement UI components",
@@ -198,7 +217,8 @@ export class MasterPlanner {
         tasks.push({
             id: "task-012",
             title: "Code review",
-            description: "Review code for quality, security, and best practices",
+            description:
+                "Review code for quality, security, and best practices",
             dependencies: ["task-011"],
             acceptanceCriteria: [
                 "Code follows project style guide",
@@ -223,7 +243,14 @@ export function parseRequirementIntoTasks(requirement, jobId) {
     const taskList = planner.heuristicPlan(requirement);
     const graphManager = new TaskGraphManager({ jobId });
     for (const task of taskList) {
-        graphManager.addTask(task.id, task.title, task.description, task.dependencies, task.acceptanceCriteria);
+        graphManager.addTask(
+            task.id,
+            task.title,
+            task.description,
+            task.dependencies,
+            task.acceptanceCriteria,
+        );
     }
     return graphManager;
 }
+//# sourceMappingURL=master-planner.js.map

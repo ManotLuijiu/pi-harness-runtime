@@ -15,10 +15,16 @@
  *     latest_compaction_summary.md
  *     continue_prompt.md
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, } from "node:fs";
+import {
+    appendFileSync,
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { continuePromptGenerator, } from "./continue-prompt.js";
+import { continuePromptGenerator } from "./continue-prompt.js";
 const COMPACTION_PATTERNS = [
     /\[compaction\]/i,
     /compacted from \d+[,.]?\d* tokens/i,
@@ -45,7 +51,7 @@ export class AutoCompactEngine {
     constructor(config) {
         this.rootDir =
             config.rootDir ??
-                join(homedir(), ".pi", "harness", config.jobId, "context");
+            join(homedir(), ".pi", "harness", config.jobId, "context");
         this.jobId = config.jobId;
         this.requirement = config.requirement ?? "";
         this.maxAttempts = config.maxContinueAttempts ?? 5;
@@ -70,21 +76,20 @@ export class AutoCompactEngine {
         let reason = "unknown";
         let errorMessage;
         // Extract compacted token count
-        const tokenMatch = output.match(/compacted from ([,\d]+(?:\.\d+)?)\s*tokens/i);
+        const tokenMatch = output.match(
+            /compacted from ([,\d]+(?:\.\d+)?)\s*tokens/i,
+        );
         if (tokenMatch) {
             compactedFromTokens = parseInt(tokenMatch[1].replace(/,/g, ""), 10);
         }
         // Extract reason
         if (/output.*token.*limit/i.test(output)) {
             reason = "output_token_limit";
-        }
-        else if (/context.*truncated/i.test(output)) {
+        } else if (/context.*truncated/i.test(output)) {
             reason = "context_truncated";
-        }
-        else if (/session.*compact/i.test(output)) {
+        } else if (/session.*compact/i.test(output)) {
             reason = "session_compact";
-        }
-        else if (/\[Earlier conversation summarized\]/i.test(output)) {
+        } else if (/\[Earlier conversation summarized\]/i.test(output)) {
             reason = "context_compact";
         }
         // Extract error message
@@ -109,7 +114,12 @@ export class AutoCompactEngine {
         this.ensureDir();
         // Append to events log
         const eventsPath = join(this.rootDir, "compaction_events.jsonl");
-        appendFileSync(eventsPath, JSON.stringify(event) + "\n", "utf-8");
+        appendFileSync(
+            eventsPath,
+            `${JSON.stringify(event)}
+`,
+            "utf-8",
+        );
         // Write latest summary
         const summaryPath = join(this.rootDir, "latest_compaction_summary.md");
         const summary = this.generateSummary(event);
@@ -216,9 +226,11 @@ ${event.errorMessage ? `**Error:** ${event.errorMessage}` : ""}
 
 Session was compacted due to ${event.reason}.
 
-${event.compactedFromTokens > 0
-            ? `Context was reduced from approximately ${event.compactedFromTokens.toLocaleString()} tokens.`
-            : "Context was compacted."}
+${
+    event.compactedFromTokens > 0
+        ? `Context was reduced from approximately ${event.compactedFromTokens.toLocaleString()} tokens.`
+        : "Context was compacted."
+}
 
 ## Next Step
 
@@ -235,9 +247,9 @@ Continue attempts: ${this.continueAttempts}/${this.maxAttempts}
         try {
             const files = readFileSync(join(partialDir, "files.json"), "utf-8");
             return JSON.parse(files);
-        }
-        catch {
+        } catch {
             return [];
         }
     }
 }
+//# sourceMappingURL=auto-compact.js.map

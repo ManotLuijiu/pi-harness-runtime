@@ -24,10 +24,10 @@ const FAILURE_PATTERNS = {
     "compilation error": "build_error",
     quota: "quota_exhausted",
     "rate limit": "quota_exhausted",
-    "429": "quota_exhausted",
-    "500": "provider_error",
-    "502": "provider_error",
-    "503": "provider_error",
+    429: "quota_exhausted",
+    500: "provider_error",
+    502: "provider_error",
+    503: "provider_error",
     connection: "provider_error",
     timeout: "provider_error",
 };
@@ -76,8 +76,7 @@ export class RepairEngine {
      */
     recordAttempt(repairTaskId, description, success, output) {
         const task = this.repairTasks.get(repairTaskId);
-        if (!task)
-            return;
+        if (!task) return;
         const attempt = {
             attempt: task.attemptedFixes.length + 1,
             description,
@@ -89,11 +88,12 @@ export class RepairEngine {
         if (success) {
             task.status = "resolved";
             task.resolvedAt = new Date().toISOString();
-        }
-        else if (attempt.attempt >= task.retryPolicy.maxRetries) {
+        } else if (attempt.attempt >= task.retryPolicy.maxRetries) {
             // Check if should escalate
-            if (task.retryPolicy.escalationAfter &&
-                attempt.attempt >= task.retryPolicy.escalationAfter) {
+            if (
+                task.retryPolicy.escalationAfter &&
+                attempt.attempt >= task.retryPolicy.escalationAfter
+            ) {
                 task.status = "escalated";
             }
         }
@@ -105,11 +105,9 @@ export class RepairEngine {
      */
     getNextRetryDelay(repairTaskId) {
         const task = this.repairTasks.get(repairTaskId);
-        if (!task)
-            return null;
+        if (!task) return null;
         const attempt = task.attemptedFixes.length;
-        if (attempt >= task.retryPolicy.maxRetries)
-            return null;
+        if (attempt >= task.retryPolicy.maxRetries) return null;
         const { backoffMs, backoffMultiplier } = task.retryPolicy;
         return backoffMs * backoffMultiplier ** attempt;
     }
@@ -118,8 +116,7 @@ export class RepairEngine {
      */
     shouldEscalate(repairTaskId) {
         const task = this.repairTasks.get(repairTaskId);
-        if (!task)
-            return false;
+        if (!task) return false;
         return task.status === "escalated";
     }
     /**
@@ -128,7 +125,9 @@ export class RepairEngine {
     getRepairTasks(jobId) {
         // const path = join(this.rootDir, "jobs", jobId, "repair-tasks.jsonl");
         // In practice, this would read from file. For now, return in-memory.
-        return Array.from(this.repairTasks.values()).filter((t) => t.originalTaskId.startsWith(`task-${jobId}`));
+        return Array.from(this.repairTasks.values()).filter((t) =>
+            t.originalTaskId.startsWith(`task-${jobId}`),
+        );
     }
     /**
      * Get repair summary
@@ -137,7 +136,9 @@ export class RepairEngine {
         const tasks = this.getRepairTasks(jobId);
         return {
             total: tasks.length,
-            pending: tasks.filter((t) => t.status === "pending" || t.status === "in_progress").length,
+            pending: tasks.filter(
+                (t) => t.status === "pending" || t.status === "in_progress",
+            ).length,
             resolved: tasks.filter((t) => t.status === "resolved").length,
             escalated: tasks.filter((t) => t.status === "escalated").length,
         };
@@ -147,7 +148,12 @@ export class RepairEngine {
      */
     analyzeAndRepair(originalTaskId, errorMessage, options) {
         const failureType = this.classifyFailure(errorMessage);
-        const repairTask = this.createRepairTask(originalTaskId, failureType, errorMessage, options);
+        const repairTask = this.createRepairTask(
+            originalTaskId,
+            failureType,
+            errorMessage,
+            options,
+        );
         const guidance = this.generateGuidance(repairTask);
         return { repairTask, guidance };
     }
@@ -210,7 +216,12 @@ export class RepairEngine {
      * Save repair task to file
      */
     saveRepairTask(task) {
-        const path = join(this.rootDir, "jobs", task.originalTaskId.split("-")[1] ?? "unknown", "repair-tasks.jsonl");
+        const path = join(
+            this.rootDir,
+            "jobs",
+            task.originalTaskId.split("-")[1] ?? "unknown",
+            "repair-tasks.jsonl",
+        );
         mkdirSync(dirname(path), { recursive: true });
         appendJsonl(path, task);
     }
@@ -243,14 +254,19 @@ export class RepairEngine {
             lines.push(`  Original: ${task.originalTaskId}`);
             lines.push(`  Type: ${task.failureType}`);
             lines.push(`  Description: ${task.description}`);
-            lines.push(`  Attempts: ${task.attemptedFixes.length}/${task.retryPolicy.maxRetries}`);
+            lines.push(
+                `  Attempts: ${task.attemptedFixes.length}/${task.retryPolicy.maxRetries}`,
+            );
             if (task.attemptedFixes.length > 0) {
                 lines.push("  Attempt History:");
                 for (const fix of task.attemptedFixes) {
-                    lines.push(`    - [${fix.success ? "✓" : "✗"}] ${fix.description}`);
+                    lines.push(
+                        `    - [${fix.success ? "✓" : "✗"}] ${fix.description}`,
+                    );
                 }
             }
         }
         return lines.join("\n");
     }
 }
+//# sourceMappingURL=repair-engine.js.map

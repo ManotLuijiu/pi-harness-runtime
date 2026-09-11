@@ -174,19 +174,14 @@ export class ProjectDetector {
             try {
                 const rootFiles = readdirSync(rootDir);
                 for (const file of rootFiles) {
-                    if (file.includes("package.json"))
-                        files.push(file);
-                    if (file.includes("vite.config"))
-                        files.push(file);
-                    if (file.includes("next.config"))
-                        files.push(file);
+                    if (file.includes("package.json")) files.push(file);
+                    if (file.includes("vite.config")) files.push(file);
+                    if (file.includes("next.config")) files.push(file);
                 }
-            }
-            catch {
+            } catch {
                 // Ignore errors
             }
-        }
-        catch {
+        } catch {
             // Return empty on error
         }
         return files;
@@ -236,8 +231,7 @@ export class ProjectDetector {
                 if (pkg?.version) {
                     info.version = pkg.version;
                 }
-            }
-            catch {
+            } catch {
                 // Ignore
             }
         }
@@ -281,3 +275,4 @@ export class ProjectDetector {
         return lines.join("\n");
     }
 }
+//# sourceMappingURL=detector.js.map

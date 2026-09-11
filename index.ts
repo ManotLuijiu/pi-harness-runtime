@@ -117,6 +117,38 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+// --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
+// Prevents 2000+ second hangs when SSH background commands aren't detached.
+// Intercepts every bash tool call before execution and rewrites risky SSH commands.
+async function initSshDetachInterceptor(pi: ExtensionAPI): Promise<void> {
+	try {
+		const {
+			isSshCommand,
+			isDetachedPattern,
+			hasBareAmpersand,
+			transformToDetached,
+		} = await import("./harness/ssh-detach-interceptor.js");
+		// Register on tool_call with default priority (100)
+		pi.on("tool_call", (event, _api) => {
+			if (event.toolName !== "bash") return {};
+			const command = (event.input as { command?: string }).command ?? "";
+
+			if (!isSshCommand(command)) return {};
+			if (isDetachedPattern(command)) return {};
+			if (!hasBareAmpersand(command)) return {};
+
+			// Transform to detached pattern
+			const transformed = transformToDetached(command);
+			if (transformed !== command) {
+				(event.input as { command: string }).command = transformed;
+			}
+			return {};
+		});
+	} catch {
+		// ssh-detach-interceptor not available
+	}
+}
+
 // --- loop-completions: Watch daemon loop completions → update TUI todos ---------
 // When the daemon loop finishes, it writes a completion event to
 // ~/.pi-harness-runtime/loop-completions/. The harness extension watches this
@@ -210,7 +242,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 	}
 }
 import { homedir } from "node:os";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // --- Debug log → file instead of TUI ---------------------------------
@@ -354,6 +386,9 @@ export default function (pi: ExtensionAPI) {
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
 
+	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
+	void initSshDetachInterceptor(pi);
+
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
 
@@ -402,8 +437,29 @@ AFTER running any Docker build command (docker build, docker compose build, dock
 4. For aggressive cleanup: \`docker builder prune -a -f\` (removes ALL unused cache)
 `;
 	let firstAgentStart = true;
-	pi.on("before_agent_start", async (event) => {
+	// --- Auto-Load RULES.md -----------------------------------------------
+	// pi-coding-agent only auto-loads AGENTS.md/CLAUDE.md.
+	// We add RULES.md and PROJECT_RULES.md here so agents always read them.
+	const RULE_FILE_NAMES = ["RULES.md", "PROJECT_RULES.md"];
+
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (firstAgentStart) {
+			// Load RULES.md files from project root
+			for (const ruleFile of RULE_FILE_NAMES) {
+				const rulePath = join(ctx.cwd, ruleFile);
+				if (existsSync(rulePath)) {
+					try {
+						const content = readFileSync(rulePath, "utf-8");
+						// Only inject if file has substantial content (skip empty/placeholder files)
+						if (content.trim().length > 50) {
+							event.systemPrompt += `\n\n# ${ruleFile}\n${content.trim()}\n`;
+						}
+					} catch {
+						// Skip if unreadable
+					}
+				}
+			}
+
 			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
 			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
 			event.systemPrompt += WRITE_REVIEW_HINT;
