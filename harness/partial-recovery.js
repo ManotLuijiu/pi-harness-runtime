@@ -19,14 +19,7 @@
  *         recovery_status.json
  *         files.json
  */
-import {
-    existsSync,
-    mkdirSync,
-    writeFileSync,
-    readFileSync,
-    readdirSync,
-    unlinkSync,
-} from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync, } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { continuePromptGenerator } from "./continue-prompt.js";
@@ -36,8 +29,7 @@ export class PartialRecovery {
     partials = [];
     constructor(jobId, taskId, rootDir) {
         this.rootDir =
-            rootDir ??
-            join(homedir(), ".pi", "harness", jobId, "partial", taskId);
+            rootDir ?? join(homedir(), ".pi", "harness", jobId, "partial", taskId);
         this.taskId = taskId;
         this.ensureDir();
         this.loadExistingPartials();
@@ -149,9 +141,7 @@ export class PartialRecovery {
         const codeBlockMatch = prompt.match(/```[\s\S]*?```/g);
         if (codeBlockMatch) {
             const content = codeBlockMatch.join("\n\n");
-            this.savePartial(content, "output_limit", {
-                fromContinuation: true,
-            });
+            this.savePartial(content, "output_limit", { fromContinuation: true });
         }
     }
     /**
@@ -192,7 +182,8 @@ export class PartialRecovery {
         if (existsSync(statusPath)) {
             try {
                 return JSON.parse(readFileSync(statusPath, "utf-8"));
-            } catch {
+            }
+            catch {
                 // Fall through to default
             }
         }
@@ -220,7 +211,8 @@ export class PartialRecovery {
             }
             try {
                 unlinkSync(join(this.rootDir, file));
-            } catch {
+            }
+            catch {
                 // Ignore errors
             }
         }
@@ -279,14 +271,9 @@ export class PartialRecovery {
                 : undefined,
             attempts: current.attempts + 1,
             lastError: error ?? current.lastError,
-            completedAt:
-                status === "completed" ? new Date().toISOString() : undefined,
+            completedAt: status === "completed" ? new Date().toISOString() : undefined,
         };
-        writeFileSync(
-            statusPath,
-            JSON.stringify(updated, null, 2) + "\n",
-            "utf-8",
-        );
+        writeFileSync(statusPath, JSON.stringify(updated, null, 2) + "\n", "utf-8");
     }
     mergeAsMarkdownSections() {
         return this.partials
@@ -319,10 +306,12 @@ export class PartialRecovery {
                 const parsed = JSON.parse(partial.content);
                 if (Array.isArray(parsed)) {
                     results.push(...parsed);
-                } else {
+                }
+                else {
                     results.push(parsed);
                 }
-            } catch {
+            }
+            catch {
                 // Not JSON, include as-is
                 results.push({ _raw: partial.content });
             }
@@ -338,14 +327,9 @@ export class PartialRecovery {
             const newLines = [];
             for (const line of lines) {
                 // Skip if it looks like a duplicate header
-                if (
-                    !parts.some(
-                        (p) =>
-                            p.includes(line) ||
-                            line.startsWith("#") ||
-                            line.startsWith("---"),
-                    )
-                ) {
+                if (!parts.some((p) => p.includes(line) ||
+                    line.startsWith("#") ||
+                    line.startsWith("---"))) {
                     newLines.push(line);
                 }
             }
@@ -384,12 +368,10 @@ export class PartialRecovery {
         const lines = merged.split("\n");
         for (const line of lines) {
             if (line.match(/^[-*]\s/) && line.includes("[completed]")) {
-                completed.push(
-                    line
-                        .replace(/^[-*]\s/, "")
-                        .replace("[completed]", "")
-                        .trim(),
-                );
+                completed.push(line
+                    .replace(/^[-*]\s/, "")
+                    .replace("[completed]", "")
+                    .trim());
             }
         }
         return completed.slice(0, 10);

@@ -4,7 +4,7 @@
  * Integrates MiniMax quota scraper with harness status display.
  * Provides real-time quota data for the status bar.
  */
-import { MiniMaxQuotaManager } from "./minimax-quota-scraper.js";
+import { MiniMaxQuotaManager, } from "./minimax-quota-scraper.js";
 /**
  * Format quota data for display
  */
@@ -67,7 +67,8 @@ export class QuotaStatusManager {
                 ? this.config.formatter(data)
                 : formatQuotaStatus(data);
             return this.lastStatus;
-        } catch (error) {
+        }
+        catch (error) {
             console.warn("[QuotaStatus] Failed to fetch quota:", error);
             return this.lastStatus ?? null;
         }
@@ -123,24 +124,18 @@ export class QuotaStatusManager {
 /**
  * Create a quota status manager from environment variables
  */
-export function createQuotaStatusManagerFromEnv(
-    provider = process.env.QUOTA_PROVIDER ?? "minimax",
-) {
+export function createQuotaStatusManagerFromEnv(provider = process.env.QUOTA_PROVIDER ?? "minimax") {
     // Check if quota tracking is enabled
     if (process.env.QUOTA_AUTO_FETCH !== "true") {
         return null;
     }
     // Check if cookie file exists
-    const cookieFile =
-        process.env.QUOTA_COOKIE_FILE ??
+    const cookieFile = process.env.QUOTA_COOKIE_FILE ??
         `${process.env.HOME ?? process.env.USERPROFILE}/.config/minimax-cookies.txt`;
     return new QuotaStatusManager({
         provider,
         cookieFile,
-        refreshIntervalMs: parseInt(
-            process.env.QUOTA_REFRESH_MS ?? "300000",
-            10,
-        ),
+        refreshIntervalMs: parseInt(process.env.QUOTA_REFRESH_MS ?? "300000", 10),
     });
 }
 //# sourceMappingURL=quota-status.js.map

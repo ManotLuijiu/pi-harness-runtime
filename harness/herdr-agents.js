@@ -3,16 +3,9 @@
  */
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import {
-    createHerdrBus,
-    getHerdrWorkspacePaths,
-    ensureHerdrWorkspace,
-} from "../packages/event-bus/src/herdr-bus.js";
+import { createHerdrBus, getHerdrWorkspacePaths, ensureHerdrWorkspace, } from "../packages/event-bus/src/herdr-bus.js";
 // Suppress stack traces — only show error message to keep TUI clean
-const logError = (err) =>
-    console.error(
-        `[herdr] Error: ${err instanceof Error ? err.message : String(err)}`,
-    );
+const logError = (err) => console.error(`[herdr] Error: ${err instanceof Error ? err.message : String(err)}`);
 async function startReviewAgent() {
     console.log("[herdr:review] Starting review agent...");
     const bus = createHerdrBus("review-agent");
@@ -21,16 +14,14 @@ async function startReviewAgent() {
     bus.startPolling(async (payload) => {
         if (payload.topic === "code.written") {
             const data = payload.data;
-            console.log(
-                `[herdr:review] code.written: task=${data.taskId} files=${data.files.length}`,
-            );
+            console.log(`[herdr:review] code.written: task=${data.taskId} files=${data.files.length}`);
             for (const file of data.files ?? []) {
                 console.log(`[herdr:review] Reviewing: ${file}`);
             }
         }
     });
     console.log(`[herdr:review] Workspace: ${bus.getWorkspace()}`);
-    await new Promise(() => {});
+    await new Promise(() => { });
 }
 async function startCodeAgent() {
     console.log("[herdr:code] Starting code agent...");
@@ -40,13 +31,11 @@ async function startCodeAgent() {
     bus.startPolling(async (payload) => {
         if (payload.topic === "review.completed") {
             const data = payload.data;
-            console.log(
-                `[herdr:code] Review done: task=${data.taskId} status=${data.status} report=${data.reportFile}`,
-            );
+            console.log(`[herdr:code] Review done: task=${data.taskId} status=${data.status} report=${data.reportFile}`);
         }
     });
     console.log(`[herdr:code] Workspace: ${bus.getWorkspace()}`);
-    await new Promise(() => {});
+    await new Promise(() => { });
 }
 function showStatus() {
     const paths = getHerdrWorkspacePaths();
@@ -62,7 +51,8 @@ function showStatus() {
             try {
                 const { topic, ts } = JSON.parse(line);
                 console.log(`  ${ts} ${topic}`);
-            } catch {
+            }
+            catch {
                 /* skip */
             }
         }

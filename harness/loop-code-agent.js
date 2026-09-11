@@ -8,16 +8,13 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { ensureHerdrWorkspace } from "../packages/event-bus/src/herdr-bus.js";
+import { ensureHerdrWorkspace, } from "../packages/event-bus/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
 const AGENT_ID = "code-agent";
 const AGENT_TYPE = "code";
 const POLL_MS = 1000;
 // Suppress stack traces — only show error message to keep TUI clean
-const logError = (err) =>
-    console.error(
-        `[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
-    );
+const logError = (err) => console.error(`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`);
 async function main() {
     console.log(`[${AGENT_ID}] Starting...`);
     const paths = ensureHerdrWorkspace();
@@ -31,14 +28,13 @@ async function main() {
     blackboard.load();
     blackboard.registerAgent(AGENT_ID, "Code Agent", "minimax", "minimax");
     blackboard.updateAgentStatus(AGENT_ID, "idle");
-    console.log(
-        `[${AGENT_ID}] Registered. Blackboard: ${blackboard.getPath()}`,
-    );
+    console.log(`[${AGENT_ID}] Registered. Blackboard: ${blackboard.getPath()}`);
     while (true) {
         await sleep(POLL_MS);
         blackboard.load();
         const record = blackboard.getRecord();
-        if (!record) continue;
+        if (!record)
+            continue;
         // Check for early exit
         const earlyExit = checkEarlyExit(record);
         if (earlyExit) {
@@ -47,60 +43,53 @@ async function main() {
             break;
         }
         // Check if this loop is ours (loopId matches)
-        if (record.jobId !== loopId) continue;
+        if (record.jobId !== loopId)
+            continue;
         // Check nextAction for code agent
         const action = parseNextAction(record.nextAction);
-        if (!action || action.agentType !== AGENT_TYPE) continue;
+        if (!action || action.agentType !== AGENT_TYPE)
+            continue;
         // Claim the task
         const locked = blackboard.acquireLock(action.taskId, AGENT_ID);
-        if (!locked) continue;
+        if (!locked)
+            continue;
         blackboard.updateAgentStatus(AGENT_ID, "working", action.taskId);
         console.log(`[${AGENT_ID}] Claimed: ${action.taskId}`);
         // Do the work
         const result = await writeCode(action, paths, record.jobId);
         // Update task status
-        updateTaskStatus(
-            blackboard,
-            record,
-            action.taskId,
-            "done",
-            result.files,
-        );
+        updateTaskStatus(blackboard, record, action.taskId, "done", result.files);
         // Set nextAction for review agent
         const nextTaskId = getNextReviewTask(record, action.iteration);
         if (nextTaskId) {
-            blackboard.setNextAction(
-                encodeNextAction({
-                    taskId: nextTaskId,
-                    agentType: "review",
-                    iteration: getReviewIteration(nextTaskId),
-                    prompt: action.prompt,
-                    codeFiles: result.files,
-                }),
-            );
+            blackboard.setNextAction(encodeNextAction({
+                taskId: nextTaskId,
+                agentType: "review",
+                iteration: getReviewIteration(nextTaskId),
+                prompt: action.prompt,
+                codeFiles: result.files,
+            }));
             console.log(`[${AGENT_ID}] -> nextAction: review ${nextTaskId}`);
-        } else {
+        }
+        else {
             // No review needed — go to report
             const writeDone = getNextWriteTask(record, action.iteration);
             if (writeDone) {
-                blackboard.setNextAction(
-                    encodeNextAction({
-                        taskId: writeDone,
-                        agentType: "code",
-                        iteration: getWriteIteration(writeDone),
-                        prompt: action.prompt,
-                    }),
-                );
+                blackboard.setNextAction(encodeNextAction({
+                    taskId: writeDone,
+                    agentType: "code",
+                    iteration: getWriteIteration(writeDone),
+                    prompt: action.prompt,
+                }));
                 console.log(`[${AGENT_ID}] -> nextAction: code ${writeDone}`);
-            } else {
+            }
+            else {
                 // All done — go to report
-                blackboard.setNextAction(
-                    encodeNextAction({
-                        taskId: "report",
-                        agentType: "review",
-                        iteration: 0,
-                    }),
-                );
+                blackboard.setNextAction(encodeNextAction({
+                    taskId: "report",
+                    agentType: "review",
+                    iteration: 0,
+                }));
                 console.log(`[${AGENT_ID}] -> nextAction: report`);
             }
         }
@@ -134,18 +123,16 @@ export const prompt = ${JSON.stringify(action.prompt)};
 async function findActiveLoop(rootDir) {
     const { readdirSync, existsSync } = await import("fs");
     try {
-        const files = readdirSync(rootDir).filter(
-            (f) => f.startsWith("loop-") && f.endsWith(".config.json"),
-        );
+        const files = readdirSync(rootDir).filter((f) => f.startsWith("loop-") && f.endsWith(".config.json"));
         // Find most recent config that has an active blackboard
         for (const configFile of files.slice(-1)) {
-            const config = JSON.parse(
-                readFileSync(join(rootDir, configFile), "utf-8"),
-            );
+            const config = JSON.parse(readFileSync(join(rootDir, configFile), "utf-8"));
             const bbPath = join(rootDir, "jobs", config.loopId, "blackboard");
-            if (existsSync(bbPath)) return config.loopId;
+            if (existsSync(bbPath))
+                return config.loopId;
         }
-    } catch {
+    }
+    catch {
         // no loop yet
     }
     return null;
@@ -159,58 +146,48 @@ function encodeNextAction(action) {
     };
 }
 function parseNextAction(nextAction) {
-    if (!nextAction) return null;
+    if (!nextAction)
+        return null;
     const a = nextAction;
-    if (!a.taskId) return null;
-    if (
-        typeof a.instruction === "string" &&
-        a.instruction.startsWith("LOOP:")
-    ) {
+    if (!a.taskId)
+        return null;
+    if (typeof a.instruction === "string" && a.instruction.startsWith("LOOP:")) {
         try {
             return JSON.parse(a.instruction.slice(5));
-        } catch {
+        }
+        catch {
             return null;
         }
     }
     return null;
 }
 function checkEarlyExit(record) {
-    const blocked = Object.values(record.tasks.nodes).find(
-        (n) => n.status === "blocked",
-    );
-    if (blocked) return `blocked at ${blocked.id}`;
-    const approved = Object.values(record.tasks.nodes).find(
-        (n) => n.status === "done" && n.result === "approved",
-    );
-    if (approved) return "approved";
+    const blocked = Object.values(record.tasks.nodes).find((n) => n.status === "blocked");
+    if (blocked)
+        return `blocked at ${blocked.id}`;
+    const approved = Object.values(record.tasks.nodes).find((n) => n.status === "done" && n.result === "approved");
+    if (approved)
+        return "approved";
     return null;
 }
 function updateTaskStatus(blackboard, record, taskId, status, files) {
     if (record.tasks.nodes[taskId]) {
         record.tasks.nodes[taskId].status = status;
-        if (files) record.tasks.nodes[taskId].result = files.join(", ");
+        if (files)
+            record.tasks.nodes[taskId].result =
+                files.join(", ");
         record.tasks.nodes[taskId].updatedAt = new Date().toISOString();
         blackboard.save();
     }
 }
 function getNextReviewTask(record, writeIteration) {
-    const reviewCount = Object.keys(record.tasks.nodes).filter((id) =>
-        id.startsWith("review-"),
-    ).length;
-    const step = Math.max(
-        1,
-        Math.floor(
-            Object.keys(record.tasks.nodes).filter((id) =>
-                id.startsWith("write-"),
-            ).length / (reviewCount || 1),
-        ),
-    );
+    const reviewCount = Object.keys(record.tasks.nodes).filter((id) => id.startsWith("review-")).length;
+    const step = Math.max(1, Math.floor(Object.keys(record.tasks.nodes).filter((id) => id.startsWith("write-"))
+        .length / (reviewCount || 1)));
     const targetReview = Math.ceil(writeIteration / step);
     const taskId = `review-${targetReview}`;
-    if (
-        record.tasks.nodes[taskId] &&
-        record.tasks.nodes[taskId].status === "pending"
-    ) {
+    if (record.tasks.nodes[taskId] &&
+        record.tasks.nodes[taskId].status === "pending") {
         return taskId;
     }
     return null;
@@ -218,10 +195,8 @@ function getNextReviewTask(record, writeIteration) {
 function getNextWriteTask(record, currentIteration) {
     const nextWrite = currentIteration + 1;
     const taskId = `write-${nextWrite}`;
-    if (
-        record.tasks.nodes[taskId] &&
-        record.tasks.nodes[taskId].status === "pending"
-    ) {
+    if (record.tasks.nodes[taskId] &&
+        record.tasks.nodes[taskId].status === "pending") {
         return taskId;
     }
     return null;

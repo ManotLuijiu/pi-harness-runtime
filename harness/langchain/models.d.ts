@@ -10,25 +10,25 @@
  */
 import { ChatOpenAI } from "@langchain/openai";
 export interface ModelOptions {
-   /** Override model id (e.g. "gpt-5.6", "GLM-5.2", "MiniMax-M2") */
-   model?: string;
-   /** Override API base URL */
-   baseURL?: string;
-   /** Override API key */
-   apiKey?: string;
-   /** Sampling temperature */
-   temperature?: number;
+    /** Override model id (e.g. "gpt-5.6", "GLM-5.2", "MiniMax-M2") */
+    model?: string;
+    /** Override API base URL */
+    baseURL?: string;
+    /** Override API key */
+    apiKey?: string;
+    /** Sampling temperature */
+    temperature?: number;
 }
 /**
  * Pre-resolved model config from model-router.ts.
  * Pass this to skip env-lookup and use the routed model directly.
  */
 export interface ResolvedModelOptions {
-   model: string;
-   baseURL: string;
-   apiKey: string;
-   /** Sampling temperature */
-   temperature?: number;
+    model: string;
+    baseURL: string;
+    apiKey: string;
+    /** Sampling temperature */
+    temperature?: number;
 }
 /**
  * Planner model — GPT family.
@@ -42,9 +42,7 @@ export interface ResolvedModelOptions {
  *   PLANNER_MODEL     (required)
  *   PLANNER_BASE_URL  (required)
  */
-export declare function createPlannerModel(
-   opts?: ModelOptions | ResolvedModelOptions,
-): ChatOpenAI;
+export declare function createPlannerModel(opts?: ModelOptions | ResolvedModelOptions): ChatOpenAI;
 /**
  * Reviewer model — GLM family (master reviewer per design).
  *
@@ -57,9 +55,7 @@ export declare function createPlannerModel(
  *   GLM_MODEL     (required)
  *   GLM_BASE_URL  (required)
  */
-export declare function createReviewerModel(
-   opts?: ModelOptions | ResolvedModelOptions,
-): ChatOpenAI;
+export declare function createReviewerModel(opts?: ModelOptions | ResolvedModelOptions): ChatOpenAI;
 /**
  * Coder model — MiniMax family.
  *
@@ -72,7 +68,5 @@ export declare function createReviewerModel(
  *   MINIMAX_MODEL     (required)
  *   MINIMAX_BASE_URL  (required)
  */
-export declare function createCoderModel(
-   opts?: ModelOptions | ResolvedModelOptions,
-): ChatOpenAI;
+export declare function createCoderModel(opts?: ModelOptions | ResolvedModelOptions): ChatOpenAI;
 //# sourceMappingURL=models.d.ts.map

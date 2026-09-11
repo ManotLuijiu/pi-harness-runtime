@@ -37,14 +37,7 @@ export class OutputLimitHandler {
     constructor(config) {
         this.rootDir =
             config.rootDir ??
-            join(
-                homedir(),
-                ".pi",
-                "harness",
-                config.jobId,
-                "partial",
-                config.taskId,
-            );
+                join(homedir(), ".pi", "harness", config.jobId, "partial", config.taskId);
         this.jobId = config.jobId;
         this.taskId = config.taskId;
         this.maxAttempts = config.maxContinueAttempts ?? 5;
@@ -77,26 +70,20 @@ export class OutputLimitHandler {
     classifyFailure(error, response) {
         const errorStr = String(error ?? "").toLowerCase();
         // Check for quota exhaustion
-        if (
-            /error.*quota/i.test(errorStr) ||
+        if (/error.*quota/i.test(errorStr) ||
             /error.*2056/i.test(errorStr) ||
-            /error.*insufficient_quota/i.test(errorStr)
-        ) {
+            /error.*insufficient_quota/i.test(errorStr)) {
             return "quota_exhausted";
         }
         // Check for context/sequence length
-        if (
-            /error.*context.*length/i.test(errorStr) ||
+        if (/error.*context.*length/i.test(errorStr) ||
             /error.*too many tokens/i.test(errorStr) ||
-            /error.*maximum context/i.test(errorStr)
-        ) {
+            /error.*maximum context/i.test(errorStr)) {
             return "context_full";
         }
         // Check for output token limit
-        if (
-            this.detectOutputLimit(error, response) ||
-            response?.finishReason === "length"
-        ) {
+        if (this.detectOutputLimit(error, response) ||
+            response?.finishReason === "length") {
             return "output_limit";
         }
         return "unknown";
@@ -183,9 +170,7 @@ export class OutputLimitHandler {
         lines.push("1. Review the partial content above");
         lines.push("2. Continue from where the response was truncated");
         lines.push("3. Do not repeat content that already appears above");
-        lines.push(
-            `4. This is attempt ${this.attempts + 1} of ${this.maxAttempts}`,
-        );
+        lines.push(`4. This is attempt ${this.attempts + 1} of ${this.maxAttempts}`);
         return lines.join("\n");
     }
     /**
@@ -239,11 +224,7 @@ export class OutputLimitHandler {
             attempts: this.attempts,
             lastError: event.reason,
         };
-        writeFileSync(
-            statusPath,
-            JSON.stringify(status, null, 2) + "\n",
-            "utf-8",
-        );
+        writeFileSync(statusPath, JSON.stringify(status, null, 2) + "\n", "utf-8");
     }
     async backoff() {
         const delay = this.backoffMs * 2 ** (this.attempts - 1);

@@ -18,16 +18,16 @@
  * Wiki: wiki/pi-lens-status-line.md
  */
 export interface QuotaData {
-   /** MiniMax 5-hour window usage percentage (0–100). Undefined = unknown. */
-   fiveHourPercent?: number;
-   /** MiniMax weekly window usage percentage (0–100). Undefined = unknown. */
-   weeklyPercent?: number;
-   /** ISO timestamp of when the 5-hour quota resets. */
-   fiveHourResetAt?: string;
-   /** ISO timestamp of when the weekly quota resets. */
-   weeklyResetAt?: string;
-   /** Raw message from GLM quota signal (for display) */
-   rawMessage?: string;
+    /** MiniMax 5-hour window usage percentage (0–100). Undefined = unknown. */
+    fiveHourPercent?: number;
+    /** MiniMax weekly window usage percentage (0–100). Undefined = unknown. */
+    weeklyPercent?: number;
+    /** ISO timestamp of when the 5-hour quota resets. */
+    fiveHourResetAt?: string;
+    /** ISO timestamp of when the weekly quota resets. */
+    weeklyResetAt?: string;
+    /** Raw message from GLM quota signal (for display) */
+    rawMessage?: string;
 }
 /** True when the daemon is running inside a pi-lens-equipped pi host. */
 export declare function isPiLensAvailable(): boolean;
@@ -47,36 +47,39 @@ export declare function formatQuotaLine(q: QuotaData): string;
  * The pi host can read `.harness-status` and display it in its own UI.
  */
 export declare class StatusLineManager {
-   private readonly workspace;
-   private readonly quotaFile;
-   private lastQuota;
-   private timer?;
-   private loopStatus;
-   constructor(workspace: string);
-   /**
-    * Start polling the quota file.
-    * Call once after construction.
-    */
-   start(): void;
-   /** Stop polling. */
-   stop(): void;
-   /**
-    * Update the loop status (planning/writing/reviewing/finished).
-    * Call this from the daemon's onStep handler.
-    */
-   updateLoopStatus(status: string): void;
-   /**
-    * Update the full status — call after each loop transition.
-    * Writes the status file (when no pi-lens) and logs to console.
-    */
-   update(data: { loopStatus?: string; quota?: QuotaData }): void;
-   /**
-    * Returns a rendered one-line status string for the pi host to display.
-    * Combines loop status + quota into a single readable line.
-    */
-   getLine(): string;
-   private _pollQuota;
-   private _writeStatusFile;
+    private readonly workspace;
+    private readonly quotaFile;
+    private lastQuota;
+    private timer?;
+    private loopStatus;
+    constructor(workspace: string);
+    /**
+     * Start polling the quota file.
+     * Call once after construction.
+     */
+    start(): void;
+    /** Stop polling. */
+    stop(): void;
+    /**
+     * Update the loop status (planning/writing/reviewing/finished).
+     * Call this from the daemon's onStep handler.
+     */
+    updateLoopStatus(status: string): void;
+    /**
+     * Update the full status — call after each loop transition.
+     * Writes the status file (when no pi-lens) and logs to console.
+     */
+    update(data: {
+        loopStatus?: string;
+        quota?: QuotaData;
+    }): void;
+    /**
+     * Returns a rendered one-line status string for the pi host to display.
+     * Combines loop status + quota into a single readable line.
+     */
+    getLine(): string;
+    private _pollQuota;
+    private _writeStatusFile;
 }
 /**
  * Write quota data to the shared quota file.

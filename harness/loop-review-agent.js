@@ -8,39 +8,34 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import {
-    ensureHerdrWorkspace,
-    parseVerdict,
-} from "../packages/event-bus/src/herdr-bus.js";
+import { ensureHerdrWorkspace, parseVerdict, } from "../packages/event-bus/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
 const AGENT_ID = "review-agent";
 const AGENT_TYPE = "review";
 const POLL_MS = 1000;
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
 // Suppress stack traces — only show error message to keep TUI clean
-const logError = (err) =>
-    console.error(
-        `[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`,
-    );
+const logError = (err) => console.error(`[${AGENT_ID}] Error: ${err instanceof Error ? err.message : String(err)}`);
 async function main() {
     console.log(`[${AGENT_ID}] Starting...`);
     const paths = ensureHerdrWorkspace();
     // Find active loop config
     const loopId = await findActiveLoop(paths.root);
-    if (!loopId) console.log(`[${AGENT_ID}] No active loop found. Waiting...`);
+    if (!loopId)
+        console.log(`[${AGENT_ID}] No active loop found. Waiting...`);
     const blackboard = new SharedBlackboard(loopId ?? "no-loop", paths.root);
     blackboard.load();
     blackboard.registerAgent(AGENT_ID, "Review Agent", "openai", "gpt-4o");
     blackboard.updateAgentStatus(AGENT_ID, "idle");
-    console.log(
-        `[${AGENT_ID}] Registered. Blackboard: ${blackboard.getPath()}`,
-    );
+    console.log(`[${AGENT_ID}] Registered. Blackboard: ${blackboard.getPath()}`);
     while (true) {
         await sleep(POLL_MS);
         blackboard.load();
         const record = blackboard.getRecord();
-        if (!record) continue;
-        if (record.jobId !== loopId) continue;
+        if (!record)
+            continue;
+        if (record.jobId !== loopId)
+            continue;
         // Check for early exit
         const earlyExit = checkEarlyExit(record);
         if (earlyExit) {
@@ -49,10 +44,12 @@ async function main() {
         }
         // Check nextAction for review agent
         const action = parseNextAction(record.nextAction);
-        if (!action || action.agentType !== AGENT_TYPE) continue;
+        if (!action || action.agentType !== AGENT_TYPE)
+            continue;
         // Claim the task
         const locked = blackboard.acquireLock(action.taskId, AGENT_ID);
-        if (!locked) continue;
+        if (!locked)
+            continue;
         blackboard.updateAgentStatus(AGENT_ID, "working", action.taskId);
         console.log(`[${AGENT_ID}] Claimed: ${action.taskId}`);
         // Handle report task
@@ -76,32 +73,26 @@ async function main() {
         // Decide next action based on verdict
         if (verdict === "approved" || verdict === "blocked") {
             // Early exit — go to report
-            blackboard.setNextAction(
-                encodeNextAction({
-                    taskId: "report",
-                    agentType: "review",
-                    iteration: 0,
-                }),
-            );
-            console.log(
-                `[${AGENT_ID}] ${verdict.toUpperCase()} — nextAction: report`,
-            );
-        } else {
+            blackboard.setNextAction(encodeNextAction({
+                taskId: "report",
+                agentType: "review",
+                iteration: 0,
+            }));
+            console.log(`[${AGENT_ID}] ${verdict.toUpperCase()} — nextAction: report`);
+        }
+        else {
             // Changes requested — continue to next write
             const nextWrite = getNextWriteTask(record, action.iteration);
             if (nextWrite) {
-                blackboard.setNextAction(
-                    encodeNextAction({
-                        taskId: nextWrite,
-                        agentType: "code",
-                        iteration: getWriteIteration(nextWrite),
-                        prompt: action.prompt,
-                    }),
-                );
-                console.log(
-                    `[${AGENT_ID}] CHANGES — nextAction: code ${nextWrite}`,
-                );
-            } else {
+                blackboard.setNextAction(encodeNextAction({
+                    taskId: nextWrite,
+                    agentType: "code",
+                    iteration: getWriteIteration(nextWrite),
+                    prompt: action.prompt,
+                }));
+                console.log(`[${AGENT_ID}] CHANGES — nextAction: code ${nextWrite}`);
+            }
+            else {
                 blackboard.setNextAction({
                     taskId: "report",
                     agentType: "review",
@@ -118,14 +109,12 @@ async function doReview(action, paths, loopId) {
     mkdirSync(reviewDir, { recursive: true });
     const reviewFile = join(reviewDir, `review-${action.iteration}.md`);
     // Read code files
-    const codeBlocks = await Promise.all(
-        (action.codeFiles ?? []).map(async (file) => {
-            const content = existsSync(file)
-                ? readFileSync(file, "utf-8").slice(0, 3000)
-                : `[Not found: ${file}]`;
-            return `## ${file}\n\n\`\`\`\n${content}\n\`\`\`\n`;
-        }),
-    );
+    const codeBlocks = await Promise.all((action.codeFiles ?? []).map(async (file) => {
+        const content = existsSync(file)
+            ? readFileSync(file, "utf-8").slice(0, 3000)
+            : `[Not found: ${file}]`;
+        return `## ${file}\n\n\`\`\`\n${content}\n\`\`\`\n`;
+    }));
     // Write review stub
     const review = `# Review — Iteration ${action.iteration}
 
@@ -147,13 +136,12 @@ async function pollVerdict(reviewFile) {
         if (existsSync(reviewFile)) {
             const content = readFileSync(reviewFile, "utf-8");
             const verdict = parseVerdict(content);
-            if (verdict) return verdict;
+            if (verdict)
+                return verdict;
         }
         await sleep(3000);
     }
-    console.log(
-        `[${AGENT_ID}] Verdict timeout — defaulting to CHANGES_REQUESTED`,
-    );
+    console.log(`[${AGENT_ID}] Verdict timeout — defaulting to CHANGES_REQUESTED`);
     return "changes_requested";
 }
 async function finishReport(blackboard, record) {
@@ -166,26 +154,21 @@ async function finishReport(blackboard, record) {
 async function findActiveLoop(rootDir) {
     const { readdirSync } = await import("fs");
     try {
-        const files = readdirSync(rootDir).filter(
-            (f) => f.startsWith("loop-") && f.endsWith(".config.json"),
-        );
+        const files = readdirSync(rootDir).filter((f) => f.startsWith("loop-") && f.endsWith(".config.json"));
         if (files.length > 0) {
-            const config = JSON.parse(
-                readFileSync(join(rootDir, files[0]), "utf-8"),
-            );
+            const config = JSON.parse(readFileSync(join(rootDir, files[0]), "utf-8"));
             return config.loopId;
         }
-    } catch {
+    }
+    catch {
         // no loop yet
     }
     return null;
 }
 function checkEarlyExit(record) {
     const reportNode = record.tasks.nodes["report"];
-    if (
-        reportNode &&
-        (reportNode.status === "done" || reportNode.status === "blocked")
-    ) {
+    if (reportNode &&
+        (reportNode.status === "done" || reportNode.status === "blocked")) {
         return reportNode.status === "done" ? "finished" : "blocked";
     }
     return null;
@@ -208,16 +191,16 @@ function encodeNextAction(action) {
     };
 }
 function parseNextAction(nextAction) {
-    if (!nextAction) return null;
+    if (!nextAction)
+        return null;
     const a = nextAction;
-    if (!a.taskId) return null;
-    if (
-        typeof a.instruction === "string" &&
-        a.instruction.startsWith("LOOP:")
-    ) {
+    if (!a.taskId)
+        return null;
+    if (typeof a.instruction === "string" && a.instruction.startsWith("LOOP:")) {
         try {
             return JSON.parse(a.instruction.slice(5));
-        } catch {
+        }
+        catch {
             return null;
         }
     }
@@ -227,10 +210,8 @@ function getNextWriteTask(record, currentReviewIteration) {
     // After review N, next write is N+1
     const nextWrite = currentReviewIteration + 1;
     const taskId = `write-${nextWrite}`;
-    if (
-        record.tasks.nodes[taskId] &&
-        record.tasks.nodes[taskId].status === "pending"
-    ) {
+    if (record.tasks.nodes[taskId] &&
+        record.tasks.nodes[taskId].status === "pending") {
         return taskId;
     }
     return null;

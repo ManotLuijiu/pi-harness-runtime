@@ -128,13 +128,52 @@ export function hasBareAmpersand(command: string): boolean {
 }
 
 /**
+ * Check if an SSH command has a `&& ... &` or `; ... &` pattern INSIDE
+ * the quoted remote command. This means: "run A, then run B, then background B".
+ *
+ * This is risky because SSH waits for the WHOLE quoted command chain to complete.
+ * If B hangs (import error, DB timeout, port conflict), SSH never exits.
+ *
+ * RISKY: ssh ... "cd X && python uvicorn ... &"
+ * RISKY: ssh ... "cmd1; cmd2 &".
+ * SAFE:  ssh ... "cmd &" (just backgrounds one command)
+ */
+export function hasCommandChainWithAmpersand(command: string): boolean {
+	if (!isSshCommand(command)) return false;
+	if (isDetachedPattern(command)) return false;
+
+	const sshRange = findLastSshCommand(command);
+	if (!sshRange) return false;
+	const sshPart = command.slice(sshRange.start, sshRange.end);
+
+	// Find the quoted remote command
+	const quoteMatch = sshPart.match(/['"](.+?)['"]\s*$/s);
+	if (!quoteMatch) return false;
+
+	const quotedContent = quoteMatch[1];
+	// Check for && or ; followed by & inside the quoted content
+	// Pattern: "cmd1 && cmd2 &" or "cmd1; cmd2 &"
+	// We want to catch when there's a chain (&& or ;) and then &
+	// Risky: command chain followed by &
+	// e.g. "cd /path && python uvicorn 2>&1 &"  or "cmd1 && cmd2 &"
+	// Safe: just one command with & ("cmd &") or detached ("cmd > log 2>&1 & echo DONE")
+	const trimmed = quotedContent.trim();
+	// Detect && or ; followed by anything, then &
+	return /&&.+\s+&\s*$/.test(trimmed) || /;.+\s+&\s*$/.test(trimmed);
+}
+
+/**
  * Transform a command to use detached SSH pattern.
- * Removes trailing unquoted & and appends nohup wrapper.
+ * Handles TWO risky patterns:
  *
- * Before: ssh user@host 'kill 123' &
- * After:  ssh user@host 'kill 123' nohup '' > /tmp/herdr-ssh.log 2>&1 & echo 'SSH_DETACHED'
+ * Pattern 1 (outside quotes): ssh user@host 'cmd' &
+ *   → ssh user@host 'cmd' nohup '' > log 2>&1 & echo DONE
  *
- * The && operators inside the quoted command are preserved.
+ * Pattern 2 (inside quotes, command chain): ssh user@host "cd X && python uvicorn &"
+ *   → ssh user@host "cd X && nohup python uvicorn > /tmp/herdr-ssh.log 2>&1 & echo SSH_DETACHED"
+ *
+ * The && operators in pattern 2 are preserved; nohup is inserted before the
+ * final backgrounded command so SSH exits even if that command hangs.
  */
 export function transformToDetached(
 	command: string,
@@ -178,19 +217,93 @@ export function transformToDetached(
 		}
 	}
 
-	const sshPrefix = sshPart.slice(0, remoteCmdEnd).trimEnd();
+	// sshPrefix is the SSH command up to (not including) the remote command's opening quote.
+	// We add the closing quote explicitly via openQuote (from quoteMatch).
+	// For pattern-2 return, we use beforeQuote (without any quote) + openQuote + transformed + closeQuote.
+	const sshPrefix = sshPart.slice(0, remoteCmdEnd - 1).trimEnd();
+	// Find the opening quote position in sshPrefix so we can use "beforeQuote" for pattern-2
+	const openQuotePos = sshPrefix.search(/['"]/);
+	const beforeQuote = openQuotePos >= 0 ? sshPrefix.slice(0, openQuotePos) : sshPrefix;
 	const afterRemoteCmd = sshPart.slice(remoteCmdEnd);
 
-	// Only transform if there's a trailing bare & OUTSIDE the quoted part
-	if (!/^\s*&\s*$/.test(afterRemoteCmd.trim())) return command;
+	// Pattern 1: trailing bare & OUTSIDE the quoted part
+	if (/^\s*&\s*$/.test(afterRemoteCmd.trim())) {
+		// sshPrefix = "ssh host 'cmd" (includes opening quote AND command content).
+		// openQuotePos gives the position of the opening quote so we can strip it.
+		const iq = openQuotePos >= 0 ? sshPrefix[openQuotePos] : "'";
+		const sshBase = openQuotePos >= 0 ? sshPrefix.slice(0, openQuotePos).trimEnd() : sshPrefix.trimEnd();
+		return (
+			beforeSsh +
+			sshBase +
+			` ${iq}nohup ${iq} > ${logFile} 2>&1 & echo 'SSH_DETACHED'` +
+			afterSsh
+		);
+	}
 
-	// Remove the trailing & and rebuild with nohup
-	return (
-		beforeSsh +
-		sshPrefix +
-		` nohup '' > ${logFile} 2>&1 & echo 'SSH_DETACHED'` +
-		afterSsh
-	);
+	// Pattern 2: && ... & inside the quoted command
+	// e.g. ssh host "cd /path && python uvicorn &"
+	// We need to add nohup and redirects to the final backgrounded command
+	if (hasCommandChainWithAmpersand(command)) {
+		// Extract the quoted content
+		const quoteMatch = sshPart.match(/(['"])(.+?)\1\s*$/);
+		if (quoteMatch) {
+			const openQuote = quoteMatch[1];
+			const content = quoteMatch[2];
+			const afterQuote = sshPart.slice(
+				(quoteMatch.index ?? 0) + quoteMatch[0].length,
+			);
+
+			// Transform: find "cmd1 && cmd2 2>&1 &" or "cmd1 && cmd2 &" pattern
+			// Split on && or ; and wrap only the last command with nohup
+			const chainMatch = content.match(/(.+?)(&&|;)\s*(.+?)\s+(2>&1)\s*&\s*$/);
+			if (chainMatch) {
+				const [, prefix, chainOp, lastCmd] = chainMatch;
+				// Insert nohup before the last command, keep 2>&1 as-is
+				const transformedContent = `${prefix}${chainOp} nohup ${lastCmd.trim()} 2>&1 & echo 'SSH_DETACHED'`;
+				return (
+					beforeSsh +
+					beforeQuote +
+					openQuote +
+					transformedContent +
+					openQuote +
+					afterQuote +
+					afterSsh
+				);
+			}
+
+			// No 2>&1 before &: split on && or ; and wrap last command
+			const simpleChain = content.match(/(.+?)(&&|;)\s*(.+?)\s*&\s*$/);
+			if (simpleChain) {
+				const [, prefix, chainOp, lastCmd] = simpleChain;
+				const transformedContent = `${prefix}${chainOp} nohup ${lastCmd.trim()} > ${logFile} 2>&1 & echo 'SSH_DETACHED'`;
+				return (
+					beforeSsh +
+					beforeQuote +
+					openQuote +
+					transformedContent +
+					openQuote +
+					afterQuote +
+					afterSsh
+				);
+			}
+
+			// Fallback: if no &&/; found but there's &, wrap with nohup
+			if (/\s&\s*$/.test(content)) {
+				const transformedContent = `nohup ${content.trim().replace(/\s+&\s*$/, ` > ${logFile} 2>&1 & echo 'SSH_DETACHED'`)}`;
+				return (
+					beforeSsh +
+					sshPrefix +
+					openQuote +
+					transformedContent +
+					openQuote +
+					afterQuote +
+					afterSsh
+				);
+			}
+		}
+	}
+
+	return command;
 }
 
 /**

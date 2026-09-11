@@ -28,17 +28,17 @@
  */
 /** Model options derived from a resolved env prefix. */
 export interface ResolvedModel {
-   model: string;
-   baseURL: string;
-   apiKey: string;
+    model: string;
+    baseURL: string;
+    apiKey: string;
 }
 /** Result of routing a request to models. */
 export interface RouteResult {
-   planner: ResolvedModel;
-   reviewer: ResolvedModel;
-   coder: ResolvedModel;
-   /** Text of the request with directive comments stripped (safe for agent prompts). */
-   cleanRequest: string;
+    planner: ResolvedModel;
+    reviewer: ResolvedModel;
+    coder: ResolvedModel;
+    /** Text of the request with directive comments stripped (safe for agent prompts). */
+    cleanRequest: string;
 }
 /**
  * Resolve a model family to actual env-backed model options.

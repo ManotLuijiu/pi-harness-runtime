@@ -12,10 +12,9 @@ async function getPlaywright() {
     if (!playwrightModule) {
         try {
             playwrightModule = await import("playwright");
-        } catch {
-            console.warn(
-                "[PlaywrightRunner] Playwright not installed. E2E tests will be skipped.",
-            );
+        }
+        catch {
+            console.warn("[PlaywrightRunner] Playwright not installed. E2E tests will be skipped.");
             return null;
         }
     }
@@ -47,16 +46,13 @@ export class PlaywrightE2ERunner {
     async start() {
         const pw = await getPlaywright();
         if (!pw) {
-            throw new Error(
-                "Playwright not available. Install with: bun add playwright",
-            );
+            throw new Error("Playwright not available. Install with: bun add playwright");
         }
-        const browserType =
-            this.config.browser === "firefox"
-                ? pw.firefox
-                : this.config.browser === "webkit"
-                  ? pw.webkit
-                  : pw.chromium;
+        const browserType = this.config.browser === "firefox"
+            ? pw.firefox
+            : this.config.browser === "webkit"
+                ? pw.webkit
+                : pw.chromium;
         this.browser = await browserType.launch({
             headless: this.config.headless,
             slowMo: this.config.slowMo,
@@ -87,34 +83,34 @@ export class PlaywrightE2ERunner {
      * Navigate to a URL
      */
     async navigate(url) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         await this.page.goto(url, { timeout: this.config.timeout });
     }
     /**
      * Click an element
      */
     async click(selector) {
-        if (!this.page) throw new Error("Browser not started");
-        await this.page.waitForSelector(selector, {
-            timeout: this.config.timeout,
-        });
+        if (!this.page)
+            throw new Error("Browser not started");
+        await this.page.waitForSelector(selector, { timeout: this.config.timeout });
         await this.page.click(selector);
     }
     /**
      * Type text into an input
      */
     async type(selector, text) {
-        if (!this.page) throw new Error("Browser not started");
-        await this.page.waitForSelector(selector, {
-            timeout: this.config.timeout,
-        });
+        if (!this.page)
+            throw new Error("Browser not started");
+        await this.page.waitForSelector(selector, { timeout: this.config.timeout });
         await this.page.fill(selector, text);
     }
     /**
      * Wait for selector
      */
     async wait(selector, timeoutMs) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         await this.page.waitForSelector(selector, {
             timeout: timeoutMs ?? this.config.timeout,
         });
@@ -123,17 +119,19 @@ export class PlaywrightE2ERunner {
      * Take a screenshot
      */
     async screenshot(path) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         await this.page.screenshot({ path, fullPage: true });
     }
     /**
      * Assert a condition
      */
     async assert(condition, message) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         const result = await this.page.evaluate((cond) => {
             // eslint-disable-next-line no-eval
-            return new Function("cond", `return ${cond}`)();
+            return new Function(`return ${cond}`)();
         }, condition);
         if (!result && message) {
             throw new Error(message);
@@ -150,7 +148,8 @@ export class PlaywrightE2ERunner {
      * Start tracing for debugging
      */
     async startTracing(_outputPath) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         await this.page
             .context()
             .tracing.start({ screenshots: true, snapshots: true });
@@ -159,7 +158,8 @@ export class PlaywrightE2ERunner {
      * Stop tracing and save
      */
     async stopTracing(outputPath) {
-        if (!this.page) throw new Error("Browser not started");
+        if (!this.page)
+            throw new Error("Browser not started");
         await this.page.context().tracing.stop({ path: outputPath });
     }
 }

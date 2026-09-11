@@ -53,7 +53,8 @@ export class SharedBlackboard {
      * Save blackboard to disk
      */
     save() {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.updatedAt = new Date().toISOString();
         ensureUsageDir();
         const path = join(this.jobDir, "status.json");
@@ -63,7 +64,8 @@ export class SharedBlackboard {
      * Update job status
      */
     updateStatus(status) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.status = status;
         this.save();
         this.appendEvent("StatusUpdated", { status });
@@ -72,7 +74,8 @@ export class SharedBlackboard {
      * Set the next action for agents to pick up
      */
     setNextAction(action) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.nextAction = action;
         this.save();
         this.appendEvent("NextActionUpdated", {
@@ -85,7 +88,8 @@ export class SharedBlackboard {
      * Clear the next action (after agent picks it up)
      */
     clearNextAction() {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.nextAction = undefined;
         this.save();
     }
@@ -93,7 +97,8 @@ export class SharedBlackboard {
      * Register an agent
      */
     registerAgent(agentId, name, provider, model) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.agentRegistry.agents[agentId] = {
             id: agentId,
             name,
@@ -108,9 +113,11 @@ export class SharedBlackboard {
      * Update agent status
      */
     updateAgentStatus(agentId, status, currentTaskId) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         const agent = this.record.agentRegistry.agents[agentId];
-        if (!agent) return;
+        if (!agent)
+            return;
         agent.status = status;
         agent.currentTaskId = currentTaskId;
         agent.lastHeartbeat = new Date().toISOString();
@@ -120,7 +127,8 @@ export class SharedBlackboard {
      * Unregister an agent
      */
     unregisterAgent(agentId) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         delete this.record.agentRegistry.agents[agentId];
         this.save();
     }
@@ -128,7 +136,8 @@ export class SharedBlackboard {
      * Write an agent report
      */
     writeReport(report) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         this.record.reports[report.agentId] = report;
         this.save();
         this.appendEvent("AgentReportWritten", {
@@ -141,7 +150,8 @@ export class SharedBlackboard {
      * Acquire a lock on a task
      */
     acquireLock(taskId, agentId) {
-        if (!this.record) return false;
+        if (!this.record)
+            return false;
         if (this.record.locks[taskId]) {
             return false; // Already locked
         }
@@ -158,7 +168,8 @@ export class SharedBlackboard {
      * Release a lock on a task
      */
     releaseLock(taskId, agentId) {
-        if (!this.record) return false;
+        if (!this.record)
+            return false;
         const lock = this.record.locks[taskId];
         if (!lock || lock.agentId !== agentId) {
             return false; // Not locked by this agent
@@ -190,17 +201,20 @@ export class SharedBlackboard {
      * Get active agents
      */
     getActiveAgents() {
-        if (!this.record) return [];
+        if (!this.record)
+            return [];
         return Object.values(this.record.agentRegistry.agents);
     }
     /**
      * Check for stale agents (no heartbeat in N minutes)
      */
     getStaleAgents(maxAgeMinutes = 10) {
-        if (!this.record) return [];
+        if (!this.record)
+            return [];
         const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
         return Object.values(this.record.agentRegistry.agents).filter((a) => {
-            if (!a.lastHeartbeat) return false;
+            if (!a.lastHeartbeat)
+                return false;
             return Date.parse(a.lastHeartbeat) < cutoff;
         });
     }
@@ -208,7 +222,8 @@ export class SharedBlackboard {
      * Append an event to the event log
      */
     appendEvent(type, data) {
-        if (!this.record) return;
+        if (!this.record)
+            return;
         const event = {
             ts: new Date().toISOString(),
             jobId: this.record.jobId,

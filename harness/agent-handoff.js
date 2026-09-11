@@ -31,13 +31,7 @@ export class AgentHandoffProtocol {
      * Record a handoff event
      */
     recordHandoff(context, result) {
-        const path = join(
-            this.rootDir,
-            "jobs",
-            context.jobId,
-            "handoffs",
-            `${context.taskId}.json`,
-        );
+        const path = join(this.rootDir, "jobs", context.jobId, "handoffs", `${context.taskId}.json`);
         const event = {
             ts: new Date().toISOString(),
             agentId: context.toAgent,
@@ -95,9 +89,7 @@ export class AgentHandoffProtocol {
             return age < 5 * 60 * 1000; // 5 minutes
         });
         if (recentHandoffs.length > 3) {
-            issues.push(
-                `Too many recent handoffs (${recentHandoffs.length}). Possible ping-pong.`,
-            );
+            issues.push(`Too many recent handoffs (${recentHandoffs.length}). Possible ping-pong.`);
         }
         return { valid: issues.length === 0, issues };
     }
@@ -105,13 +97,7 @@ export class AgentHandoffProtocol {
      * Load handoff history for a task
      */
     loadHandoffHistory(jobId, taskId) {
-        const path = join(
-            this.rootDir,
-            "jobs",
-            jobId,
-            "handoffs",
-            `${taskId}.json`,
-        );
+        const path = join(this.rootDir, "jobs", jobId, "handoffs", `${taskId}.json`);
         const data = readJson(path);
         return data?.taskHistory ?? [];
     }
@@ -124,9 +110,7 @@ export class AgentHandoffProtocol {
         }
         const lines = [`Task ${taskId} is in progress.`];
         if (currentState.filesModified) {
-            lines.push(
-                `Files modified: ${currentState.filesModified.join(", ")}`,
-            );
+            lines.push(`Files modified: ${currentState.filesModified.join(", ")}`);
         }
         if (currentState.lastAction) {
             lines.push(`Last action: ${currentState.lastAction}`);

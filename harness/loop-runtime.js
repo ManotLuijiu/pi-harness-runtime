@@ -14,17 +14,14 @@
  *   On quota: pause job for later resume
  */
 import { MirrorStore } from "../mirror.js";
-import { JobStateMachine } from "./job-state-machine.js";
-import { CompactOrchestrator } from "./context-compact-orchestrator.js";
-import { createSessionMemoryManager } from "./session-memory.js";
+import { JobStateMachine, } from "./job-state-machine.js";
+import { CompactOrchestrator, } from "./context-compact-orchestrator.js";
+import { createSessionMemoryManager, } from "./session-memory.js";
 import { AutoCompactEngine } from "./auto-compact.js";
 import { OutputLimitHandler } from "./output-limit-handler.js";
-import { createForkedSummarizer } from "./forked-summarizer.js";
+import { createForkedSummarizer, } from "./forked-summarizer.js";
 // GLM quota error parsing for 429 responses
-import {
-    parseGLMErrorResetTime,
-    parseMinimaxOverloadResetTime,
-} from "./e2e/glm-quota-scraper.js";
+import { parseGLMErrorResetTime, parseMinimaxOverloadResetTime, } from "./e2e/glm-quota-scraper.js";
 // --- Constants ----------------------------------------------------------------
 const DEFAULT_MAX_COMPACT_RETRIES = 3;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
@@ -107,10 +104,7 @@ export class LoopRuntime {
                 const wrappedInvoke = async (opts) => {
                     return callbacks.onInvokeAgent(opts);
                 };
-                this.forkedSummarizer = createForkedSummarizer(
-                    callbacks.summarizerModel,
-                    wrappedInvoke,
-                );
+                this.forkedSummarizer = createForkedSummarizer(callbacks.summarizerModel, wrappedInvoke);
             }
         }
     }
@@ -125,22 +119,14 @@ export class LoopRuntime {
             const waitMs = resumeMs - now;
             if (waitMs > 0) {
                 const waitMin = Math.ceil(waitMs / 60_000);
-                const notify = this.callbacks.onNotify ?? (() => {});
-                await notify(
-                    `Quota reset in ${waitMin} min — auto-resuming at ${checkpoint.resumeAt}`,
-                    "info",
-                );
+                const notify = this.callbacks.onNotify ?? (() => { });
+                await notify(`Quota reset in ${waitMin} min — auto-resuming at ${checkpoint.resumeAt}`, "info");
                 // Wait in 5-minute chunks so we don't block forever if quota resets early
                 while (this.running && Date.now() < resumeMs) {
                     await new Promise((r) => setTimeout(r, 5 * 60_000)); // 5 min
                     // Re-check mirror — quota may have reset early
-                    const fresh =
-                        await this.callbacks.onCheckMirror?.("minimax");
-                    if (
-                        fresh &&
-                        fresh.h5_used_pct !== undefined &&
-                        fresh.h5_used_pct < 100
-                    ) {
+                    const fresh = await this.callbacks.onCheckMirror?.("minimax");
+                    if (fresh && fresh.h5_used_pct !== undefined && fresh.h5_used_pct < 100) {
                         break; // quota reset early, resume now
                     }
                 }
@@ -168,10 +154,7 @@ export class LoopRuntime {
                         totalCompactions: this.totalCompactions,
                     };
                 }
-                this.callbacks.onIteration?.(
-                    this.state.iteration,
-                    this.state.status,
-                );
+                this.callbacks.onIteration?.(this.state.iteration, this.state.status);
                 // Check job status
                 const statusSummary = await this.jobState.getStatusSummary();
                 if (statusSummary?.status === "paused_quota") {
@@ -187,10 +170,8 @@ export class LoopRuntime {
                 this.state.currentTaskId = task.id;
                 await this.executeTaskWithCompact(task);
                 // Auto-checkpoint
-                if (
-                    this.config.autoCheckpoint &&
-                    this.state.iteration % this.config.checkpointInterval === 0
-                ) {
+                if (this.config.autoCheckpoint &&
+                    this.state.iteration % this.config.checkpointInterval === 0) {
                     await this.saveCheckpoint();
                 }
             }
@@ -201,7 +182,8 @@ export class LoopRuntime {
                 finalCheckpoint: this.state.lastCheckpoint ?? undefined,
                 totalCompactions: this.totalCompactions,
             };
-        } finally {
+        }
+        finally {
             this.running = false;
         }
     }
@@ -270,21 +252,10 @@ export class LoopRuntime {
             };
             // Use compact orchestrator if available
             if (this.compactOrchestrator && this.callbacks.onInvokeAgent) {
-                const orchestratorCallbacks = this.buildCompactCallbacks(
-                    task,
-                    model,
-                );
-                const result = await this.compactOrchestrator.invokeWithCompact(
-                    invokeOptions,
-                    orchestratorCallbacks,
-                );
+                const orchestratorCallbacks = this.buildCompactCallbacks(task, model);
+                const result = await this.compactOrchestrator.invokeWithCompact(invokeOptions, orchestratorCallbacks);
                 if (result.success) {
-                    const continued = await this.handleAutoContinuation(
-                        compactMessages,
-                        result,
-                        task,
-                        outputLimitHandler,
-                    );
+                    const continued = await this.handleAutoContinuation(compactMessages, result, task, outputLimitHandler);
                     if (continued) {
                         continue;
                     }
@@ -296,9 +267,7 @@ export class LoopRuntime {
                 // Check for circuit breaker
                 if (this.compactOrchestrator.isCircuitBroken()) {
                     this.state.status = "blocked";
-                    throw new Error(
-                        `Compact circuit breaker engaged after ${this.compactOrchestrator.getConsecutiveFailures()} failures.`,
-                    );
+                    throw new Error(`Compact circuit breaker engaged after ${this.compactOrchestrator.getConsecutiveFailures()} failures.`);
                 }
                 // Compact happened — retry
                 if (result.compactResult) {
@@ -328,9 +297,7 @@ export class LoopRuntime {
                             h5_used_pct: 100,
                             h5_resets_at_epoch: resetEpoch,
                         });
-                        console.log(
-                            `[LoopRuntime] GLM quota hit, reset at ${resetTime}`,
-                        );
+                        console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
                     }
                     await this.handleQuotaPause();
                     return;
@@ -342,10 +309,7 @@ export class LoopRuntime {
             if (!result || !result.success) {
                 const errorMsg = result?.error ?? "Invoke failed";
                 // Check if this is a GLM 429 quota error with reset time
-                if (
-                    errorMsg.includes("1308") ||
-                    errorMsg.includes("Usage limit")
-                ) {
+                if (errorMsg.includes("1308") || errorMsg.includes("Usage limit")) {
                     const resetTime = parseGLMErrorResetTime(errorMsg);
                     if (resetTime) {
                         // Update mirror with reset epoch so auto-resume works
@@ -357,19 +321,14 @@ export class LoopRuntime {
                             h5_used_pct: 100,
                             h5_resets_at_epoch: resetEpoch,
                         });
-                        console.log(
-                            `[LoopRuntime] GLM quota hit, reset at ${resetTime}`,
-                        );
+                        console.log(`[LoopRuntime] GLM quota hit, reset at ${resetTime}`);
                     }
                     // Handle quota pause instead of throwing
                     await this.handleQuotaPause();
                     return;
                 }
                 // Check if this is a Minimax 529 overloaded error
-                if (
-                    errorMsg.includes("529") &&
-                    errorMsg.includes("overloaded_error")
-                ) {
+                if (errorMsg.includes("529") && errorMsg.includes("overloaded_error")) {
                     const resetEpoch = parseMinimaxOverloadResetTime(errorMsg);
                     if (resetEpoch) {
                         // Update mirror with reset epoch so auto-resume works
@@ -380,9 +339,7 @@ export class LoopRuntime {
                             h5_used_pct: 100,
                             h5_resets_at_epoch: resetEpoch,
                         });
-                        console.log(
-                            `[LoopRuntime] Minimax overloaded, auto-resume in ~2min`,
-                        );
+                        console.log(`[LoopRuntime] Minimax overloaded, auto-resume in ~2min`);
                     }
                     // Handle quota pause instead of throwing
                     await this.handleQuotaPause();
@@ -390,12 +347,7 @@ export class LoopRuntime {
                 }
                 throw new Error(errorMsg);
             }
-            const continued = await this.handleAutoContinuation(
-                compactMessages,
-                result,
-                task,
-                outputLimitHandler,
-            );
+            const continued = await this.handleAutoContinuation(compactMessages, result, task, outputLimitHandler);
             if (continued) {
                 continue;
             }
@@ -406,33 +358,22 @@ export class LoopRuntime {
         }
         // Max compact retries exceeded
         this.state.status = "blocked";
-        throw new Error(
-            `Max compact retries (${this.maxCompactRetries}) exceeded`,
-        );
+        throw new Error(`Max compact retries (${this.maxCompactRetries}) exceeded`);
     }
     async handleAutoContinuation(messages, result, task, outputLimitHandler) {
         const output = result.output ?? "";
-        const hitOutputLimit = outputLimitHandler.detectOutputLimit(
-            result.error,
-            {
-                finishReason: result.finishReason,
-            },
-        );
-        const hitCompactionBoundary =
-            this.autoCompactEngine?.detectCompaction(output) ?? false;
+        const hitOutputLimit = outputLimitHandler.detectOutputLimit(result.error, {
+            finishReason: result.finishReason,
+        });
+        const hitCompactionBoundary = this.autoCompactEngine?.detectCompaction(output) ?? false;
         if (!hitOutputLimit && !hitCompactionBoundary) {
             return false;
         }
         if (!outputLimitHandler.shouldContinue()) {
-            throw new Error(
-                `Output limit recovery exhausted after ${outputLimitHandler.getAttempts()} attempts for task ${task.id}.`,
-            );
+            throw new Error(`Output limit recovery exhausted after ${outputLimitHandler.getAttempts()} attempts for task ${task.id}.`);
         }
         this.handleInvokeSuccess(messages, result, task);
-        await outputLimitHandler.handleOutputLimit(
-            output,
-            result.finishReason ?? "length",
-        );
+        await outputLimitHandler.handleOutputLimit(output, result.finishReason ?? "length");
         const continueMessage = hitCompactionBoundary
             ? (this.autoCompactEngine?.buildContinueMessage() ?? "continue")
             : "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if needed and continue the same task.";
@@ -454,12 +395,10 @@ export class LoopRuntime {
     buildCompactCallbacks(task, _model) {
         return {
             invokeAgent: async (opts) => {
-                return (
-                    (await this.callbacks.onInvokeAgent?.(opts)) ?? {
-                        success: false,
-                        error: "No agent",
-                    }
-                );
+                return ((await this.callbacks.onInvokeAgent?.(opts)) ?? {
+                    success: false,
+                    error: "No agent",
+                });
             },
             onCheckpoint: async (result) => {
                 this.callbacks.onCompaction?.(result);
@@ -557,12 +496,12 @@ export class LoopRuntime {
             this.state.status = "waiting_human";
             await this.callbacks.onEscalate?.(task, "Human review required");
             this.paused = true;
-        } else if (verdict === "repair") {
+        }
+        else if (verdict === "repair") {
             // Append repair instruction
             messages.push({
                 role: "user",
-                content:
-                    "Tests failed. Please fix the issues and ensure all tests pass.",
+                content: "Tests failed. Please fix the issues and ensure all tests pass.",
                 timestamp: Date.now(),
             });
         }
@@ -602,7 +541,8 @@ export class LoopRuntime {
             // console.log(
             // 	`[LoopRuntime] Paused for 5h quota. Auto-resume at ${resumeAt}`,
             // );
-        } else {
+        }
+        else {
             // console.log(
             // 	"[LoopRuntime] Paused for quota but no reset time known yet.",
             // );
@@ -638,10 +578,7 @@ export class LoopRuntime {
             const continuePrompt = this.autoCompactEngine.loadContinuePrompt();
             if (continuePrompt) {
                 // Resume will inject the continue prompt
-                this.callbacks.onIteration?.(
-                    this.state.iteration,
-                    this.state.status,
-                );
+                this.callbacks.onIteration?.(this.state.iteration, this.state.status);
             }
         }
         return this.run();

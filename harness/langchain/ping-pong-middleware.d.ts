@@ -1,8 +1,4 @@
-import {
-    PingPongDecisionEngine,
-    type PingPongDecisionOptions,
-    type PingPongDecisionResult,
-} from "../../packages/intent-analyzer/src/index.js";
+import { PingPongDecisionEngine, type PingPongDecisionOptions, type PingPongDecisionResult } from "../../packages/intent-analyzer/src/index.js";
 export interface PingPongMiddlewareOptions extends PingPongDecisionOptions {
     /** Shared directory watched by LoopDaemon. Defaults to /tmp/herdr-workspace. */
     workspace?: string;
@@ -26,13 +22,7 @@ export interface PingPongMiddlewareResult {
 export declare class PingPongMiddleware {
     private readonly engine;
     constructor(engine?: PingPongDecisionEngine);
-    submit(
-        request: string,
-        options?: PingPongMiddlewareOptions,
-    ): PingPongMiddlewareResult;
+    submit(request: string, options?: PingPongMiddlewareOptions): PingPongMiddlewareResult;
 }
-export declare function submitPingPongIntent(
-    request: string,
-    options?: PingPongMiddlewareOptions,
-): PingPongMiddlewareResult;
+export declare function submitPingPongIntent(request: string, options?: PingPongMiddlewareOptions): PingPongMiddlewareResult;
 //# sourceMappingURL=ping-pong-middleware.d.ts.map

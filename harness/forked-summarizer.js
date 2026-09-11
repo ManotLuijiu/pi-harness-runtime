@@ -73,16 +73,15 @@ export class ForkedSummarizer {
                 maxOutputTokens: this.config.maxSummaryTokens,
             });
             if (!result.success || !result.output) {
-                throw new Error(
-                    `Summarization failed: ${result.error ?? "unknown"}`,
-                );
+                throw new Error(`Summarization failed: ${result.error ?? "unknown"}`);
             }
             return {
                 summary: result.output.trim(),
                 droppedCount: oldMessages.length,
                 tokensUsed: result.usage?.totalTokens,
             };
-        } catch (error) {
+        }
+        catch (error) {
             // Return heuristic summary on failure
             return {
                 summary: this.heuristicSummary(oldMessages, focusOn),
@@ -123,7 +122,8 @@ Do not include verbatim tool results — summarize their outcomes instead.`;
      * Truncate content to max length
      */
     truncateContent(content, maxLength) {
-        if (content.length <= maxLength) return content;
+        if (content.length <= maxLength)
+            return content;
         return content.substring(0, maxLength) + "... [truncated]";
     }
     /**
@@ -145,7 +145,8 @@ Do not include verbatim tool results — summarize their outcomes instead.`;
             ];
             for (const pattern of filePatterns) {
                 for (const match of content.matchAll(pattern)) {
-                    if (match[1]) keyFiles.add(match[1].trim());
+                    if (match[1])
+                        keyFiles.add(match[1].trim());
                 }
             }
             // Look for decisions
@@ -155,7 +156,8 @@ Do not include verbatim tool results — summarize their outcomes instead.`;
             ];
             for (const pattern of decisionPatterns) {
                 for (const match of content.matchAll(pattern)) {
-                    if (match[1]) decisions.push(match[1].trim());
+                    if (match[1])
+                        decisions.push(match[1].trim());
                 }
             }
             // Extract key user messages
@@ -202,13 +204,10 @@ Do not include verbatim tool results — summarize their outcomes instead.`;
  * Create a ForkedSummarizer with default config
  */
 export function createForkedSummarizer(model, invokeAgent, config) {
-    return new ForkedSummarizer(
-        {
-            model,
-            maxSummaryTokens: 4096,
-            ...config,
-        },
-        invokeAgent,
-    );
+    return new ForkedSummarizer({
+        model,
+        maxSummaryTokens: 4096,
+        ...config,
+    }, invokeAgent);
 }
 //# sourceMappingURL=forked-summarizer.js.map

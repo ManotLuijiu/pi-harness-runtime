@@ -17,15 +17,8 @@
  *                 2. Handle reactive 413 (context too long)
  *                 3. Generate continue prompt
  */
-import {
-    roughTokenCount,
-    roughMessagesTokens,
-} from "../packages/token-estimation/src/index.js";
-import {
-    ContextWindowManager,
-    microcompactToolResults,
-    MAX_CONSECUTIVE_COMPACT_FAILURES,
-} from "./context-window-manager.js";
+import { roughTokenCount, roughMessagesTokens, } from "../packages/token-estimation/src/index.js";
+import { ContextWindowManager, microcompactToolResults, MAX_CONSECUTIVE_COMPACT_FAILURES, } from "./context-window-manager.js";
 import { continuePromptGenerator } from "./continue-prompt.js";
 // --- Orchestrator -------------------------------------------------------------
 /**
@@ -61,17 +54,12 @@ export class CompactOrchestrator {
         this.blockingThreshold = config.blockingThreshold ?? 0.97;
         this.maxCompactAttempts =
             config.maxCompactAttempts ?? MAX_CONSECUTIVE_COMPACT_FAILURES;
-        this.microcompactTimeGapMs =
-            config.microcompactTimeGapMs ?? 30 * 60 * 1000;
+        this.microcompactTimeGapMs = config.microcompactTimeGapMs ?? 30 * 60 * 1000;
         this.microcompactKeepRecent = config.microcompactKeepRecent ?? 2;
         this.contextWindow = new ContextWindowManager();
         // Set context window size if provided
         if (config.contextWindowSize) {
-            this.contextWindow.setContextWindow(
-                this.provider,
-                this.model,
-                config.contextWindowSize,
-            );
+            this.contextWindow.setContextWindow(this.provider, this.model, config.contextWindowSize);
         }
     }
     /**
@@ -101,13 +89,7 @@ export class CompactOrchestrator {
         // -- Blocking: must compact before API call ---------------------------
         if (this.contextWindow.shouldBlockApiCall(estimate)) {
             callbacks.onPreCompact?.("token_threshold");
-            const compact = await this.runFullCompact(
-                messages,
-                model ?? this.model,
-                maxOutputTokens,
-                "token_threshold",
-                callbacks,
-            );
+            const compact = await this.runFullCompact(messages, model ?? this.model, maxOutputTokens, "token_threshold", callbacks);
             if (!compact.success) {
                 return {
                     success: false,
@@ -125,13 +107,7 @@ export class CompactOrchestrator {
         // -- Proactive auto-compact at 85% ----------------------------------
         if (this.contextWindow.shouldProactiveCompact(estimate)) {
             callbacks.onPreCompact?.("token_threshold");
-            const compact = await this.runFullCompact(
-                messages,
-                model ?? this.model,
-                maxOutputTokens,
-                "token_threshold",
-                callbacks,
-            );
+            const compact = await this.runFullCompact(messages, model ?? this.model, maxOutputTokens, "token_threshold", callbacks);
             if (compact.success) {
                 this.contextWindow.recordCompactSuccess();
                 if (compact.result) {
@@ -171,13 +147,7 @@ export class CompactOrchestrator {
                 };
             }
             callbacks.onPreCompact?.("output_limit");
-            const compact = await this.runFullCompact(
-                messages,
-                model ?? this.model,
-                maxOutputTokens,
-                "output_limit",
-                callbacks,
-            );
+            const compact = await this.runFullCompact(messages, model ?? this.model, maxOutputTokens, "output_limit", callbacks);
             if (compact.success) {
                 this.contextWindow.recordCompactSuccess();
                 if (compact.result) {
@@ -218,16 +188,15 @@ export class CompactOrchestrator {
         let droppedCount = oldMessages.length;
         if (callbacks.summarizeViaForkedAgent) {
             try {
-                const result = await callbacks.summarizeViaForkedAgent(
-                    oldMessages,
-                    reason,
-                );
+                const result = await callbacks.summarizeViaForkedAgent(oldMessages, reason);
                 summary = result.summary;
                 droppedCount = result.droppedCount;
-            } catch {
+            }
+            catch {
                 summary = this.heuristicSummary(oldMessages, reason);
             }
-        } else {
+        }
+        else {
             summary = this.heuristicSummary(oldMessages, reason);
         }
         // -- Build compact boundary message -----------------------------------
@@ -247,13 +216,11 @@ export class CompactOrchestrator {
         };
         // -- Preserve tool results from recent messages -----------------------
         const preservedRecent = recentMessages.map((msg) => {
-            if (msg.role !== "assistant" || !msg.toolResults) return msg;
+            if (msg.role !== "assistant" || !msg.toolResults)
+                return msg;
             return {
                 ...msg,
-                toolResults: this.preserveRecentToolResults(
-                    msg,
-                    this.microcompactKeepRecent,
-                ),
+                toolResults: this.preserveRecentToolResults(msg, this.microcompactKeepRecent),
             };
         });
         // -- Rebuild message array -------------------------------------------
@@ -281,7 +248,8 @@ export class CompactOrchestrator {
      * Preserve only recent N tool results per message
      */
     preserveRecentToolResults(msg, keepCount) {
-        if (!msg.toolResults) return undefined;
+        if (!msg.toolResults)
+            return undefined;
         const sorted = [...msg.toolResults]
             .sort((a, b) => b.timestamp - a.timestamp)
             .slice(0, keepCount);
@@ -320,10 +288,7 @@ export class CompactOrchestrator {
      * Uses the microcompactToolResults helper from context-window-manager.
      */
     tryMicrocompact(messages) {
-        if (
-            Date.now() - this.lastAssistantTimestamp <
-            this.microcompactTimeGapMs
-        ) {
+        if (Date.now() - this.lastAssistantTimestamp < this.microcompactTimeGapMs) {
             return;
         }
         const freed = microcompactToolResults(messages, {
@@ -338,29 +303,22 @@ export class CompactOrchestrator {
      * Check if error is a context-too-long error
      */
     isContextTooLongError(error) {
-        if (!error) return false;
-        return (
-            /context.*(length|window).*exceed/i.test(error) ||
+        if (!error)
+            return false;
+        return (/context.*(length|window).*exceed/i.test(error) ||
             /too many (tokens|input tokens)/i.test(error) ||
             /413/i.test(error) ||
-            /prompt is too long/i.test(error)
-        );
+            /prompt is too long/i.test(error));
     }
     /**
      * Estimate token count for an invoke call.
      */
     estimateTokens(opts) {
-        const messageTokens = roughMessagesTokens(
-            opts.messages.map((m) => ({ role: m.role, content: m.content })),
-        );
-        const toolTokens = (opts.tools ?? []).reduce(
-            (sum, tool) =>
-                sum +
-                roughTokenCount(tool.name) +
-                roughTokenCount(tool.description ?? "") +
-                roughTokenCount(JSON.stringify(tool.input_schema ?? {})),
-            0,
-        );
+        const messageTokens = roughMessagesTokens(opts.messages.map((m) => ({ role: m.role, content: m.content })));
+        const toolTokens = (opts.tools ?? []).reduce((sum, tool) => sum +
+            roughTokenCount(tool.name) +
+            roughTokenCount(tool.description ?? "") +
+            roughTokenCount(JSON.stringify(tool.input_schema ?? {})), 0);
         return messageTokens + toolTokens;
     }
     /**
@@ -368,7 +326,8 @@ export class CompactOrchestrator {
      */
     trackToolResults(messages) {
         for (const msg of messages) {
-            if (msg.role !== "assistant" || !msg.toolResults) continue;
+            if (msg.role !== "assistant" || !msg.toolResults)
+                continue;
             for (const tr of msg.toolResults) {
                 this.toolResultsById.set(tr.id, {
                     timestamp: tr.timestamp,

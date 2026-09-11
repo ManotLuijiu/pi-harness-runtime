@@ -15,10 +15,7 @@ export class SessionMemoryManager {
     maxFacts = 50;
     maxDecisions = 20;
     constructor(jobId, rootDir) {
-        this.memoryPath = join(
-            rootDir ?? join(process.env.HOME ?? ".", ".pi", "harness", jobId),
-            "session-memory.json",
-        );
+        this.memoryPath = join(rootDir ?? join(process.env.HOME ?? ".", ".pi", "harness", jobId), "session-memory.json");
         this.memory = this.load() ?? {
             jobId,
             extractedFacts: [],
@@ -37,44 +34,31 @@ export class SessionMemoryManager {
         for (const msg of messages) {
             const content = msg.content;
             // File creation patterns
-            for (const match of content.matchAll(
-                /(?:created|created file|created module):?\s*([^\n.]+)/gi,
-            )) {
+            for (const match of content.matchAll(/(?:created|created file|created module):?\s*([^\n.]+)/gi)) {
                 if (match[1]) {
                     this.addFileReference(match[1].trim(), "created");
                 }
             }
             // File modification patterns
-            for (const match of content.matchAll(
-                /(?:modified|updated|changed):?\s*([^\n.]+)/gi,
-            )) {
+            for (const match of content.matchAll(/(?:modified|updated|changed):?\s*([^\n.]+)/gi)) {
                 if (match[1] && !/(?:file|module|code)/i.test(match[0])) {
                     this.addFileReference(match[1].trim(), "modified");
                 }
             }
             // Test result patterns
-            for (const match of content.matchAll(
-                /(?:test|spec):?\s*([^\n.]+)\s*(passed|failed|pass|fail)/gi,
-            )) {
+            for (const match of content.matchAll(/(?:test|spec):?\s*([^\n.]+)\s*(passed|failed|pass|fail)/gi)) {
                 if (match[1] && match[2]) {
-                    this.addTestResult(
-                        match[1].trim(),
-                        /^pass$/i.test(match[2]),
-                    );
+                    this.addTestResult(match[1].trim(), /^pass$/i.test(match[2]));
                 }
             }
             // Decision patterns
-            for (const match of content.matchAll(
-                /(?:decided|choosing|chose|decision|approach|using):?\s*([^\n.]+)/gi,
-            )) {
+            for (const match of content.matchAll(/(?:decided|choosing|chose|decision|approach|using):?\s*([^\n.]+)/gi)) {
                 if (match[1] && match[1].length > 10) {
                     this.recordDecision(match[1].trim());
                 }
             }
             // Key facts patterns
-            for (const match of content.matchAll(
-                /(?:important|key|note|facts?:)\s*([^\n]+)/gi,
-            )) {
+            for (const match of content.matchAll(/(?:important|key|note|facts?:)\s*([^\n]+)/gi)) {
                 if (match[1] && match[1].length > 20) {
                     this.recordFact(match[1].trim());
                 }
@@ -98,9 +82,7 @@ export class SessionMemoryManager {
         });
         // Trim to max
         if (this.memory.decisions.length > this.maxDecisions) {
-            this.memory.decisions = this.memory.decisions.slice(
-                -this.maxDecisions,
-            );
+            this.memory.decisions = this.memory.decisions.slice(-this.maxDecisions);
         }
         this.save();
     }
@@ -115,9 +97,7 @@ export class SessionMemoryManager {
         this.memory.extractedFacts.push(fact);
         // Trim to max
         if (this.memory.extractedFacts.length > this.maxFacts) {
-            this.memory.extractedFacts = this.memory.extractedFacts.slice(
-                -this.maxFacts,
-            );
+            this.memory.extractedFacts = this.memory.extractedFacts.slice(-this.maxFacts);
         }
         this.save();
     }
@@ -188,9 +168,7 @@ export class SessionMemoryManager {
         }
         // Test status
         if (this.memory.testsStatus.length > 0) {
-            const passed = this.memory.testsStatus.filter(
-                (t) => t.passed,
-            ).length;
+            const passed = this.memory.testsStatus.filter((t) => t.passed).length;
             const total = this.memory.testsStatus.length;
             parts.push(`## Tests: ${passed}/${total} passed`);
             parts.push("");
@@ -237,10 +215,8 @@ export class SessionMemoryManager {
      * Check if all tests passed
      */
     allTestsPassed() {
-        return (
-            this.memory.testsStatus.length > 0 &&
-            this.memory.testsStatus.every((t) => t.passed)
-        );
+        return (this.memory.testsStatus.length > 0 &&
+            this.memory.testsStatus.every((t) => t.passed));
     }
     /**
      * Clear memory (e.g., after successful task completion)
@@ -273,18 +249,14 @@ export class SessionMemoryManager {
         }
         if (other.decisions) {
             for (const decision of other.decisions) {
-                if (
-                    !this.memory.decisions.some((d) => d.text === decision.text)
-                ) {
+                if (!this.memory.decisions.some((d) => d.text === decision.text)) {
                     this.memory.decisions.push(decision);
                 }
             }
         }
         if (other.filesModified) {
             for (const file of other.filesModified) {
-                if (
-                    !this.memory.filesModified.some((f) => f.path === file.path)
-                ) {
+                if (!this.memory.filesModified.some((f) => f.path === file.path)) {
                     this.memory.filesModified.push(file);
                 }
             }
@@ -299,23 +271,17 @@ export class SessionMemoryManager {
         }
         try {
             return JSON.parse(readFileSync(this.memoryPath, "utf-8"));
-        } catch {
+        }
+        catch {
             return null;
         }
     }
     save() {
-        const dir = this.memoryPath.substring(
-            0,
-            this.memoryPath.lastIndexOf("/"),
-        );
+        const dir = this.memoryPath.substring(0, this.memoryPath.lastIndexOf("/"));
         if (!existsSync(dir)) {
             mkdirSync(dir, { recursive: true });
         }
-        writeFileSync(
-            this.memoryPath,
-            JSON.stringify(this.memory, null, 2),
-            "utf-8",
-        );
+        writeFileSync(this.memoryPath, JSON.stringify(this.memory, null, 2), "utf-8");
     }
 }
 // --- Factory ----------------------------------------------------------------

@@ -26,9 +26,7 @@ export class ContinuePromptGenerator {
         }
         if (context.partialFiles.length > 0) {
             parts.push("## Partial Files Created");
-            parts.push(
-                "Review these files — they may contain incomplete work:",
-            );
+            parts.push("Review these files — they may contain incomplete work:");
             for (const file of context.partialFiles) {
                 parts.push(`- ${file}`);
             }
@@ -48,17 +46,7 @@ export class ContinuePromptGenerator {
             }
             parts.push("");
         }
-        parts.push(
-            "## Instructions",
-            "",
-            "1. Review any partial files created above",
-            "2. Continue from where the previous session ended",
-            "3. Complete the remaining work listed in 'What Needs To Be Done'",
-            "4. Ensure all tests pass before marking complete",
-            "",
-            "**Do not repeat work that was already completed.**",
-            "",
-        );
+        parts.push("## Instructions", "", "1. Review any partial files created above", "2. Continue from where the previous session ended", "3. Complete the remaining work listed in 'What Needs To Be Done'", "4. Ensure all tests pass before marking complete", "", "**Do not repeat work that was already completed.**", "");
         if (context.nextStep) {
             parts.push("## Suggested Next Step");
             parts.push(context.nextStep);
@@ -114,9 +102,7 @@ export class ContinuePromptGenerator {
             whatWasCompleted: result.summary
                 ? ContinuePromptGenerator.extractCompletedWork(result.summary)
                 : [],
-            whatNeedsToBeDone: [
-                "Continue from where the conversation was compacted",
-            ],
+            whatNeedsToBeDone: ["Continue from where the conversation was compacted"],
             partialFiles: [],
             decisions: result.summary
                 ? ContinuePromptGenerator.extractDecisions(result.summary)
@@ -169,8 +155,9 @@ export class ContinuePromptGenerator {
      * Truncate content to max length
      */
     truncateContent(content, maxLength) {
-        if (content.length <= maxLength) return content;
-        return `${content.substring(0, maxLength)}... [truncated]`;
+        if (content.length <= maxLength)
+            return content;
+        return content.substring(0, maxLength) + "... [truncated]";
     }
 }
 // --- Singleton Instance ------------------------------------------------------
