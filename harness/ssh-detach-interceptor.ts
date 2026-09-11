@@ -34,18 +34,15 @@ function findLastSshCommand(s: string): { start: number; end: number } | null {
 			continue;
 		}
 		if (depth > 0) {
-			if (
-				(ch === '"' && depth === 1) ||
-				(ch === "'" && depth === 2)
-			) {
+			if ((ch === '"' && depth === 1) || (ch === "'" && depth === 2)) {
 				depth = 0;
 			}
 		} else if (ch === '"') depth = 1;
-			else if (ch === "'") depth = 2;
-			else if (ch === "|") {
-				sshEnd = i;
-				break;
-			}
+		else if (ch === "'") depth = 2;
+		else if (ch === "|") {
+			sshEnd = i;
+			break;
+		}
 	}
 	return { start: sshStart, end: sshEnd };
 }
@@ -190,13 +187,22 @@ export function transformToDetached(
 	// Returns position AFTER the closing quote, or s.length if no quotes found.
 	function findClosingQuotePos(s: string): number {
 		for (let i = s.length - 1; i >= 0; i--) {
-			if (s[i] === "\\" && i > 0) { i--; continue; }
+			if (s[i] === "\\" && i > 0) {
+				i--;
+				continue;
+			}
 			if (s[i] === '"' || s[i] === "'") {
 				const cq = s[i];
 				let found = false;
 				for (let j = i - 1; j >= 0; j--) {
-					if (s[j] === "\\") { j--; continue; }
-					if (s[j] === cq) { found = true; break; }
+					if (s[j] === "\\") {
+						j--;
+						continue;
+					}
+					if (s[j] === cq) {
+						found = true;
+						break;
+					}
 				}
 				if (found) return i + 1; // AFTER closing quote
 			}
@@ -207,13 +213,22 @@ export function transformToDetached(
 	// Helper: find the position OF the closing quote (excluding the quote itself)
 	function findClosingQuotePosExcl(s: string): number {
 		for (let i = s.length - 1; i >= 0; i--) {
-			if (s[i] === "\\" && i > 0) { i--; continue; }
+			if (s[i] === "\\" && i > 0) {
+				i--;
+				continue;
+			}
 			if (s[i] === '"' || s[i] === "'") {
 				const cq = s[i];
 				let found = false;
 				for (let j = i - 1; j >= 0; j--) {
-					if (s[j] === "\\") { j--; continue; }
-					if (s[j] === cq) { found = true; break; }
+					if (s[j] === "\\") {
+						j--;
+						continue;
+					}
+					if (s[j] === cq) {
+						found = true;
+						break;
+					}
 				}
 				if (found) return i; // AT (not after) closing quote
 			}

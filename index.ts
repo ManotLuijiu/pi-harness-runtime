@@ -129,14 +129,20 @@ async function initSshDetachInterceptor(pi: ExtensionAPI): Promise<void> {
 		pi.on("tool_call", (event, _api) => {
 			if (event.toolName !== "bash") return {};
 			const command = (event.input as { command?: string }).command ?? "";
-			const { isSshCommand, isDetachedPattern, hasBareAmpersand } = require("./harness/ssh-detach-interceptor.js");
+			const {
+				isSshCommand,
+				isDetachedPattern,
+				hasBareAmpersand,
+			} = require("./harness/ssh-detach-interceptor.js");
 
 			if (!isSshCommand(command)) return {};
 			if (isDetachedPattern(command)) return {};
 			if (!hasBareAmpersand(command)) return {};
 
 			// Transform to detached pattern
-			const { transformToDetached } = require("./harness/ssh-detach-interceptor.js");
+			const {
+				transformToDetached,
+			} = require("./harness/ssh-detach-interceptor.js");
 			const transformed = transformToDetached(command);
 			if (transformed !== command) {
 				(event.input as { command: string }).command = transformed;
