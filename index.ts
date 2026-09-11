@@ -435,6 +435,25 @@ AFTER running any Docker build command (docker build, docker compose build, dock
 3. Example: After \`docker compose up --build\`, run \`docker builder prune -f\`
 4. For aggressive cleanup: \`docker builder prune -a -f\` (removes ALL unused cache)
 `;
+	// --- SSH Guard Rules: Never run servers over SSH in the foreground --------
+	// This runs in EVERY repo the agent enters — not just pi-harness-runtime.
+	// Pattern: embed as constant (no file dependency) so it works everywhere.
+	const SSH_GUARD_RULES = `
+## SSH / Remote Server Commands
+
+**CRITICAL — SSH BACKGROUNDING RULE:**
+Never run a server or long-running process over SSH in the foreground. This causes the SSH session to hang indefinitely, blocking the agent for hours.
+
+- BAD: \`ssh host "python -m uvicorn ..."\`  (no &, SSH will hang)
+- GOOD: \`ssh host "nohup python -m uvicorn ... > /tmp/log 2>&1 & echo DONE"\`
+- GOOD: \`ssh host "cd /path && python -m uvicorn ... > log 2>&1 & echo DONE"\`
+
+Every SSH command that starts a server, daemon, or background process MUST use the detached SSH pattern: nohup + redirect + & + echo DONE.
+If you are unsure whether a command will hang, ALWAYS use nohup + backgrounding. It is always safe to detach; it is never safe to run a server in the foreground over SSH.
+
+Server process examples that must be detached: uvicorn, fastapi dev server, gunicorn, node server, flask run, django runserver, python http.server, any listening daemon.
+`;
+
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
@@ -442,6 +461,7 @@ AFTER running any Docker build command (docker build, docker compose build, dock
 			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
 			event.systemPrompt += WRITE_REVIEW_HINT;
 			event.systemPrompt += DOCKER_CLEANUP_HINT;
+			event.systemPrompt += SSH_GUARD_RULES;
 			firstAgentStart = false;
 		}
 	});
