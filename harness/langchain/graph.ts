@@ -78,6 +78,17 @@ export interface LoopDeps {
 		code: string,
 		writtenFiles?: Record<string, string>,
 	) => Promise<ReviewVerdict>;
+	/**
+	 * ADK ParallelAgent equivalent: run 3 specialist reviews in parallel.
+	 * If provided, reviewNode uses this instead of the monolithic review().
+	 * Specialists: security auditor + style auditor + performance analyst.
+	 * Takes ~1/3 the time of sequential reviews.
+	 */
+	parallelReview?: (
+		plan: string,
+		code: string,
+		writtenFiles?: Record<string, string>,
+	) => Promise<ReviewVerdict>;
 	maxIterations: number;
 	onStep?: (step: string, state: LoopState) => void;
 	/** Optional widget for TUI / status-line display (mirrors pi-lens footer style). */
@@ -159,7 +170,10 @@ function writeNode(deps: LoopDeps) {
 
 function reviewNode(deps: LoopDeps) {
 	return async (state: LoopState): Promise<Partial<LoopState>> => {
-		const review = await deps.review(
+		// ADK ParallelAgent: use parallel review if available (3x faster)
+		// Falls back to sequential review for dry-run or when parallelReview is not wired.
+		const doReview = deps.parallelReview ?? deps.review;
+		const review = await doReview(
 			state.plan,
 			state.code,
 			state.writtenFiles ?? {},
@@ -326,6 +340,13 @@ export async function buildRealLoopDeps(
 	const coder = mod.createCoderAgent(coderModelOpts);
 	const reviewer = mod.createReviewerAgent(reviewerModelOpts);
 
+	// ADK ParallelAgent: create 3 specialist reviewers for parallel execution
+	const specialists = {
+		security: mod.createSpecialistReviewer("security", reviewerModelOpts),
+		style: mod.createSpecialistReviewer("style", reviewerModelOpts),
+		performance: mod.createSpecialistReviewer("performance", reviewerModelOpts),
+	};
+
 	// Create and init the shared blackboard
 	const blackboard = new WriteReviewBlackboard(
 		options.blackboardDir ?? process.cwd(),
@@ -451,6 +472,9 @@ export async function buildRealLoopDeps(
 				};
 			}
 		},
+		// ADK ParallelAgent: 3 specialists run in parallel via Promise.all
+		parallelReview: async (plan, _code, writtenFiles = {}) =>
+			mod.parallelReview(specialists, plan, _code, writtenFiles),
 	};
 }
 
@@ -551,6 +575,14 @@ export function buildDryRunDeps(
 				summary: "Dry-run: looks good",
 				comments: [],
 			};
+		},
+		// Dry-run parallel review: same deterministic stub (no LLM calls)
+		parallelReview: async (_plan, _code, _writtenFiles = {}) => {
+			return buildDryRunDeps({ maxIterations: options.maxIterations }).review(
+				"",
+				"",
+				{},
+			);
 		},
 	};
 }
