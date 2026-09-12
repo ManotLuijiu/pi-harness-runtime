@@ -235,10 +235,7 @@ export async function parallelReview(
 	const codeSection =
 		Object.keys(writtenFiles).length > 0
 			? Object.entries(writtenFiles)
-					.map(
-						([path, content]) =>
-							`## ${path}\n\n\`\`\`\n${content}\n\`\`\`\n`,
-					)
+					.map(([path, content]) => `## ${path}\n\n\`\`\`\n${content}\n\`\`\`\n`)
 					.join("\n\n")
 			: `## Code\n\n\`\`\`\n${code}\n\`\`\`\n`;
 
@@ -263,8 +260,15 @@ export async function parallelReview(
 		_specialist: SpecialistType,
 	): { verdict: string; summary: string; comments: unknown[] } => {
 		if (typeof r === "object" && r !== null && "structuredResponse" in r) {
-			const sr = (r as { structuredResponse: { verdict: string; summary: string; comments: unknown[] } })
-				.structuredResponse;
+			const sr = (
+				r as {
+					structuredResponse: {
+						verdict: string;
+						summary: string;
+						comments: unknown[];
+					};
+				}
+			).structuredResponse;
 			return { verdict: sr.verdict, summary: sr.summary, comments: sr.comments };
 		}
 		return { verdict: "approved", summary: "", comments: [] };
@@ -278,9 +282,17 @@ export async function parallelReview(
 	const buildLabeledComments = (
 		comments: unknown[],
 		type: SpecialistType,
-	): { file?: string; comment: string; severity: "critical" | "major" | "minor" }[] =>
+	): {
+		file?: string;
+		comment: string;
+		severity: "critical" | "major" | "minor";
+	}[] =>
 		(comments ?? []).map((c) => {
-			const comment = c as { file?: string; comment: string; severity?: "critical" | "major" | "minor" };
+			const comment = c as {
+				file?: string;
+				comment: string;
+				severity?: "critical" | "major" | "minor";
+			};
 			return {
 				file: comment.file,
 				comment: `[${type}] ${comment.comment}`,
