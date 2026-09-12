@@ -991,6 +991,8 @@ export class LoopDaemon {
 			console.error(
 				`[daemon] Task ${task.taskId} failed: ${err instanceof Error ? err.message : String(err)}`,
 			);
+			// Release lease so the task can be picked up again on next poll
+			this._releaseLease(task.taskId);
 			this.running.delete(task.taskId);
 		});
 	}
@@ -1134,12 +1136,26 @@ export class LoopDaemon {
 					ac.abort();
 				}, this.config.taskTimeoutMs);
 				try {
+					// NOTE: If timeout wins, finalState will be undefined. We handle
+					// this below so we don't crash on finalState.review.
 					finalState = await Promise.race([
 						invokeTask(ac.signal),
 						timeoutPromise(this.config.taskTimeoutMs),
 					]);
 				} finally {
 					clearTimeout(timeout);
+				}
+				// Handle timeout case: timeoutPromise resolved first, finalState is undefined.
+				// Must not fall through to finalState.review access (would throw).
+				if (finalState === undefined) {
+					log("Task timed out — releasing lease and cleaning up");
+					this._releaseLease(task.taskId);
+					this.running.delete(task.taskId);
+					this._notifyHumanReviewNeeded(
+						task,
+						`Task timed out after ${this.config.taskTimeoutMs}ms — manual review needed`,
+					);
+					return;
 				}
 			} else {
 				finalState = await invokeTask();
