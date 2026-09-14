@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.69](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.68...v1.1.69) (2026-09-14)
+
 ### [1.1.68](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.76...v1.1.68) (2026-09-14)
 
 
