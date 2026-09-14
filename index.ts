@@ -13,7 +13,6 @@
  * Runs directly from Bun.
  */
 
-import { Key } from "@earendil-works/pi-tui";
 import type {
 	CompactOptions,
 	ExtensionAPI,
@@ -24,8 +23,6 @@ import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
-import { GLMQuotaScraper } from "./harness/e2e/glm-quota-scraper.js";
-import { ChatGPTQuotaScraper } from "./harness/e2e/chatgpt-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
@@ -43,7 +40,6 @@ import {
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
-import { registerCopySyncShortcut } from "./packages/clipboard/src/copy-sync.js";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
@@ -120,32 +116,43 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 // --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
 // Prevents 2000+ second hangs when SSH background commands aren't detached.
 // Intercepts every bash tool call before execution and rewrites risky SSH commands.
+//
+// Also guards foreground `ssh ... "<daemon>"` commands (pollers, servers) by
+// prefixing `timeout Ns` so the local call always returns (PI_HARNESS_SSH_TIMEOUT_S).
 async function initSshDetachInterceptor(pi: ExtensionAPI): Promise<void> {
 	try {
-		const { registerSshDetachInterceptor } = await import(
-			"./harness/ssh-detach-interceptor.js"
-		);
+		const interceptor = await import("./harness/ssh-detach-interceptor.js");
 		// Register on tool_call with default priority (100)
+		// NOTE: module functions are captured in closure scope — do NOT use require()
+		// here; this package is ESM ("type": "module") and require is undefined.
 		pi.on("tool_call", (event, _api) => {
 			if (event.toolName !== "bash") return {};
-			const command = (event.input as { command?: string }).command ?? "";
-			const {
-				isSshCommand,
-				isDetachedPattern,
-				hasBareAmpersand,
-			} = require("./harness/ssh-detach-interceptor.js");
+			const input = event.input as { command?: string; timeout?: number };
+			const command = input.command ?? "";
+			if (!interceptor.isSshCommand(command)) return {};
 
-			if (!isSshCommand(command)) return {};
-			if (isDetachedPattern(command)) return {};
-			if (!hasBareAmpersand(command)) return {};
+			// 1) Detach transform: bare `ssh ... &` or `ssh "a && b &"` chains
+			if (
+				!interceptor.isDetachedPattern(command) &&
+				(interceptor.hasBareAmpersand(command) ||
+					interceptor.hasCommandChainWithAmpersand(command))
+			) {
+				const transformed = interceptor.transformToDetached(command);
+				if (transformed !== command) {
+					input.command = transformed;
+					return {};
+				}
+			}
 
-			// Transform to detached pattern
-			const {
-				transformToDetached,
-			} = require("./harness/ssh-detach-interceptor.js");
-			const transformed = transformToDetached(command);
-			if (transformed !== command) {
-				(event.input as { command: string }).command = transformed;
+			// 2) Timeout guard: foreground SSH running a daemon-ish remote command
+			//    (e.g. `ssh -tt host "python -m amos_worker --video | head -10"`)
+			if (interceptor.isForegroundDaemonSsh(command)) {
+				const seconds = interceptor.getDefaultSshTimeoutSeconds();
+				input.command = interceptor.addSshTimeoutGuard(command, seconds);
+				// Also cap the bash tool's own timeout as belt-and-suspenders
+				if (input.timeout === undefined || input.timeout > seconds) {
+					input.timeout = seconds;
+				}
 			}
 			return {};
 		});
@@ -246,37 +253,11 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 		// ignore — best-effort
 	}
 }
-import { homedir } from "node:os";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-
-// --- Debug log → file instead of TUI ---------------------------------
-const DEBUG_LOG_DIR = join(homedir(), ".pi", "harness-logs");
-const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
-
-try {
-	if (!existsSync(DEBUG_LOG_DIR)) mkdirSync(DEBUG_LOG_DIR, { recursive: true });
-} catch {
-	/* non-fatal */
-}
-
-// Write harness runtime logs to file only (NOT to TUI stdout)
-function _debugLog_(...args: unknown[]): void {
-	try {
-		const line =
-			new Date().toISOString() +
-			" " +
-			args
-				.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-				.join(" ");
-		appendFileSync(DEBUG_LOG_PATH, line + "\n");
-	} catch {
-		// non-fatal
-	}
-}
-
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
+import { homedir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
