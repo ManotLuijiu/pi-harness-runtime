@@ -56,15 +56,15 @@ export function isSshCommand(command: string): boolean {
 
 /**
  * Check if an SSH command uses the detached pattern:
- * nohup + redirect + DONE echo (visible OUTSIDE the quoted remote command).
+ * nohup + redirect + trailing DONE echo. The chain may live remotely
+ * (inside the quoted command) or locally — either way ssh exits promptly.
  *
- * Note: & inside the quoted remote command string does NOT count as detached.
+ * Note: a quoted `cmd &` alone (no redirect/echo) does NOT count.
  */
 export function isDetachedPattern(command: string): boolean {
 	const sshRange = findLastSshCommand(command);
 	if (!sshRange) return false;
 	const sshPart = command.slice(sshRange.start, sshRange.end);
-	// nohup must be OUTSIDE quotes (in the ssh command prefix, before the quoted remote cmd)
 	return (
 		/nohup\b/.test(sshPart) &&
 		(/>\s*\//.test(sshPart) || /2>&1/.test(sshPart)) &&
@@ -267,25 +267,26 @@ export function transformToDetached(
 	const remoteCmdEnd2 = findClosingQuotePosExcl(sshPart);
 	const beforeQuote = sshPart.slice(0, remoteCmdEnd2);
 
-	// Chain with 2>&1 redirect first
-	const chainMatch2 = beforeQuote.match(/(.+?)(&&|;)\s*(.+?)\s+(2>&1)\s*&\s*$/);
+	// Chain with 2>&1 redirect first (&& chains only — `;` chains inside quotes
+	// are left alone per contract: SSH completes normally for them)
+	const chainMatch2 = beforeQuote.match(/(.+?)&&\s*(.+?)\s+(2>&1)\s*&\s*$/);
 	if (chainMatch2) {
 		return (
 			beforeSsh +
 			chainMatch2[1] +
-			chainMatch2[2] +
-			` nohup ${chainMatch2[3]} ${chainMatch2[4]} & echo 'SSH_DETACHED'"`
+			"&&" +
+			` nohup ${chainMatch2[2]} ${chainMatch2[3]} & echo 'SSH_DETACHED'"`
 		);
 	}
 
 	// Chain without 2>&1
-	const chainMatch = beforeQuote.match(/(.+?)(&&|;)\s*(.+?)\s*&\s*$/);
+	const chainMatch = beforeQuote.match(/(.+?)&&\s*(.+?)\s*&\s*$/);
 	if (chainMatch) {
 		return (
 			beforeSsh +
 			chainMatch[1] +
-			chainMatch[2] +
-			` nohup ${chainMatch[3]} > ${logFile} 2>&1 & echo 'SSH_DETACHED'"`
+			"&&" +
+			` nohup ${chainMatch[2]} > ${logFile} 2>&1 & echo 'SSH_DETACHED'"`
 		);
 	}
 
@@ -299,6 +300,8 @@ export interface SshDetection {
 	isSsh: boolean;
 	isDetached: boolean;
 	hasBareAmpersand: boolean;
+	/** Foreground SSH running a daemon-ish remote command with no timeout guard. */
+	needsTimeoutGuard: boolean;
 	suggestion: string;
 }
 
@@ -306,16 +309,130 @@ export function detectSsh(command: string): SshDetection {
 	const ssh = isSshCommand(command);
 	const detached = ssh ? isDetachedPattern(command) : false;
 	const bare = ssh ? hasBareAmpersand(command) : false;
+	const needsTimeout = ssh ? isForegroundDaemonSsh(command) : false;
+
+	let suggestion = "";
+	if (ssh && !detached && bare) {
+		suggestion =
+			"Warning: trailing '&' outside quotes backgrounds SSH itself. Use nohup ... > /tmp/log 2>&1 & echo DONE.";
+	} else if (needsTimeout) {
+		suggestion = `Warning: foreground SSH running a long-lived remote command. Auto-wrapped with timeout ${getDefaultSshTimeoutSeconds()}s (set PI_HARNESS_SSH_TIMEOUT_S to change).`;
+	}
 
 	return {
 		isSsh: ssh,
 		isDetached: detached,
 		hasBareAmpersand: bare,
-		suggestion:
-			ssh && !detached && bare
-				? "Warning: trailing '&' outside quotes backgrounds SSH itself. Use nohup ... > /tmp/log 2>&1 & echo DONE."
-				: ssh && !detached
-					? "Use detached SSH pattern: nohup ... > /tmp/log 2>&1 & echo DONE."
-					: "",
+		needsTimeoutGuard: needsTimeout,
+		suggestion,
 	};
+}
+
+// --- Foreground daemon-over-SSH timeout guard ---------------------------------
+//
+// Problem: `ssh -tt host "python -m worker --video | head -10"` runs a poller
+// daemon in the foreground. head -10 exits, the daemon swallows BrokenPipeError
+// and keeps ticking; ssh -tt holds the session until the whole remote pipeline
+// ends — which never happens. Observed: 1911.9s hang until manual abort.
+//
+// Solution: detect daemon-ish remote payloads without any timeout protection
+// and prefix the ssh invocation with `timeout Ns` so the local side is always
+// guaranteed to return.
+
+/** Long-running remote command patterns (pollers, servers, watchers). */
+const REMOTE_DAEMON_PATTERNS: RegExp[] = [
+	/\buvicorn\b/,
+	/\bgunicorn\b/,
+	/\bcelery\b/,
+	/\bflask\s+run\b/,
+	/\btail\s+-f\b/,
+	/\bnpm\s+(run\s+)?(dev|start)\b/,
+	/\bbun\s+(run\s+)?(dev|start)\b/,
+	/\byarn\s+(dev|start)\b/,
+	/\bnode\s+\S*(server|daemon)\S*/,
+	/--watch(\s|=)/,
+	/\bpython3?\s+-m\s+\S*(worker|daemon|server|bot|poller|scheduler|agent)\S*/,
+	/\buv\s+run\s+\S*(worker|daemon|server|bot|poller|scheduler|agent)\S*/,
+];
+
+export function getDefaultSshTimeoutSeconds(): number {
+	const raw = process.env.PI_HARNESS_SSH_TIMEOUT_S;
+	const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
+}
+
+/**
+ * Extract the remote command payload of an ssh invocation (the quoted
+ * argument). Falls back to the whole ssh segment when unquoted.
+ */
+function extractRemotePayload(sshPart: string): string {
+	const m = sshPart.match(/["'](.+)["']/s);
+	return m ? m[1] : sshPart;
+}
+
+/**
+ * The ssh flag segment: everything before the quoted remote command.
+ * Used for host-side flag checks (-f, -o, ...) so that remote payload args
+ * like `tail -f` are not mistaken for ssh flags.
+ */
+function getSshFlagSegment(sshPart: string): string {
+	const quotePos = sshPart.search(/["']/);
+	return quotePos >= 0 ? sshPart.slice(0, quotePos) : sshPart;
+}
+
+/**
+ * Check if an SSH command runs a daemon-ish remote command in the
+ * foreground with no timeout protection anywhere (local or remote).
+ *
+ * RISKY:  ssh -tt host "cd app && python -m amos_worker --video 2>&1 | head -10"
+ * SAFE:   timeout 60s ssh host "python -m amos_worker --video"
+ * SAFE:   ssh host "timeout 30 python -m amos_worker --video"
+ * SAFE:   ssh host "nohup python -m amos_worker ... &" (detached patterns)
+ * SAFE:   ssh -f host "..." (ssh backgrounds itself)
+ */
+export function isForegroundDaemonSsh(command: string): boolean {
+	if (!isSshCommand(command)) return false;
+	if (isDetachedPattern(command)) return false;
+	if (hasBareAmpersand(command)) return false; // handled by detach transform
+	if (/\bnohup\b/.test(command)) return false;
+
+	const range = findLastSshCommand(command);
+	if (!range) return false;
+	const sshPart = command.slice(range.start, range.end);
+
+	// ssh -f: requests ssh itself to go to background before executing.
+	// Only inspect the flag segment — `tail -f` in the remote payload is NOT ssh -f.
+	const flagSegment = getSshFlagSegment(sshPart);
+	if (/(^|\s)-f(\s|$)/.test(flagSegment)) return false;
+
+	// Any timeout guard (local `timeout Ns ssh` or remote `timeout N cmd`)
+	if (/\btimeout\b/.test(command)) return false;
+
+	const payload = extractRemotePayload(sshPart);
+	// Remote-side backgrounding (`... &` inside quotes): SSH completes when the
+	// remote shell returns — per project convention this is the safe pattern.
+	if (/&\s*$/.test(payload.trim())) return false;
+
+	return REMOTE_DAEMON_PATTERNS.some((re) => re.test(payload));
+}
+
+/**
+ * Prefix the last ssh invocation with `timeout Ns` so the local bash call is
+ * guaranteed to return even if the remote daemon never exits.
+ *
+ * Before: echo 'x' | ssh -tt host "python -m amos_worker --video | head -10"
+ * After:  echo 'x' | timeout 300s ssh -tt host "python -m amos_worker --video | head -10"
+ */
+export function addSshTimeoutGuard(
+	command: string,
+	seconds: number = getDefaultSshTimeoutSeconds(),
+): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return command;
+	const range = findLastSshCommand(command);
+	if (!range) return command;
+	return (
+		command.slice(0, range.start) +
+		`timeout ${seconds}s ` +
+		command.slice(range.start)
+	);
 }
