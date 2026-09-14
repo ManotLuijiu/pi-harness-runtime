@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.68](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.76...v1.1.68) (2026-09-14)
+
+
+### Bug Fixes
+
+* **interceptor:** guard foreground daemon-over-SSH hangs with timeout ([57770b5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/57770b5f477d9885836cc1b0dddee612a5c55d18))
+
 ### [1.1.19](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.61...v1.1.19) (2026-09-10)
 
 ### Features
