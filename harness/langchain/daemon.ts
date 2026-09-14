@@ -1125,15 +1125,27 @@ export class LoopDaemon {
 						onSurge: ({ attempt, delayMs }) =>
 							log(
 								`Provider surge (529) — resume in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`,
-								),
+							),
 						onExhausted: async () => {
 							// Escalating backoff: when all internal surge retries are exhausted,
 							// sleep for N × 3min (N = number of surges seen so far), then retry.
 							// Surge 1: sleep 3min → retry. Surge 2: sleep 6min → retry. etc.
-							const p = { ...{ multiplier: 2, minDelayMs: 30_000, maxDelayMs: 15 * 60_000, jitterRatio: 0.2, maxAttempts: 5 }, ...this.config.surgePolicy };
+							const p = {
+								...{
+									multiplier: 2,
+									minDelayMs: 30_000,
+									maxDelayMs: 15 * 60_000,
+									jitterRatio: 0.2,
+									maxAttempts: 5,
+								},
+								...this.config.surgePolicy,
+							};
 							const baseDelayMs = 3 * 60_000; // midpoint of "recovers within 1-5 minutes"
 							const surgeCount = surgeScheduler.attempts; // how many surges already handled
-							const waitMs = Math.min(baseDelayMs * surgeCount, p.maxDelayMs ?? 15 * 60_000);
+							const waitMs = Math.min(
+								baseDelayMs * surgeCount,
+								p.maxDelayMs ?? 15 * 60_000,
+							);
 							const waitMins = Math.round(waitMs / 60_000);
 							log(
 								`All ${p.maxAttempts} surge retries exhausted (${surgeCount} surges seen) — escalating wait to ${waitMins}m before retrying.`,
