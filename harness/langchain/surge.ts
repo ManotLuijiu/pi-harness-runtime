@@ -259,7 +259,9 @@ export interface SurgeRetryOptions {
 	/** Called once when attempts are exhausted (no more retries in this scheduler).
 	 * Can be async to allow sleeping. Return true to retry, false/undefined to throw.
 	 */
-	onExhausted?: (signal: SurgeSignal) => boolean | void | Promise<boolean | void>;
+	onExhausted?: (
+		signal: SurgeSignal,
+	) => boolean | void | Promise<boolean | void>;
 	/** Injectable sleep for tests. Default: real setTimeout */
 	sleep?: (ms: number) => Promise<void>;
 }
