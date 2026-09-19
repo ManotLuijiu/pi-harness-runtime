@@ -1,0 +1,46 @@
+{
+  "name": "@pi-harness/jev-judge",
+  "version": "1.1.69",
+  "description": "Jev Judge - Structured decision model for agent routing, E2E testing, and automated decisions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./e2e-judge": {
+      "import": "./dist/e2e-judge.js",
+      "types": "./dist/e2e-judge.d.ts"
+    },
+    "./flaky-detector": {
+      "import": "./dist/flaky-detector.js",
+      "types": "./dist/flaky-detector.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "bun-types": "^1.1.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "jev",
+    "typesafe",
+    "openrouter",
+    "agent",
+    "judge",
+    "e2e",
+    "testing",
+    "structured-decisions"
+  ]
+}
