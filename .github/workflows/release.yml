@@ -70,7 +70,8 @@ jobs:
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
             const newVersion = '$TAG_VERSION';
             pkg.version = newVersion;
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
+            fs.writeFileSync('package.json',
+              JSON.stringify(pkg, null, 2) + '\\n');
             console.log('Updated version to:', newVersion);
           "
 
@@ -79,9 +80,12 @@ jobs:
             if [ -f "$dir/package.json" ]; then
               node -e "
                 const fs = require('fs');
-                const pkg = JSON.parse(fs.readFileSync('$dir/package.json', 'utf8'));
+                const pkg = JSON.parse(
+                  fs.readFileSync('$dir/package.json', 'utf8')
+                );
                 pkg.version = '$TAG_VERSION';
-                fs.writeFileSync('$dir/package.json', JSON.stringify(pkg, null, 2) + '\\n');
+                fs.writeFileSync('$dir/package.json',
+                  JSON.stringify(pkg, null, 2) + '\\n');
                 console.log('Updated $dir to:', '$TAG_VERSION');
               "
             fi
@@ -116,7 +120,8 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${API_URL}" \
-            -d '{"name":"Release v${{ steps.meta.outputs.version }}"}' || true
+            -d '{"name":"Release v${{ steps.meta.outputs.version }}"}' \
+            || true
 
       - name: Publish to npm
         if: >-
@@ -124,14 +129,17 @@ jobs:
           github.event.inputs.dry_run != 'true'
         run: |
           # OIDC handles auth automatically - no token needed
-          npm publish --access public --ignore-scripts
+          # Use computed npm_tag (beta for prerelease, latest otherwise)
+          npm publish --access public --ignore-scripts \
+            --tag ${{ steps.meta.outputs.npm_tag }}
 
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.dry_run == 'true'
         run: |
-          npm publish --ignore-scripts --access public --dry-run
+          npm publish --ignore-scripts --access public \
+            --dry-run --tag ${{ steps.meta.outputs.npm_tag }}
 
       - name: Create GitHub Release
         if: >-
