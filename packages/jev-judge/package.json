@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/jev-judge",
-  "version": "1.1.69",
+  "version": "1.1.71-1",
   "description": "Jev Judge - Structured decision model for agent routing, E2E testing, and automated decisions",
   "type": "module",
   "main": "./dist/index.js",

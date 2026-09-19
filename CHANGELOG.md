@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.71-1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-1) (2026-09-19)
+
+
+### Features
+
+* add jev-judge package for structured decision making ([810a6d8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/810a6d81ae5803d28a471a3cd059197e953c9707))
+
 ### [1.1.71-0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-0) (2026-09-19)
 
 ### [1.1.70](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.70) (2026-09-19)
