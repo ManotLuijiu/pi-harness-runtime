@@ -378,14 +378,33 @@ export default function (pi: ExtensionAPI) {
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
 
+	// --- TASK TRACKING TERMINOLOGY CLARIFICATION ------------------------
+	// CRITICAL: This project has TWO separate task trackers. Agents often confuse them.
+	const TASK_TERMINOLOGY_CLARIFICATION = `
+## TASK TRACKING TERMINOLOGY (CRITICAL)
+
+This project uses TWO different task tracking systems. **Always clarify which one the user means:**
+
+| What you say | Tool | Purpose |
+|-------------|------|---------|
+| **bd** / **beads** / **issues** | \`bd create\`, \`bd list\`, \`bd close\` | Issue tracker (GitHub-synced) |
+| **todo** / **todos** | \`todo\` tool (JSON-RPC) | Local task list (session-only) |
+
+**When in doubt, ASK:** "Did you mean **bd** (issue tracker) or **todo** (local task list)?"
+
+### When to use each:
+- **bd (beads)**: Long-lived issues, bugs, features, GitHub issues
+- **todo**: Short-lived session tasks, immediate action items
+`;
+
 	// --- Auto-Invoke rpiv-todo via System Prompt ------------------------
 	// This makes the todo overlay ALWAYS activate at session start
 	const AUTO_TODO_INVOKE_HINT = `
 
-You have access to a todo tool that shows a persistent task overlay.
+You have access to a **todo tool** that shows a persistent task overlay.
 ALWAYS use it at the START of every session to capture user requirements as tasks.
 When the user gives you a multi-step task:
-1. Immediately create todo items for each step using the todo tool
+1. Immediately create todo items for each step using the **todo tool** (not bd!)
 2. Keep tasks updated - mark in_progress when working, completed when done
 3. When a task is completed, continue to the next or ask the user
 
@@ -395,10 +414,12 @@ The todo overlay persists and helps track progress across your conversation.
 	const COMMIT_BUILD_CHECKLIST = `
 
 BEFORE committing code or triggering builds, ALWAYS check:
-1. Run 'bd ready' to see pending tasks
-2. Mark completed tasks with 'bd close <id> --reason "Done"'
-3. Acknowledge pending tasks before proceeding
-4. Never commit/build without acknowledging pending todos
+1. Run \`bd ready\` to see pending **bd issues**
+2. Mark completed issues with \`bd close <id> --reason "Done"\`
+3. Acknowledge pending issues before proceeding
+4. Never commit/build without acknowledging pending bd issues
+
+NOTE: Use \`todo\` tool for session task tracking, \`bd\` for issue tracker.
 `;
 
 	const WRITE_REVIEW_HINT = `
@@ -407,10 +428,11 @@ WRITER-REVIEWER WORKFLOW:
 When working on a feature from {project}/wiki/* or {project}/.write-review/:
 1. Read the prompt/task file to understand requirements
 2. Write clean, complete code
-3. Mark task "in_progress" in todos
-4. When code is ready, trigger review with \`{done} bd create "Review: <task>" -t review -p 1 && bd close <id> --reason "Approved"\`
-5. If reviewer requests changes, update code and re-review
-6. Never skip review on non-trivial features
+3. Mark task "in_progress" using **todo tool**
+4. When code is ready, trigger review with \`bd create "Review: <task>" -t review -p 1\`
+5. After review, close the issue: \`bd close <id> --reason "Approved"\`
+6. If reviewer requests changes, update code and re-review
+7. Never skip review on non-trivial features
 `;
 
 	const DOCKER_CLEANUP_HINT = `
@@ -444,6 +466,7 @@ Server process examples that must be detached: uvicorn, fastapi dev server, guni
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
+			event.systemPrompt += TASK_TERMINOLOGY_CLARIFICATION;
 			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
 			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
 			event.systemPrompt += WRITE_REVIEW_HINT;
@@ -473,12 +496,13 @@ Server process examples that must be detached: uvicorn, fastapi dev server, guni
 
 	const TODO_BUILD_REMINDER = `
 
-IMPORTANT - TODO UPDATE REMINDER:
+IMPORTANT - TASK UPDATE REMINDER:
 Before running a build, ensure you update the current task status:
-1. Mark the task as in_progress with bd update <id> --status in_progress
-2. After build succeeds, update the task: bd close <id> --reason "Done" or bd update <id> --status pending
+1. If tracking in **todo tool**: mark task in_progress
+2. If tracking in **bd issues**: use \`bd update <id> --status in_progress\`
+3. After build succeeds: mark completed in the appropriate tracker
 
-Run \`bd ready\` to see current tasks.
+Run \`bd ready\` to see current bd issues.
 `;
 
 	// Detect build commands and append todo reminder to their output
