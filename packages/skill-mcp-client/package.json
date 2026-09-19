@@ -1,6 +1,6 @@
 {
   "name": "@pi/skill-mcp-client",
-  "version": "1.1.71-0",
+  "version": "1.1.71-1",
   "description": "MCP client for Skills SaaS backend",
   "type": "module",
   "main": "./dist/index.js",
