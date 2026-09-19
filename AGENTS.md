@@ -1,5 +1,24 @@
 # Agent Instructions
 
+## Terminology: Two Task Tracking Systems (CRITICAL)
+
+This project has **TWO separate task trackers** with different purposes:
+
+| Term | Tool | Purpose |
+|------|------|---------|
+| **bd** / **beads** / **issues** | `bd create`, `bd list`, `bd close` | Issue tracker synced with GitHub issues |
+| **todo** / **todos** / **task list** | `todo` tool (JSON-RPC) | Local task list for in-session tracking |
+
+**When in doubt, ASK**: If a user mentions "tasks", "todos", or "track this" without specifying, ask:
+
+> **"Did you mean bd (issue tracker) or todo (local task list)?"**
+
+### When to use each:
+- **bd (beads)**: Long-lived issues, bugs, feature requests, GitHub-synced items
+- **todo (local task list)**: Short-lived session tasks, step-by-step workflows, immediate action items
+
+---
+
 ## Pre-Commit/Build Checklist
 
 **BEFORE any `git commit`, `git push`, or `bench build`:**
@@ -175,15 +194,15 @@ const icon = await readFile('./node_modules/lucide-static/icons/file-code.svg', 
 
 ## Todo List Rule (CRITICAL)
 
-**When you identify 2+ tasks, issues, or jobs — add ALL of them to the Todo list immediately.**
+**When you identify 2+ tasks, issues, or jobs — add ALL of them to the task list immediately.**
 
 Do NOT just list them in text. Use the `todo` tool to create tracked tasks:
 
 ```bash
-# Creating multiple tasks at once
-bd create "Fix initialRemotionData not defined" -p 2
-bd create "Fix dictionary.title undefined" -p 2
-bd create "Replace Film icon with themed icon" -p 2
+# Creating multiple tasks at once (use todo tool, NOT bd!)
+todo create "Fix initialRemotionData not defined"
+todo create "Fix dictionary.title undefined"
+todo create "Replace Film icon with themed icon"
 ```
 
 **Rule**: If you write something like:
@@ -196,6 +215,8 @@ bd create "Replace Film icon with themed icon" -p 2
 **Then you MUST create Todo items for each one.** Single-issue fixes don't need tracking.
 
 **Why**: Agents often identify issues verbally but forget to track them. This rule ensures nothing slips through.
+
+**IMPORTANT**: The `todo` tool and `bd` commands are DIFFERENT systems. Use `todo` for local task tracking.
 
 ## Remote Server Commands (SSH)
 
