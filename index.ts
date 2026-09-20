@@ -622,7 +622,8 @@ Before running a build, ensure you update the current task status:
 Run \`bd ready\` to see current bd issues.
 `;
 
-	// Detect build commands and append todo reminder to their output
+	// Detect build commands and log reminder (don't modify result.content)
+	// Modifying result.content is fragile - pi-coding-agent expects specific structures
 	pi.on("tool_execution_end", async (event) => {
 		const toolName = (event as { toolName?: string }).toolName;
 		if (toolName !== "bash") return;
@@ -630,7 +631,7 @@ Run \`bd ready\` to see current bd issues.
 		const result = (event as { result?: { content?: unknown } }).result;
 		if (!result) return;
 
-		// Handle content that might be an array or object
+		// Get content for detection only - don't modify result.content
 		const rawContent = result.content;
 		let content: string;
 		if (typeof rawContent === "string") {
@@ -639,8 +640,10 @@ Run \`bd ready\` to see current bd issues.
 			content = rawContent
 				.map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
 				.join("\n");
+		} else if (rawContent) {
+			content = JSON.stringify(rawContent);
 		} else {
-			content = JSON.stringify(rawContent ?? "");
+			return; // No content to analyze
 		}
 
 		// Check if this is a build command
@@ -648,18 +651,13 @@ Run \`bd ready\` to see current bd issues.
 			content.toLowerCase().includes(cmd.toLowerCase()),
 		);
 
+		// Log reminder to console (agent will see it)
 		if (
 			isBuildCommand &&
 			!content.includes("bd ready") &&
 			!content.includes("TODO UPDATE")
 		) {
-			// Append todo reminder without changing the tool result content shape.
-			const reminderBlock = { type: "text", text: TODO_BUILD_REMINDER };
-			if (Array.isArray(rawContent)) {
-				result.content = [...rawContent, reminderBlock];
-			} else {
-				result.content = [{ type: "text", text: content + TODO_BUILD_REMINDER }];
-			}
+			console.log(TODO_BUILD_REMINDER.trim());
 		}
 	});
 
