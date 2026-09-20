@@ -19,6 +19,7 @@ Jev is a "System One" model - a new class of AI optimized for **structured decis
 - **E2EJudge** - E2E testing decisions (flaky detection, build blocking, retry)
 - **FlakyDetector** - Specialized flaky test detection
 - **DecisionEngine** - Threshold-based routing and actions
+- **AutoContinueJudge** - Agent autonomous decision-making (continue or wait)
 
 ## Installation
 
@@ -224,6 +225,66 @@ Jev via OpenRouter:
 - Latency: ~250ms P50
 
 See [OpenRouter pricing](https://openrouter.ai/typesafe/jev-1.13) for details.
+
+## Auto-Continue Judge (Agent Use Case)
+
+**Problem:** Agent completes 2/5 tasks, asks "Continue?" User asleep → agent waits indefinitely.
+
+**Solution:** Use Jev to judge whether to auto-continue.
+
+```typescript
+import { AutoContinueJudge, createTaskState } from "@pi-harness/jev-judge/auto-continue";
+import { hasJevApiKey, createJevJudge } from "@pi-harness/jev-judge";
+
+// Auto-detect API key from environment
+const judge = new AutoContinueJudge({
+  apiKey: process.env.TYPESAFE_API_KEY!, // or auto-detect
+  proceedThreshold: 0.7,  // Continue if >70% confidence
+  maxWaitMinutes: 30,
+});
+
+// Build task state
+const taskState = createTaskState(
+  ["task-1", "task-2"],  // completed
+  ["task-3", "task-4", "task-5"],  // remaining
+  new Date(Date.now() - 30 * 60 * 1000),  // last user activity 30 min ago
+  new Date(Date.now() - 2 * 60 * 60 * 1000)  // session started 2 hours ago
+);
+
+// Get decision
+const decision = await judge.decide(taskState);
+
+if (decision.action === "proceed") {
+  console.log("Continuing with remaining tasks...");
+  // Agent proceeds autonomously
+} else if (decision.action === "proceed_with_caution") {
+  console.log(`Proceeding with caution (${decision.riskLevel} risk)`);
+  // Agent proceeds but logs each step
+} else {
+  console.log(`Waiting... (recommend ${decision.waitRecommendation} min)`);
+  // Agent waits or notifies
+}
+```
+
+### Environment Variable Auto-Detection
+
+The package automatically detects API keys from environment:
+
+```bash
+# Option 1: TypeSafe API key (preferred)
+export TYPESAFE_API_KEY="your-key-here"
+
+# Option 2: OpenRouter API key
+export OPENROUTER_API_KEY="your-key-here"
+```
+
+```typescript
+import { hasJevApiKey, createJevJudge } from "@pi-harness/jev-judge";
+
+if (hasJevApiKey()) {
+  const judge = createJevJudge();  // Auto-detects API key
+}
+```
 
 ## Examples
 
