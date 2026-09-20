@@ -45,6 +45,45 @@ import type {
 import OpenAI from "openai";
 
 /**
+ * Environment variable keys for API keys
+ */
+export const ENV_KEYS = {
+  TYPESAFE_API_KEY: "TYPESAFE_API_KEY",
+  OPENROUTER_API_KEY: "OPENROUTER_API_KEY",
+} as const;
+
+/**
+ * Get API key from environment
+ * Priority: TYPESAFE_API_KEY > OPENROUTER_API_KEY
+ */
+export function getApiKeyFromEnv(): string | undefined {
+  return (
+    process.env[ENV_KEYS.TYPESAFE_API_KEY] ||
+    process.env[ENV_KEYS.OPENROUTER_API_KEY]
+  );
+}
+
+/**
+ * Check if Jev API key is available
+ */
+export function hasJevApiKey(): boolean {
+  return !!getApiKeyFromEnv();
+}
+
+/**
+ * Create JevJudge with auto-detected API key from environment
+ */
+export function createJevJudge(config?: Partial<JevJudgeConfig>): JevJudge {
+  const apiKey = getApiKeyFromEnv();
+  if (!apiKey) {
+    throw new Error(
+      `Jev API key not found. Set ${ENV_KEYS.TYPESAFE_API_KEY} or ${ENV_KEYS.OPENROUTER_API_KEY} in environment.`
+    );
+  }
+  return new JevJudge({ apiKey, ...config });
+}
+
+/**
  * Default configuration
  */
 const DEFAULT_CONFIG = {
@@ -131,7 +170,6 @@ Respond with a JSON object mapping each question ID to its answer.`,
       ],
       response_format: {
         type: "json_object",
-        schema: this.buildResponseSchema(questions),
       },
       temperature: 0.1, // Low temperature for consistent decisions
     });
@@ -263,33 +301,8 @@ Respond with a JSON object mapping each question ID to its answer.`,
 
   // Private helpers
 
-  private buildResponseSchema(questions: JevQuestions): Record<string, unknown> {
-    const schema: Record<string, unknown> = {};
-
-    for (const [id, question] of Object.entries(questions)) {
-      switch ((question as JevQuestion).type) {
-        case "noul":
-          schema[id] = { type: "object", properties: {
-            noul: { type: "number", minimum: 0, maximum: 1 }
-          }, required: ["noul"] };
-          break;
-        case "choice":
-          schema[id] = { type: "object", properties: {
-            choice: { type: "string", enum: (question as { options: string[] }).options },
-            confidence: { type: "number", minimum: 0, maximum: 1 }
-          }, required: ["choice"] };
-          break;
-        case "score":
-          schema[id] = { type: "object", properties: {
-            score: { type: "number" },
-            confidence: { type: "number", minimum: 0, maximum: 1 }
-          }, required: ["score"] };
-          break;
-      }
-    }
-
-    return { type: "object", properties: schema, additionalProperties: false };
-  }
+  // Note: Response schema removed - using json_object mode without strict schema
+  // This allows Jev to return flexible responses
 
   private buildDecision<T extends string>(
     questionId: T,
@@ -343,3 +356,5 @@ export * from "./types.js";
 export { E2EJudge } from "./e2e-judge.js";
 export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
+export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
+export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto-continue.js";
