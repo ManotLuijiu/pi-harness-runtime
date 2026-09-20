@@ -576,13 +576,20 @@ Server process examples that must be detached: uvicorn, fastapi dev server, guni
 	let firstAgentStart = true;
 	pi.on("before_agent_start", async (event) => {
 		if (firstAgentStart) {
-			event.systemPrompt += TASK_TERMINOLOGY_CLARIFICATION;
-			event.systemPrompt += AUTO_TODO_INVOKE_HINT;
-			event.systemPrompt += COMMIT_BUILD_CHECKLIST;
-			event.systemPrompt += WRITE_REVIEW_HINT;
-			event.systemPrompt += DOCKER_CLEANUP_HINT;
-			event.systemPrompt += SSH_GUARD_RULES;
+			// Return additional system prompt content to append
+			const additionalPrompt = [
+				TASK_TERMINOLOGY_CLARIFICATION,
+				AUTO_TODO_INVOKE_HINT,
+				COMMIT_BUILD_CHECKLIST,
+				WRITE_REVIEW_HINT,
+				DOCKER_CLEANUP_HINT,
+				SSH_GUARD_RULES,
+			].join("\n");
+
 			firstAgentStart = false;
+
+			// Return the additional prompt to append to systemPrompt
+			return { systemPrompt: event.systemPrompt + "\n" + additionalPrompt };
 		}
 	});
 
