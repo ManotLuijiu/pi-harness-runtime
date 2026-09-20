@@ -69,6 +69,113 @@ import {
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
 
+// --- Jev Auto-Continue: Agent autonomous decision-making --------------------
+// Lazy import - only loads when packages/jev-judge exists and API key available
+async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
+	try {
+		// Check if TYPESAFE_API_KEY is available
+		if (!process.env.TYPESAFE_API_KEY && !process.env.OPENROUTER_API_KEY) {
+			console.log("[auto-continue] No Jev API key found, skipping");
+			return;
+		}
+
+		const mod = await import("./packages/jev-judge/src/auto-continue.js");
+
+		// Track waiting state
+		let waitingForUserSince: Date | null = null;
+		let lastUserMessage: Date | null = null;
+
+		// Detect when agent asks for continuation
+		pi.on("message_end", async (event) => {
+			const msg = event.message as { role?: string; content?: string } | undefined;
+			if (!msg || msg.role !== "assistant") return;
+
+			const content = typeof msg.content === "string" ? msg.content : "";
+			const hasContinuation = /continue|proceed|next phase|next step/i.test(content);
+
+			if (hasContinuation && !waitingForUserSince) {
+				waitingForUserSince = new Date();
+				console.log("[auto-continue] Agent waiting for continuation confirmation");
+			}
+		});
+
+		// Detect user responses
+		pi.on("message_start", async (event) => {
+			const msg = event.message as { role?: string } | undefined;
+			if (msg?.role === "user") {
+				lastUserMessage = new Date();
+				if (waitingForUserSince) {
+					console.log("[auto-continue] User responded, cancelling wait");
+					waitingForUserSince = null;
+				}
+			}
+		});
+
+		// Periodic check for auto-continue decision
+		const AUTO_CONTINUE_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
+		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
+
+		const checkAndAutoContinue = async () => {
+			if (!waitingForUserSince) return;
+
+			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
+			if (waitMinutes < MIN_WAIT_MINUTES) return;
+
+			console.log(`[auto-continue] Checking after ${waitMinutes.toFixed(0)} minutes wait...`);
+
+			try {
+				const judge = new mod.AutoContinueJudge({
+					apiKey: process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY!,
+					proceedThreshold: 0.7,
+					maxWaitMinutes: 30,
+				});
+
+				const taskState = mod.createTaskState(
+					[], // completed tasks
+					[], // remaining tasks
+					lastUserMessage || undefined,
+					new Date(Date.now() - waitMinutes * 60000),
+				);
+
+				const decision = await judge.decide(taskState);
+
+				console.log(
+					`[auto-continue] Decision: ${decision.action} (${(decision.probability * 100).toFixed(0)}% confidence)`,
+				);
+
+				if (decision.action === "proceed") {
+					// Send steer message to continue
+					pi.sendUserMessage(
+						"User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
+							`Decision: ${decision.reasoning}\n` +
+							"Continue with remaining tasks.",
+						{ deliverAs: "steer" },
+					);
+					waitingForUserSince = null;
+				} else if (decision.action === "proceed_with_caution") {
+					pi.sendUserMessage(
+						"User is unavailable. Proceeding with caution - will log each significant step.\n" +
+						`Risk level: ${decision.riskLevel}\n` +
+						"Continue with remaining tasks, reporting progress.",
+						{ deliverAs: "steer" },
+					);
+					waitingForUserSince = null;
+				}
+				// If action is "wait", do nothing and check again later
+			} catch (error) {
+				console.error("[auto-continue] Error:", error);
+			}
+		};
+
+		// Start periodic check
+		setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
+
+		console.log("[auto-continue] Jev Auto-Continue initialized");
+	} catch {
+		// auto-continue not available
+	}
+}
+
 // --- todo-bd-sync: Two-way sync between rpiv-todo and bd --------------------
 // Lazy import - only loads when packages/todo-bd-sync exists
 async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
@@ -374,6 +481,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
 	void initSshDetachInterceptor(pi);
+
+	// --- jev-auto-continue: Agent autonomous decision when user unavailable -----
+	void initAutoContinue(pi);
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
