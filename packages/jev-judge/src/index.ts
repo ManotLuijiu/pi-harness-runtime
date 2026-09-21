@@ -69,7 +69,11 @@ export function getApiKeyFromEnv(): string | undefined {
   const keyFile = `${keysDir}/jev-api-key.txt`;
 
   try {
-    const { readFileSync, existsSync } = require("fs");
+    const { readFileSync, existsSync, mkdirSync } = require("fs");
+    // Auto-create directory if doesn't exist
+    if (!existsSync(keysDir)) {
+      mkdirSync(keysDir, { recursive: true });
+    }
     if (existsSync(keyFile)) {
       const key = readFileSync(keyFile, "utf8").trim();
       if (key && key.length > 10) {
@@ -77,7 +81,7 @@ export function getApiKeyFromEnv(): string | undefined {
       }
     }
   } catch {
-    // Ignore file read errors
+    // Ignore file/directory errors
   }
 
   return undefined;

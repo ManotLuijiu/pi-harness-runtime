@@ -77,7 +77,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Check if Jev API key is available (env var or keys file)
 		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 		const keysDir = `${homedir}/.pi-harness-runtime/keys`;
-		const { readFileSync, existsSync } = await import("fs");
+		const { readFileSync, existsSync, mkdirSync } = await import("fs");
+
+		// Auto-create directory if doesn't exist
+		if (!existsSync(keysDir)) {
+			mkdirSync(keysDir, { recursive: true });
+		}
+
 		const hasEnvKey =
 			process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY;
 		const hasFileKey =
