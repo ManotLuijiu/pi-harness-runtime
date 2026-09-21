@@ -1243,6 +1243,32 @@ Run \`bd ready\` to see current bd issues.
 			return;
 		}
 
+		// OpenAI Codex path (uses OAuth tokens from ~/.codex/auth.json)
+		if (provider === "openai-codex") {
+			if (quotaAutoFetchInFlight) return;
+
+
+			const nowMs = Date.now();
+			if (nowMs - lastOpenAIQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			// Check if Codex auth file exists
+			const codexAuthFile = join(homedir(), ".codex", "auth.json");
+			if (!existsSync(codexAuthFile)) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastOpenAIQuotaFetchAt = nowMs;
+			try {
+				await autoFetchOpenAIQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
+			return;
+		}
+
 		// GLM path (z.ai has both 5h and weekly windows)
 		if (provider === "glm") {
 			if (quotaAutoFetchInFlight) return;
