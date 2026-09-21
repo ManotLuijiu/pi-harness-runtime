@@ -29,6 +29,12 @@ import { homedir } from "node:os";
 
 export interface ChatGPTQuotaData {
 	provider: "openai" | "openai-codex";
+	/** 5h used percentage (0-100) */
+	h5UsedPct: number;
+	/** When the 5h window resets (e.g., "4h 30m") */
+	h5ResetsAt: string;
+	/** Epoch ms when the 5h window resets */
+	h5ResetsAtEpoch?: number;
 	/** Weekly used percentage (0-100) */
 	weeklyUsedPct: number;
 	/** When the weekly window resets (e.g., "5d 16h") */
@@ -394,6 +400,12 @@ export class ChatGPTQuotaScraper {
 						reset_after_seconds?: number;
 						reset_at?: number;
 					};
+					secondary_window?: {
+						used_percent?: number;
+						limit_window_seconds?: number;
+						reset_after_seconds?: number;
+						reset_at?: number;
+					};
 				};
 				credits?: {
 					has_credits?: boolean;
@@ -402,23 +414,60 @@ export class ChatGPTQuotaScraper {
 				plan_type?: string;
 			};
 
+			// primary_window = 5h, secondary_window = weekly
 			const primaryWindow = data?.rate_limit?.primary_window;
-			const weeklyUsedPct = primaryWindow?.used_percent ?? 0;
-			const resetAfterSeconds = primaryWindow?.reset_after_seconds ?? 0;
-			const resetAtEpoch = primaryWindow?.reset_at;
+			const secondaryWindow = data?.rate_limit?.secondary_window;
+
+			// Determine which is 5h (smaller window) and which is weekly
+			const FIVE_HOURS_SEC = 5 * 60 * 60; // 18000 seconds
+			let h5UsedPct = 0;
+			let h5ResetAfter = 0;
+			let h5ResetAt: number | undefined;
+			let weeklyUsedPct = 0;
+			let weeklyResetAfter = 0;
+			let weeklyResetAt: number | undefined;
+
+			// Classify windows by duration
+			if (primaryWindow) {
+				const duration = primaryWindow.limit_window_seconds ?? 0;
+				if (duration <= FIVE_HOURS_SEC) {
+					h5UsedPct = primaryWindow.used_percent ?? 0;
+					h5ResetAfter = primaryWindow.reset_after_seconds ?? 0;
+					h5ResetAt = primaryWindow.reset_at;
+				} else {
+					weeklyUsedPct = primaryWindow.used_percent ?? 0;
+					weeklyResetAfter = primaryWindow.reset_after_seconds ?? 0;
+					weeklyResetAt = primaryWindow.reset_at;
+				}
+			}
+			if (secondaryWindow) {
+				const duration = secondaryWindow.limit_window_seconds ?? 0;
+				if (duration <= FIVE_HOURS_SEC) {
+					h5UsedPct = secondaryWindow.used_percent ?? 0;
+					h5ResetAfter = secondaryWindow.reset_after_seconds ?? 0;
+					h5ResetAt = secondaryWindow.reset_at;
+				} else {
+					weeklyUsedPct = secondaryWindow.used_percent ?? 0;
+					weeklyResetAfter = secondaryWindow.reset_after_seconds ?? 0;
+					weeklyResetAt = secondaryWindow.reset_at;
+				}
+			}
 
 			if (!this.config.quiet) {
 				console.log(
-					`[DEBUG ChatGPTQuotaScraper] Weekly usage: ${weeklyUsedPct}%, resets in ${formatRemainsSeconds(resetAfterSeconds)}`,
+					`[DEBUG ChatGPTQuotaScraper] 5h: ${h5UsedPct}%, Weekly: ${weeklyUsedPct}%`,
 				);
 			}
 
 			return {
 				provider: "openai",
+				h5UsedPct,
+				h5ResetsAt: formatRemainsSeconds(h5ResetAfter),
+				h5ResetsAtEpoch: h5ResetAt ? h5ResetAt * 1000 : undefined,
 				weeklyUsedPct,
-				weeklyResetsAt: formatRemainsSeconds(resetAfterSeconds),
-				weeklyResetsAtEpoch: resetAtEpoch ? resetAtEpoch * 1000 : undefined,
-				resetAfterSeconds,
+				weeklyResetsAt: formatRemainsSeconds(weeklyResetAfter),
+				weeklyResetsAtEpoch: weeklyResetAt ? weeklyResetAt * 1000 : undefined,
+				resetAfterSeconds: weeklyResetAfter,
 				creditBalance: data.credits?.has_credits ? data.credits.balance : undefined,
 				planType: data.plan_type,
 				apiEndpoint: USAGE_API,
