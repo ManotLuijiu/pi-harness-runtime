@@ -58,34 +58,38 @@ export type MirrorSource = "scrape" | "tui-signal" | "manual";
 
 /** Per-provider mirror record. */
 export interface ProviderMirrorRecord {
-	/** ISO-8601 UTC timestamp when this row was last updated. */
-	synced_at: string;
-	/** Provider id (e.g. "minimax", "openai", "glm"). Must match the key. */
-	provider: string;
-	/** Source of the data — used for diagnostics. */
-	source: MirrorSource;
-	/** Optional model id the data was captured for. */
-	model?: string;
-	/** 5h window used percent (0-100). Provider-reported when available. */
-	h5_used_pct?: number;
-	/** When the 5h window resets — human-readable or ISO. */
-	h5_resets_at?: string;
-	/** Epoch ms when the 5h window resets — precise UTC timestamp. */
-	h5_resets_at_epoch?: number;
-	/** Weekly used percent. */
-	weekly_used_pct?: number;
-	/** When the weekly window resets. */
-	weekly_resets_at?: string;
-	/** Epoch ms when the weekly window resets — precise UTC timestamp. */
-	weekly_resets_at_epoch?: number;
-	/** Set when a limit was hit and we have the exhaustion signal. */
-	exhausted?: boolean;
-	/** Limit type from TUI signal: tokens, context_window, rate_limit, unknown. */
-	limitType?: "tokens" | "context_window" | "rate_limit" | "unknown";
-	/** Remaining pct (0-100) at exhaustion — 0 means exactly exhausted. */
-	remainingPct?: number;
-	/** ISO-8601 reset timestamp from TUI signal, if absolute. */
-	resets_at?: string;
+/** ISO-8601 UTC timestamp when this row was last updated. */
+synced_at: string;
+/** Provider id (e.g. "minimax", "openai", "glm"). Must match the key. */
+provider: string;
+/** Source of the data — used for diagnostics. */
+source: MirrorSource;
+/** Optional model id the data was captured for. */
+model?: string;
+/** 5h window used percent (0-100). Provider-reported when available. */
+h5_used_pct?: number;
+/** When the 5h window resets — human-readable or ISO. */
+h5_resets_at?: string;
+/** Epoch ms when the 5h window resets — precise UTC timestamp. */
+h5_resets_at_epoch?: number;
+/** Weekly used percent. */
+weekly_used_pct?: number;
+/** When the weekly window resets. */
+weekly_resets_at?: string;
+/** Epoch ms when the weekly window resets — precise UTC timestamp. */
+weekly_resets_at_epoch?: number;
+/** Raw tokens used (for GLM which has no percentage). */
+weekly_used_tokens?: number;
+/** Monthly quota in tokens (for GLM). */
+monthly_quota_tokens?: number;
+/** Set when a limit was hit and we have the exhaustion signal. */
+exhausted?: boolean;
+/** Limit type from TUI signal: tokens, context_window, rate_limit, unknown. */
+limitType?: "tokens" | "context_window" | "rate_limit" | "unknown";
+/** Remaining pct (0-100) at exhaustion — 0 means exactly exhausted. */
+remainingPct?: number;
+/** ISO-8601 reset timestamp from TUI signal, if absolute. */
+resets_at?: string;
 }
 
 /** Map of provider id → its mirror record. */

@@ -44,6 +44,18 @@ export interface GLMQuotaData {
 	hourlyCalls: number[];
 	/** Hourly token usage */
 	hourlyTokens: number[];
+	/** 5h window usage percentage (0-100) */
+	h5UsedPct: number;
+	/** When the 5h window resets (human-readable) */
+	h5ResetsAt: string;
+	/** Epoch ms when the 5h window resets */
+	h5ResetsAtEpoch: number;
+	/** Weekly usage percentage (0-100) */
+	weeklyUsedPct: number;
+	/** When the weekly window resets (human-readable) */
+	weeklyResetsAt: string;
+	/** Epoch ms when the weekly window resets */
+	weeklyResetsAtEpoch: number;
 	/** Raw API response for diagnostics */
 	apiEndpoint?: string;
 	/** Timestamp of scrape */
@@ -141,17 +153,63 @@ export class GLMQuotaScraper {
 		quiet: boolean;
 	};
 
-	constructor(config: GLMScraperConfig = {}) {
-		// Resolve API key: direct value > file > null
-		const apiKey =
-			config.apiKey ?? loadApiKey(config.apiKeyFile ?? DEFAULT_API_KEY_FILE);
+		constructor(config: GLMScraperConfig = {}) {
+			// Resolve API key: direct value > file > null
+			const apiKey =
+				config.apiKey ?? loadApiKey(config.apiKeyFile ?? DEFAULT_API_KEY_FILE);
 
-		this.config = {
-			apiKeyFile: config.apiKeyFile ?? DEFAULT_API_KEY_FILE,
-			apiKey: apiKey ?? null,
-			quiet: config.quiet ?? false,
-		};
-	}
+			this.config = {
+				apiKeyFile: config.apiKeyFile ?? DEFAULT_API_KEY_FILE,
+				apiKey: apiKey ?? null,
+				quiet: config.quiet ?? false,
+			};
+		}
+
+		/**
+		 * Calculate 5h and weekly usage from hourly data
+		 */
+			private calculateHourlyUsage(
+			timestamps: string[],
+			tokens: number[],
+			_calls: number[],
+		): { h5Tokens: number; weeklyTokens: number } {
+			const now = new Date();
+			const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+			const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+			let h5Tokens = 0;
+			let weeklyTokens = 0;
+
+			for (let i = 0; i < timestamps.length; i++) {
+				const ts = timestamps[i];
+				if (!ts) continue;
+
+				// Parse timestamp: "2026-09-14 00:00"
+				const hourTime = new Date(ts.replace(" ", "T") + ":00");
+
+				if (hourTime >= fiveHoursAgo) {
+					h5Tokens += tokens[i] ?? 0;
+				}
+
+				if (hourTime >= weekAgo) {
+					weeklyTokens += tokens[i] ?? 0;
+				}
+			}
+
+			return { h5Tokens, weeklyTokens };
+		}
+
+		/**
+		 * Find the index of the last hour with usage
+		 */
+		private findLastUsageIndex(timestamps: string[], tokens: number[]): number {
+			for (let i = timestamps.length - 1; i >= 0; i--) {
+				if ((tokens[i] ?? 0) > 0) {
+					return i;
+				}
+			}
+			return -1;
+		}
 
 	/**
 	 * Set API key directly
@@ -211,8 +269,9 @@ export class GLMQuotaScraper {
 		const end = endDate ?? new Date();
 		const start = startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-		const startStr = start.toISOString().replace("T", " ").replace("Z", "");
-		const endStr = end.toISOString().replace("T", " ").replace("Z", "");
+		// Format: yyyy-MM-dd HH:mm:ss (no milliseconds)
+		const startStr = start.toISOString().replace("T", " ").replace("Z", "").replace(/\.\d+$/, "");
+		const endStr = end.toISOString().replace("T", " ").replace("Z", "").replace(/\.\d+$/, "");
 
 		const url = `${API_BASE_URL}${USAGE_ENDPOINT}?startTime=${encodeURIComponent(startStr)}&endTime=${encodeURIComponent(endStr)}`;
 
@@ -272,6 +331,33 @@ export class GLMQuotaScraper {
 			const totalUsage = d.totalUsage ?? {};
 			const modelSummary = d.modelSummaryList?.[0];
 
+			// Calculate 5h and weekly usage from hourly data
+			const { h5Tokens, weeklyTokens } = this.calculateHourlyUsage(d.x_time ?? [], d.tokensUsage ?? [], d.modelCallCount ?? []);
+
+			// GLM Lite plan limits (Legacy Plan V2):
+			// Based on browser comparison: 20% weekly = 29.6M tokens
+			// So weekly quota ≈ 148M tokens, 5h quota ≈ 30M tokens
+			const H5_TOKEN_LIMIT = parseInt(process.env.GLM_5H_TOKEN_LIMIT ?? "30000000", 10); // 30M tokens per 5h
+			const WEEKLY_TOKEN_LIMIT = parseInt(process.env.GLM_WEEKLY_TOKEN_LIMIT ?? "148000000", 10); // 148M tokens per week
+
+			const h5UsedPct = Math.min(100, (h5Tokens / H5_TOKEN_LIMIT) * 100);
+			const weeklyUsedPct = Math.min(100, (weeklyTokens / WEEKLY_TOKEN_LIMIT) * 100);
+
+			// Calculate reset times
+			const now = new Date();
+			const h5ResetDurationMs = 5 * 60 * 60 * 1000; // 5 hours
+			const weeklyResetDurationMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+			// Find last usage time to calculate when 5h window will reset
+			const lastUsageIdx = this.findLastUsageIndex(d.x_time ?? [], d.tokensUsage ?? []);
+			const lastUsageTime = lastUsageIdx >= 0 && d.x_time ? new Date(d.x_time[lastUsageIdx].replace(" ", "T") + ":00") : now;
+			const h5ResetAt = new Date(lastUsageTime.getTime() + h5ResetDurationMs);
+			const weeklyResetAt = new Date(now.getTime() + weeklyResetDurationMs);
+
+			// Calculate seconds until reset
+			const h5SecondsUntilReset = Math.max(0, Math.floor((h5ResetAt.getTime() - now.getTime()) / 1000));
+			const weeklySecondsUntilReset = Math.max(0, Math.floor((weeklyResetAt.getTime() - now.getTime()) / 1000));
+
 			const result: GLMQuotaData = {
 				provider: "glm",
 				totalCalls: totalUsage.totalModelCallCount ?? 0,
@@ -280,15 +366,20 @@ export class GLMQuotaScraper {
 				hourlyTimestamps: d.x_time ?? [],
 				hourlyCalls: d.modelCallCount ?? [],
 				hourlyTokens: d.tokensUsage ?? [],
+				h5UsedPct,
+				h5ResetsAt: formatRemainsSeconds(h5SecondsUntilReset),
+				h5ResetsAtEpoch: h5ResetAt.getTime(),
+				weeklyUsedPct,
+				weeklyResetsAt: formatRemainsSeconds(weeklySecondsUntilReset),
+				weeklyResetsAtEpoch: weeklyResetAt.getTime(),
 				apiEndpoint: url,
 				scrapedAt: new Date().toISOString(),
 			};
 
 			if (!this.config.quiet) {
 				console.log(
-					`[DEBUG GLMQuotaScraper] Total calls: ${result.totalCalls}, ` +
-						`Total tokens: ${result.totalTokens.toLocaleString()}, ` +
-						`Model: ${result.modelName}`,
+					`[DEBUG GLMQuotaScraper] 5h: ${h5UsedPct.toFixed(1)}% (${(h5Tokens/1e6).toFixed(1)}M tokens), ` +
+						`Week: ${weeklyUsedPct.toFixed(1)}% (${(weeklyTokens/1e6).toFixed(1)}M tokens)`,
 				);
 			}
 

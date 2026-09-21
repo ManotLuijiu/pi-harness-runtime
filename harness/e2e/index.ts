@@ -42,3 +42,32 @@ export type {
 	PlaywrightRunnerConfig,
 	QuotaPageData,
 } from "./playwright-runner.js";
+
+// Unified quota management
+export {
+	UnifiedQuotaManager,
+	createUnifiedQuotaManagerFromEnv,
+	type QuotaData,
+	type Provider,
+} from "./unified-quota-manager.js";
+
+// Individual scrapers for direct access
+export { MiniMaxQuotaManager, type MiniMaxQuotaData } from "./minimax-quota-scraper.js";
+export { GLMQuotaManager, GLMQuotaScraper, type GLMQuotaData, type GLMSubscriptionData, parseGLMErrorResetTime, parseMinimaxOverloadResetTime } from "./glm-quota-scraper.js";
+export { ChatGPTQuotaManager, ChatGPTQuotaScraper, type ChatGPTQuotaData } from "./chatgpt-quota-scraper.js";
+export { OpenAIQuotaManager, OpenAIQuotaScraper, type OpenAIQuotaData } from "./openai-quota-scraper.js";
+
+// Browser-based scrapers
+export {
+	ChromeProfileManager,
+	getChromeProfileManager,
+	BaseBrowserScraper,
+	CodexBrowserScraper,
+	ZaiBrowserScraper,
+	scrapeCodexQuota,
+	scrapeZaiQuota,
+	checkZaiCookies,
+	type BrowserScraperConfig,
+	type CodexQuotaData,
+	type ZaiQuotaData,
+} from "./browser-scrapers/index.js";
