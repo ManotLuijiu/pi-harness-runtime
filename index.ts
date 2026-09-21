@@ -74,9 +74,20 @@ import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
 // Lazy import - only loads when packages/jev-judge exists and API key available
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	try {
-		// Check if TYPESAFE_API_KEY is available
-		if (!process.env.TYPESAFE_API_KEY && !process.env.OPENROUTER_API_KEY) {
-			console.log("[auto-continue] No Jev API key found, skipping");
+		// Check if Jev API key is available (env var or keys file)
+		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+		const keysDir = `${homedir}/.pi-harness-runtime/keys`;
+		const { readFileSync, existsSync } = await import("fs");
+		const hasEnvKey =
+			process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY;
+		const hasFileKey =
+			existsSync(`${keysDir}/jev-api-key.txt`) &&
+			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 10;
+
+		if (!hasEnvKey && !hasFileKey) {
+			console.log(
+				"[auto-continue] No Jev API key found. Set TYPESAFE_API_KEY env or create ~/.pi-harness-runtime/keys/jev-api-key.txt"
+			);
 			return;
 		}
 

@@ -53,14 +53,34 @@ export const ENV_KEYS = {
 } as const;
 
 /**
- * Get API key from environment
- * Priority: TYPESAFE_API_KEY > OPENROUTER_API_KEY
+ * Get API key from environment or keys file
+ * Priority: TYPESAFE_API_KEY env > OPENROUTER_API_KEY env > keys file
  */
 export function getApiKeyFromEnv(): string | undefined {
-  return (
+  // First check environment variables
+  const envKey =
     process.env[ENV_KEYS.TYPESAFE_API_KEY] ||
-    process.env[ENV_KEYS.OPENROUTER_API_KEY]
-  );
+    process.env[ENV_KEYS.OPENROUTER_API_KEY];
+  if (envKey) return envKey;
+
+  // Fall back to keys file (e.g., ~/.pi-harness-runtime/keys/jev-api-key.txt)
+  const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+  const keysDir = `${homedir}/.pi-harness-runtime/keys`;
+  const keyFile = `${keysDir}/jev-api-key.txt`;
+
+  try {
+    const { readFileSync, existsSync } = require("fs");
+    if (existsSync(keyFile)) {
+      const key = readFileSync(keyFile, "utf8").trim();
+      if (key && key.length > 10) {
+        return key;
+      }
+    }
+  } catch {
+    // Ignore file read errors
+  }
+
+  return undefined;
 }
 
 /**
