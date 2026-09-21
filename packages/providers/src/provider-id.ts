@@ -114,7 +114,7 @@ export function providerDisplayName(provider: ProviderId): string {
  * - openai: has weekly-only window (no 5h limit since 2026)
  */
 export function providerHasContinuousScrape(provider: ProviderId): boolean {
-	return provider === "minimax" || provider === "openai";
+	return provider === "minimax" || provider === "openai" || provider === "glm";
 }
 
 /** True if this provider has a TUI-driven signal path today. */
@@ -122,7 +122,6 @@ export function providerHasTUISignal(provider: ProviderId): boolean {
 	return (
 		provider === "openai" ||
 		provider === "openai-codex" ||
-		provider === "glm" ||
 		provider === "anthropic" ||
 		provider === "openrouter"
 	);

@@ -23,6 +23,7 @@ import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
+import { GLMQuotaScraper } from "./harness/e2e/glm-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
@@ -755,7 +756,9 @@ Run \`bd ready\` to see current bd issues.
 	// --- Smart quota fetch for OpenAI status -------------------------
 	const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 	const _openaiQuotaScraper = new OpenAIQuotaScraper({ quiet: true });
+	const _glmQuotaScraper = new GLMQuotaScraper({ quiet: true });
 	let lastOpenAIQuotaFetchAt = 0;
+	let lastGLMQuotaFetchAt = 0;
 
 	// --- Cookie sanitizer integration ------------------------------------
 	// The drop folder is the user-facing, forgiving input. The canonical
@@ -1135,6 +1138,47 @@ Run \`bd ready\` to see current bd issues.
 		}
 	}
 
+	/**
+	 * Auto-fetch GLM quota via z.ai API.
+	 * GLM has both 5h and weekly windows.
+	 */
+	async function autoFetchGLMQuota(options?: {
+		suppressErrors?: boolean;
+	}): Promise<boolean> {
+		const suppressErrors = options?.suppressErrors === true;
+
+		try {
+			const data = await _glmQuotaScraper.fetchUsage();
+			if (!data) {
+				if (!suppressErrors) {
+					console.error("[pi-harness] GLM quota auto-fetch: no data returned");
+				}
+				return false;
+			}
+
+			writeMirrorRecord("glm", {
+					synced_at: data.scrapedAt,
+					source: "scrape",
+					h5_used_pct: data.h5UsedPct,
+					h5_resets_at: data.h5ResetsAt,
+					h5_resets_at_epoch: data.h5ResetsAtEpoch,
+					weekly_used_pct: data.weeklyUsedPct,
+					weekly_resets_at: data.weeklyResetsAt,
+					weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
+					model: data.modelName,
+				});
+			return true;
+		} catch (error) {
+			if (!suppressErrors) {
+				console.error(
+					"[pi-harness] GLM quota auto-fetch skipped:",
+					error instanceof Error ? error.message : String(error),
+				);
+			}
+			return false;
+		}
+	}
+
 	async function maybeAutoFetchQuota(
 		modelId: string | null | undefined,
 	): Promise<void> {
@@ -1199,7 +1243,26 @@ Run \`bd ready\` to see current bd issues.
 			return;
 		}
 
-		// Other providers (GLM, Anthropic, etc.) - TUI signal path only for now
+		// GLM path (z.ai has both 5h and weekly windows)
+		if (provider === "glm") {
+			if (quotaAutoFetchInFlight) return;
+
+			const nowMs = Date.now();
+			if (nowMs - lastGLMQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+				return;
+			}
+
+			quotaAutoFetchInFlight = true;
+			lastGLMQuotaFetchAt = nowMs;
+			try {
+				await autoFetchGLMQuota({ suppressErrors: true });
+			} finally {
+				quotaAutoFetchInFlight = false;
+			}
+			return;
+		}
+
+		// Other providers (Anthropic, OpenRouter) - TUI signal path only for now
 		return;
 	}
 
