@@ -500,6 +500,18 @@ The runtime watches `~/.pi-harness-runtime/cookies/` for cookie files. Drop any 
 **Override:** set `QUOTA_COOKIE_FILE=/path/to/your/cookies.txt` to bypass the sanitizer
 and read a specific file directly.
 
+### Jev API Key Setup (Auto-Continue)
+
+Jev enables autonomous agent decisions when you're unavailable. Set the API key once and it persists:
+
+```bash
+echo "your_jev_api_key_here" > ~/.pi-harness-runtime/keys/jev-api-key.txt
+```
+
+Get your Jev API key from: https://openrouter.ai/keys
+
+**Priority:** `TYPESAFE_API_KEY` env > `OPENROUTER_API_KEY` env > `~/.pi-harness-runtime/keys/jev-api-key.txt`
+
 ## herdr Integration (Clipboard Bridge)
 
 > **⚠️ This only applies when using herdr.dev**
