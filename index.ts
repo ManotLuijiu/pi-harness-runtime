@@ -92,7 +92,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		if (!hasEnvKey && !hasFileKey) {
 			console.log(
-				"[auto-continue] No Jev API key found. Set TYPESAFE_API_KEY env or create ~/.pi-harness-runtime/keys/jev-api-key.txt"
+				"[auto-continue] No Jev API key found. Run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt"
 			);
 			return;
 		}

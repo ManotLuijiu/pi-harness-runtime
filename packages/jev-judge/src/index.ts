@@ -101,7 +101,7 @@ export function createJevJudge(config?: Partial<JevJudgeConfig>): JevJudge {
   const apiKey = getApiKeyFromEnv();
   if (!apiKey) {
     throw new Error(
-      `Jev API key not found. Set ${ENV_KEYS.TYPESAFE_API_KEY} or ${ENV_KEYS.OPENROUTER_API_KEY} in environment.`
+      `Jev API key not found. Run: echo "{api_key}" > ~/.pi-harness-runtime/keys/jev-api-key.txt`
     );
   }
   return new JevJudge({ apiKey, ...config });
