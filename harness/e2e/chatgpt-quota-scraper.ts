@@ -26,6 +26,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { resolveApiKey } from "./api-key-resolver.js";
 
 export interface ChatGPTQuotaData {
 	provider: "openai" | "openai-codex";
@@ -165,15 +166,38 @@ export class ChatGPTQuotaScraper {
 	}
 
 	/**
-	 * Load tokens from auth file
+	 * Load tokens from auth file (tries multiple sources)
 	 */
 	loadTokens(): ChatGPTAuthTokens | null {
-		const auth = loadAuthFile(this.config.authFile);
-		if (!auth || !auth.tokens) {
+		// Try primary auth file (~/.codex/auth.json)
+		let auth = loadAuthFile(this.config.authFile);
+		let tokens = auth?.tokens;
+
+		// Fallback: try pi.dev auth.json (~/.pi/agent/auth.json)
+		if (!tokens) {
+			try {
+				const piAuthPath = join(homedir(), ".pi", "agent", "auth.json");
+				if (existsSync(piAuthPath)) {
+					const piAuth = JSON.parse(readFileSync(piAuthPath, "utf-8"));
+					// Check for openai-codex OAuth tokens
+					if (piAuth["openai-codex"]?.type === "oauth") {
+						tokens = {
+							access_token: piAuth["openai-codex"].access,
+							refresh_token: piAuth["openai-codex"].refresh,
+							id_token: piAuth["openai-codex"].access, // Use access as id_token
+							account_id: piAuth["openai-codex"].accountId,
+						};
+					}
+				}
+			} catch {
+				// Ignore pi auth read errors
+			}
+		}
+
+		if (!tokens) {
 			return null;
 		}
 
-		const tokens = auth.tokens;
 		const client_id = tokens.id_token ? extractClientId(tokens.id_token) : null;
 
 		if (!tokens.access_token || !tokens.refresh_token || !client_id) {
