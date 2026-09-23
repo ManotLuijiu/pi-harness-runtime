@@ -1155,7 +1155,7 @@ Run \`bd ready\` to see current bd issues.
 		}
 	}
 
-	/**
+		/**
 	 * Auto-fetch GLM quota via z.ai API.
 	 * GLM has both 5h and weekly windows.
 	 */
@@ -1173,23 +1173,55 @@ Run \`bd ready\` to see current bd issues.
 				return false;
 			}
 
-			writeMirrorRecord("glm", {
-					synced_at: data.scrapedAt,
-					source: "scrape",
-					h5_used_pct: data.h5UsedPct,
-					h5_resets_at: data.h5ResetsAt,
-					h5_resets_at_epoch: data.h5ResetsAtEpoch,
-					weekly_used_pct: data.weeklyUsedPct,
-					weekly_resets_at: data.weeklyResetsAt,
-					weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
-					model: data.modelName,
-				});
+			// Check if 5h quota is exhausted (100% or more used)
+			const exhausted = data.h5UsedPct >= 100;
+
+				writeMirrorRecord("glm", {
+						synced_at: data.scrapedAt,
+						source: "scrape",
+						h5_used_pct: data.h5UsedPct,
+						h5_resets_at: data.h5ResetsAt,
+						h5_resets_at_epoch: data.h5ResetsAtEpoch,
+						weekly_used_pct: data.weeklyUsedPct,
+						weekly_resets_at: data.weeklyResetsAt,
+						weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
+						model: data.modelName,
+						exhausted,
+					});
 			return true;
 		} catch (error) {
+			// Check if this is a 429 quota error
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			const is429 = errorMsg.includes("1308") || errorMsg.includes("Usage limit reached");
+
+			if (is429) {
+				// Extract reset time from error
+				const { parseGLMErrorResetTime } = await import("./harness/e2e/glm-quota-scraper.js");
+				const resetAt = parseGLMErrorResetTime(errorMsg);
+				const resetEpoch = resetAt ? new Date(resetAt).getTime() : undefined;
+
+				writeMirrorRecord("glm", {
+						synced_at: new Date().toISOString(),
+						source: "scrape", // still mark as scrape for consistency
+						exhausted: true,
+								limitType: "rate_limit",
+								h5_used_pct: 100,
+								h5_resets_at_epoch: resetEpoch,
+						});
+
+				if (!suppressErrors) {
+					const resetTime = resetAt
+						? `resets at ${new Date(resetAt).toLocaleString()}`
+						: "resets soon";
+					console.error(`[pi-harness] GLM 5h quota exhausted! ${resetTime}`);
+				}
+				return true;
+			}
+
 			if (!suppressErrors) {
 				console.error(
 					"[pi-harness] GLM quota auto-fetch skipped:",
-					error instanceof Error ? error.message : String(error),
+					errorMsg,
 				);
 			}
 			return false;
