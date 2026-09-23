@@ -254,16 +254,17 @@ export function buildFooterStatusValue(
 		const weeklyPct = view.weekly_used_pct ?? 0;
 		const weeklyLeft = Math.max(0, 100 - weeklyPct);
 		const weeklyResets = view.weekly_resets_at ?? "soon";
+		const h5Resets = view.h5_resets_at ?? "soon";
 
 		let statusLine: string;
 		if (view.h5_used_pct === undefined) {
 			// OpenAI: weekly-only (no 5h window)
 			statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
 		} else {
-			// MiniMax: has both 5h and weekly windows
+			// MiniMax/GLM: has both 5h and weekly windows
 			const h5Pct = view.h5_used_pct;
 			const h5Left = Math.max(0, 100 - h5Pct);
-			statusLine = `5h: ${h5Left.toFixed(0)}% left · week: ${weeklyLeft.toFixed(0)}% left`;
+			statusLine = `5h: ${h5Left.toFixed(0)}% left (resets ${h5Resets}) - week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
 		}
 
 		const freshnessSuffix =
