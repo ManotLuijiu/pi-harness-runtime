@@ -68,7 +68,7 @@ import {
 	type SharedBlackboard,
 	createBlackboard,
 } from "./harness/blackboard.ts";
-import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
+import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
@@ -1202,12 +1202,24 @@ Run \`bd ready\` to see current bd issues.
 
 				writeMirrorRecord("glm", {
 						synced_at: new Date().toISOString(),
-						source: "scrape", // still mark as scrape for consistency
+						source: "scrape",
 						exhausted: true,
-								limitType: "rate_limit",
-								h5_used_pct: 100,
-								h5_resets_at_epoch: resetEpoch,
-						});
+						limitType: "rate_limit",
+						h5_used_pct: 100,
+						h5_resets_at_epoch: resetEpoch,
+					});
+
+				// Start countdown timer for auto-resume
+				if (resetAt && currentSession) {
+					const countdown = getGLMQuotaCountdown();
+					await countdown.startCountdown(
+						currentSession.jobId,
+						resetAt,
+						mirrorStore,
+						currentSession.machine,
+					);
+					console.log(`[GLM countdown] Started - will auto-resume at ${resetAt}`);
+				}
 
 				if (!suppressErrors) {
 					const resetTime = resetAt
