@@ -382,3 +382,11 @@ export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
 export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto-continue.js";
+
+// Export WrapUpJudge
+export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
+export type { TodoItem, WrapUpResult } from "./wrap-up-judge.js";
+
+// Export EnvironmentJudge
+export { EnvironmentJudge } from "./environment-judge.js";
+export type { EnvironmentContext, EnvironmentDecision, SafetyCheck, EnvironmentConfig } from "./environment-judge.js";
