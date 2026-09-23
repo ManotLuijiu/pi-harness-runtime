@@ -28,6 +28,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveApiKey } from "./api-key-resolver.js";
 import { homedir } from "node:os";
 
 export interface GLMQuotaData {
@@ -103,6 +104,7 @@ const SUBSCRIPTION_ENDPOINT = "/biz/subscription/list";
  * Load API key from file, checking multiple locations
  */
 function loadApiKey(path: string): string | null {
+	// First try: use the provided path (legacy behavior)
 	if (existsSync(path)) {
 		try {
 			const key = readFileSync(path, "utf-8").trim();
@@ -111,7 +113,8 @@ function loadApiKey(path: string): string | null {
 			// ignore
 		}
 	}
-	// Fallback to legacy location
+
+	// Second try: fallback to legacy location
 	if (existsSync(LEGACY_API_KEY_FILE)) {
 		try {
 			const key = readFileSync(LEGACY_API_KEY_FILE, "utf-8").trim();
@@ -120,6 +123,13 @@ function loadApiKey(path: string): string | null {
 			// ignore
 		}
 	}
+
+	// Third try: auto-discover from pi.dev auth.json
+	const autoKey = resolveApiKey("zai");
+	if (autoKey) {
+		return autoKey;
+	}
+
 	return null;
 }
 
