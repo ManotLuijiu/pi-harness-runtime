@@ -4,6 +4,10 @@ export const PROACTIVE_COMPACT_COOLDOWN_MS = 10 * 60 * 1000;
 export const MAX_PROACTIVE_COMPACT_FAILURES = 3;
 export const OUTPUT_LIMIT_AUTO_RESUME_LIMIT = 3;
 export const OUTPUT_LIMIT_RESUME_PROMPT = "Output token limit hit. Resume directly — no apology, no recap. Pick up mid-thought if the cut happened there. Break remaining work into smaller pieces.";
+export const PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT = 100;
+export const PROVIDER_OVERLOAD_AUTO_RESUME_MIN_MS = 60_000;
+export const PROVIDER_OVERLOAD_AUTO_RESUME_MAX_MS = 5 * 60_000;
+export const PROVIDER_OVERLOAD_RESUME_PROMPT = "resume";
 export function shouldTriggerProactiveCompact(usage, options) {
     if (!usage) {
         return false;
@@ -15,6 +19,35 @@ export function shouldTriggerProactiveCompact(usage, options) {
     }
     const threshold = options?.threshold ?? PROACTIVE_COMPACT_THRESHOLD;
     return usage.percent !== null && usage.percent >= threshold;
+}
+function readAssistantStopText(message) {
+    const parts = [];
+    if (typeof message.errorMessage === "string") {
+        parts.push(message.errorMessage);
+    }
+    if (typeof message.stopReason === "string") {
+        parts.push(message.stopReason);
+    }
+    if (typeof message.content === "string") {
+        parts.push(message.content);
+    }
+    else if (Array.isArray(message.content)) {
+        for (const part of message.content) {
+            if (typeof part === "string") {
+                parts.push(part);
+            }
+            else if (part && typeof part === "object") {
+                const obj = part;
+                if (typeof obj.text === "string") {
+                    parts.push(obj.text);
+                }
+                else if (typeof obj.content === "string") {
+                    parts.push(obj.content);
+                }
+            }
+        }
+    }
+    return parts.join("\n");
 }
 export function isOutputLimitAssistantMessage(message) {
     if (message.role !== "assistant") {
@@ -33,6 +66,48 @@ export function shouldQueueOutputLimitResume(message, resumeAttempts, hasPending
     return (isOutputLimitAssistantMessage(message) &&
         resumeAttempts < maxAttempts &&
         !hasPendingMessages);
+}
+/**
+ * Check if this is a FRESH 529 overload error (not a "Retry failed" report)
+ * Fresh errors should trigger retries; "Retry failed" messages should NOT.
+ */
+export function isFreshProviderOverloadError(message) {
+    if (message.role !== "assistant") {
+        return false;
+    }
+    const text = readAssistantStopText(message);
+    // Fresh overload: contains overload indicator + 529 code
+    const isFreshOverload = text.includes("overloaded_error") ||
+        text.includes("peak-hour surge") ||
+        text.includes("temporarily busy") ||
+        text.includes("server is temporarily busy") ||
+        text.includes("try again shortly");
+    // But NOT if it's a "Retry failed" report (that means our retry already failed)
+    const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
+    return isFreshOverload && !isRetryFailedReport;
+}
+/**
+ * Legacy check - returns true for BOTH fresh overloads AND "Retry failed" reports
+ * @deprecated Use isFreshProviderOverloadError for retry logic
+ */
+export function isProviderOverloadAssistantMessage(message) {
+    if (message.role !== "assistant") {
+        return false;
+    }
+    return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|\b529\b|\b2064\b/i.test(readAssistantStopText(message));
+}
+export function shouldQueueProviderOverloadResume(message, resumeAttempts, hasPendingMessages, options) {
+    const maxAttempts = options?.maxAttempts ?? PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT;
+    return (isFreshProviderOverloadError(message) &&
+        resumeAttempts < maxAttempts &&
+        !hasPendingMessages);
+}
+export function getProviderOverloadResumeDelayMs(options) {
+    const minMs = options?.minMs ?? PROVIDER_OVERLOAD_AUTO_RESUME_MIN_MS;
+    const maxMs = options?.maxMs ?? PROVIDER_OVERLOAD_AUTO_RESUME_MAX_MS;
+    const random = options?.random ?? Math.random;
+    const clampedRandom = Math.max(0, Math.min(1, random()));
+    return Math.round(minMs + clampedRandom * (maxMs - minMs));
 }
 export function shouldQueuePostCompactionResume(event, hasPendingMessages, options) {
     if (event.reason === "manual" && options?.force !== true) {

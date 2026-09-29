@@ -584,4 +584,3 @@ export class LoopRuntime {
         return this.run();
     }
 }
-//# sourceMappingURL=loop-runtime.js.map

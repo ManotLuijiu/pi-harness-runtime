@@ -99,7 +99,13 @@ export class E2ETestEngine {
         const results = [];
         let totalDuration = 0;
         for (const scenario of scenarios) {
-            if (scenario.required) {
+            if (!scenario.required) {
+                // Skip non-required scenarios on failure of required ones
+                const result = await this.runScenario(scenario, context);
+                results.push(result);
+                totalDuration += result.duration;
+            }
+            else {
                 const result = await this.runScenario(scenario, context);
                 results.push(result);
                 totalDuration += result.duration;
@@ -115,11 +121,6 @@ export class E2ETestEngine {
                     }
                     break;
                 }
-            } else {
-                // Skip non-required scenarios on failure of required ones
-                const result = await this.runScenario(scenario, context);
-                results.push(result);
-                totalDuration += result.duration;
             }
         }
         const report = {
@@ -287,4 +288,3 @@ export const CommonSteps = {
         return steps;
     },
 };
-//# sourceMappingURL=test-engine.js.map

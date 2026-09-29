@@ -50,4 +50,3 @@ export function parseMiniMaxQuotaText(text) {
     }
     return data;
 }
-//# sourceMappingURL=minimax-quota-parser.js.map

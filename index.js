@@ -16,6 +16,7 @@ import { UsageTracker } from "./tracker.ts";
 import { MirrorStore } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
 import { OpenAIQuotaScraper } from "./harness/e2e/openai-quota-scraper.js";
+import { GLMQuotaScraper } from "./harness/e2e/glm-quota-scraper.js";
 import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import { CookieWatcher, DEFAULT_DROP_DIR as COOKIE_DROP_DIR, hasAnyCookieSource as sanitizerHasAnyCookieSource, } from "./packages/cookie-sanitizer/src/index.ts";
 import { providerFromModelId, } from "./packages/providers/src/provider-id.ts";
@@ -23,7 +24,7 @@ import { TUIUsageMonitor, } from "./packages/quota-manager/src/tui-usage-monitor
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
 import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
-import { MAX_PROACTIVE_COMPACT_FAILURES, OUTPUT_LIMIT_RESUME_PROMPT, PROVIDER_OVERLOAD_RESUME_PROMPT, PROACTIVE_COMPACT_COOLDOWN_MS, getProviderOverloadResumeDelayMs, shouldQueueOutputLimitResume, shouldQueueProviderOverloadResume, shouldQueuePostCompactionResume, shouldTriggerProactiveCompact, } from "./proactive-compact.ts";
+import { MAX_PROACTIVE_COMPACT_FAILURES, OUTPUT_LIMIT_RESUME_PROMPT, PROVIDER_OVERLOAD_RESUME_PROMPT, getProviderOverloadResumeDelayMs, PROACTIVE_COMPACT_COOLDOWN_MS, shouldQueueOutputLimitResume, shouldQueueProviderOverloadResume, shouldQueuePostCompactionResume, shouldTriggerProactiveCompact, } from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
 import { renderStatus } from "./renderer.ts";
 import { JobStateMachine, } from "./harness/job-state-machine.ts";
@@ -31,13 +32,107 @@ import { createTaskGraphManager, } from "./harness/task-graph.js";
 import { MasterPlanner } from "./harness/master-planner.ts";
 import { RepairEngine } from "./harness/repair-engine.ts";
 import { createBlackboard, } from "./harness/blackboard.ts";
-import { scheduleAutoResume, cancelAutoResume } from "./harness/index.js";
+import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
+// --- Jev Auto-Continue: Agent autonomous decision-making --------------------
+// Lazy import - only loads when packages/jev-judge exists and API key available
+async function initAutoContinue(pi) {
+    try {
+        // Check if Jev API key is available (env var or keys file)
+        const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+        const keysDir = `${homedir}/.pi-harness-runtime/keys`;
+        const { readFileSync, existsSync, mkdirSync } = await import("fs");
+        // Auto-create directory if doesn't exist
+        if (!existsSync(keysDir)) {
+            mkdirSync(keysDir, { recursive: true });
+        }
+        const hasEnvKey = process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY;
+        const hasFileKey = existsSync(`${keysDir}/jev-api-key.txt`) &&
+            readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 10;
+        if (!hasEnvKey && !hasFileKey) {
+            console.log("[auto-continue] No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
+            return;
+        }
+        const mod = await import("./packages/jev-judge/src/auto-continue.js");
+        // Track waiting state
+        let waitingForUserSince = null;
+        let lastUserMessage = null;
+        // Detect when agent asks for continuation
+        pi.on("message_end", async (event) => {
+            const msg = event.message;
+            if (!msg || msg.role !== "assistant")
+                return;
+            const content = typeof msg.content === "string" ? msg.content : "";
+            const hasContinuation = /continue|proceed|next phase|next step/i.test(content);
+            if (hasContinuation && !waitingForUserSince) {
+                waitingForUserSince = new Date();
+                console.log("[auto-continue] Agent waiting for continuation confirmation");
+            }
+        });
+        // Detect user responses
+        pi.on("message_start", async (event) => {
+            const msg = event.message;
+            if (msg?.role === "user") {
+                lastUserMessage = new Date();
+                if (waitingForUserSince) {
+                    console.log("[auto-continue] User responded, cancelling wait");
+                    waitingForUserSince = null;
+                }
+            }
+        });
+        // Periodic check for auto-continue decision
+        const AUTO_CONTINUE_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
+        const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
+        const checkAndAutoContinue = async () => {
+            if (!waitingForUserSince)
+                return;
+            const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
+            if (waitMinutes < MIN_WAIT_MINUTES)
+                return;
+            console.log(`[auto-continue] Checking after ${waitMinutes.toFixed(0)} minutes wait...`);
+            try {
+                const judge = new mod.AutoContinueJudge({
+                    apiKey: process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY,
+                    proceedThreshold: 0.7,
+                    maxWaitMinutes: 30,
+                });
+                const taskState = mod.createTaskState([], // completed tasks
+                [], // remaining tasks
+                lastUserMessage || undefined, new Date(Date.now() - waitMinutes * 60000));
+                const decision = await judge.decide(taskState);
+                console.log(`[auto-continue] Decision: ${decision.action} (${(decision.probability * 100).toFixed(0)}% confidence)`);
+                if (decision.action === "proceed") {
+                    // Send steer message to continue
+                    pi.sendUserMessage("User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
+                        `Decision: ${decision.reasoning}\n` +
+                        "Continue with remaining tasks.", { deliverAs: "steer" });
+                    waitingForUserSince = null;
+                }
+                else if (decision.action === "proceed_with_caution") {
+                    pi.sendUserMessage("User is unavailable. Proceeding with caution - will log each significant step.\n" +
+                        `Risk level: ${decision.riskLevel}\n` +
+                        "Continue with remaining tasks, reporting progress.", { deliverAs: "steer" });
+                    waitingForUserSince = null;
+                }
+                // If action is "wait", do nothing and check again later
+            }
+            catch (error) {
+                console.error("[auto-continue] Error:", error);
+            }
+        };
+        // Start periodic check
+        setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
+        console.log("[auto-continue] Jev Auto-Continue initialized");
+    }
+    catch {
+        // auto-continue not available
+    }
+}
 // --- todo-bd-sync: Two-way sync between rpiv-todo and bd --------------------
 // Lazy import - only loads when packages/todo-bd-sync exists
 async function initTodoBdSync(pi) {
     try {
         const mod = await import("./packages/todo-bd-sync/src/extension.js");
-        mod.registerTodoBdSync(pi, { debug: false });
+        mod.registerTodoBdSync(pi);
     }
     catch {
         // todo-bd-sync not available
@@ -65,51 +160,142 @@ async function initWriteReview(pi) {
         // write-review not available
     }
 }
-import { homedir } from "node:os";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-// --- Debug log → file instead of TUI ---------------------------------
-const DEBUG_LOG_DIR = join(homedir(), ".pi", "harness-logs");
-const DEBUG_LOG_PATH = join(DEBUG_LOG_DIR, "harness-debug.log");
-try {
-    if (!existsSync(DEBUG_LOG_DIR))
-        mkdirSync(DEBUG_LOG_DIR, { recursive: true });
-}
-catch {
-    /* non-fatal */
-}
-// Write harness runtime logs to file only (NOT to TUI stdout)
-function _debugLog(...args) {
+// --- file-copy-helper: Inject cp rule when mimicking files --------------------
+// Lazy import - only loads when packages/file-copy-helper exists
+async function initFileCopyHelper(pi) {
     try {
-        const line = new Date().toISOString() +
-            " " +
-            args
-                .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-                .join(" ");
-        appendFileSync(DEBUG_LOG_PATH, line + "\n");
+        const mod = await import("./packages/file-copy-helper/src/extension.js");
+        mod.registerFileCopyHelper(pi);
     }
     catch {
-        // non-fatal
+        // file-copy-helper not available
     }
 }
-// --- Selective console override — harness DEBUG → file only --------
-// Real errors (no [DEBUG prefix) still print to TUI so you notice problems.
-const _origLog = console.log.bind(console);
-const _origError = console.error.bind(console);
-console.log = (...args) => {
-    _origLog(...args);
-    _debugLog(...args);
-};
-console.error = (...args) => {
-    const first = String(args[0] ?? "");
-    if (first.startsWith("[DEBUG")) {
-        _debugLog(...args);
+// --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
+// Prevents 2000+ second hangs when SSH background commands aren't detached.
+// Intercepts every bash tool call before execution and rewrites risky SSH commands.
+//
+// Also guards foreground `ssh ... "<daemon>"` commands (pollers, servers) by
+// prefixing `timeout Ns` so the local call always returns (PI_HARNESS_SSH_TIMEOUT_S).
+async function initSshDetachInterceptor(pi) {
+    try {
+        const interceptor = await import("./harness/ssh-detach-interceptor.js");
+        // Register on tool_call with default priority (100)
+        // NOTE: module functions are captured in closure scope — do NOT use require()
+        // here; this package is ESM ("type": "module") and require is undefined.
+        pi.on("tool_call", (event, _api) => {
+            if (event.toolName !== "bash")
+                return {};
+            const input = event.input;
+            const command = input.command ?? "";
+            if (!interceptor.isSshCommand(command))
+                return {};
+            // 1) Detach transform: bare `ssh ... &` or `ssh "a && b &"` chains
+            if (!interceptor.isDetachedPattern(command) &&
+                (interceptor.hasBareAmpersand(command) ||
+                    interceptor.hasCommandChainWithAmpersand(command))) {
+                const transformed = interceptor.transformToDetached(command);
+                if (transformed !== command) {
+                    input.command = transformed;
+                    return {};
+                }
+            }
+            // 2) Timeout guard: foreground SSH running a daemon-ish remote command
+            //    (e.g. `ssh -tt host "python -m amos_worker --video | head -10"`)
+            if (interceptor.isForegroundDaemonSsh(command)) {
+                const seconds = interceptor.getDefaultSshTimeoutSeconds();
+                input.command = interceptor.addSshTimeoutGuard(command, seconds);
+                // Also cap the bash tool's own timeout as belt-and-suspenders
+                if (input.timeout === undefined || input.timeout > seconds) {
+                    input.timeout = seconds;
+                }
+            }
+            return {};
+        });
     }
-    else {
-        _origError(...args);
-        _debugLog(...args);
+    catch {
+        // ssh-detach-interceptor not available
     }
-};
+}
+// --- loop-completions: Watch daemon loop completions → update TUI todos ---------
+// When the daemon loop finishes, it writes a completion event to
+// ~/.pi-harness-runtime/loop-completions/. The harness extension watches this
+// dir and sends a steer message to the agent so the TUI todo count updates.
+async function initLoopCompletions(pi) {
+    const { existsSync, mkdirSync, watch } = await import("node:fs");
+    const { join: joinPath } = await import("node:path");
+    const { homedir: getHomeDir } = await import("node:os");
+    const COMPLETION_DIR = joinPath(getHomeDir(), ".pi-harness-runtime", "loop-completions");
+    try {
+        if (!existsSync(COMPLETION_DIR)) {
+            mkdirSync(COMPLETION_DIR, { recursive: true });
+        }
+    }
+    catch {
+        return; // can't create dir — skip
+    }
+    // Process any pre-existing files (e.g. from a previous session)
+    try {
+        const { readdirSync } = await import("node:fs");
+        const files = readdirSync(COMPLETION_DIR).filter((f) => f.endsWith(".json"));
+        for (const file of files) {
+            processCompletionFile(joinPath(COMPLETION_DIR, file), pi);
+        }
+    }
+    catch {
+        // ignore — best-effort
+    }
+    // Watch for new completion files
+    try {
+        const watcher = watch(COMPLETION_DIR, { persistent: false }, (event, filename) => {
+            if (event !== "rename")
+                return;
+            if (!filename || !filename.endsWith(".json"))
+                return;
+            const filePath = joinPath(COMPLETION_DIR, filename);
+            // Delay so the write finishes before we read
+            setTimeout(() => processCompletionFile(filePath, pi), 500);
+        });
+        watcher.on("error", () => { });
+    }
+    catch {
+        // fs.watch not available — skip
+    }
+}
+function processCompletionFile(filePath, pi) {
+    const { existsSync, readFileSync, unlinkSync } = require("node:fs");
+    try {
+        if (!existsSync(filePath))
+            return;
+        const raw = readFileSync(filePath, "utf8");
+        const completion = JSON.parse(raw);
+        const tag = completion.verdict === "approved"
+            ? "[ok]"
+            : completion.verdict === "blocked"
+                ? "[blocked]"
+                : "[done]";
+        const message = `Loop completed ${tag}: ${completion.taskId}\n` +
+            `  verdict: ${completion.verdict}\n` +
+            `  iterations: ${completion.iterations}\n` +
+            `  task: ${completion.request.slice(0, 80)}${completion.request.length > 80 ? "..." : ""}\n\n` +
+            `Run \`bd close ${completion.taskId} --reason "${completion.verdict}"\` if not already closed.`;
+        try {
+            pi.sendUserMessage(message, { deliverAs: "steer" });
+        }
+        catch {
+            // ignore — best-effort
+        }
+        unlinkSync(filePath);
+    }
+    catch {
+        // ignore — best-effort
+    }
+}
+// --- Debug logging (file only, no console override) ---------------
+// Logs written to file only. Real console output preserved for pi's TUI.
+import { homedir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
 let currentSession = null;
@@ -164,6 +350,7 @@ function ensureHarnessDir() {
 }
 async function getCheckpointManager() {
     const { JsonCheckpointManager } = await import("./packages/checkpoint/src/checkpoint-manager.ts");
+    // SAFETY: JsonCheckpointManager implements CheckpointManager via structural typing
     return new JsonCheckpointManager(HARNESS_ROOT_DIR);
 }
 function isOutputLimitResumePromptMessage(message) {
@@ -195,14 +382,40 @@ export default function (pi) {
     void initConfigCapture(pi);
     // --- write-review: Two-agent write with review loop ----------------------
     void initWriteReview(pi);
+    // --- file-copy-helper: Inject cp rule when mimicking files -------------
+    void initFileCopyHelper(pi);
+    // --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
+    void initSshDetachInterceptor(pi);
+    // --- jev-auto-continue: Agent autonomous decision when user unavailable -----
+    void initAutoContinue(pi);
+    // --- loop-completions: Watch daemon completions → agent TUI todos --------
+    void initLoopCompletions(pi);
+    // --- TASK TRACKING TERMINOLOGY CLARIFICATION ------------------------
+    // CRITICAL: This project has TWO separate task trackers. Agents often confuse them.
+    const TASK_TERMINOLOGY_CLARIFICATION = `
+## TASK TRACKING TERMINOLOGY (CRITICAL)
+
+This project uses TWO different task tracking systems. **Always clarify which one the user means:**
+
+| What you say | Tool | Purpose |
+|-------------|------|---------|
+| **bd** / **beads** / **issues** | \`bd create\`, \`bd list\`, \`bd close\` | Issue tracker (GitHub-synced) |
+| **todo** / **todos** | \`todo\` tool (JSON-RPC) | Local task list (session-only) |
+
+**When in doubt, ASK:** "Did you mean **bd** (issue tracker) or **todo** (local task list)?"
+
+### When to use each:
+- **bd (beads)**: Long-lived issues, bugs, features, GitHub issues
+- **todo**: Short-lived session tasks, immediate action items
+`;
     // --- Auto-Invoke rpiv-todo via System Prompt ------------------------
     // This makes the todo overlay ALWAYS activate at session start
     const AUTO_TODO_INVOKE_HINT = `
 
-You have access to a todo tool that shows a persistent task overlay.
+You have access to a **todo tool** that shows a persistent task overlay.
 ALWAYS use it at the START of every session to capture user requirements as tasks.
 When the user gives you a multi-step task:
-1. Immediately create todo items for each step using the todo tool
+1. Immediately create todo items for each step using the **todo tool** (not bd!)
 2. Keep tasks updated - mark in_progress when working, completed when done
 3. When a task is completed, continue to the next or ask the user
 
@@ -211,10 +424,12 @@ The todo overlay persists and helps track progress across your conversation.
     const COMMIT_BUILD_CHECKLIST = `
 
 BEFORE committing code or triggering builds, ALWAYS check:
-1. Run 'bd ready' to see pending tasks
-2. Mark completed tasks with 'bd close <id> --reason "Done"'
-3. Acknowledge pending tasks before proceeding
-4. Never commit/build without acknowledging pending todos
+1. Run \`bd ready\` to see pending **bd issues**
+2. Mark completed issues with \`bd close <id> --reason "Done"\`
+3. Acknowledge pending issues before proceeding
+4. Never commit/build without acknowledging pending bd issues
+
+NOTE: Use \`todo\` tool for session task tracking, \`bd\` for issue tracker.
 `;
     const WRITE_REVIEW_HINT = `
 
@@ -222,10 +437,11 @@ WRITER-REVIEWER WORKFLOW:
 When working on a feature from {project}/wiki/* or {project}/.write-review/:
 1. Read the prompt/task file to understand requirements
 2. Write clean, complete code
-3. Mark task "in_progress" in todos
-4. When code is ready, trigger review with \`{done} bd create "Review: <task>" -t review -p 1 && bd close <id> --reason "Approved"\`
-5. If reviewer requests changes, update code and re-review
-6. Never skip review on non-trivial features
+3. Mark task "in_progress" using **todo tool**
+4. When code is ready, trigger review with \`bd create "Review: <task>" -t review -p 1\`
+5. After review, close the issue: \`bd close <id> --reason "Approved"\`
+6. If reviewer requests changes, update code and re-review
+7. Never skip review on non-trivial features
 `;
     const DOCKER_CLEANUP_HINT = `
 
@@ -236,14 +452,39 @@ AFTER running any Docker build command (docker build, docker compose build, dock
 3. Example: After \`docker compose up --build\`, run \`docker builder prune -f\`
 4. For aggressive cleanup: \`docker builder prune -a -f\` (removes ALL unused cache)
 `;
+    // --- SSH Guard Rules: Never run servers over SSH in the foreground --------
+    // This runs in EVERY repo the agent enters — not just pi-harness-runtime.
+    // Pattern: embed as constant (no file dependency) so it works everywhere.
+    const SSH_GUARD_RULES = `
+## SSH / Remote Server Commands
+
+**CRITICAL — SSH BACKGROUNDING RULE:**
+Never run a server or long-running process over SSH in the foreground. This causes the SSH session to hang indefinitely, blocking the agent for hours.
+
+- BAD: \`ssh host "python -m uvicorn ..."\`  (no &, SSH will hang)
+- GOOD: \`ssh host "nohup python -m uvicorn ... > /tmp/log 2>&1 & echo DONE"\`
+- GOOD: \`ssh host "cd /path && python -m uvicorn ... > log 2>&1 & echo DONE"\`
+
+Every SSH command that starts a server, daemon, or background process MUST use the detached SSH pattern: nohup + redirect + & + echo DONE.
+If you are unsure whether a command will hang, ALWAYS use nohup + backgrounding. It is always safe to detach; it is never safe to run a server in the foreground over SSH.
+
+Server process examples that must be detached: uvicorn, fastapi dev server, gunicorn, node server, flask run, django runserver, python http.server, any listening daemon.
+`;
     let firstAgentStart = true;
     pi.on("before_agent_start", async (event) => {
         if (firstAgentStart) {
-            event.systemPrompt += AUTO_TODO_INVOKE_HINT;
-            event.systemPrompt += COMMIT_BUILD_CHECKLIST;
-            event.systemPrompt += WRITE_REVIEW_HINT;
-            event.systemPrompt += DOCKER_CLEANUP_HINT;
+            // Return additional system prompt content to append
+            const additionalPrompt = [
+                TASK_TERMINOLOGY_CLARIFICATION,
+                AUTO_TODO_INVOKE_HINT,
+                COMMIT_BUILD_CHECKLIST,
+                WRITE_REVIEW_HINT,
+                DOCKER_CLEANUP_HINT,
+                SSH_GUARD_RULES,
+            ].join("\n");
             firstAgentStart = false;
+            // Return the additional prompt to append to systemPrompt
+            return { systemPrompt: event.systemPrompt + "\n" + additionalPrompt };
         }
     });
     // --- Auto-Todo Reminder on Build Commands ---------------------------
@@ -265,14 +506,16 @@ AFTER running any Docker build command (docker build, docker compose build, dock
     ];
     const TODO_BUILD_REMINDER = `
 
-IMPORTANT - TODO UPDATE REMINDER:
+IMPORTANT - TASK UPDATE REMINDER:
 Before running a build, ensure you update the current task status:
-1. Mark the task as in_progress with bd update <id> --status in_progress
-2. After build succeeds, update the task: bd close <id> --reason "Done" or bd update <id> --status pending
+1. If tracking in **todo tool**: mark task in_progress
+2. If tracking in **bd issues**: use \`bd update <id> --status in_progress\`
+3. After build succeeds: mark completed in the appropriate tracker
 
-Run \`bd ready\` to see current tasks.
+Run \`bd ready\` to see current bd issues.
 `;
-    // Detect build commands and append todo reminder to their output
+    // Detect build commands and log reminder (don't modify result.content)
+    // Modifying result.content is fragile - pi-coding-agent expects specific structures
     pi.on("tool_execution_end", async (event) => {
         const toolName = event.toolName;
         if (toolName !== "bash")
@@ -280,29 +523,30 @@ Run \`bd ready\` to see current tasks.
         const result = event.result;
         if (!result)
             return;
-        // Handle content that might be an array or object
+        // Get content for detection only - don't modify result.content
         const rawContent = result.content;
         let content;
         if (typeof rawContent === "string") {
             content = rawContent;
         }
         else if (Array.isArray(rawContent)) {
-            content = rawContent.map((c) => typeof c === "string" ? c : JSON.stringify(c)).join("\n");
+            content = rawContent
+                .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
+                .join("\n");
+        }
+        else if (rawContent) {
+            content = JSON.stringify(rawContent);
         }
         else {
-            content = JSON.stringify(rawContent ?? "");
+            return; // No content to analyze
         }
         // Check if this is a build command
         const isBuildCommand = BUILD_COMMANDS.some((cmd) => content.toLowerCase().includes(cmd.toLowerCase()));
-        if (isBuildCommand && !content.includes("bd ready") && !content.includes("TODO UPDATE")) {
-            // Append todo reminder without changing the tool result content shape.
-            const reminderBlock = { type: "text", text: TODO_BUILD_REMINDER };
-            if (Array.isArray(rawContent)) {
-                result.content = [...rawContent, reminderBlock];
-            }
-            else {
-                result.content = [{ type: "text", text: content + TODO_BUILD_REMINDER }];
-            }
+        // Log reminder to console (agent will see it)
+        if (isBuildCommand &&
+            !content.includes("bd ready") &&
+            !content.includes("TODO UPDATE")) {
+            console.log(TODO_BUILD_REMINDER.trim());
         }
     });
     // --- Auto-track every assistant message ------------------------------
@@ -354,9 +598,10 @@ Run \`bd ready\` to see current tasks.
                 // );
                 tuiMonitor.processMessage(text);
             }
+            // message_end: no-op on parse error (already logged upstream)
         }
-        catch (e) {
-            // console.error("[DEBUG message_end] TUI processMessage error:", e);
+        catch {
+            // ignore — the message was already logged by the TUI layer
         }
     });
     // --- Smart quota fetch for MiniMax status ------------------------
@@ -364,12 +609,17 @@ Run \`bd ready\` to see current tasks.
     const MINIMAX_REFRESH_TOKEN_THRESHOLD = 200_000;
     const MINIMAX_REFRESH_REQUEST_THRESHOLD = 12;
     const quotaScraper = process.env.QUOTA_COOKIE_FILE
-        ? new MiniMaxQuotaScraper({ cookieFile: process.env.QUOTA_COOKIE_FILE })
-        : new MiniMaxQuotaScraper();
+        ? new MiniMaxQuotaScraper({
+            cookieFile: process.env.QUOTA_COOKIE_FILE,
+            quiet: true,
+        })
+        : new MiniMaxQuotaScraper({ quiet: true });
     // --- Smart quota fetch for OpenAI status -------------------------
     const OPENAI_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     const _openaiQuotaScraper = new OpenAIQuotaScraper({ quiet: true });
+    const _glmQuotaScraper = new GLMQuotaScraper({ quiet: true });
     let lastOpenAIQuotaFetchAt = 0;
+    let lastGLMQuotaFetchAt = 0;
     // --- Cookie sanitizer integration ------------------------------------
     // The drop folder is the user-facing, forgiving input. The canonical
     // cache (`~/.config/minimax-cookies.txt`) is the runtime-owned,
@@ -573,8 +823,7 @@ Run \`bd ready\` to see current tasks.
                 return null;
             }
             const parsed = parseMiniMaxQuotaText(rawText);
-            if (parsed.h5UsedPct === undefined &&
-                parsed.weeklyUsedPct === undefined) {
+            if (parsed.h5UsedPct === undefined && parsed.weeklyUsedPct === undefined) {
                 return null;
             }
             return {
@@ -673,6 +922,73 @@ Run \`bd ready\` to see current tasks.
             return false;
         }
     }
+    /**
+ * Auto-fetch GLM quota via z.ai API.
+ * GLM has both 5h and weekly windows.
+ */
+    async function autoFetchGLMQuota(options) {
+        const suppressErrors = options?.suppressErrors === true;
+        try {
+            const data = await _glmQuotaScraper.fetchUsage();
+            if (!data) {
+                if (!suppressErrors) {
+                    console.error("[pi-harness] GLM quota auto-fetch: no data returned");
+                }
+                return false;
+            }
+            // Check if 5h quota is exhausted (100% or more used)
+            const exhausted = data.h5UsedPct >= 100;
+            writeMirrorRecord("glm", {
+                synced_at: data.scrapedAt,
+                source: "scrape",
+                h5_used_pct: data.h5UsedPct,
+                h5_resets_at: data.h5ResetsAt,
+                h5_resets_at_epoch: data.h5ResetsAtEpoch,
+                weekly_used_pct: data.weeklyUsedPct,
+                weekly_resets_at: data.weeklyResetsAt,
+                weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
+                model: data.modelName,
+                exhausted,
+            });
+            return true;
+        }
+        catch (error) {
+            // Check if this is a 429 quota error
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            const is429 = errorMsg.includes("1308") || errorMsg.includes("Usage limit reached");
+            if (is429) {
+                // Extract reset time from error
+                const { parseGLMErrorResetTime } = await import("./harness/e2e/glm-quota-scraper.js");
+                const resetAt = parseGLMErrorResetTime(errorMsg);
+                const resetEpoch = resetAt ? new Date(resetAt).getTime() : undefined;
+                writeMirrorRecord("glm", {
+                    synced_at: new Date().toISOString(),
+                    source: "scrape",
+                    exhausted: true,
+                    limitType: "rate_limit",
+                    h5_used_pct: 100,
+                    h5_resets_at_epoch: resetEpoch,
+                });
+                // Start countdown timer for auto-resume
+                if (resetAt && currentSession) {
+                    const countdown = getGLMQuotaCountdown();
+                    await countdown.startCountdown(currentSession.jobId, resetAt, mirrorStore, currentSession.machine);
+                    console.log(`[GLM countdown] Started - will auto-resume at ${resetAt}`);
+                }
+                if (!suppressErrors) {
+                    const resetTime = resetAt
+                        ? `resets at ${new Date(resetAt).toLocaleString()}`
+                        : "resets soon";
+                    console.error(`[pi-harness] GLM 5h quota exhausted! ${resetTime}`);
+                }
+                return true;
+            }
+            if (!suppressErrors) {
+                console.error("[pi-harness] GLM quota auto-fetch skipped:", errorMsg);
+            }
+            return false;
+        }
+    }
     async function maybeAutoFetchQuota(modelId) {
         const provider = providerFromModelId(modelId);
         // MiniMax path
@@ -726,7 +1042,48 @@ Run \`bd ready\` to see current tasks.
             }
             return;
         }
-        // Other providers (GLM, Anthropic, etc.) - TUI signal path only for now
+        // OpenAI Codex path (uses OAuth tokens from ~/.codex/auth.json)
+        if (provider === "openai-codex") {
+            if (quotaAutoFetchInFlight)
+                return;
+            const nowMs = Date.now();
+            if (nowMs - lastOpenAIQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+                return;
+            }
+            // Check if Codex auth file exists
+            const codexAuthFile = join(homedir(), ".codex", "auth.json");
+            if (!existsSync(codexAuthFile)) {
+                return;
+            }
+            quotaAutoFetchInFlight = true;
+            lastOpenAIQuotaFetchAt = nowMs;
+            try {
+                await autoFetchOpenAIQuota({ suppressErrors: true });
+            }
+            finally {
+                quotaAutoFetchInFlight = false;
+            }
+            return;
+        }
+        // GLM path (z.ai has both 5h and weekly windows)
+        if (provider === "glm") {
+            if (quotaAutoFetchInFlight)
+                return;
+            const nowMs = Date.now();
+            if (nowMs - lastGLMQuotaFetchAt < OPENAI_REFRESH_MIN_INTERVAL_MS) {
+                return;
+            }
+            quotaAutoFetchInFlight = true;
+            lastGLMQuotaFetchAt = nowMs;
+            try {
+                await autoFetchGLMQuota({ suppressErrors: true });
+            }
+            finally {
+                quotaAutoFetchInFlight = false;
+            }
+            return;
+        }
+        // Other providers (Anthropic, OpenRouter) - TUI signal path only for now
         return;
     }
     // --- /usage — show full status ---------------------------------------
@@ -735,7 +1092,9 @@ Run \`bd ready\` to see current tasks.
         handler: async (_args, ctx) => {
             const local = aggregateWindows(tracker.all());
             const provider = providerFromModelId(ctx.model?.id ?? null);
-            const mirror = provider ? mirrorStore.readProvider(provider) : mirrorStore.read();
+            const mirror = provider
+                ? mirrorStore.readProvider(provider)
+                : mirrorStore.read();
             const output = renderStatus({
                 model: ctx.model?.id ?? null,
                 cwd: ctx.cwd ?? process.cwd(),
@@ -751,8 +1110,7 @@ Run \`bd ready\` to see current tasks.
     pi.registerCommand("usage-refresh", {
         description: "Force refresh quota from provider console",
         handler: async (_args, ctx) => {
-            const autoFetchAvailable = hasCookieSource() ||
-                (await hasBrowserProfileAutoFetchSource());
+            const autoFetchAvailable = hasCookieSource() || (await hasBrowserProfileAutoFetchSource());
             if (!autoFetchAvailable) {
                 ctx.ui.notify("MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.", "warning");
                 return;
@@ -927,10 +1285,7 @@ Run \`bd ready\` to see current tasks.
                 ctx.ui.notify("No tasks found. The job may not have been planned yet.", "info");
                 return;
             }
-            const lines = [
-                `Tasks for Job ${currentSession.jobId}`,
-                `${"-".repeat(50)}`,
-            ];
+            const lines = [`Tasks for Job ${currentSession.jobId}`, `${"-".repeat(50)}`];
             for (const task of tasks) {
                 const status = task.status.padEnd(10);
                 lines.push(`[${task.id}] ${status} ${task.title}`);
@@ -1081,6 +1436,10 @@ Run \`bd ready\` to see current tasks.
     // so this is safe to call frequently.
     setInterval(() => {
         void maybeAutoFetchQuota(lastActiveProvider ?? null);
+        // Also refresh footer status so user sees updated quota data
+        if (footerStatusCtx) {
+            refreshFooterStatus(footerStatusCtx, tracker, mirrorStore, hasCookieSource, () => lastActiveProvider);
+        }
     }, MINIMAX_REFRESH_MIN_INTERVAL_MS);
     function clearProviderOverloadResume() {
         if (providerOverloadResumeTimer) {
@@ -1091,7 +1450,7 @@ Run \`bd ready\` to see current tasks.
     function scheduleProviderOverloadResume(hasPendingMessages) {
         clearProviderOverloadResume();
         const delayMs = getProviderOverloadResumeDelayMs();
-        const delayMinutes = Math.max(1, Math.round(delayMs / 60000));
+        const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
         console.error("[pi-harness] Provider overloaded; scheduling resume in " +
             delayMinutes +
             " min");

@@ -1,4 +1,86 @@
 import { parseContextWindowStatusLine, parseQuotaUsageStatusLine, } from "./status-parsers.ts";
+/**
+ * Format countdown seconds into a human-readable string for TUI display.
+ * Examples: "4h 32m", "45m 12s", "12s"
+ */
+export function formatCountdownForDisplay(seconds) {
+    if (seconds <= 0)
+        return "RESET";
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (days > 0) {
+        return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+        return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
+}
+/**
+ * Get a human-readable limit type label.
+ * Special cases for GLM's 5h quota limit.
+ */
+function getLimitTypeLabel(provider, limitType) {
+    // GLM specific: 5h quota limit
+    if (provider === "glm" && limitType === "rate_limit") {
+        return "5h quota";
+    }
+    return limitType ?? "tokens";
+}
+/**
+ * Format reset time for display.
+ * Converts ISO strings or human-readable times to a compact format.
+ */
+function formatResetTime(resetAt) {
+    if (!resetAt)
+        return "soon";
+    // If it's already a short human-readable string, return as-is
+    if (/^\d+\s*(hr|min|day|d|h|m|s)/i.test(resetAt)) {
+        return resetAt;
+    }
+    // Try to parse as ISO datetime
+    const date = new Date(resetAt);
+    if (!isNaN(date.getTime())) {
+        // Format as "Aug 25 01:47" or similar
+        const now = new Date();
+        const sameYear = date.getFullYear() === now.getFullYear();
+        const sameDay = date.toDateString() === now.toDateString();
+        const timeStr = date.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        });
+        if (sameDay) {
+            return `today ${timeStr}`;
+        }
+        const month = date.toLocaleString("en-US", { month: "short" });
+        const day = date.getDate();
+        if (sameYear) {
+            return `${month} ${day} ${timeStr}`;
+        }
+        return `${month} ${day} ${date.getFullYear()} ${timeStr}`;
+    }
+    return resetAt;
+}
+/**
+ * Build a TUI-signal exhaustion status line with optional countdown.
+ * This is used when a provider (like GLM) hits its limit.
+ */
+export function buildExhaustionStatusLine(provider, view, countdownSeconds) {
+    const label = providerDisplayName(provider);
+    const limitTypeLabel = getLimitTypeLabel(provider, view.limitType);
+    const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
+    if (countdownSeconds !== undefined && countdownSeconds > 0) {
+        const countdown = formatCountdownForDisplay(countdownSeconds);
+        return `${label}: ⏳ ${countdown} (${limitTypeLabel})`;
+    }
+    return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
+}
 import { getProviderLabel } from "./packages/types/src/ai-providers.js";
 import { providerHasContinuousScrape, providerHasTUISignal, } from "./packages/providers/src/provider-id.js";
 export function parseFooterStatusValue(value) {
@@ -98,9 +180,9 @@ export function buildFooterStatusValue(local, mirror, freshness, hasCookieSource
         (view.limitType !== undefined ||
             view.resets_at !== undefined ||
             view.h5_resets_at !== undefined)) {
-        const reset = view.resets_at ?? view.h5_resets_at ?? "soon";
-        const limitType = view.limitType ?? "tokens";
-        return `${label}: limit hit (${limitType}), reset ${reset}`;
+        const limitTypeLabel = getLimitTypeLabel(provider, view.limitType ?? undefined);
+        const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
+        return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
     }
     // Continuous data path: providers with continuous scrape (MiniMax has 5h+weekly, OpenAI has weekly-only)
     if (provider &&
@@ -111,16 +193,17 @@ export function buildFooterStatusValue(local, mirror, freshness, hasCookieSource
         const weeklyPct = view.weekly_used_pct ?? 0;
         const weeklyLeft = Math.max(0, 100 - weeklyPct);
         const weeklyResets = view.weekly_resets_at ?? "soon";
+        const h5Resets = view.h5_resets_at ?? "soon";
         let statusLine;
-        if (view.h5_used_pct !== undefined) {
-            // MiniMax: has both 5h and weekly windows
-            const h5Pct = view.h5_used_pct;
-            const h5Left = Math.max(0, 100 - h5Pct);
-            statusLine = `5h: ${h5Left.toFixed(0)}% left · week: ${weeklyLeft.toFixed(0)}% left`;
-        }
-        else {
+        if (view.h5_used_pct === undefined) {
             // OpenAI: weekly-only (no 5h window)
             statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
+        }
+        else {
+            // MiniMax/GLM: has both 5h and weekly windows
+            const h5Pct = view.h5_used_pct;
+            const h5Left = Math.max(0, 100 - h5Pct);
+            statusLine = `5h: ${h5Left.toFixed(0)}% left (resets ${h5Resets}) - week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
         }
         const freshnessSuffix = freshness === "fresh" || freshness === "missing" ? "" : ` · ${freshness}`;
         return `${label}: ${statusLine}${freshnessSuffix}`;
