@@ -223,7 +223,16 @@ async function initQdrant(): Promise<void> {
 		const { getQdrantConfig } = await import("./packages/skills/src/loader.js");
 		const cfg = getQdrantConfig();
 		if (cfg) {
-			console.error("[pi-harness] Qdrant vector search ready");
+			// Check if OpenAI embedding key is available
+			const { getOpenAIApiKey } = await import("./packages/qdrant-skills/src/embedder.js");
+			const embeddingKey = getOpenAIApiKey();
+			if (embeddingKey) {
+				console.error("[pi-harness] Qdrant vector search ready");
+			} else {
+				console.error("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
+				const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+				console.error('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
+			}
 		} else {
 			const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 			console.error("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
