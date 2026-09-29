@@ -275,4 +275,3 @@ export async function createJobStateMachine(rootDir, jobId) {
     const machine = new JobStateMachine({ checkpointManager: manager });
     return { machine, checkpoint: null };
 }
-//# sourceMappingURL=job-state-machine.js.map

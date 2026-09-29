@@ -56,15 +56,20 @@
 - Constructor `deps` propagation fixed (was silently dropped)
 - **Status:** shipped
 
-### M7 — Trajectory capture + learning (in progress)
-> Inspired by Hermes Agent's closed learning loop. Our loop produces structured
-> write-review cycles — persist them to build a smarter loop over time.
+### M7 — Closed Learning Loop (in progress)
+> Inspired by [Hermes Agent](https://github.com/nousresearch/hermes-agent)'s closed learning loop.
+> See [hermes-self-improvement-adaptation.md](./hermes-self-improvement-adaptation.md) for full plan.
 
 | # | Feature | Status |
 |---|---------|--------|
 | 7a | Trajectory capture — save cycles to `~/.pi-harness/trajectories/` | **Done (v1.1.51)** |
 | 7b | Review memory — track approved patterns in `~/.pi-harness/approved-patterns.json` | Pending |
 | 7c | Trajectory classifier — detect converging vs. diverging cycles | Pending |
+| 7d | Background Review Fork — LLM analyzes trajectories post-cycle | Pending |
+| 7e | Persistent Memory — MEMORY.md + USER.md for agent notes | Pending |
+| 7f | Autonomous Skill Creation — SKILL.md for complex patterns | Pending |
+| 7g | Skills Self-Improve — auto-patch + curator consolidation | Pending |
+| 7h | Learning Journey — timeline visualization of learned items | Pending |
 
 **Design:** `packages/trajectory/src/` — new package, keeps concerns separated.
 

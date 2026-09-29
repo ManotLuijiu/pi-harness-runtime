@@ -256,4 +256,3 @@ export function createBlackboard(jobId, rootDir, taskGraph) {
     blackboard.init(jobId, taskGraph);
     return blackboard;
 }
-//# sourceMappingURL=blackboard.js.map

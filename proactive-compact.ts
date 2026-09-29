@@ -7,7 +7,7 @@ export const MAX_PROACTIVE_COMPACT_FAILURES = 3;
 export const OUTPUT_LIMIT_AUTO_RESUME_LIMIT = 3;
 export const OUTPUT_LIMIT_RESUME_PROMPT =
 	"Output token limit hit. Resume directly — no apology, no recap. Pick up mid-thought if the cut happened there. Break remaining work into smaller pieces.";
-export const PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT = 3;
+export const PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT = 100;
 export const PROVIDER_OVERLOAD_AUTO_RESUME_MIN_MS = 60_000;
 export const PROVIDER_OVERLOAD_AUTO_RESUME_MAX_MS = 5 * 60_000;
 export const PROVIDER_OVERLOAD_RESUME_PROMPT = "resume";
@@ -104,6 +104,33 @@ export function shouldQueueOutputLimitResume(
 	);
 }
 
+/**
+ * Check if this is a FRESH 529 overload error (not a "Retry failed" report)
+ * Fresh errors should trigger retries; "Retry failed" messages should NOT.
+ */
+export function isFreshProviderOverloadError(
+	message: AssistantStopLike,
+): boolean {
+	if (message.role !== "assistant") {
+		return false;
+	}
+	const text = readAssistantStopText(message);
+	// Fresh overload: contains overload indicator + 529 code
+	const isFreshOverload =
+		text.includes("overloaded_error") ||
+		text.includes("peak-hour surge") ||
+		text.includes("temporarily busy") ||
+		text.includes("server is temporarily busy") ||
+		text.includes("try again shortly");
+	// But NOT if it's a "Retry failed" report (that means our retry already failed)
+	const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
+	return isFreshOverload && !isRetryFailedReport;
+}
+
+/**
+ * Legacy check - returns true for BOTH fresh overloads AND "Retry failed" reports
+ * @deprecated Use isFreshProviderOverloadError for retry logic
+ */
 export function isProviderOverloadAssistantMessage(
 	message: AssistantStopLike,
 ): boolean {
@@ -111,7 +138,7 @@ export function isProviderOverloadAssistantMessage(
 		return false;
 	}
 
-	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|Retry failed after \d+ attempts:.*529|\b529\b|\b2064\b/i.test(
+	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|\b529\b|\b2064\b/i.test(
 		readAssistantStopText(message),
 	);
 }
@@ -125,7 +152,7 @@ export function shouldQueueProviderOverloadResume(
 	const maxAttempts =
 		options?.maxAttempts ?? PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT;
 	return (
-		isProviderOverloadAssistantMessage(message) &&
+		isFreshProviderOverloadError(message) &&
 		resumeAttempts < maxAttempts &&
 		!hasPendingMessages
 	);

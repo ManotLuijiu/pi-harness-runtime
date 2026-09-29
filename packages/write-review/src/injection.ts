@@ -113,6 +113,7 @@ export function getWriteReviewHints(projectPath: string): {
  * Register write-review extension with pi
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { BeforeAgentStartEventResult } from "@earendil-works/pi-coding-agent";
 import { createBlackboard } from "./blackboard.js";
 
 export function injectWriterInstructions(
@@ -124,7 +125,7 @@ export function injectWriterInstructions(
 	let hintsInjected = false;
 
 	// System prompt injection
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event): Promise<BeforeAgentStartEventResult | undefined> => {
 		const cwd = findProjectRoot(process.cwd?.() ?? "/");
 		if (cwd !== currentProject) {
 			currentProject = cwd;
@@ -135,9 +136,10 @@ export function injectWriterInstructions(
 		if (!hintsInjected && blackboard) {
 			const status = blackboard.load();
 			if (status && status.phase !== "idle") {
-				event.systemPrompt += formatWriteReviewHint(cwd);
+				let systemPrompt = event.systemPrompt;
+				systemPrompt += formatWriteReviewHint(cwd);
 				if (status.phase !== "approved") {
-					event.systemPrompt += formatReviewReminder(cwd);
+					systemPrompt += formatReviewReminder(cwd);
 				}
 				hintsInjected = true;
 				if (config?.debug) {
@@ -145,8 +147,10 @@ export function injectWriterInstructions(
 						`[write-review] Hints injected for ${cwd}, phase: ${status.phase}`,
 					);
 				}
+				return { systemPrompt };
 			}
 		}
+		return undefined;
 	});
 
 	// Build gate

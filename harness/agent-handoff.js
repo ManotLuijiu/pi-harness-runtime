@@ -121,4 +121,3 @@ export class AgentHandoffProtocol {
         return lines.join("\n");
     }
 }
-//# sourceMappingURL=agent-handoff.js.map
