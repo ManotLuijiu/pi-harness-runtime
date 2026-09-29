@@ -44,14 +44,16 @@ const IMPORT_ERROR_TRIGGERS = [
 ];
 
 // Copy/deploy context indicators (must have at least one)
+// Only explicit copy/mimic/deploy commands — NOT generic words like "sync"
 const COPY_CONTEXT = [
 	"sudo cp",
-	"copy.*to",
-	"deploy",
-	"sync",
-	"after copying",
-	"after deploy",
-	"after sync",
+	" cp ",
+	" cp\t",
+	"\bcp\s+-r",
+	"\bmimic\b",
+	"\bclone\b",
+	"\breplicate\b",
+	"\bdeploy\b",
 ];
 
 // Extract source and destination from user request
@@ -154,7 +156,7 @@ function shouldInjectCopyRule(text: string): {
 
 /**
  * Check if text contains import error triggers
- * Requires BOTH: import error context + copy/deploy context
+ * Requires BOTH: import error context + copy/mimic intent
  */
 function shouldInjectImportErrorRule(text: string): {
 	triggered: boolean;
@@ -168,13 +170,13 @@ function shouldInjectImportErrorRule(text: string): {
 		return { triggered: false, reason: "No import error triggers found" };
 	}
 
-	// Must have copy/deploy context
+	// Must have explicit copy/mimic/deploy intent — NOT generic "sync" or path fragments
 	const hasCopyContext = COPY_CONTEXT.some((ctx) => lower.includes(ctx));
 	if (!hasCopyContext) {
-		return { triggered: false, reason: "No copy/deploy context found" };
+		return { triggered: false, reason: "No copy/deploy intent found" };
 	}
 
-	return { triggered: true, reason: "Has import error + copy context" };
+	return { triggered: true, reason: "Has import error + copy intent" };
 }
 
 /**
