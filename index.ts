@@ -274,9 +274,9 @@ function initMoocodingSyncHint(): void {
 		console.error(
 			`[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
 		);
-		console.error("[pi-harness] Sync: cd ~/pi-harness-runtime && bun scripts/sync-skills.ts");
-		console.error("[pi-harness]   --from " + benchPath + "  (original_path)");
-		console.error("[pi-harness]   --to   " + targetPath + "  (destination_path)");
+		console.error(
+			`[pi-harness] Run /sync-skills --from ${benchPath} --to ${targetPath}`
+		);
 	} catch {
 		// Non-fatal — ignore errors
 	}
