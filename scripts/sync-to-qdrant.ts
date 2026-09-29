@@ -3,7 +3,7 @@
  * Sync Skills to Qdrant
  * 
  * Uploads local skills to Qdrant vector database for team sharing.
- * FILTERS OUT client-specific skills (only MooCoding/AWS content allowed).
+ * SANITIZES client-specific data by replacing with placeholders.
  * 
  * Usage:
  *   bun scripts/sync-to-qdrant.ts --from ~/.pi-harness-runtime/skills
@@ -16,56 +16,54 @@ import { join, basename } from "node:path";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 // =============================================================================
-// BLOCKED: Client company names that will be EXCLUDED from sync
+// SANITIZATION: Replace client-specific names with placeholders
 // =============================================================================
-const BLOCKED_COMPANY_PATTERNS = [
-  'inpac',
-  'm-capital',
-  'mcapital', 
-  'digisoft',
-  'cloudshot',
-  'paperclip',
-  'teamw',
-  'openclaw',
-  'autoresearch',
+
+interface SanitizationRule {
+  pattern: RegExp;
+  replacement: string;
+}
+
+const SANITIZATION_RULES: SanitizationRule[] = [
+  // Client company names (case-insensitive)
+  { pattern: /\binpac\b/gi, replacement: "[Client A]" },
+  { pattern: /\bm-capital\b/gi, replacement: "[Client A]" },
+  { pattern: /\bmcapital\b/gi, replacement: "[Client A]" },
+  { pattern: /\bdigisoft\b/gi, replacement: "[Client B]" },
+  { pattern: /\bcloudshot\b/gi, replacement: "[Client C]" },
+  { pattern: /\bpaperclip\b/gi, replacement: "[Client D]" },
+  { pattern: /\bteamw\b/gi, replacement: "[Client E]" },
+  { pattern: /\bopenclaw\b/gi, replacement: "[Client F]" },
+  { pattern: /\bautoresearch\b/gi, replacement: "[Internal Tool]" },
+  
+  // Project/app specific names
+  { pattern: /\bgse-insurance\b/gi, replacement: "[Insurance Project]" },
+  { pattern: /\btbs-import\b/gi, replacement: "[Import Project]" },
+  { pattern: /\bdigisoft_erp\b/gi, replacement: "[Client B Erp]" },
+  { pattern: /\bm_capital\b/gi, replacement: "[Client A]" },
+  { pattern: /\binpac_\b/gi, replacement: "[Client A]_" },
+  { pattern: /\bpaperclip_\b/gi, replacement: "[Client D]_" },
+  { pattern: /\bopenclaw_\b/gi, replacement: "[Client F]_" },
+  { pattern: /\bcloudshot_\b/gi, replacement: "[Client C]_" },
+  { pattern: /\bteamw_\b/gi, replacement: "[Client E]_" },
+  
+  // Generic replacements
+  { pattern: /Company Name/gi, replacement: "[Client Name]" },
+  { pattern: /your company/gi, replacement: "[Client]" },
+  { pattern: /our client/gi, replacement: "[Client]" },
+  { pattern: /client-specific/gi, replacement: "[Project-specific]" },
 ];
 
-const BLOCKED_SKILL_NAMES = [
-  'autoresearch-invoice',
-  'bullmq-provisioning',
-  'create-form-report-template',
-  'cross-version-cherry-pick',
-  'data-seeding-hooks',
-  'frappe-custom-page',
-  'frappe-desktop-icon-debugging',
-  'frappe-manual-generator',
-  'frappe-pdf-css-injection',
-  'frappe-permission-manager',
-  'frappe-print-format',
-  'frappe-print-page-override',
-  'frappe-setup-wizard',
-  'frappe-tusd-upload',
-  'github-translation-sync',
-  'gse-insurance',
-  'inpac-',
-  'interactive-crop-overlay',
-  'mariadb-optimization',
-  'openclaw-channel',
-  'override-grid-view',
-  'playwright-frappe-testing',
-  'release-app',
-  's3-presigned-url-refresh',
-  'spa-multi-app-routing',
-  'tbs-import',
-  'thai-accounting-books',
-  'thai-account-language-toggle',
-  'thai-withholding-tax',
-  'translation-tools-bench',
-  'whispertool',
-  'workspace-knowledge',
-  'workspace-sync',
-  'zshrc-app-hooks',
-];
+/**
+ * Sanitize text by replacing client-specific patterns
+ */
+function sanitize(text: string): string {
+  let result = text;
+  for (const rule of SANITIZATION_RULES) {
+    result = result.replace(rule.pattern, rule.replacement);
+  }
+  return result;
+}
 
 // =============================================================================
 // Qdrant Config
@@ -78,12 +76,10 @@ interface QdrantConfig {
 }
 
 function getQdrantConfig(): QdrantConfig | null {
-  // Check env vars
   let apiKey = process.env.QDRANT_API_KEY;
   const url = process.env.QDRANT_CLUSTER_ENDPOINT || "https://api.qdrant.tech";
   const collection = process.env.QDRANT_COLLECTION || "pi-harness-skills";
   
-  // Check keys file
   if (!apiKey) {
     const keyPath = `${process.env.HOME}/.pi-harness-runtime/keys/qdrant-api-key.txt`;
     if (existsSync(keyPath)) {
@@ -129,46 +125,28 @@ function parseFrontmatter(content: string): Record<string, string> | null {
   return fm;
 }
 
-function isSkillBlocked(name: string, content: string): boolean {
-  const lowerName = name.toLowerCase();
-  
-  // Check skill name
-  for (const blocked of BLOCKED_SKILL_NAMES) {
-    if (lowerName.includes(blocked)) return true;
-  }
-  
-  // Check content for company names
-  const lowerContent = content.toLowerCase();
-  for (const company of BLOCKED_COMPANY_PATTERNS) {
-    if (lowerContent.includes(company)) return true;
-  }
-  
-  return false;
-}
-
 function readSkill(dirPath: string): SkillDoc | null {
   const skillPath = join(dirPath, "SKILL.md");
   if (!existsSync(skillPath)) return null;
 
   try {
-    const content = readFileSync(skillPath, "utf-8");
-    const fm = parseFrontmatter(content);
+    const rawContent = readFileSync(skillPath, "utf-8");
+    const fm = parseFrontmatter(rawContent);
     if (!fm) return null;
 
-    const name = fm.name || basename(dirPath);
-    const description = fm.description || "";
-    const body = content.replace(/^---[\s\S]*?---\n/, "").trim();
+    // Sanitize all content
+    const sanitizedContent = sanitize(rawContent);
+    const sanitizedFm = sanitize(fm.name || basename(dirPath));
     
-    // Text for embedding
+    const name = sanitizedFm || basename(dirPath);
+    const description = sanitize(fm.description || "");
+    const body = sanitizedContent.replace(/^---[\s\S]*?---\n/, "").trim();
+    
+    // Text for embedding (sanitized)
     const text = `${name}. ${description}. ${body.slice(0, 1000)}`;
-    
-    // Check if blocked
-    if (isSkillBlocked(name, content)) {
-      return null; // Skip blocked skills
-    }
 
     return {
-      id: 0, // Will be set during sync
+      id: 0,
       name,
       description,
       body: body.slice(0, 2000),
@@ -248,7 +226,6 @@ async function searchSkills(
     with_payload: true,
   } as Parameters<typeof client.query>[1]);
 
-  // Result format: { points: [...] }
   const points = (results as { points?: unknown[] })?.points || [];
   
   console.error(`\nFound ${points.length} skills:\n`);
@@ -297,34 +274,27 @@ async function syncToQdrant(sourceDir: string, clear: boolean = false): Promise<
   console.error(`[Sync] Scanning: ${sourceDir}`);
   const skillDirs = findSkillDirs(sourceDir);
   
-  // Read and filter skills
+  // Read and sanitize ALL skills
   const skills: SkillDoc[] = [];
-  const blocked: string[] = [];
   
   for (const dir of skillDirs) {
     const skill = readSkill(dir);
     if (skill) {
       skills.push(skill);
-    } else {
-      blocked.push(basename(dir));
     }
   }
   
-  console.error(`[Sync] Found ${skillDirs.length} skills total`);
-  console.error(`[Sync] Filtered: ${skills.length} allowed, ${blocked.length} blocked`);
-  
-  if (blocked.length > 0 && blocked.length <= 10) {
-    console.error(`[Sync] Blocked skills: ${blocked.join(", ")}`);
-  }
+  console.error(`[Sync] Found ${skillDirs.length} skills`);
+  console.error(`[Sync] All skills sanitized and ready to upload`);
 
   if (skills.length === 0) {
     console.error("[Sync] No skills to upload.");
     return;
   }
 
-  console.error(`[Sync] Uploading ${skills.length} skills to Qdrant...`);
+  console.error(`[Sync] Uploading ${skills.length} sanitized skills to Qdrant...`);
   await upsertSkills(client, config.collection, skills);
-  console.error(`[Sync] Complete! ${skills.length} skills uploaded.`);
+  console.error(`[Sync] Complete! ${skills.length} sanitized skills uploaded.`);
 }
 
 async function listSkills(): Promise<void> {
@@ -364,10 +334,20 @@ const args = process.argv.slice(2);
 
 if (args.includes("--help")) {
   console.log(`
-Sync Skills to Qdrant (MooCoding/AWS Only)
-──────────────────────────────────────────
+Sync Skills to Qdrant (Sanitized)
+──────────────────────────────────
 Upload skills to Qdrant for team sharing.
-CLIENT-SPECIFIC SKILLS ARE AUTOMATICALLY BLOCKED.
+Client-specific names are REPLACED with placeholders.
+
+Sanitization Rules:
+  inpac         → [Client A]
+  m-capital     → [Client A]
+  digisoft      → [Client B]
+  cloudshot     → [Client C]
+  paperclip     → [Client D]
+  teamw         → [Client E]
+  openclaw      → [Client F]
+  autoresearch  → [Internal Tool]
 
 Usage:
   bun scripts/sync-to-qdrant.ts --from <dir>     Sync skills from directory
@@ -375,9 +355,6 @@ Usage:
   bun scripts/sync-to-qdrant.ts --list            List skills in Qdrant
   bun scripts/sync-to-qdrant.ts --search <query>  Search skills in Qdrant
   bun scripts/sync-to-qdrant.ts --help            Show this help
-
-Blocked Company Patterns:
-  ${BLOCKED_COMPANY_PATTERNS.join(", ")}
 
 Environment:
   QDRANT_API_KEY    Your Qdrant Cloud API key
