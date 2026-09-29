@@ -780,6 +780,8 @@ export class LoopRuntime {
 
 	private async saveCheckpoint(): Promise<void> {
 		const now = new Date().toISOString();
+		// Preserve resumeAt from current checkpoint if set
+		const currentCheckpoint = this.jobState.getCheckpoint();
 		const checkpoint: RuntimeCheckpoint = {
 			version: 1,
 			jobId: this.state.jobId,
@@ -787,6 +789,7 @@ export class LoopRuntime {
 			taskId: this.state.currentTaskId ?? undefined,
 			iteration: this.state.iteration,
 			status: this.state.status,
+			resumeAt: currentCheckpoint?.resumeAt,
 			createdAt: now,
 			updatedAt: now,
 		};
