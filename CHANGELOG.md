@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.72](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.72) (2026-09-29)
+
+
+### Features
+
+* Implement Hermes-style self-improvement system + fix critical bugs ([2c477af](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2c477afc810ceaa4d57ded859b88e61d37999807))
+
 ### [1.1.71-1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-1) (2026-09-19)
 
 
