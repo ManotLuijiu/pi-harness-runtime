@@ -63,3 +63,4 @@ export * from "./trigger.js";
 export * from "./injection.js";
 export * from "./gate.js";
 export * from "./review.js";
+export * from "./event-bus.js";
