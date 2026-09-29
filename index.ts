@@ -339,6 +339,35 @@ async function initLoopCompletions(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+/**
+ * Initialize Hermes-style skill system
+ * - Register skill commands with pi
+ * - Scan skills from ~/.pi-harness-runtime/skills/
+ */
+async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
+	try {
+		// Dynamically import to avoid circular deps
+		const { initSkills } = 
+			await import("./packages/skills/src/index.js");
+
+		// Scan skills from default locations
+		const result = initSkills();
+		console.error(`[pi-harness] Scanned ${result.skills.length} skills`);
+
+		// Register /skill commands
+		try {
+			const { initSkillCommands } = await import("./packages/skills/src/skill-commands.js");
+			initSkillCommands(pi);
+			console.error("[pi-harness] Registered skill commands");
+		} catch (err) {
+			console.error(`[pi-harness] Failed to register skill commands:`, err);
+		}
+
+	} catch (err) {
+		console.error(`[pi-harness] Failed to initialize skills:`, err);
+	}
+}
+
 interface LoopCompletion {
 	taskId: string;
 	request: string;
@@ -381,8 +410,8 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, symlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
@@ -431,15 +460,76 @@ function readMessageText(message: unknown): string {
 	}
 }
 
+/**
+ * Skill directories for Hermes-style skill system
+ */
+const SKILLS_DIR = join(homedir(), ".pi-harness-runtime", "skills");
+const MEMORY_DIR = join(homedir(), ".pi-harness-runtime", "memory");
+const TRAJECTORY_DIR = join(homedir(), ".pi-harness-runtime", "trajectory");
+const PI_SKILLS_DIR = join(homedir(), ".pi", "skills");
+
 function ensureHarnessDir() {
 	if (!existsSync(HARNESS_ROOT_DIR)) {
 		mkdirSync(HARNESS_ROOT_DIR, { recursive: true });
 	}
-	// Also ensure the shared cookie drop folder exists
-	const cookieDropDir = join(homedir(), ".pi-harness-runtime", "cookies");
-	if (!existsSync(cookieDropDir)) {
-		mkdirSync(cookieDropDir, { recursive: true });
+	// Hermes-style directory structure
+	for (const dir of [SKILLS_DIR, MEMORY_DIR, TRAJECTORY_DIR, COOKIE_DROP_DIR]) {
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
 	}
+	// Create symlink so pi.dev discovers our skills
+	ensurePiSkillsSymlink();
+	console.error(
+		`[pi-harness] Initialized ~/.pi-harness-runtime/ with skills/, memory/, trajectory/, cookies/`,
+	);
+}
+
+/**
+ * Create symlink from ~/.pi/skills to ~/.pi-harness-runtime/skills
+ * This allows pi.dev to discover our Hermes-style skills
+ */
+function ensurePiSkillsSymlink(): void {
+	// SAFETY: Only create symlink if ~/.pi/skills doesn't exist
+	if (existsSync(PI_SKILLS_DIR)) {
+		return; // User has their own skills dir, don't override
+	}
+	
+	try {
+		// SAFETY: Ensure parent dir exists
+		const parentDir = dirname(PI_SKILLS_DIR);
+		if (!existsSync(parentDir)) {
+			mkdirSync(parentDir, { recursive: true });
+		}
+		
+		// Create symlink: ~/.pi/skills -> ~/.pi-harness-runtime/skills
+		symlinkSync(SKILLS_DIR, PI_SKILLS_DIR, "junction");
+		console.error(`[pi-harness] Created symlink: ~/.pi/skills -> ~/.pi-harness-runtime/skills`);
+	} catch {
+		// Ignore errors (may fail due to permissions or existing file)
+		// User can create the symlink manually if needed
+	}
+}
+
+/**
+ * Get skill directory path (for pi-harness/skills package)
+ */
+export function getSkillsDir(): string {
+	return SKILLS_DIR;
+}
+
+/**
+ * Get memory directory path (for trajectory/memory package)
+ */
+export function getMemoryDir(): string {
+	return MEMORY_DIR;
+}
+
+/**
+ * Get trajectory directory path (for trajectory package)
+ */
+export function getTrajectoryDir(): string {
+	return TRAJECTORY_DIR;
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
@@ -505,6 +595,10 @@ export default function (pi: ExtensionAPI) {
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
+
+	// --- Hermes-style skills: Initialize skill system ----------------------
+	// Scan skills from ~/.pi-harness-runtime/skills/ and register with pi.dev
+	void initHermesSkills(pi);
 
 	// --- TASK TRACKING TERMINOLOGY CLARIFICATION ------------------------
 	// CRITICAL: This project has TWO separate task trackers. Agents often confuse them.
