@@ -19,7 +19,7 @@ export interface EmbeddingResult {
  * Get OpenAI API key for embeddings
  */
 export function getOpenAIApiKey(): string | null {
-  // Check env vars (same as Jev)
+  // 1. Env vars (same priority as Jev)
   if (process.env.OPENAI_API_KEY) {
     return process.env.OPENAI_API_KEY;
   }
@@ -29,19 +29,40 @@ export function getOpenAIApiKey(): string | null {
   if (process.env.OPENROUTER_API_KEY) {
     return process.env.OPENROUTER_API_KEY;
   }
-  
-  // Check keys file
+
+  // 2. Keys file
   try {
     const { existsSync, readFileSync } = require("node:fs");
     const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
     const keyPath = `${homedir}/.pi-harness-runtime/keys/openai-api-key.txt`;
     if (existsSync(keyPath)) {
-      return readFileSync(keyPath, "utf-8").trim();
+      const val = readFileSync(keyPath, "utf-8").trim();
+      if (val.length > 5) return val;
     }
   } catch {
     // ignore
   }
-  
+
+  // 3. pi.dev auth.json (OpenAI OAuth tokens stored by pi.dev login)
+  try {
+    const { existsSync, readFileSync } = require("node:fs");
+    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+    const authPath = `${homedir}/.pi/agent/auth.json`;
+    if (existsSync(authPath)) {
+      const auth = JSON.parse(readFileSync(authPath, "utf-8")) as {
+        openai?: { type?: string; key?: string; access?: string };
+        "openai-codex"?: { type?: string; key?: string; access?: string };
+      };
+      // Try openai first (API key), then openai-codex (OAuth access token)
+      const entry = auth.openai ?? auth["openai-codex"];
+      if (entry) {
+        return entry.access ?? entry.key ?? null;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   return null;
 }
 
