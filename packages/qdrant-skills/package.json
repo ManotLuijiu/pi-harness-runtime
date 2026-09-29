@@ -1,0 +1,27 @@
+{
+  "name": "@pi-harness/qdrant-skills",
+  "version": "1.0.0",
+  "description": "Qdrant vector search integration for Hermes-style skill system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./embedder": "./dist/embedder.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@qdrant/js-client-rest": "^1.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
