@@ -184,8 +184,8 @@ export class SkillRegistry {
         wait: false,
         points: [{ id: point.id, vector: embedding, payload: point }],
       });
-    } catch (err) {
-      console.error(`[skills] Failed to index "${skill.id}" to Qdrant:`, err instanceof Error ? err.message : String(err));
+    } catch {
+      // Silently skip — embeddings are optional
     }
   }
 
