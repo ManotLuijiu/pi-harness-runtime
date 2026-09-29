@@ -30,11 +30,10 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /\bm-capital\b/gi, replacement: "[Client A]" },
   { pattern: /\bmcapital\b/gi, replacement: "[Client A]" },
   { pattern: /\bdigisoft\b/gi, replacement: "[Client B]" },
-  { pattern: /\bcloudshot\b/gi, replacement: "[Client C]" },
-  { pattern: /\bpaperclip\b/gi, replacement: "[Client D]" },
+
   { pattern: /\bteamw\b/gi, replacement: "[Client E]" },
   { pattern: /\bopenclaw\b/gi, replacement: "[Client F]" },
-  { pattern: /\bautoresearch\b/gi, replacement: "[Internal Tool]" },
+
   
   // Project/app specific names
   { pattern: /\bgse-insurance\b/gi, replacement: "[Insurance Project]" },
@@ -44,7 +43,7 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /\binpac_\b/gi, replacement: "[Client A]_" },
   { pattern: /\bpaperclip_\b/gi, replacement: "[Client D]_" },
   { pattern: /\bopenclaw_\b/gi, replacement: "[Client F]_" },
-  { pattern: /\bcloudshot_\b/gi, replacement: "[Client C]_" },
+
   { pattern: /\bteamw_\b/gi, replacement: "[Client E]_" },
   
   // Generic replacements
@@ -53,6 +52,17 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /our client/gi, replacement: "[Client]" },
   { pattern: /client-specific/gi, replacement: "[Project-specific]" },
 ];
+
+// Skill name sanitization (for skill directory name -> sanitized display name)
+const SKILL_NAME_MAP: Record<string, string> = {
+  'gse-insurance-step5-slot-filter': 'insurance-project-step-filter',
+  'inpac-pe-approval-workflow': 'client-a-pe-approval-workflow',
+  'inpac-po-approval-workflow': 'client-a-po-approval-workflow',
+  'inpac-pr-approval-workflow': 'client-a-pr-approval-workflow',
+  'openclaw-channel': 'client-f-channel',
+  'tbs-import-clearance-lcv': 'import-project-clearance',
+  'whispertool': 'whisper-tool',
+};
 
 /**
  * Sanitize text by replacing client-specific patterns
@@ -134,11 +144,15 @@ function readSkill(dirPath: string): SkillDoc | null {
     const fm = parseFrontmatter(rawContent);
     if (!fm) return null;
 
-    // Sanitize all content
-    const sanitizedContent = sanitize(rawContent);
-    const sanitizedFm = sanitize(fm.name || basename(dirPath));
+    // Get original skill name from directory
+    const originalName = fm.name || basename(dirPath);
     
-    const name = sanitizedFm || basename(dirPath);
+    // Sanitize content
+    const sanitizedContent = sanitize(rawContent);
+    
+    // Use name map for known sensitive skill names, otherwise sanitize
+    const name = SKILL_NAME_MAP[originalName] || sanitize(originalName);
+    
     const description = sanitize(fm.description || "");
     const body = sanitizedContent.replace(/^---[\s\S]*?---\n/, "").trim();
     
