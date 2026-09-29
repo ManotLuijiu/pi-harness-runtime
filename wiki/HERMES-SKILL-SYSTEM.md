@@ -228,12 +228,107 @@ if (gate.requiresApproval("skill_create", "agent")) {
 2. **Sync script for user convenience**
    ```bash
    # User runs to sync from their skill source
-   ./scripts/sync-skills.sh --from ~/my-skills --to ~/.pi-harness-runtime/skills
+   bun scripts/sync-skills.ts --from ~/my-skills
    ```
 
 3. **Backup recommendations**
    - `~/.pi-harness-runtime/` should be backed up
    - Contains agent learning + user skills + memory
+
+## Qdrant Integration (Team Sharing)
+
+Skills can be stored in Qdrant vector database for team sharing across multiple PCs.
+
+### Setup
+
+1. **Get Qdrant API Key**
+   ```bash
+   # Option 1: Environment variable
+   export QDRANT_API_KEY=your-api-key
+
+   # Option 2: File (preferred - same pattern as Jev)
+   echo "your-api-key" > ~/.pi-harness-runtime/keys/qdrant-api-key.txt
+   ```
+
+2. **Sync Skills to Qdrant**
+   ```bash
+   # Upload all local skills to Qdrant
+   bun scripts/sync-to-qdrant.ts --from ~/.pi-harness-runtime/skills
+
+   # Clear and re-upload
+   bun scripts/sync-to-qdrant.ts --from ~/.pi-harness-runtime/skills --clear
+   ```
+
+3. **Use Skills from Qdrant**
+   ```bash
+   # Search skills
+   bun scripts/sync-to-qdrant.ts --search "frappe permissions"
+
+   # List skills in Qdrant
+   bun scripts/sync-to-qdrant.ts --list
+   ```
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    QDRANT CLOUD                             │
+│                                                              │
+│  Skills embedded with OpenAI (text-embedding-3-small)        │
+│  Semantic search finds related skills by meaning            │
+│                                                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │ frappe-     │  │ erpnext-    │  │ frappe-     │         │
+│  │ permission  │  │ manufacturing│  │ custom-    │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+└─────────────────────────────────────────────────────────────┘
+         ↑                    ↑                    ↑
+    PC-A (home)          PC-B (office)        PC-C (travel)
+```
+
+### Benefits
+
+| Scenario | Without Qdrant | With Qdrant |
+|----------|---------------|-------------|
+| Setup new PC | Sync 124 skills manually | Just add Qdrant API key |
+| Find skill | Keyword match only | Semantic understanding |
+| Team sharing | Manual file sharing | Qdrant team workspace |
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   SKILL SEARCH FLOW                         │
+└─────────────────────────────────────────────────────────────┘
+
+  USER REQUEST
+       │
+       ▼
+  ┌─────────────────┐
+  │ Local Skills    │  ← First: Check ~/.pi-harness-runtime/skills/
+  │ (Hermes/pi.dev)│     Uses triggers, confidence, author
+  └────────┬────────┘
+           │ (if not found)
+           ▼
+  ┌─────────────────┐
+  │ Qdrant Search   │  ← Fallback: Semantic search in Qdrant
+  │ (Team Skills)   │     Uses OpenAI embeddings
+  └────────┬────────┘
+           │ (if not found)
+           ▼
+  ┌─────────────────┐
+  │ Agent Creates   │  ← Last resort: Agent creates new skill
+  │ New Skill       │     And optionally uploads to Qdrant
+  └─────────────────┘
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QDRANT_API_KEY` | - | Qdrant Cloud API key |
+| `QDRANT_URL` | `https://api.qdrant.tech` | Qdrant server URL |
+| `QDRANT_COLLECTION` | `pi-harness-skills` | Collection name |
 
 ## Integration with pi.dev
 

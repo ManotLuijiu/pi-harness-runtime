@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 # Local secrets and environment overrides
 .env
+.env.*
 .env.local
 .env.*.local
 # Local SQLite state (created at runtime in ~/.pi/usage-status/)

@@ -6,21 +6,17 @@
  * 
  * Usage:
  *   bun scripts/sync-to-qdrant.ts --from ~/.pi-harness-runtime/skills
- *   bun scripts/sync-to-qdrant.ts --from ~/frappe-bench/.claude-plugins/moocoding-skills/skills
  *   bun scripts/sync-to-qdrant.ts --list          # List skills in Qdrant
  *   bun scripts/sync-to-qdrant.ts --search "..."    # Search skills in Qdrant
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
-import { homedir } from "node:os";
 import {
   getQdrantConfig,
-  getQdrantApiKey,
   isQdrantAvailable,
   QdrantRestClient,
   type QdrantSkillDocument,
-  type QdrantSearchResult,
 } from "../packages/qdrant-skills/src/client.js";
 import { embedSkillDocument } from "../packages/qdrant-skills/src/embedder.js";
 
@@ -76,7 +72,7 @@ function readSkill(dirPath: string): QdrantSkillDocument | null {
       id: name.toLowerCase().replace(/\s+/g, "-"),
       name,
       description,
-      body: body.slice(0, 5000), // Limit body size
+      body: body.slice(0, 5000),
       triggers: [],
       author,
       version,
@@ -117,10 +113,9 @@ function findSkillDirs(dir: string): string[] {
  * Sync skills from directory to Qdrant
  */
 async function syncToQdrant(sourceDir: string, clear: boolean = false): Promise<void> {
-  // Check Qdrant availability
   if (!isQdrantAvailable()) {
     console.error("Error: Qdrant API key not found.");
-    console.error("Set QDRANT_API_KEY environment variable or create:");
+    console.error("Set QDRANT_API_KEY or create:");
     console.error("  ~/.pi-harness-runtime/keys/qdrant-api-key.txt");
     process.exit(1);
   }
@@ -134,10 +129,8 @@ async function syncToQdrant(sourceDir: string, clear: boolean = false): Promise<
   const client = new QdrantRestClient(config);
   console.error(`[Sync] Connecting to Qdrant: ${config.url}`);
 
-  // Ensure collection exists
   await client.ensureCollection(config.collectionName, config.vectorSize);
 
-  // Find skills
   console.error(`[Sync] Scanning: ${sourceDir}`);
   const skillDirs = findSkillDirs(sourceDir);
   console.error(`[Sync] Found ${skillDirs.length} skills`);
@@ -147,13 +140,11 @@ async function syncToQdrant(sourceDir: string, clear: boolean = false): Promise<
     return;
   }
 
-  // Clear collection if requested
   if (clear) {
     console.error("[Sync] Clearing existing collection...");
     await client.clearCollection(config.collectionName);
   }
 
-  // Embed and upload skills
   const points: Array<{ id: string; vector: number[]; payload: QdrantSkillDocument }> = [];
   
   for (let i = 0; i < skillDirs.length; i++) {
@@ -175,7 +166,6 @@ async function syncToQdrant(sourceDir: string, clear: boolean = false): Promise<
       console.error(`\n[Sync] Failed to embed ${skill.name}:`, err);
     }
 
-    // Small delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 
@@ -209,7 +199,7 @@ async function listSkillsInQdrant(): Promise<void> {
     const info = await client.getCollectionInfo(config.collectionName);
     console.error(`Collection: ${config.collectionName}`);
     console.error(`Points: ${info.pointsCount}`);
-  } catch (err) {
+  } catch {
     console.error("Collection not found or empty.");
   }
 }
@@ -230,12 +220,10 @@ async function searchSkillsInQdrant(query: string): Promise<void> {
   }
 
   const client = new QdrantRestClient(config);
-  const { embedSkillDocument } = await import("../packages/qdrant-skills/src/embedder.js");
 
   console.error(`[Search] Query: "${query}"`);
 
   try {
-    // Create embedding for query
     const tempDoc: QdrantSkillDocument = {
       id: "query",
       name: "query",
@@ -263,7 +251,7 @@ async function searchSkillsInQdrant(query: string): Promise<void> {
 }
 
 // CLI
-const args = process.argv.slice(2);
+const args = Bun.argv.slice(2);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
