@@ -61,10 +61,14 @@ export async function createCollection(
       vectors: { size: dimensions, distance: "Cosine" },
     });
   } catch (err) {
-    // Ignore "already exists" errors
-    if (err instanceof Error && !err.message.includes("already exists")) {
-      throw err;
+    // Ignore "already exists" / "Conflict" — both mean the collection already exists
+    if (err instanceof Error) {
+      const msg = err.message.toLowerCase();
+      if (msg.includes("already exists") || msg.includes("conflict") || msg.includes("already_exists")) {
+        return;
+      }
     }
+    throw err;
   }
 }
 
