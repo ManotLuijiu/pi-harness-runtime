@@ -124,6 +124,16 @@ export function isFreshProviderOverloadError(
 		text.includes("try again shortly");
 	// But NOT if it's a "Retry failed" report (that means our retry already failed)
 	const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
+	// Extract request_id for logging
+	const requestIdMatch = text.match(/request_id[^"]*"([^"]+)"/i) || text.match(/request_id[^"]*([a-f0-9]+)/i);
+	const requestId = requestIdMatch ? requestIdMatch[1] : "unknown";
+	if (isFreshOverload) {
+		console.error(
+			`[pi-harness] Fresh 529 detected (request=${requestId}), retry_failed_report=${isRetryFailedReport}`,
+		);
+	} else if (text.includes("529") || text.includes("overload")) {
+		console.error(`[pi-harness] 529-related but NOT fresh (stopReason or other): ${text.slice(0, 100)}`);
+	}
 	return isFreshOverload && !isRetryFailedReport;
 }
 
@@ -151,11 +161,18 @@ export function shouldQueueProviderOverloadResume(
 ): boolean {
 	const maxAttempts =
 		options?.maxAttempts ?? PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT;
-	return (
-		isFreshProviderOverloadError(message) &&
-		resumeAttempts < maxAttempts &&
-		!hasPendingMessages
-	);
+	const isFresh = isFreshProviderOverloadError(message);
+	const underLimit = resumeAttempts < maxAttempts;
+	const noPending = !hasPendingMessages;
+	const shouldQueue = isFresh && underLimit && noPending;
+
+	if (isFresh) {
+		console.error(
+			`[pi-harness] shouldQueue=${shouldQueue} attempts=${resumeAttempts}/${maxAttempts} hasPending=${hasPendingMessages}`,
+		);
+	}
+
+	return shouldQueue;
 }
 
 export function getProviderOverloadResumeDelayMs(options?: {

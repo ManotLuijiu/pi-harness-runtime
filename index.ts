@@ -722,10 +722,14 @@ Run \`bd ready\` to see current bd issues.
 			)
 		) {
 			providerOverloadResumeAttempts += 1;
+			console.error(`[pi-harness] Scheduling provider overload resume #${providerOverloadResumeAttempts}`);
 			scheduleProviderOverloadResume(() => ctx.hasPendingMessages());
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
 			pendingOutputLimitResumeAfterSettled = false;
+			if (providerOverloadResumeAttempts > 0) {
+				console.error(`[pi-harness] Counter reset (stopReason=stop), was=${providerOverloadResumeAttempts}`);
+			}
 			providerOverloadResumeAttempts = 0;
 			clearProviderOverloadResume();
 		}
@@ -1866,13 +1870,13 @@ Run \`bd ready\` to see current bd issues.
 		const delayMs = getProviderOverloadResumeDelayMs();
 		const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
 		console.error(
-			"[pi-harness] Provider overloaded; scheduling resume in " +
-				delayMinutes +
-				" min",
+			`[pi-harness] Provider overloaded; scheduling resume in ${delayMinutes} min (${delayMs}ms) attempt=${providerOverloadResumeAttempts}`,
 		);
 		providerOverloadResumeTimer = setTimeout(() => {
 			providerOverloadResumeTimer = null;
+			console.error(`[pi-harness] Provider resume timer fired, sending "resume"`);
 			if (hasPendingMessages()) {
+				console.error(`[pi-harness] Resume skipped: hasPendingMessages=true`);
 				return;
 			}
 			queueAutoResume(

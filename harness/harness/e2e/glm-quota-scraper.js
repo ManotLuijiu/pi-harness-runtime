@@ -1,0 +1,458 @@
+/**
+ * GLM/z.ai Quota Scraper — API Key Authentication
+ *
+ * Scrapes quota/usage data from z.ai API using API key authentication.
+ * Unlike cookie-based scrapers (MiniMax, OpenAI), this uses Bearer token auth.
+ *
+ * Target: https://api.z.ai/api/monitor/usage/model-usage
+ *
+ * Response shape:
+ * {
+ *   "code": 200,
+ *   "data": {
+ *     "x_time": ["2026-08-10 00:00", ...],
+ *     "modelCallCount": [0, 0, 42, ...],
+ *     "tokensUsage": [0, 0, 1200785, ...],
+ *     "totalUsage": {
+ *       "totalModelCallCount": 190,
+ *       "totalTokensUsage": 6170914
+ *     },
+ *     "modelSummaryList": [{"modelName": "GLM-5.2", "totalTokens": 6170914}],
+ *     "granularity": "hourly"
+ *   },
+ *   "success": true
+ * }
+ *
+ * Also fetches subscription info from: /biz/subscription/list
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { resolveApiKey } from "./api-key-resolver.js";
+import { homedir } from "node:os";
+const DEFAULT_API_KEY_DIR = join(homedir(), ".pi-harness-runtime", "keys");
+const DEFAULT_API_KEY_FILE = join(DEFAULT_API_KEY_DIR, "zai-api-key.txt");
+// Also check legacy location
+const LEGACY_API_KEY_FILE = join(homedir(), ".config", "zai-api-key.txt");
+const API_BASE_URL = "https://api.z.ai/api";
+const USAGE_ENDPOINT = "/monitor/usage/model-usage";
+const SUBSCRIPTION_ENDPOINT = "/biz/subscription/list";
+/**
+ * Load API key from file, checking multiple locations
+ */
+function loadApiKey(path) {
+    // First try: use the provided path (legacy behavior)
+    if (existsSync(path)) {
+        try {
+            const key = readFileSync(path, "utf-8").trim();
+            if (key && key.length > 10)
+                return key;
+        }
+        catch {
+            // ignore
+        }
+    }
+    // Second try: fallback to legacy location
+    if (existsSync(LEGACY_API_KEY_FILE)) {
+        try {
+            const key = readFileSync(LEGACY_API_KEY_FILE, "utf-8").trim();
+            if (key && key.length > 10)
+                return key;
+        }
+        catch {
+            // ignore
+        }
+    }
+    // Third try: auto-discover from pi.dev auth.json
+    const autoKey = resolveApiKey("zai");
+    if (autoKey) {
+        return autoKey;
+    }
+    return null;
+}
+/**
+ * Format remaining seconds into human-readable string
+ */
+function formatRemainsSeconds(seconds) {
+    if (seconds <= 0)
+        return "soon";
+    const days = Math.floor(seconds / 86400);
+    const hr = Math.floor((seconds % 86400) / 3600);
+    const min = Math.floor((seconds % 3600) / 60);
+    const parts = [];
+    if (days > 0)
+        parts.push(`${days}d`);
+    if (hr > 0)
+        parts.push(`${hr}h`);
+    if (min > 0 && days === 0)
+        parts.push(`${min}m`);
+    return parts.join(" ") || "0m";
+}
+/**
+ * GLM/z.ai Quota Scraper
+ *
+ * Uses API key authentication to fetch quota data from z.ai.
+ */
+export class GLMQuotaScraper {
+    config;
+    constructor(config = {}) {
+        // Resolve API key: direct value > file > null
+        const apiKey = config.apiKey ?? loadApiKey(config.apiKeyFile ?? DEFAULT_API_KEY_FILE);
+        this.config = {
+            apiKeyFile: config.apiKeyFile ?? DEFAULT_API_KEY_FILE,
+            apiKey: apiKey ?? null,
+            quiet: config.quiet ?? false,
+        };
+    }
+    /**
+     * Calculate 5h and weekly usage from hourly data
+     */
+    calculateHourlyUsage(timestamps, tokens, _calls) {
+        const now = new Date();
+        const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        let h5Tokens = 0;
+        let weeklyTokens = 0;
+        for (let i = 0; i < timestamps.length; i++) {
+            const ts = timestamps[i];
+            if (!ts)
+                continue;
+            // Parse timestamp: "2026-09-14 00:00"
+            const hourTime = new Date(ts.replace(" ", "T") + ":00");
+            if (hourTime >= fiveHoursAgo) {
+                h5Tokens += tokens[i] ?? 0;
+            }
+            if (hourTime >= weekAgo) {
+                weeklyTokens += tokens[i] ?? 0;
+            }
+        }
+        return { h5Tokens, weeklyTokens };
+    }
+    /**
+     * Find the index of the last hour with usage
+     */
+    findLastUsageIndex(timestamps, tokens) {
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            if ((tokens[i] ?? 0) > 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    /**
+     * Set API key directly
+     */
+    setApiKey(key) {
+        this.config.apiKey = key;
+        return this;
+    }
+    /**
+     * Set API key file path
+     */
+    setApiKeyFile(path) {
+        this.config.apiKeyFile = path;
+        this.config.apiKey = loadApiKey(path) ?? null;
+        return this;
+    }
+    /**
+     * Check if any API key source exists
+     */
+    hasApiKey() {
+        if (this.config.apiKey && this.config.apiKey.length > 10) {
+            return true;
+        }
+        // Try loading from default location
+        const key = loadApiKey(this.config.apiKeyFile);
+        return key !== null && key.length > 10;
+    }
+    /**
+     * Get the current API key
+     */
+    getApiKey() {
+        return this.config.apiKey ?? loadApiKey(this.config.apiKeyFile);
+    }
+    /**
+     * Fetch usage data from z.ai API
+     */
+    async fetchUsage(startDate, endDate) {
+        const apiKey = this.getApiKey();
+        if (!apiKey) {
+            if (!this.config.quiet) {
+                console.error(`[DEBUG GLMQuotaScraper] No API key found. ` +
+                    `Set ZAI_API_KEY env var or drop key into ${DEFAULT_API_KEY_FILE}`);
+            }
+            return null;
+        }
+        // Default to last 7 days
+        const end = endDate ?? new Date();
+        const start = startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        // Format: yyyy-MM-dd HH:mm:ss (no milliseconds)
+        const startStr = start.toISOString().replace("T", " ").replace("Z", "").replace(/\.\d+$/, "");
+        const endStr = end.toISOString().replace("T", " ").replace("Z", "").replace(/\.\d+$/, "");
+        const url = `${API_BASE_URL}${USAGE_ENDPOINT}?startTime=${encodeURIComponent(startStr)}&endTime=${encodeURIComponent(endStr)}`;
+        try {
+            if (!this.config.quiet) {
+                console.log(`[DEBUG GLMQuotaScraper] Fetching usage from ${startStr} to ${endStr}`);
+            }
+            const response = await fetch(url, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+            });
+            if (!response.ok) {
+                if (!this.config.quiet) {
+                    console.error(`[DEBUG GLMQuotaScraper] API returned ${response.status}: ${response.statusText}`);
+                }
+                return null;
+            }
+            const data = (await response.json());
+            if (!data.success || !data.data) {
+                if (!this.config.quiet) {
+                    console.error(`[DEBUG GLMQuotaScraper] API error: ${data.msg ?? "Unknown error"}`);
+                }
+                return null;
+            }
+            const d = data.data;
+            const totalUsage = d.totalUsage ?? {};
+            const modelSummary = d.modelSummaryList?.[0];
+            // Calculate 5h and weekly usage from hourly data
+            const { h5Tokens, weeklyTokens } = this.calculateHourlyUsage(d.x_time ?? [], d.tokensUsage ?? [], d.modelCallCount ?? []);
+            // GLM Lite plan limits (Legacy Plan V2):
+            // Based on browser comparison: 20% weekly = 29.6M tokens
+            // So weekly quota ≈ 148M tokens, 5h quota ≈ 30M tokens
+            const H5_TOKEN_LIMIT = parseInt(process.env.GLM_5H_TOKEN_LIMIT ?? "30000000", 10); // 30M tokens per 5h
+            const WEEKLY_TOKEN_LIMIT = parseInt(process.env.GLM_WEEKLY_TOKEN_LIMIT ?? "148000000", 10); // 148M tokens per week
+            const h5UsedPct = Math.min(100, (h5Tokens / H5_TOKEN_LIMIT) * 100);
+            const weeklyUsedPct = Math.min(100, (weeklyTokens / WEEKLY_TOKEN_LIMIT) * 100);
+            // Calculate reset times
+            const now = new Date();
+            const h5ResetDurationMs = 5 * 60 * 60 * 1000; // 5 hours
+            const weeklyResetDurationMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+            // Find last usage time to calculate when 5h window will reset
+            const lastUsageIdx = this.findLastUsageIndex(d.x_time ?? [], d.tokensUsage ?? []);
+            const lastUsageTime = lastUsageIdx >= 0 && d.x_time ? new Date(d.x_time[lastUsageIdx].replace(" ", "T") + ":00") : now;
+            const h5ResetAt = new Date(lastUsageTime.getTime() + h5ResetDurationMs);
+            const weeklyResetAt = new Date(now.getTime() + weeklyResetDurationMs);
+            // Calculate seconds until reset
+            const h5SecondsUntilReset = Math.max(0, Math.floor((h5ResetAt.getTime() - now.getTime()) / 1000));
+            const weeklySecondsUntilReset = Math.max(0, Math.floor((weeklyResetAt.getTime() - now.getTime()) / 1000));
+            const result = {
+                provider: "glm",
+                totalCalls: totalUsage.totalModelCallCount ?? 0,
+                totalTokens: totalUsage.totalTokensUsage ?? 0,
+                modelName: modelSummary?.modelName ?? "Unknown",
+                hourlyTimestamps: d.x_time ?? [],
+                hourlyCalls: d.modelCallCount ?? [],
+                hourlyTokens: d.tokensUsage ?? [],
+                h5UsedPct,
+                h5ResetsAt: formatRemainsSeconds(h5SecondsUntilReset),
+                h5ResetsAtEpoch: h5ResetAt.getTime(),
+                weeklyUsedPct,
+                weeklyResetsAt: formatRemainsSeconds(weeklySecondsUntilReset),
+                weeklyResetsAtEpoch: weeklyResetAt.getTime(),
+                apiEndpoint: url,
+                scrapedAt: new Date().toISOString(),
+            };
+            if (!this.config.quiet) {
+                console.log(`[DEBUG GLMQuotaScraper] 5h: ${h5UsedPct.toFixed(1)}% (${(h5Tokens / 1e6).toFixed(1)}M tokens), ` +
+                    `Week: ${weeklyUsedPct.toFixed(1)}% (${(weeklyTokens / 1e6).toFixed(1)}M tokens)`);
+            }
+            return result;
+        }
+        catch (error) {
+            if (!this.config.quiet) {
+                console.error("[DEBUG GLMQuotaScraper] Fetch error:", error instanceof Error ? error.message : String(error));
+            }
+            return null;
+        }
+    }
+    /**
+     * Fetch subscription info from z.ai API
+     */
+    async fetchSubscription() {
+        const apiKey = this.getApiKey();
+        if (!apiKey) {
+            return null;
+        }
+        const url = `${API_BASE_URL}${SUBSCRIPTION_ENDPOINT}`;
+        try {
+            const response = await fetch(url, {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+            });
+            if (!response.ok) {
+                return null;
+            }
+            const data = (await response.json());
+            if (!data.success || !data.data || data.data.length === 0) {
+                return null;
+            }
+            const sub = data.data[0];
+            return {
+                productName: sub.productName ?? "Unknown",
+                status: sub.status ?? "Unknown",
+                purchaseTime: sub.purchaseTime ?? "",
+                valid: sub.valid ?? "",
+                currentPeriod: sub.currentPeriod ?? 0,
+                nextRenewTime: sub.nextRenewTime ?? "",
+                billingCycle: sub.billingCycle ?? "monthly",
+                renewPrice: sub.renewPrice ?? 0,
+            };
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * Convenience method: get both usage and subscription data
+     */
+    async scrape() {
+        const [usage, subscription] = await Promise.all([
+            this.fetchUsage(),
+            this.fetchSubscription(),
+        ]);
+        return { usage, subscription };
+    }
+    /**
+     * Get weekly usage percentage (calls vs quota)
+     * For GLM, this calculates based on typical weekly allocation
+     */
+    async getWeeklyUsagePercentage() {
+        const usage = await this.fetchUsage();
+        if (!usage || usage.totalTokens === 0) {
+            return null;
+        }
+        // GLM Coding Lite typically has a weekly token quota
+        // Based on the subscription (monthly), we estimate weekly allocation
+        // Typical allocation: ~50M tokens/month = ~12.5M tokens/week
+        const WEEKLY_TOKEN_QUOTA = 12500000;
+        const pct = Math.min(100, (usage.totalTokens / WEEKLY_TOKEN_QUOTA) * 100);
+        return Math.round(pct);
+    }
+    /**
+     * Get when the quota resets (typically weekly on Sunday midnight or monthly)
+     */
+    getQuotaResetInfo() {
+        // GLM quotas typically reset weekly (Sunday midnight UTC) or monthly
+        const now = new Date();
+        const nextSunday = new Date(now);
+        nextSunday.setDate(now.getDate() + (7 - now.getDay()));
+        nextSunday.setUTCHours(0, 0, 0, 0);
+        const diffMs = nextSunday.getTime() - now.getTime();
+        const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
+        return {
+            resetsAt: formatRemainsSeconds(diffSeconds),
+            resetAfterSeconds: diffSeconds,
+        };
+    }
+}
+/**
+ * Parse reset time from GLM 429 error message.
+ * Extracts the reset timestamp from messages like:
+ * '{"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-08-25 01:47:16"}'
+ */
+export function parseGLMErrorResetTime(errorMessage) {
+    // Try to find the JSON object in the message
+    const jsonMatch = errorMessage.match(/\{[^{}]*\}/);
+    if (jsonMatch) {
+        try {
+            const json = JSON.parse(jsonMatch[0]);
+            if (json.code === 1308 && json.message) {
+                // Extract datetime from message
+                const datetimeMatch = json.message.match(/reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i);
+                if (datetimeMatch) {
+                    const datetimeStr = datetimeMatch[1].replace(" ", "T");
+                    const date = new Date(datetimeStr);
+                    if (!isNaN(date.getTime())) {
+                        return date.toISOString();
+                    }
+                }
+            }
+        }
+        catch {
+            // Not JSON, try plain text parsing
+        }
+    }
+    // Fallback: try plain text parsing
+    const plainMatch = errorMessage.match(/reset at (\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i);
+    if (plainMatch) {
+        const datetimeStr = plainMatch[1].replace(" ", "T");
+        const date = new Date(datetimeStr);
+        if (!isNaN(date.getTime())) {
+            return date.toISOString();
+        }
+    }
+    return null;
+}
+/**
+ * Parse reset time from Minimax 529 overloaded error.
+ * Extracts retry delay from messages like:
+ * '{"type":"error","error":{"type":"overloaded_error","message":"The system is currently experiencing a peak-hour surge, and the server is temporarily busy. It usually recovers within 1–5 minutes. Please try again shortly (2064)"}}'
+ *
+ * Returns epoch ms when the retry window expires (1-5 minutes, default to 2 min).
+ */
+export function parseMinimaxOverloadResetTime(errorMessage) {
+    const OVERLOADED_ERROR = "overloaded_error";
+    const RECOVERY_PATTERN = /recovers? within (\d+)[\u2013-](\d+) minutes/i;
+    const SIMPLE_DELAY_PATTERN = /retry after (\d+) (?:second|sec)/i;
+    // Check if this is a Minimax overloaded error
+    if (!errorMessage.includes(OVERLOADED_ERROR) &&
+        !errorMessage.includes("surge") &&
+        !errorMessage.includes("peak")) {
+        return null;
+    }
+    // Try to extract recovery time range (e.g., "1-5 minutes")
+    const rangeMatch = errorMessage.match(RECOVERY_PATTERN);
+    if (rangeMatch) {
+        const minMin = parseInt(rangeMatch[1], 10);
+        const maxMin = parseInt(rangeMatch[2], 10);
+        // Use midpoint for retry delay (e.g., 3 min for "1-5 minutes")
+        const retryMinutes = Math.round((minMin + maxMin) / 2);
+        return Date.now() + retryMinutes * 60 * 1000;
+    }
+    // Fallback: try simple delay pattern
+    const simpleMatch = errorMessage.match(SIMPLE_DELAY_PATTERN);
+    if (simpleMatch) {
+        const seconds = parseInt(simpleMatch[1], 10);
+        return Date.now() + seconds * 1000;
+    }
+    // Default: 2 minutes for overloaded error
+    return Date.now() + 2 * 60 * 1000;
+}
+/**
+ * Integration helper for index.ts
+ */
+export class GLMQuotaManager {
+    scraper;
+    lastQuota;
+    lastFetchTime = 0;
+    cacheDurationMs;
+    constructor(config = {}) {
+        this.scraper = new GLMQuotaScraper(config);
+        this.cacheDurationMs = config.cacheDurationMs ?? 15 * 60 * 1000; // 15 min default
+    }
+    /**
+     * Get current quota (uses cache)
+     */
+    async getQuota(forceRefresh = false) {
+        const now = Date.now();
+        if (!forceRefresh &&
+            this.lastQuota &&
+            now - this.lastFetchTime < this.cacheDurationMs) {
+            return this.lastQuota;
+        }
+        this.lastQuota = (await this.scraper.fetchUsage()) ?? undefined;
+        this.lastFetchTime = now;
+        return this.lastQuota ?? null;
+    }
+    /**
+     * Check if quota is available
+     */
+    isAvailable() {
+        return this.scraper.hasApiKey();
+    }
+}
