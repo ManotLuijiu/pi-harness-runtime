@@ -2,23 +2,41 @@
  * Qdrant Skills Package
  * 
  * Vector search integration for Hermes-style skill system.
+ * Uses Qdrant Cloud with built-in sentence-transformers inference.
  * 
- * Features:
- * - Store skills in Qdrant for team sharing
- * - Semantic search across PCs
- * - Auto-fallback when local skills not found
+ * @example
+ * ```typescript
+ * import { createQdrantClient, searchSkills, upsertSkills } from '@pi-harness/qdrant-skills';
+ * 
+ * const client = createQdrantClient({
+ *   url: process.env.QDRANT_CLUSTER_ENDPOINT!,
+ *   apiKey: process.env.QDRANT_API_KEY!,
+ * });
+ * 
+ * // Search for skills
+ * const results = await searchSkills(client, 'my-skills', 'frappe permissions');
+ * 
+ * // Upload skills
+ * await upsertSkills(client, 'my-skills', [{ id: 1, name: 'test', description: '...', body: '...', text: '...' }]);
+ * ```
  */
 
-export * from "./client.js";
-export * from "./embedder.js";
+export {
+  createQdrantClient,
+  createCollection,
+  deleteCollection,
+  upsertSkills,
+  searchSkills,
+  getAllSkills,
+  type QdrantConfig,
+  type SkillPoint,
+  type SearchResult,
+} from './client.js';
 
-// Re-export types
-export type {
-  QdrantConfig,
-  QdrantSkillDocument,
-  QdrantSearchResult,
-} from "./client.js";
-
-export type {
-  EmbeddingResult,
-} from "./embedder.js";
+export {
+  createEmbedding,
+  embedSkillDocument,
+  embedSkillsBatch,
+  getOpenAIApiKey,
+  type EmbeddingResult,
+} from './embedder.js';

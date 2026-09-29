@@ -5,7 +5,7 @@
  * Used to store skills in Qdrant for semantic search.
  */
 
-import type { QdrantSkillDocument } from "./client.js";
+import type { SkillPoint } from "./client.js";
 
 /**
  * Embedding result
@@ -89,15 +89,11 @@ export async function createEmbedding(
  * Create embedding for a skill document
  */
 export async function embedSkillDocument(
-  skill: QdrantSkillDocument,
+  skill: SkillPoint,
   apiKey?: string
-): Promise<{ id: string; embedding: number[]; payload: QdrantSkillDocument }> {
-  // Combine description and triggers for embedding
-  const textToEmbed = [
-    skill.name,
-    skill.description,
-    ...(skill.triggers || []),
-  ].join(" ");
+): Promise<{ id: number; embedding: number[]; payload: SkillPoint }> {
+  // Combine name and description for embedding
+  const textToEmbed = [skill.name, skill.description].join(". ");
   
   const { embedding } = await createEmbedding(textToEmbed, apiKey);
   
@@ -112,11 +108,11 @@ export async function embedSkillDocument(
  * Batch embed multiple skills
  */
 export async function embedSkillsBatch(
-  skills: QdrantSkillDocument[],
+  skills: SkillPoint[],
   apiKey?: string,
   onProgress?: (index: number, total: number) => void
-): Promise<Array<{ id: string; embedding: number[]; payload: QdrantSkillDocument }>> {
-  const results: Array<{ id: string; embedding: number[]; payload: QdrantSkillDocument }> = [];
+): Promise<Array<{ id: number; embedding: number[]; payload: SkillPoint }>> {
+  const results: Array<{ id: number; embedding: number[]; payload: SkillPoint }> = [];
   
   for (let i = 0; i < skills.length; i++) {
     const skill = skills[i];
@@ -124,7 +120,7 @@ export async function embedSkillsBatch(
       const result = await embedSkillDocument(skill, apiKey);
       results.push(result);
     } catch (err) {
-      console.error(`[QdrantSkills] Failed to embed skill ${skill.id}:`, err);
+      console.error(`[QdrantSkills] Failed to embed skill ${skill.name}:`, err);
     }
     
     if (onProgress) {

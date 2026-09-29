@@ -1,266 +1,178 @@
 /**
- * Qdrant Skills Client
- * 
- * Manages skill embeddings in Qdrant vector database.
- * Uses REST API directly - no external dependencies.
- * 
- * Used for team-shared skill discovery across PCs.
+ * Qdrant Client - Official @qdrant/js-client-rest wrapper
  */
 
-/**
- * Qdrant configuration
- */
+import { QdrantClient } from "@qdrant/js-client-rest";
+
 export interface QdrantConfig {
+  /** Qdrant cluster URL (e.g., https://xxx.qdrant.tech) */
   url: string;
+  /** API key for authentication */
   apiKey: string;
-  collectionName: string;
-  vectorSize: number; // 1536 for OpenAI text-embedding-3-small
+  /** Collection name (default: 'pi-harness-skills') */
+  collection?: string;
 }
 
-/**
- * Skill document stored in Qdrant
- */
-export interface QdrantSkillDocument {
-  id: string;
+export interface SkillPoint {
+  id: number;
   name: string;
   description: string;
   body: string;
-  triggers: string[];
-  author: string;
-  version: string;
-  confidence: number;
-  source?: string; // Original path if synced from local
+  /** Full text to embed */
+  text: string;
 }
 
-/**
- * Search result from Qdrant
- */
-export interface QdrantSearchResult {
-  id: string;
+export interface SearchResult {
+  id: number;
+  name: string;
+  description: string;
   score: number;
-  document: QdrantSkillDocument;
 }
 
 /**
- * Check if Qdrant API key is available
+ * Parse host:port from URL
  */
-export function isQdrantAvailable(): boolean {
-  // Check env var first
-  if (process.env.QDRANT_API_KEY) {
-    return true;
-  }
-  
-  // Check keys file
-  try {
-    const { existsSync, readFileSync } = require("node:fs");
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-    const keyPath = `${homedir}/.pi-harness-runtime/keys/qdrant-api-key.txt`;
-    if (existsSync(keyPath)) {
-      const key = readFileSync(keyPath, "utf-8").trim();
-      return key.length > 0;
-    }
-  } catch {
-    // ignore
-  }
-  
-  return false;
-}
-
-/**
- * Get Qdrant API key
- */
-export function getQdrantApiKey(): string | null {
-  // Check env var first
-  if (process.env.QDRANT_API_KEY) {
-    return process.env.QDRANT_API_KEY;
-  }
-  
-  // Check keys file
-  try {
-    const { existsSync, readFileSync } = require("node:fs");
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-    const keyPath = `${homedir}/.pi-harness-runtime/keys/qdrant-api-key.txt`;
-    if (existsSync(keyPath)) {
-      return readFileSync(keyPath, "utf-8").trim();
-    }
-  } catch {
-    // ignore
-  }
-  
-  return null;
-}
-
-/**
- * Get Qdrant URL
- */
-export function getQdrantUrl(): string {
-  return process.env.QDRANT_URL || "https://api.qdrant.tech";
-}
-
-/**
- * Default collection name for skills
- */
-export const DEFAULT_COLLECTION = "pi-harness-skills";
-
-/**
- * Default vector size (OpenAI text-embedding-3-small)
- */
-export const DEFAULT_VECTOR_SIZE = 1536;
-
-/**
- * Get Qdrant config from environment
- */
-export function getQdrantConfig(): QdrantConfig | null {
-  const apiKey = getQdrantApiKey();
-  if (!apiKey) {
-    return null;
-  }
-  
+function parseHostPort(url: string): { host: string; port: number } {
+  const match = url.match(/https?:\/\/([^:]+)(?::(\d+))?/);
   return {
-    url: getQdrantUrl(),
-    apiKey,
-    collectionName: process.env.QDRANT_COLLECTION || DEFAULT_COLLECTION,
-    vectorSize: parseInt(process.env.QDRANT_VECTOR_SIZE || String(DEFAULT_VECTOR_SIZE), 10),
+    host: match?.[1] || url,
+    port: parseInt(match?.[2] || "6333"),
   };
 }
 
 /**
- * Qdrant REST API client (simple implementation)
+ * Create a Qdrant client
  */
-export class QdrantRestClient {
-  private url: string;
-  private apiKey: string;
+export function createQdrantClient(config: QdrantConfig): QdrantClient {
+  const { host, port } = parseHostPort(config.url);
+  return new QdrantClient({ host, port, apiKey: config.apiKey });
+}
 
-  constructor(config: QdrantConfig) {
-    this.url = config.url.replace(/\/$/, ""); // Remove trailing slash
-    this.apiKey = config.apiKey;
-  }
-
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<T> {
-    const url = `${this.url}${path}`;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "api-key": this.apiKey,
-    };
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+/**
+ * Create a collection with dense vectors
+ */
+export async function createCollection(
+  client: QdrantClient,
+  name: string,
+  dimensions: number = 384 // all-MiniLM-L6-v2
+): Promise<void> {
+  try {
+    await client.createCollection(name, {
+      vectors: { size: dimensions, distance: "Cosine" },
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Qdrant API error ${response.status}: ${error}`);
-    }
-
-    return response.json() as Promise<T>;
-  }
-
-  /**
-   * Create collection if not exists
-   */
-  async ensureCollection(name: string, vectorSize: number): Promise<void> {
-    try {
-      await this.request("PUT", `/collections/${name}`, {
-        vectors: {
-          size: vectorSize,
-          distance: "Cosine",
-        },
-      });
-      console.error(`[QdrantSkills] Created collection: ${name}`);
-    } catch (err) {
-      // Collection might already exist
-      if (err instanceof Error && !err.message.includes("already exists")) {
-        throw err;
-      }
-      console.error(`[QdrantSkills] Collection exists: ${name}`);
+  } catch (err) {
+    // Ignore "already exists" errors
+    if (err instanceof Error && !err.message.includes("already exists")) {
+      throw err;
     }
   }
+}
 
-  /**
-   * Upload points (skills) to collection
-   */
-  async uploadPoints(
-    collectionName: string,
-    points: Array<{
-      id: string;
-      vector: number[];
-      payload: QdrantSkillDocument;
-    }>
-  ): Promise<void> {
-    await this.request("PUT", `/collections/${collectionName}/points`, {
-      points: points.map((p) => ({
-        id: p.id,
-        vector: p.vector,
-        payload: p.payload,
-      })),
-    });
-    console.error(`[QdrantSkills] Uploaded ${points.length} points to ${collectionName}`);
+/**
+ * Delete a collection
+ */
+export async function deleteCollection(
+  client: QdrantClient,
+  name: string
+): Promise<void> {
+  try {
+    await client.deleteCollection(name);
+  } catch {
+    // Ignore if not exists
   }
+}
 
-  /**
-   * Search for similar skills
-   */
-  async search(
-    collectionName: string,
-    query: number[],
-    limit: number = 5,
-    scoreThreshold?: number
-  ): Promise<QdrantSearchResult[]> {
-    const body: Record<string, unknown> = {
-      vector: query,
-      limit,
-      with_payload: true,
-    };
+/**
+ * Upsert skill points with cloud inference
+ */
+export async function upsertSkills(
+  client: QdrantClient,
+  collectionName: string,
+  skills: SkillPoint[],
+  model: string = "sentence-transformers/all-MiniLM-L6-v2"
+): Promise<void> {
+  const points = skills.map((skill, idx) => ({
+    id: skill.id || idx + 1,
+    payload: {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body.slice(0, 2000),
+    },
+    vector: {
+      text: skill.text,
+      model,
+    },
+  }));
 
-    if (scoreThreshold !== undefined) {
-      body.score_threshold = scoreThreshold;
-    }
+  await client.upsert(collectionName, { wait: true, points });
+}
 
-    const response = await this.request<{
-      result: Array<{
-        id: string;
+/**
+ * Search skills with semantic query
+ */
+export async function searchSkills(
+  client: QdrantClient,
+  collectionName: string,
+  query: string,
+  model: string = "sentence-transformers/all-MiniLM-L6-v2",
+  limit: number = 5
+): Promise<SearchResult[]> {
+  const results = await client.query(collectionName, {
+    query: { text: query, model },
+    limit,
+    with_payload: true,
+  } as Parameters<typeof client.query>[1]);
+
+  // Parse response: { result: { points: [...] } }
+  const typedResults = results as {
+    result?: {
+      points?: Array<{
+        id: number;
         score: number;
-        payload: QdrantSkillDocument;
+        payload?: Record<string, unknown>;
       }>;
-    }>("POST", `/collections/${collectionName}/points/search`, body);
-
-    return response.result.map((r) => ({
-      id: r.id,
-      score: r.score,
-      document: r.payload,
-    }));
-  }
-
-  /**
-   * Delete all points from collection
-   */
-  async clearCollection(collectionName: string): Promise<void> {
-    await this.request("POST", `/collections/${collectionName}/points/delete`, {
-      filter: {}, // Match all
-    });
-    console.error(`[QdrantSkills] Cleared collection: ${collectionName}`);
-  }
-
-  /**
-   * Get collection info
-   */
-  async getCollectionInfo(collectionName: string): Promise<{
-    pointsCount: number;
-  }> {
-    const response = await this.request<{
-      result: {
-        points_count: number;
-      };
-    }>("GET", `/collections/${collectionName}`);
-
-    return {
-      pointsCount: response.result.points_count,
     };
-  }
+  };
+
+  const points = typedResults?.result?.points || [];
+
+  return points.map((point) => ({
+    id: point.id,
+    name: (point.payload?.name as string) || `skill-${point.id}`,
+    description: (point.payload?.description as string) || "",
+    score: point.score,
+  }));
+}
+
+/**
+ * Get all skills from collection
+ */
+export async function getAllSkills(
+  client: QdrantClient,
+  collectionName: string
+): Promise<SearchResult[]> {
+  const results = await client.query(collectionName, {
+    filter: {}, // Empty filter = all
+    limit: 100,
+    with_payload: true,
+  } as Parameters<typeof client.query>[1]);
+
+  const typedResults = results as {
+    result?: {
+      points?: Array<{
+        id: number;
+        score: number;
+        payload?: Record<string, unknown>;
+      }>;
+    };
+  };
+
+  const points = typedResults?.result?.points || [];
+
+  return points.map((point) => ({
+    id: point.id,
+    name: (point.payload?.name as string) || `skill-${point.id}`,
+    description: (point.payload?.description as string) || "",
+    score: point.score || 0,
+  }));
 }
