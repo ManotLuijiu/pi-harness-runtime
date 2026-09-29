@@ -385,7 +385,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
-const HARNESS_ROOT_DIR = join(homedir(), ".pi", "harness");
+const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 
 interface HarnessSession {
 	jobId: string;

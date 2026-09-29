@@ -115,6 +115,7 @@ export function getWriteReviewHints(projectPath: string): {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { BeforeAgentStartEventResult } from "@earendil-works/pi-coding-agent";
 import { createBlackboard } from "./blackboard.js";
+import { getPingPongEventBus, PingPongEvent } from "./event-bus.js";
 
 export function injectWriterInstructions(
 	pi: ExtensionAPI,
@@ -123,6 +124,23 @@ export function injectWriterInstructions(
 	let currentProject: string | null = null;
 	let blackboard: ReturnType<typeof createBlackboard> | null = null;
 	let hintsInjected = false;
+
+	// Initialize event bus with ExtensionAPI
+	const eventBus = getPingPongEventBus();
+	eventBus.setExtensionAPI(pi);
+
+	// Register event listeners for debugging
+	eventBus.on(PingPongEvent.WRITER_DONE, (payload) => {
+		if (config?.debug) {
+			console.log(`[write-review] Writer done: ${JSON.stringify(payload)}`);
+		}
+	});
+
+	eventBus.on(PingPongEvent.REVIEW_NEEDED, (payload) => {
+		if (config?.debug) {
+			console.log(`[write-review] Review needed: ${JSON.stringify(payload)}`);
+		}
+	});
 
 	// System prompt injection
 	pi.on("before_agent_start", async (event): Promise<BeforeAgentStartEventResult | undefined> => {
