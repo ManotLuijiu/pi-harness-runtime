@@ -32,7 +32,6 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /\bclient-b\b/gi, replacement: "[Client B]" },
 
   { pattern: /\bclient-e\b/gi, replacement: "[Client E]" },
-  { pattern: /\bopenclaw\b/gi, replacement: "[Client F]" },
 
   
   // Project/app specific names
@@ -59,7 +58,6 @@ const SKILL_NAME_MAP: Record<string, string> = {
   'client-a-pe-approval-workflow': 'client-a-pe-approval-workflow',
   'client-a-po-approval-workflow': 'client-a-po-approval-workflow',
   'client-a-pr-approval-workflow': 'client-a-pr-approval-workflow',
-  'openclaw-channel': 'client-f-channel',
   'import-project-clearance-lcv': 'import-project-clearance',
   'whispertool': 'whisper-tool',
 };
