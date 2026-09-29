@@ -1,6 +1,6 @@
 /**
  * Skill Registry
- * 
+ *
  * Stores and manages skills with progressive disclosure.
  * Based on pi.dev Agent Skills specification.
  */
@@ -19,6 +19,100 @@ import type {
 } from "./types.js";
 import { parseSkillFile, scanSkillDirectory } from "./parser.js";
 
+// --- Qdrant integration (optional) -----------------------------------------
+// Loaded dynamically so skills work without Qdrant configured.
+// At runtime, packages/ is resolved from the monorepo root or node_modules.
+
+interface QdrantSkillPoint {
+  id: number;
+  name: string;
+  description: string;
+  body: string;
+  text: string;
+}
+
+interface QdrantClientLike {
+  upsert(collection: string, opts: { wait?: boolean; points: unknown[] }): Promise<void>;
+  query(collection: string, opts: {
+    query?: { text?: string; model?: string };
+    limit?: number;
+    with_payload?: boolean;
+    filter?: Record<string, unknown>;
+  }): Promise<unknown>;
+}
+
+interface QdrantEmbedderLike {
+  createEmbedding(text: string, apiKey?: string): Promise<{ embedding: number[]; tokens: number }>;
+}
+
+/** Resolve the Qdrant skill module path (monorepo sibling or npm package) */
+async function resolveQdrantModules(): Promise<{
+  createQdrantClient: (cfg: unknown) => { upsert(c: string, o: unknown): Promise<void>; query(c: string, o: unknown): Promise<unknown>; };
+  createCollection: (client: unknown, name: string, dims: number) => Promise<void>;
+  createEmbedding: (text: string, apiKey?: string) => Promise<{ embedding: number[]; tokens: number }>;
+} | null> {
+  // Try monorepo sibling first (resolved from packages/skills/src/loader.ts)
+  for (const base of ["../../../packages/qdrant-skills/src", "../../packages/qdrant-skills/src"]) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require(/* @vite-ignore */ base + "/index.js");
+      return mod as Awaited<ReturnType<typeof resolveQdrantModules>>;
+    } catch {
+      // Try next path
+    }
+  }
+  // Fall back to npm package
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require(/* @vite-ignore */ "@pi-harness/qdrant-skills") as { createQdrantClient: unknown; createCollection: unknown; createEmbedding: unknown };
+    return {
+      createQdrantClient: (cfg: unknown) => (mod.createQdrantClient as Function)(cfg) as { upsert(c: string, o: unknown): Promise<void>; query(c: string, o: unknown): Promise<unknown> },
+      createCollection: mod.createCollection as (client: unknown, name: string, dims: number) => Promise<void>,
+      createEmbedding: mod.createEmbedding as (text: string, apiKey?: string) => Promise<{ embedding: number[]; tokens: number }>,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Read a key file, returning null if missing or empty */
+function readKeyFile(path: string): string | null {
+  try {
+    if (!existsSync(path)) return null;
+    const val = readFileSync(path, "utf8").trim();
+    return val.length > 5 ? val : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get Qdrant config from env or keys files.
+ * Returns null if not configured.
+ */
+export function getQdrantConfig(): {
+  url: string;
+  apiKey: string;
+  collection: string;
+} | null {
+  const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+  const keysDir = `${homedir}/.pi-harness-runtime/keys`;
+
+  const url =
+    process.env.QDRANT_CLUSTER_ENDPOINT ||
+    readKeyFile(`${keysDir}/qdrant-cluster-url.txt`);
+  const apiKey =
+    process.env.QDRANT_API_KEY ||
+    readKeyFile(`${keysDir}/qdrant-api-key.txt`);
+
+  if (!url || !apiKey) return null;
+  return {
+    url,
+    apiKey,
+    collection: process.env.QDRANT_COLLECTION || "pi-harness-skills",
+  };
+}
+
 /**
  * Skill Registry - manages loaded and indexed skills
  */
@@ -27,12 +121,92 @@ export class SkillRegistry {
   private index: SkillIndex = { entries: [], loadedAt: 0 };
   private loading: Map<string, Promise<Skill>> = new Map();
 
+  // Qdrant state (lazily initialized on first register if configured)
+  private _qdrant: {
+    client: QdrantClientLike;
+    embedder: QdrantEmbedderLike;
+    collection: string;
+    ready: boolean;
+  } | null = null;
+  private _qdrantInitAttempted = false;
+
   /**
-   * Register a skill
+   * Initialize Qdrant client if configured.
+   * Called lazily on first skill registration.
+   */
+  private async _ensureQdrant(): Promise<void> {
+    if (this._qdrantInitAttempted) return;
+    this._qdrantInitAttempted = true;
+
+    const config = getQdrantConfig();
+    if (!config) return;
+
+    const mods = await resolveQdrantModules();
+    if (!mods) {
+      console.debug("[skills] Qdrant package not found — skipping vector indexing");
+      return;
+    }
+
+    try {
+      const client = mods.createQdrantClient({
+        url: config.url,
+        apiKey: config.apiKey,
+      });
+      await mods.createCollection(client, config.collection, 1536);
+      this._qdrant = {
+        client,
+        embedder: { createEmbedding: mods.createEmbedding },
+        collection: config.collection,
+        ready: true,
+      };
+      console.log(`[skills] Qdrant vector store ready (collection: ${config.collection})`);
+    } catch (err) {
+      console.error("[skills] Qdrant init failed:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
+   * Index a single skill into Qdrant (non-blocking).
+   */
+  private async _indexSkillToQdrant(skill: Skill): Promise<void> {
+    if (!this._qdrant?.ready) return;
+
+    const point: QdrantSkillPoint = {
+      id: this._hashId(skill.id),
+      name: skill.id,
+      description: skill.frontmatter.description,
+      body: skill.body.slice(0, 2000),
+      text: [skill.id, skill.frontmatter.name, skill.frontmatter.description, skill.body.slice(0, 1500)].join(" "),
+    };
+
+    try {
+      const { embedding } = await this._qdrant.embedder.createEmbedding(point.text);
+      await this._qdrant.client.upsert(this._qdrant.collection, {
+        wait: false,
+        points: [{ id: point.id, vector: embedding, payload: point }],
+      });
+    } catch (err) {
+      console.error(`[skills] Failed to index "${skill.id}" to Qdrant:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Simple deterministic ID for Qdrant (no bigints needed). */
+  private _hashId(id: string): number {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) {
+      h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  /**
+   * Register a skill (auto-indexes to Qdrant if configured).
    */
   register(skill: Skill): void {
     this.skills.set(skill.id, skill);
     this.updateIndex(skill);
+    // Trigger async Qdrant indexing without blocking registration
+    this._ensureQdrant().then(() => this._indexSkillToQdrant(skill)).catch(() => {});
   }
 
   /**
@@ -164,6 +338,68 @@ export class SkillRegistry {
   findBestMatch(query: string, options?: MatchOptions): MatchResult | null {
     const results = this.find(query, { ...options, threshold: 0 });
     return results[0] ?? null;
+  }
+
+  // --- Qdrant vector search --------------------------------------------------
+
+  /**
+   * Search skills by semantic similarity using Qdrant.
+   * Falls back to an empty result if Qdrant is not available.
+   *
+   * @param query Natural-language query
+   * @param limit Max results (default 5)
+   * @param threshold Minimum cosine score (default 0.5)
+   */
+  async findVector(
+    query: string,
+    limit = 5,
+    threshold = 0.5,
+  ): Promise<Array<{ skill: Skill; score: number }>> {
+    await this._ensureQdrant();
+    if (!this._qdrant?.ready) return [];
+
+    try {
+      const { embedding } = await this._qdrant.embedder.createEmbedding(query);
+      // SAFETY: Qdrant's query() accepts number[] for dense vector search via its internal
+      // OpenAPI spec — the float[] overload is not in the generated TypeScript types but
+      // the server handles it correctly at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const queryOpts: any = { query: embedding, limit, with_payload: true };
+      const raw = await this._qdrant.client.query(this._qdrant.collection, queryOpts) as {
+        result?: { points?: Array<{ id: number; score: number; payload?: Record<string, unknown> }> } };
+
+      const results: Array<{ skill: Skill; score: number }> = [];
+      for (const pt of raw.result?.points ?? []) {
+        if (pt.score < threshold) continue;
+        const name = pt.payload?.name as string | undefined;
+        const skill = name ? this.skills.get(name) : undefined;
+        if (skill) results.push({ skill, score: pt.score });
+      }
+      return results;
+    } catch (err) {
+      console.error("[skills] Qdrant vector search failed:", err instanceof Error ? err.message : String(err));
+      return [];
+    }
+  }
+
+  /**
+   * Sync all registered skills to Qdrant.
+   * Useful after Qdrant becomes available or collection is rebuilt.
+   */
+  async syncAllToQdrant(onProgress?: (index: number, total: number) => void): Promise<void> {
+    await this._ensureQdrant();
+    if (!this._qdrant?.ready) return;
+
+    const skills = this.list();
+    for (let i = 0; i < skills.length; i++) {
+      await this._indexSkillToQdrant(skills[i]);
+      onProgress?.(i + 1, skills.length);
+    }
+  }
+
+  /** Whether Qdrant is available and ready. */
+  get isQdrantReady(): boolean {
+    return this._qdrant?.ready ?? false;
   }
 
   /**
