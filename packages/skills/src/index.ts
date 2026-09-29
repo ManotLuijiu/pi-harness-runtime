@@ -46,7 +46,42 @@ export function initSkills(
     registry.register(skill);
   }
 
+  // Hint: if ~/.pi-harness-runtime/skills/ is empty, suggest the sync script
+  checkEmptySkillsDir();
+
   return result;
+}
+
+/** Show sync hint if the harness skills dir is empty. */
+function checkEmptySkillsDir(): void {
+  try {
+    const { readdirSync, existsSync } = require("node:fs");
+    const { join } = require("node:path");
+    const { homedir } = require("node:os");
+
+    const harnessDir = join(homedir(), ".pi-harness-runtime", "skills");
+    if (!existsSync(harnessDir)) return;
+
+    const entries = readdirSync(harnessDir).filter((n: string) => n !== "harness-runtime");
+    if (entries.length > 0) return; // Has user skills, nothing to suggest
+
+    const benchPath = join(homedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills");
+    if (!existsSync(benchPath)) return;
+
+    const benchEntries = readdirSync(benchPath).filter((n: string) =>
+      existsSync(join(benchPath, n, "SKILL.md"))
+    );
+    if (benchEntries.length === 0) return;
+
+    console.error(
+      `[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
+    );
+    console.error(
+      `[pi-harness] Populate skills dir: bun scripts/sync-skills.ts --from ~/frappe-bench/.claude-plugins/moocoding-skills/skills`
+    );
+  } catch {
+    // Non-fatal — ignore errors
+  }
 }
 
 /**
