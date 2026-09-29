@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.74](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.74) (2026-09-29)
+
+
+### Features
+
+* Add comprehensive 529 error logging for debugging ([18c602d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/18c602dbe6ac11fea00af2f5b632f0564a14a8a3))
+* Add Qdrant skills integration for team sharing ([7ffcaab](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ffcaab9af30b39b28cc6bf23a85d5b586c2130f))
+* Implement Hermes-style self-improvement system + fix critical bugs ([2c477af](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2c477afc810ceaa4d57ded859b88e61d37999807))
+* Implement Hermes-style skill system ([b871ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b871ad5107b50757ee9c18aa5d7c144c1b70f9de))
+* Implement ping-pong event bus for two-agent coordination ([ed259c8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ed259c8f0f912446782c9c31f55165ad397f89d3))
+* Qdrant integration working - E2E tests pass ([1a12f7c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1a12f7c5ce0508f689b246f88f4c3d8e79c80f86))
+* **qdrant:** Official @qdrant/js-client-rest integration ([efaa47b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/efaa47b7c86601b69fe4ae56feae66815f6387ea))
+
 ### [1.1.72](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.72) (2026-09-29)
 
 
