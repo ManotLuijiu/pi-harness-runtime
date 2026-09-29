@@ -77,7 +77,7 @@ function checkEmptySkillsDir(): void {
       `[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
     );
     console.error(
-      `[pi-harness] Populate skills dir: bun scripts/sync-skills.ts --from ~/frappe-bench/.claude-plugins/moocoding-skills/skills`
+      '[pi-harness] Sync them: bun scripts/sync-skills.ts --from ~/frappe-bench/.claude-plugins/moocoding-skills/skills'
     );
   } catch {
     // Non-fatal — ignore errors
