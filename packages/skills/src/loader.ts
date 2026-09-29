@@ -159,7 +159,6 @@ export class SkillRegistry {
         collection: config.collection,
         ready: true,
       };
-      console.log(`[skills] Qdrant vector store ready (collection: ${config.collection})`);
     } catch (err) {
       console.error("[skills] Qdrant init failed:", err instanceof Error ? err.message : String(err));
     }
