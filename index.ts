@@ -239,6 +239,41 @@ async function initQdrant(): Promise<void> {
 	}
 }
 
+// --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
+// Fires after Jev + Qdrant so all three appear together in startup
+function initMoocodingSyncHint(): void {
+	try {
+		const { readdirSync, existsSync } = require("node:fs");
+		const { join } = require("node:path");
+		const { homedir } = require("node:os");
+
+		const harnessDir = join(homedir(), ".pi-harness-runtime", "skills");
+		if (!existsSync(harnessDir)) return;
+
+		const entries: string[] = readdirSync(harnessDir).filter((n: string) => n !== "harness-runtime");
+		if (entries.length > 0) return; // Has user skills, nothing to suggest
+
+		const benchPath = join(homedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills");
+		if (!existsSync(benchPath)) return;
+
+		const benchEntries: string[] = readdirSync(benchPath).filter((n: string) =>
+			existsSync(join(benchPath, n, "SKILL.md"))
+		);
+		if (benchEntries.length === 0) return;
+
+		const targetPath = join(homedir(), ".pi-harness-runtime", "skills");
+		console.error(
+			`[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
+		);
+		console.error("[pi-harness] Sync them:");
+		console.error("[pi-harness]   bun scripts/sync-skills.ts \\\)  ");
+		console.error("[pi-harness]     --from " + benchPath + "  (original_path)");
+		console.error("[pi-harness]     --to   " + targetPath + "  (destination_path)");
+	} catch {
+		// Non-fatal — ignore errors
+	}
+}
+
 // --- write-review: Two-agent write with review loop --------------------------
 // Lazy import - only loads when packages/write-review exists
 async function initWriteReview(pi: ExtensionAPI): Promise<void> {
@@ -618,6 +653,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	void initQdrant();
+
+	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
+	void initMoocodingSyncHint();
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
