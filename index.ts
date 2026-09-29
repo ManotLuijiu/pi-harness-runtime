@@ -216,6 +216,29 @@ async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+// --- qdrant-vector-search: Semantic skill search via Qdrant -------------------
+// Check config and report status — right after Jev for discoverability
+async function initQdrant(): Promise<void> {
+	try {
+		const { getQdrantConfig } = await import("./packages/skills/src/loader.js");
+		const cfg = getQdrantConfig();
+		if (cfg) {
+			console.error("[pi-harness] Qdrant vector search ready");
+		} else {
+			const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+			console.error("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
+			console.error(
+				`  echo "{cluster-url}" > ${home}/.pi-harness-runtime/keys/qdrant-cluster-url.txt`
+			);
+			console.error(
+				`  echo "{api-key}" > ${home}/.pi-harness-runtime/keys/qdrant-api-key.txt`
+			);
+		}
+	} catch {
+		// qdrant-skills not available
+	}
+}
+
 // --- write-review: Two-agent write with review loop --------------------------
 // Lazy import - only loads when packages/write-review exists
 async function initWriteReview(pi: ExtensionAPI): Promise<void> {
@@ -603,6 +626,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- jev-auto-continue: Agent autonomous decision when user unavailable -----
 	void initAutoContinue(pi);
+
+	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
+	void initQdrant();
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
