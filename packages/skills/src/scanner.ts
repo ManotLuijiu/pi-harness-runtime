@@ -19,7 +19,8 @@ import { parseSkillFile, scanSkillDirectory } from "./parser.js";
  */
 const DEFAULT_SCAN_OPTIONS: ScanOptions = {
   directories: [
-    "~/.pi-harness/skills",
+    "~/.pi-harness-runtime/skills",
+    "~/.pi/skills",
     "skills",
     ".agents/skills",
   ],
