@@ -31,9 +31,6 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /\bmcapital\b/gi, replacement: "[Client A]" },
   { pattern: /\bdigisoft\b/gi, replacement: "[Client B]" },
 
-  { pattern: /\bteamw\b/gi, replacement: "[Client E]" },
-
-  
   // Project/app specific names
   { pattern: /\bgse-insurance\b/gi, replacement: "[Insurance Project]" },
   { pattern: /\btbs-import\b/gi, replacement: "[Import Project]" },
@@ -43,8 +40,6 @@ const SANITIZATION_RULES: SanitizationRule[] = [
   { pattern: /\bpaperclip_\b/gi, replacement: "[Client D]_" },
   { pattern: /\bopenclaw_\b/gi, replacement: "[Client F]_" },
 
-  { pattern: /\bteamw_\b/gi, replacement: "[Client E]_" },
-  
   // Generic replacements
   { pattern: /Company Name/gi, replacement: "[Client Name]" },
   { pattern: /your company/gi, replacement: "[Client]" },
