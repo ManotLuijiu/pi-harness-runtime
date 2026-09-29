@@ -975,9 +975,9 @@ Run \`bd ready\` to see current bd issues.
 		}
 	}
 
-	let footerStatusCtx: {
-		ui: { setStatus: (key: string, value: string) => void };
-	} | null = null;
+	// Store only the setStatus function, NOT the ctx itself.
+	// Storing ctx causes stale-context errors after pi reload/restart.
+	let footerSetStatus: ((key: string, value: string) => void) | null = null;
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
@@ -1042,9 +1042,9 @@ Run \`bd ready\` to see current bd issues.
 		// 	JSON.stringify(record),
 		// );
 		mirrorStore.writeProvider(provider, { ...record, provider });
-		if (footerStatusCtx) {
+		if (footerSetStatus) {
 			refreshFooterStatus(
-				footerStatusCtx,
+				footerSetStatus,
 				tracker,
 				mirrorStore,
 				hasCookieSource,
@@ -1081,9 +1081,9 @@ Run \`bd ready\` to see current bd issues.
 		// );
 		if (p !== lastActiveProvider) {
 			lastActiveProvider = p;
-			if (footerStatusCtx) {
+			if (footerSetStatus) {
 				refreshFooterStatus(
-					footerStatusCtx,
+					footerSetStatus,
 					tracker,
 					mirrorStore,
 					hasCookieSource,
@@ -1558,9 +1558,9 @@ Run \`bd ready\` to see current bd issues.
 					"Mirror cleared. The next auto refresh will repopulate it.",
 					"info",
 				);
-				footerStatusCtx = ctx;
+				footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 				refreshFooterStatus(
-					ctx,
+					footerSetStatus,
 					tracker,
 					mirrorStore,
 					hasCookieSource,
@@ -1855,9 +1855,10 @@ Run \`bd ready\` to see current bd issues.
 
 	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", (_event, ctx) => {
-		footerStatusCtx = ctx;
+		// Capture only the setStatus function, not the ctx
+		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
-			ctx,
+			footerSetStatus,
 			tracker,
 			mirrorStore,
 			hasCookieSource,
@@ -1867,9 +1868,10 @@ Run \`bd ready\` to see current bd issues.
 
 	pi.on("turn_end", (_event, ctx) => {
 		noteActiveProvider(ctx.model?.id ?? null);
-		footerStatusCtx = ctx;
+		// Capture only the setStatus function, not the ctx
+		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
-			ctx,
+			footerSetStatus,
 			tracker,
 			mirrorStore,
 			hasCookieSource,
@@ -1895,13 +1897,14 @@ Run \`bd ready\` to see current bd issues.
 	});
 
 	pi.on("session_compact", (event, ctx) => {
-		footerStatusCtx = ctx;
+		// Capture only the setStatus function, not the ctx
+		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		proactiveCompactInFlight = false;
 		lastProactiveCompactAt = Date.now();
 		consecutiveCompactFailures = 0;
 		proactiveCompactCircuitReported = false;
 		refreshFooterStatus(
-			ctx,
+			footerSetStatus,
 			tracker,
 			mirrorStore,
 			hasCookieSource,
@@ -1939,9 +1942,9 @@ Run \`bd ready\` to see current bd issues.
 	setInterval(() => {
 		void maybeAutoFetchQuota(lastActiveProvider ?? null);
 		// Also refresh footer status so user sees updated quota data
-		if (footerStatusCtx) {
+		if (footerSetStatus) {
 			refreshFooterStatus(
-				footerStatusCtx,
+				footerSetStatus,
 				tracker,
 				mirrorStore,
 				hasCookieSource,
@@ -2046,7 +2049,7 @@ Run \`bd ready\` to see current bd issues.
 // Helper: refresh persistent footer status with one-line summary
 // ----------------------------------------------------------------------
 function refreshFooterStatus(
-	ctx: { ui: { setStatus: (key: string, value: string) => void } },
+	setStatus: (key: string, value: string) => void,
 	tracker: UsageTracker,
 	mirrorStore: MirrorStore,
 	hasCookieSource: () => boolean,
@@ -2060,7 +2063,7 @@ function refreshFooterStatus(
 	// 	mirror ? JSON.stringify(mirror) : null,
 	// );
 	const freshness = mirrorStore.freshness(mirror, nowMs);
-	ctx.ui.setStatus(
+	setStatus(
 		"harness-runtime",
 		buildFooterStatusValue(local, mirror, freshness, hasCookieSource(), provider),
 	);
