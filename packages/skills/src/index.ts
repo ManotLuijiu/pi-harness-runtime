@@ -31,9 +31,11 @@ export function initSkills(
   const registry = getGlobalSkillRegistry();
 
   // Scan for skills
-  const scanOptions: Partial<ScanOptions> = {
-    directories: config?.locations,
-  };
+  const scanOptions: Partial<ScanOptions> = {};
+  // Only set directories if explicitly provided, otherwise use defaults
+  if (config?.locations !== undefined) {
+    scanOptions.directories = config.locations;
+  }
   if (config?.maxDepth !== undefined) scanOptions.maxDepth = config.maxDepth;
   if (config?.includeHidden !== undefined) scanOptions.includeHidden = config.includeHidden;
 
