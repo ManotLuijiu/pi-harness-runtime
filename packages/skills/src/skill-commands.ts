@@ -1,10 +1,12 @@
 /**
  * Skill Commands - /skill:name slash command handler
- * 
+ *
  * Registers /skill:name commands for explicit skill invocation.
  * Based on pi.dev skill command specification.
  */
 
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getGlobalSkillRegistry } from "./loader.js";
 import { scanForSkillsSync } from "./scanner.js";
@@ -69,6 +71,55 @@ export function initSkillCommands(
 
   // Register individual skill commands dynamically
   registerSkillCommands(pi, registry, cfg.prefix);
+
+  // Register /sync-skills slash command
+  pi.registerCommand("sync-skills", {
+    description: "Sync moocoding skills from frappe-bench to ~/.pi-harness-runtime/skills. Usage: /sync-skills [--from <path>] [--to <path>] [--check-only]",
+    handler: async (args: string, ctx: ExtensionContext): Promise<void> => {
+      const parsedArgs = args.trim();
+
+      // Find the sync-skills script — it lives in the npm package's scripts/
+      const agentNpmDir = resolve(ctx.cwd ?? process.cwd(), "../../../.pi/agent/npm/node_modules/pi-harness-runtime/scripts/sync-skills.ts");
+
+      ctx.ui.notify(`[sync-skills] Syncing from ~/frappe-bench/.claude-plugins/moocoding-skills/skills`, "info");
+
+      // Build spawn args: bun <script> [user args]
+      const spawnArgs = parsedArgs ? parsedArgs.split(/\s+/) : [];
+
+      // Wrap spawn in a Promise so we can await it
+      await new Promise<void>((resolve) => {
+        const bun = spawn("bun", [agentNpmDir, ...spawnArgs], {
+          cwd: ctx.cwd ?? process.cwd(),
+          env: { ...process.env },
+          killSignal: "SIGTERM",
+        });
+
+        bun.stdout.on("data", (chunk: Buffer) => {
+          const text = chunk.toString().trim();
+          if (text) ctx.ui.notify(text, "info");
+        });
+
+        bun.stderr.on("data", (chunk: Buffer) => {
+          const text = chunk.toString().trim();
+          if (text) ctx.ui.notify(text, "warning");
+        });
+
+        bun.on("close", (code) => {
+          if (code === 0) {
+            ctx.ui.notify("[sync-skills] Done. Run /reload to pick up new skills.", "info");
+          } else {
+            ctx.ui.notify(`[sync-skills] Exit code: ${code}`, "error");
+          }
+          resolve();
+        });
+
+        bun.on("error", (err) => {
+          ctx.ui.notify(`[sync-skills] Error: ${err.message}`, "error");
+          resolve();
+        });
+      });
+    },
+  });
 }
 
 /**
