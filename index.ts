@@ -354,6 +354,98 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 	}
 }
 
+// --- langchain-loop: Ping-pong write-review loop via harness/langchain/ -----------
+// Requires pi-env package + env vars in settings.json["env"] + API keys in keys/
+//
+// Env vars set by pi-env (install: pi install npm:pi-env):
+//   PLANNER_MODEL, PLANNER_BASE_URL
+//   GLM_MODEL, GLM_BASE_URL
+//   MINIMAX_MODEL, MINIMAX_BASE_URL
+//
+// API keys from: ~/.pi-harness-runtime/keys/{planner,reviewer,coder}-api-key.txt
+function initLangChain(pi: {
+	registerCommand(
+		name: string,
+		cmd: {
+			description: string;
+			handler: (args: string, ctx: unknown) => Promise<void>;
+			prompt?: string;
+		},
+	): void;
+}): void {
+	const { readFileSync, existsSync } = require("node:fs");
+	const { spawn } = require("node:child_process");
+	const { fileURLToPath } = require("url");
+	const { dirname } = require("node:path");
+
+	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const keysDir = `${home}/.pi-harness-runtime/keys`;
+
+	// Check env vars (set by pi-env from settings.json["env"])
+	const plannerEnv = process.env.PLANNER_MODEL && process.env.PLANNER_BASE_URL;
+	const reviewerEnv = process.env.GLM_MODEL && process.env.GLM_BASE_URL;
+	const coderEnv = process.env.MINIMAX_MODEL && process.env.MINIMAX_BASE_URL;
+
+	// Check API keys (from keys/ dir)
+	const plannerKey = existsSync(`${keysDir}/planner-api-key.txt`);
+	const reviewerKey = existsSync(`${keysDir}/reviewer-api-key.txt`);
+	const coderKey = existsSync(`${keysDir}/coder-api-key.txt`);
+
+	if (!plannerEnv || !reviewerEnv || !coderEnv) {
+		console.error("[pi-harness] LangChain loop not configured (pi-env missing):");
+		console.error("[pi-harness]   1. Run: pi install npm:pi-env");
+		console.error("[pi-harness]   2. Add to ~/.pi/agent/settings.json under \"env\":");
+		console.error("[pi-harness]      PLANNER_MODEL, PLANNER_BASE_URL");
+		console.error("[pi-harness]      GLM_MODEL, GLM_BASE_URL");
+		console.error("[pi-harness]      MINIMAX_MODEL, MINIMAX_BASE_URL");
+		return;
+	}
+
+	if (!plannerKey || !reviewerKey || !coderKey) {
+		console.error("[pi-harness] LangChain loop: API keys missing:");
+		if (!plannerKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/planner-api-key.txt`);
+		if (!reviewerKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
+		if (!coderKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/coder-api-key.txt`);
+		return;
+	}
+
+	// All configured — register the /langchain command
+	pi.registerCommand("langchain", {
+		description:
+			"Run LangChain ping-pong loop: planner → coder → reviewer → fix → approve",
+		prompt: "Describe the feature or task for the LangChain loop to implement.",
+		handler: async (request: string) => {
+			if (!request.trim()) {
+				console.error("[pi-harness] /langchain requires a request.");
+				console.error("[pi-harness]   Example: /langchain implement user auth module");
+				return;
+			}
+
+			const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+			env.PLANNER_API_KEY = readFileSync(`${keysDir}/planner-api-key.txt`, "utf8").trim();
+			env.GLM_API_KEY = readFileSync(`${keysDir}/reviewer-api-key.txt`, "utf8").trim();
+			env.MINIMAX_API_KEY = readFileSync(`${keysDir}/coder-api-key.txt`, "utf8").trim();
+
+			if (existsSync(`${keysDir}/langsmith-api-key.txt`)) {
+				env.LANGSMITH_API_KEY = readFileSync(`${keysDir}/langsmith-api-key.txt`, "utf8").trim();
+			}
+
+			const runtimeRoot = dirname(fileURLToPath(import.meta.url));
+			const runScript = `${runtimeRoot}/harness/langchain/run.ts`;
+
+			const proc = spawn("bun", ["run", runScript, "--mode", "graph", "--request", request], {
+				env,
+				stdio: "inherit",
+			});
+			proc.on("exit", (code: number | null) => {
+				if (code !== 0) console.error(`[pi-harness] /langchain exited with code ${code}`);
+			});
+		},
+	});
+
+	console.error("[pi-harness] LangChain loop ready (planner + reviewer + coder)");
+}
+
 // --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
 // Fires after Jev + Qdrant so all three appear together in startup
 function initMoocodingSyncHint(): void {
@@ -776,6 +868,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
 	void initMoocodingSyncHint();
+
+	// --- langchain-loop: Ping-pong write-review loop (planner + reviewer + coder) ----
+	void initLangChain(pi);
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
