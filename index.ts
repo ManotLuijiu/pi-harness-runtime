@@ -1034,6 +1034,24 @@ Run \`bd ready\` to see current bd issues.
 			}
 			providerOverloadResumeAttempts = 0;
 			clearProviderOverloadResume();
+
+			// --- Auto-Continue: Check todos and keep going -------------------------------
+			// If the agent stopped naturally AND the response mentions pending todos,
+			// auto-steering forces it to continue without waiting for user input.
+			const text = readMessageText(event.message);
+			if (
+				text &&
+				/Todos?\s*\(\d+\/\d+\)|\([○◐●]\s+\w+.*pending|Tasks?\s*\(\d+.*pending\)/i.test(text)
+			) {
+				try {
+					pi.sendUserMessage(
+						"You have pending tasks. Run `todo list` to see them, then continue with the next pending one without asking.",
+						{ deliverAs: "steer" },
+					);
+				} catch {
+					// best-effort
+				}
+			}
 		}
 
 		if (!m.usage) return;
