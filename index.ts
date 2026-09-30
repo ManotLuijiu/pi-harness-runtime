@@ -655,8 +655,6 @@ function ensureHarnessDir() {
 	console.error(
 		`[pi-harness] Initialized ~/.pi-harness-runtime/ with skills/, memory/, trajectory/, cookies/`,
 	);
-	// Telegram notifications — fires near the "Initialized" message for discoverability
-	void initTelegram();
 }
 
 /**
@@ -769,6 +767,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	void initQdrant();
+
+	// --- telegram-notifications: Telegram bot for harness event notifications ----
+	void initTelegram();
 
 	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
 	void initHoncho(pi);
