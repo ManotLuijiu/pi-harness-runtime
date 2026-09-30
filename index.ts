@@ -248,6 +248,63 @@ async function initQdrant(): Promise<void> {
 	}
 }
 
+// --- telegram-notifications: Telegram bot for harness event notifications ------------
+// Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
+let notificationCenter: unknown = null;
+async function initTelegram(): Promise<void> {
+	try {
+		const { NotificationCenter } = await import("./packages/notification/dist/index.js");
+		const { readFileSync, existsSync } = await import("node:fs");
+		const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+		const keysDir = `${home}/.pi-harness-runtime/keys`;
+
+		const botTokenPath = `${keysDir}/telegram-bot-token.txt`;
+		const chatIdPath = `${keysDir}/telegram-chat-id.txt`;
+
+		if (!existsSync(botTokenPath) || !existsSync(chatIdPath)) {
+			console.error("[pi-harness] Telegram notifications not configured:");
+			console.error(
+				`  echo "{bot-token}" > ${home}/.pi-harness-runtime/keys/telegram-bot-token.txt`
+			);
+			console.error(
+				`  echo "{chat-id}" > ${home}/.pi-harness-runtime/keys/telegram-chat-id.txt`
+			);
+			return;
+		}
+
+		const botToken = readFileSync(botTokenPath, "utf8").trim();
+		const chatId = readFileSync(chatIdPath, "utf8").trim();
+
+		if (!botToken || !chatId) {
+			console.error("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
+			return;
+		}
+
+		const center = new NotificationCenter({
+			enabled: true,
+			channels: [
+				{
+					id: "telegram",
+					type: "telegram",
+					enabled: true,
+					config: { botToken, chatId },
+				},
+			],
+		});
+
+		await center.initialize();
+		if (!center.hasChannels()) {
+			console.error("[pi-harness] Telegram: initialization failed — skipping");
+			return;
+		}
+
+		notificationCenter = center;
+		console.error(`[pi-harness] Telegram notifications ready`);
+	} catch (err) {
+		console.error("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
+	}
+}
+
 // --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
 // Fires after Jev + Qdrant so all three appear together in startup
 function initMoocodingSyncHint(): void {
@@ -661,6 +718,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	void initQdrant();
+
+	// --- telegram-notifications: Telegram bot for harness event notifications ----
+	void initTelegram();
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
 	void initMoocodingSyncHint();
