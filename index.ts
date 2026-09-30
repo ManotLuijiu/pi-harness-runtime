@@ -311,6 +311,49 @@ async function initTelegram(): Promise<void> {
 	}
 }
 
+// --- honcho-memory: Honcho MCP for peer/user memory via https://mcp.honcho.dev ------
+// Registers Honcho MCP server (honcho_profile, honcho_search, honcho_context,
+// honcho_conclude) via pi-mcp-adapter if the user has an API key.
+// Hybrid: Honcho = peer/user memory; memory-engine = structured project knowledge.
+async function initHoncho(pi: { events: { emit(name: string, data: unknown): void }; on(event: string, cb: () => void): void }): Promise<void> {
+	const { readFileSync, existsSync } = await import("node:fs");
+	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
+
+	if (!existsSync(keyPath)) {
+		console.error("[pi-harness] Honcho memory not configured:");
+		console.error("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
+		console.error(
+			`[pi-harness]   Then: echo "{api-key}" > ${home}/.pi-harness-runtime/keys/honcho-api-key.txt`
+		);
+		return;
+	}
+
+	const apiKey = readFileSync(keyPath, "utf8").trim();
+	if (!apiKey) {
+		console.error("[pi-harness] Honcho: API key is empty — skipping");
+		return;
+	}
+
+	try {
+		// Register Honcho MCP server with pi-mcp-adapter at session start
+		pi.on("session_start", () => {
+			const request = {
+				version: 1 as const,
+				name: "honcho",
+				definition: {
+					url: "https://mcp.honcho.dev",
+					auth: { header: `Bearer ${apiKey}` },
+				},
+			};
+			pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
+		});
+		console.error("[pi-harness] Honcho memory ready (peer/user memory via mcp.honcho.dev)");
+	} catch (err) {
+		console.error("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
+	}
+}
+
 // --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
 // Fires after Jev + Qdrant so all three appear together in startup
 function initMoocodingSyncHint(): void {
@@ -726,6 +769,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	void initQdrant();
+
+	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
+	void initHoncho(pi);
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
 	void initMoocodingSyncHint();

@@ -99,6 +99,7 @@
     "chokidar": "^5.0.0",
     "deepagents": "^1.10.5",
     "langchain": "^1.5.10",
+    "pi-mcp-adapter": "3.3.0",
     "zod": "^4.5.4"
   }
 }
