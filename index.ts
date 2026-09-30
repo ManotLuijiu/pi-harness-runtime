@@ -264,10 +264,16 @@ async function initTelegram(): Promise<void> {
 		if (!existsSync(botTokenPath) || !existsSync(chatIdPath)) {
 			console.error("[pi-harness] Telegram notifications not configured:");
 			console.error(
-				`  echo "{bot-token}" > ${home}/.pi-harness-runtime/keys/telegram-bot-token.txt`
+				`[pi-harness]   bot-token: create @BotFather bot → get token`
 			);
 			console.error(
-				`  echo "{chat-id}" > ${home}/.pi-harness-runtime/keys/telegram-chat-id.txt`
+				`[pi-harness]   chat-id:  message @userinfobot → reply shows your ID`
+			);
+			console.error(
+				`[pi-harness]   echo "{bot-token}" > ${home}/.pi-harness-runtime/keys/telegram-bot-token.txt`
+			);
+			console.error(
+				`[pi-harness]   echo "{chat-id}" > ${home}/.pi-harness-runtime/keys/telegram-chat-id.txt`
 			);
 			return;
 		}
