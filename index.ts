@@ -817,6 +817,29 @@ When the user gives you a multi-step task:
 The todo overlay persists and helps track progress across your conversation.
 `;
 
+	// --- CONTINUE UNTIL DONE: Auto-pick next todo, don't stop early -----------
+	// Fixes the habit: agent completes one task then waits instead of continuing
+	const CONTINUE_UNTIL_DONE_HINT = `
+
+## CONTINUE-UNTIL-DONE RULE
+
+**CRITICAL — NEVER STOP after completing ONE task when more are pending.**
+
+After completing ANY task or unit of work:
+1. IMMEDIATELY run \`todo list\` to check for pending/in_progress items
+2. If pending tasks exist, pick the next one and start working on it WITHOUT asking
+3. Only stop and report progress when ALL tasks are completed (or genuinely blocked)
+4. If blocked (waiting on user input, CI, external dependency), THEN ask
+
+**Anti-pattern (WRONG):**
+> [Task 1 done] → stops → "Done! What would you like me to do next?"
+
+**Correct pattern:**
+> [Task 1 done] → picks Task 2 → works → Task 3 → ... → all done → report
+
+This applies to EVERY turn. Every time you finish something, check todos first.
+`;
+
 	const COMMIT_BUILD_CHECKLIST = `
 
 BEFORE committing code or triggering builds, ALWAYS check:
@@ -876,6 +899,7 @@ Server process examples that must be detached: uvicorn, fastapi dev server, guni
 			const additionalPrompt = [
 				TASK_TERMINOLOGY_CLARIFICATION,
 				AUTO_TODO_INVOKE_HINT,
+				CONTINUE_UNTIL_DONE_HINT,
 				COMMIT_BUILD_CHECKLIST,
 				WRITE_REVIEW_HINT,
 				DOCKER_CLEANUP_HINT,
