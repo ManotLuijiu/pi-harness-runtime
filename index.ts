@@ -355,8 +355,9 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 }
 
 // --- langchain-loop: Ping-pong write-review loop via harness/langchain/ -----------
-// Auto-detects models from ~/.pi/agent/models-store.json (configured via /model command).
-// Only needs API keys in ~/.pi-harness-runtime/keys/.
+// User picks model-role mapping once via /langchain-config.
+// Stores selection in ~/.pi-harness-runtime/keys/langchain-role.json.
+// /langchain reads from that file and spawns the loop.
 function initLangChain(pi: {
 	registerCommand(
 		name: string,
@@ -367,76 +368,173 @@ function initLangChain(pi: {
 		},
 	): void;
 }): void {
-	const { readFileSync, existsSync } = require("node:fs");
+	const { readFileSync, writeFileSync, existsSync } = require("node:fs");
 	const { spawn } = require("node:child_process");
 	const { fileURLToPath } = require("url");
 	const { dirname } = require("node:path");
+	const readline = require("node:readline");
 
 	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 	const keysDir = `${home}/.pi-harness-runtime/keys`;
 	const modelsStorePath = `${home}/.pi/agent/models-store.json`;
+	const roleConfigPath = `${keysDir}/langchain-role.json`;
 
-	// Read models from pi's models-store.json (configured via /model command)
-	// Provider mapping: planner=GPT(openai-codex), reviewer=GLM(zai), coder=MiniMax(minimax)
-	let plannerModel = "";
-	let plannerUrl = "";
-	let reviewerModel = "";
-	let reviewerUrl = "";
-	let coderModel = "";
-	let coderUrl = "";
+	// ---------------------------------------------------------------------------
+	// Load models from models-store.json
+	// ---------------------------------------------------------------------------
+	interface ModelEntry { id: string; baseUrl: string }
+	interface RoleConfig { planner?: string; coder?: string; reviewer?: string }
 
+	let store: Record<string, { models: Array<{ id: string; baseUrl?: string }> }> = {};
 	try {
 		if (existsSync(modelsStorePath)) {
-			const store = JSON.parse(readFileSync(modelsStorePath, "utf8"));
+			store = JSON.parse(readFileSync(modelsStorePath, "utf8"));
+		}
+	} catch { /* ignore */ }
 
-			// Planner (GPT) — from openai-codex provider
-			const openaiModels = store["openai-codex"]?.models;
-			if (openaiModels?.length > 0) {
-				plannerModel = openaiModels[0].id;
-				plannerUrl = openaiModels[0].baseUrl ?? "https://api.openai.com/v1";
-			}
-
-			// Reviewer (GLM) — from zai provider
-			const zaiModels = store["zai"]?.models;
-			if (zaiModels?.length > 0) {
-				reviewerModel = zaiModels[0].id;
-				reviewerUrl = zaiModels[0].baseUrl ?? "https://api.z.ai/api/v1";
-			}
-
-			// Coder (MiniMax) — from minimax provider
-			const minimaxModels = store["minimax"]?.models;
-			if (minimaxModels?.length > 0) {
-				coderModel = minimaxModels[0].id;
-				coderUrl = minimaxModels[0].baseUrl ?? "https://api.minimaxi.com/v1";
+	// Flat list of all models: "provider/model-id"
+	function listAllModels(): Array<{ index: number; provider: string; id: string; baseUrl: string }> {
+		const entries: Array<{ index: number; provider: string; id: string; baseUrl: string }> = [];
+		let idx = 1;
+		for (const [provider, info] of Object.entries(store)) {
+			for (const model of info.models ?? []) {
+				entries.push({ index: idx++, provider, id: model.id, baseUrl: model.baseUrl ?? "" });
 			}
 		}
-	} catch {
-		// models-store.json not readable — skip silently
+		return entries;
 	}
 
-	// Check API keys (from keys/ dir)
-	const plannerKey = existsSync(`${keysDir}/planner-api-key.txt`);
-	const reviewerKey = existsSync(`${keysDir}/reviewer-api-key.txt`);
-	const coderKey = existsSync(`${keysDir}/coder-api-key.txt`);
-
-	if (!plannerModel || !reviewerModel || !coderModel) {
-		console.error("[pi-harness] LangChain loop: no models configured.");
-		console.error("[pi-harness]   Use /model in pi to configure GPT (planner), GLM (reviewer), MiniMax (coder)");
-		return;
+	function resolveModel(spec: string): ModelEntry | null {
+		// spec format: "provider/model-id"
+		const parts = spec.split("/");
+		if (parts.length !== 2) return null;
+		const [provider, id] = parts;
+		const found = store[provider]?.models?.find((m) => m.id === id);
+		if (found) return { id: found.id, baseUrl: found.baseUrl ?? "" };
+		return null;
 	}
 
-	if (!plannerKey || !reviewerKey || !coderKey) {
+	// ---------------------------------------------------------------------------
+	// Load saved role config
+	// ---------------------------------------------------------------------------
+	function loadRoleConfig(): RoleConfig {
+		try {
+			if (existsSync(roleConfigPath)) {
+				return JSON.parse(readFileSync(roleConfigPath, "utf8"));
+			}
+		} catch { /* ignore */ }
+		return {};
+	}
+
+	// ---------------------------------------------------------------------------
+	// /langchain-config: interactive model -> role picker
+	// ---------------------------------------------------------------------------
+	pi.registerCommand("langchain-config", {
+		description: "Pick which model is planner / coder / reviewer for the LangChain loop",
+		prompt: "Interactive: assign models to planner, coder, reviewer roles",
+		handler: async () => {
+			const allModels = listAllModels();
+			if (allModels.length === 0) {
+				console.error("[pi-harness] /langchain-config: no models found in ~/.pi/agent/models-store.json");
+				console.error("[pi-harness]   Configure models first via /model in pi");
+				return;
+			}
+
+			// Print available models
+			console.error("[pi-harness] Available models:");
+			for (const m of allModels) {
+				console.error(`  [${m.index}] ${m.provider}/${m.id}`);
+			}
+
+			const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+			const question = (q: string): Promise<string> =>
+				new Promise((res) => rl.question(`? ${q}: `, (a: string) => res(a.trim())));
+
+			let plannerSpec = "";
+			let coderSpec = "";
+			let reviewerSpec = "";
+
+			try {
+				const plannerIdx = parseInt(await question("Planner model index"), 10);
+				const plannerEntry = allModels.find((m) => m.index === plannerIdx);
+				if (plannerEntry) plannerSpec = `${plannerEntry.provider}/${plannerEntry.id}`;
+
+				const coderIdx = parseInt(await question("Coder model index"), 10);
+				const coderEntry = allModels.find((m) => m.index === coderIdx);
+				if (coderEntry) coderSpec = `${coderEntry.provider}/${coderEntry.id}`;
+
+				const reviewerIdx = parseInt(await question("Reviewer model index"), 10);
+				const reviewerEntry = allModels.find((m) => m.index === reviewerIdx);
+				if (reviewerEntry) reviewerSpec = `${reviewerEntry.provider}/${reviewerEntry.id}`;
+			} finally {
+				rl.close();
+			}
+
+			if (!plannerSpec || !coderSpec || !reviewerSpec) {
+				console.error("[pi-harness] /langchain-config: all three roles must be selected");
+				return;
+			}
+
+			// Save to langchain-role.json
+			const config: RoleConfig = {
+				planner: plannerSpec,
+				coder: coderSpec,
+				reviewer: reviewerSpec,
+			};
+			writeFileSync(roleConfigPath, JSON.stringify(config, null, 2), "utf8");
+
+			console.error("[pi-harness] LangChain role config saved:");
+			console.error(`[pi-harness]   planner:   ${plannerSpec}`);
+			console.error(`[pi-harness]   coder:     ${coderSpec}`);
+			console.error(`[pi-harness]   reviewer:  ${reviewerSpec}`);
+
+			// Also prompt for API keys if missing
+			if (!existsSync(`${keysDir}/planner-api-key.txt`)) {
+				console.error(`[pi-harness]   planner-api-key.txt missing. echo "{key}" > ${keysDir}/planner-api-key.txt`);
+			}
+			if (!existsSync(`${keysDir}/reviewer-api-key.txt`)) {
+				console.error(`[pi-harness]   reviewer-api-key.txt missing. echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
+			}
+			if (!existsSync(`${keysDir}/coder-api-key.txt`)) {
+				console.error(`[pi-harness]   coder-api-key.txt missing. echo "{key}" > ${keysDir}/coder-api-key.txt`);
+			}
+		},
+	});
+
+	// ---------------------------------------------------------------------------
+	// /langchain: spawn the ping-pong loop
+	// ---------------------------------------------------------------------------
+
+	function loadActiveConfig(): { planner: ModelEntry; coder: ModelEntry; reviewer: ModelEntry } | null {
+		const cfg = loadRoleConfig();
+		if (!cfg.planner || !cfg.coder || !cfg.reviewer) return null;
+		const planner = resolveModel(cfg.planner);
+		const coder = resolveModel(cfg.coder);
+		const reviewer = resolveModel(cfg.reviewer);
+		if (!planner || !coder || !reviewer) return null;
+		return { planner, coder, reviewer };
+	}
+
+	const activeConfig = loadActiveConfig();
+
+	// Check API keys exist
+	const plannerKeyExists = existsSync(`${keysDir}/planner-api-key.txt`);
+	const reviewerKeyExists = existsSync(`${keysDir}/reviewer-api-key.txt`);
+	const coderKeyExists = existsSync(`${keysDir}/coder-api-key.txt`);
+
+	if (!activeConfig) {
+		console.error("[pi-harness] LangChain loop: run /langchain-config first to assign model roles");
+	} else if (!plannerKeyExists || !reviewerKeyExists || !coderKeyExists) {
 		console.error("[pi-harness] LangChain loop: API keys missing:");
-		if (!plannerKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/planner-api-key.txt`);
-		if (!reviewerKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
-		if (!coderKey) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/coder-api-key.txt`);
-		return;
+		if (!plannerKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/planner-api-key.txt`);
+		if (!reviewerKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
+		if (!coderKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/coder-api-key.txt`);
+	} else {
+		console.error(`[pi-harness] LangChain loop ready (${activeConfig.planner.id} [planner] + ${activeConfig.coder.id} [coder] + ${activeConfig.reviewer.id} [reviewer])`);
 	}
 
-	// All configured — register the /langchain command
 	pi.registerCommand("langchain", {
-		description:
-			"Run LangChain ping-pong loop: planner → coder → reviewer → fix → approve",
+		description: "Run LangChain ping-pong loop: planner → coder → reviewer → fix → approve",
 		prompt: "Describe the feature or task for the LangChain loop to implement.",
 		handler: async (request: string) => {
 			if (!request.trim()) {
@@ -445,18 +543,22 @@ function initLangChain(pi: {
 				return;
 			}
 
+			const cfg = loadActiveConfig();
+			if (!cfg) {
+				console.error("[pi-harness] /langchain: not configured. Run /langchain-config first.");
+				return;
+			}
+
 			const env: Record<string, string> = { ...(process.env as Record<string, string>) };
 			env.PLANNER_API_KEY = readFileSync(`${keysDir}/planner-api-key.txt`, "utf8").trim();
 			env.GLM_API_KEY = readFileSync(`${keysDir}/reviewer-api-key.txt`, "utf8").trim();
 			env.MINIMAX_API_KEY = readFileSync(`${keysDir}/coder-api-key.txt`, "utf8").trim();
-
-			// Inject auto-detected models and URLs
-			env.PLANNER_MODEL = plannerModel;
-			env.PLANNER_BASE_URL = plannerUrl;
-			env.GLM_MODEL = reviewerModel;
-			env.GLM_BASE_URL = reviewerUrl;
-			env.MINIMAX_MODEL = coderModel;
-			env.MINIMAX_BASE_URL = coderUrl;
+			env.PLANNER_MODEL = cfg.planner.id;
+			env.PLANNER_BASE_URL = cfg.planner.baseUrl;
+			env.GLM_MODEL = cfg.reviewer.id;
+			env.GLM_BASE_URL = cfg.reviewer.baseUrl;
+			env.MINIMAX_MODEL = cfg.coder.id;
+			env.MINIMAX_BASE_URL = cfg.coder.baseUrl;
 
 			if (existsSync(`${keysDir}/langsmith-api-key.txt`)) {
 				env.LANGSMITH_API_KEY = readFileSync(`${keysDir}/langsmith-api-key.txt`, "utf8").trim();
@@ -474,8 +576,6 @@ function initLangChain(pi: {
 			});
 		},
 	});
-
-	console.error(`[pi-harness] LangChain loop ready (${plannerModel} + ${reviewerModel} + ${coderModel})`);
 }
 
 // --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
