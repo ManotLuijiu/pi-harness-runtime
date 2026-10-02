@@ -432,7 +432,7 @@ function initLangChain(pi: {
 	pi.registerCommand("langchain-config", {
 		description: "Pick which model is planner / coder / reviewer for the LangChain loop",
 		prompt: "Interactive: assign models to planner, coder, reviewer roles",
-		handler: async () => {
+		handler: async (_args: string, _ctx: unknown) => {
 			const allModels = listAllModels();
 			if (allModels.length === 0) {
 				console.error("[pi-harness] /langchain-config: no models found in ~/.pi/agent/models-store.json");
