@@ -97,10 +97,10 @@ export interface HarnessHeaderOptions {
 
 export function createHarnessHeader(
 	_tui: TUI,
-	theme: Theme,
+	_theme: Theme,
 	options: HarnessHeaderOptions,
 ): HarnessHeaderComponent {
-	return new HarnessHeaderComponent(theme, options);
+	return new HarnessHeaderComponent(_theme, options);
 }
 
 class HarnessHeaderComponent implements Component {
