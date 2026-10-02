@@ -514,32 +514,14 @@ Get your Jev API key from: https://openrouter.ai/keys
 
 ## LangChain Ping-Pong Loop Setup
 
-The LangChain loop runs planner (GPT) → coder (MiniMax) → reviewer (GLM) → fix → approve. It uses two config sources:
+The LangChain loop runs planner (GPT) → coder (MiniMax) → reviewer (GLM) → fix → approve. **Models are auto-detected from your existing `/model` configuration in pi** — no extra setup needed for model names.
 
-### 1. Model & URL — via `pi-env` in `settings.json`
+### 1. Configure models — use `/model` in pi
 
-Install `pi-env` and add model settings to your `~/.pi/agent/settings.json`:
-
-```json
-{
-  "env": {
-    "PLANNER_MODEL": "gpt-5.6-sol",
-    "PLANNER_BASE_URL": "https://api.openai.com/v1",
-    "GLM_MODEL": "GLM-5.2",
-    "GLM_BASE_URL": "https://api.z.ai/api/v1",
-    "MINIMAX_MODEL": "MiniMax-M2",
-    "MINIMAX_BASE_URL": "https://api.minimaxi.com/v1"
-  }
-}
-```
-
-> **Note:** Model names change fast. Check your provider's API dashboard for the latest model IDs. See `.env.example` in this repo for the most up-to-date reference.
-
-```bash
-pi install npm:pi-env
-```
-
-> **Note:** If you're in China mainland, use `https://api.minimax.chat/v1` for MiniMax.
+pi-harness-runtime reads models from `~/.pi/agent/models-store.json`. Use `/model` in pi to add:
+- **Planner**: GPT model (provider: OpenAI-compatible, e.g. `openai-codex`)
+- **Reviewer**: GLM model (provider: Z.ai)
+- **Coder**: MiniMax model (provider: MiniMax)
 
 ### 2. API Keys — in `~/.pi-harness-runtime/keys/`
 
