@@ -523,15 +523,15 @@ function initLangChain(pi: {
 	const coderKeyExists = existsSync(`${keysDir}/coder-api-key.txt`);
 
 	if (!activeConfig) {
-		console.error("[pi-harness] LangChain loop: run /langchain-config to assign model roles");
-		console.error("[pi-harness]   (after npm package updates, use /reload to pick up new version)");
+		console.error("[pi-harness] /langchain not configured — run /langchain-config");
 	} else if (!plannerKeyExists || !reviewerKeyExists || !coderKeyExists) {
-		console.error("[pi-harness] LangChain loop: API keys missing:");
-		if (!plannerKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/planner-api-key.txt`);
-		if (!reviewerKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
-		if (!coderKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/coder-api-key.txt`);
+		const missingKeys: string[] = [];
+		if (!plannerKeyExists) missingKeys.push("planner-api-key.txt");
+		if (!reviewerKeyExists) missingKeys.push("reviewer-api-key.txt");
+		if (!coderKeyExists) missingKeys.push("coder-api-key.txt");
+		console.error(`[pi-harness] /langchain missing API keys: ${missingKeys.join(", ")}`);
 	} else {
-		console.error(`[pi-harness] LangChain loop ready (${activeConfig.planner.id} [planner] + ${activeConfig.coder.id} [coder] + ${activeConfig.reviewer.id} [reviewer])`);
+		console.error(`[pi-harness] /langchain ready (${activeConfig.planner.id} + ${activeConfig.coder.id} + ${activeConfig.reviewer.id})`);
 	}
 
 	pi.registerCommand("langchain", {
@@ -865,7 +865,22 @@ const MEMORY_DIR = join(homedir(), ".pi-harness-runtime", "memory");
 const TRAJECTORY_DIR = join(homedir(), ".pi-harness-runtime", "trajectory");
 const PI_SKILLS_DIR = join(homedir(), ".pi", "skills");
 
+// --- Print minimal ASCII banner (shows every startup, matching pi.dev style) -------
+function printBanner(): void {
+	const { readFileSync, existsSync } = require("node:fs");
+	const pkgPath = `${__dirname}/package.json`;
+	let version = "?.?.?";
+	try {
+		if (existsSync(pkgPath)) {
+			const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+			version = pkg.version ?? version;
+		}
+	} catch { /* ignore */ }
+	console.error(`[Harness] v${version}`);
+}
+
 function ensureHarnessDir() {
+	printBanner();
 	if (!existsSync(HARNESS_ROOT_DIR)) {
 		mkdirSync(HARNESS_ROOT_DIR, { recursive: true });
 	}
