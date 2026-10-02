@@ -523,7 +523,8 @@ function initLangChain(pi: {
 	const coderKeyExists = existsSync(`${keysDir}/coder-api-key.txt`);
 
 	if (!activeConfig) {
-		console.error("[pi-harness] LangChain loop: run /langchain-config first to assign model roles");
+		console.error("[pi-harness] LangChain loop: run /langchain-config to assign model roles");
+		console.error("[pi-harness]   (after npm package updates, use /reload to pick up new version)");
 	} else if (!plannerKeyExists || !reviewerKeyExists || !coderKeyExists) {
 		console.error("[pi-harness] LangChain loop: API keys missing:");
 		if (!plannerKeyExists) console.error(`[pi-harness]   echo "{key}" > ${keysDir}/planner-api-key.txt`);
