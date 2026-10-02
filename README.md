@@ -512,6 +512,51 @@ Get your Jev API key from: https://openrouter.ai/keys
 
 **Priority:** `TYPESAFE_API_KEY` env > `OPENROUTER_API_KEY` env > `~/.pi-harness-runtime/keys/jev-api-key.txt`
 
+## LangChain Ping-Pong Loop Setup
+
+The LangChain loop runs planner (GPT) → coder (MiniMax) → reviewer (GLM) → fix → approve. It uses two config sources:
+
+### 1. Model & URL — via `pi-env` in `settings.json`
+
+Install `pi-env` and add model settings to your `~/.pi/agent/settings.json`:
+
+```json
+{
+  "env": {
+    "PLANNER_MODEL": "gpt-4o",
+    "PLANNER_BASE_URL": "https://api.openai.com/v1",
+    "GLM_MODEL": "GLM-5.2",
+    "GLM_BASE_URL": "https://api.z.ai/api/v1",
+    "MINIMAX_MODEL": "MiniMax-M2",
+    "MINIMAX_BASE_URL": "https://api.minimaxi.com/v1"
+  }
+}
+```
+
+```bash
+pi install npm:pi-env
+```
+
+> **Note:** If you're in China mainland, use `https://api.minimax.chat/v1` for MiniMax.
+
+### 2. API Keys — in `~/.pi-harness-runtime/keys/`
+
+```bash
+echo "{planner-api-key}" > ~/.pi-harness-runtime/keys/planner-api-key.txt
+echo "{reviewer-api-key}" > ~/.pi-harness-runtime/keys/reviewer-api-key.txt
+echo "{coder-api-key}" > ~/.pi-harness-runtime/keys/coder-api-key.txt
+# optional: for LangSmith tracing
+echo "{langsmith-key}" > ~/.pi-harness-runtime/keys/langsmith-api-key.txt
+```
+
+### Usage
+
+After reload, use the slash command:
+
+```
+/langchain implement user authentication module
+```
+
 ## herdr Integration (Clipboard Bridge)
 
 > **⚠️ This only applies when using herdr.dev**
