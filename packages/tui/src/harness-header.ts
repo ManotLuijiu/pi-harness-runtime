@@ -1,59 +1,54 @@
 /**
- * Harness ASCII Banner — a Pi-compatible custom header using Unicode half-block art.
+ * Harness ASCII Banner — a Pi-compatible custom header.
  *
- * Uses the same half-block rendering technique as Pi's built-in header:
+ * Uses Unicode block characters to create a compact 4×2 logo:
  * - `▀` (U+2580) fills the upper half of a terminal cell
  * - `▄` (U+2584) fills the lower half of a terminal cell
- * - Foreground + background color creates two "pixels" per cell
+ * - Each cell uses a distinct foreground color to suggest depth
  *
- * Logo: 4 cells wide × 2 rows. Pattern is Harness-branded (accent + success colors).
- * Compact/expanded states respond to Ctrl+O via Pi's global setExpanded() mechanism.
- *
- * MIT — derived from general technique documented in upstream pi-coding-agent.
- * Harness branding is original work of the harness project.
+ * The logo is NOT Pi's logo — it uses the same rendering primitives only.
  */
-
-import type { Component, TUI } from "@earendil-works/pi-tui";
 
 // Re-export Theme from pi-coding-agent since @pi-harness/tui has no theme dependency.
 // Extensions already depend on @earendil-works/pi-coding-agent.
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { keyText, keyHint, rawKeyHint } from "@earendil-works/pi-coding-agent";
+import { keyHint, keyText, rawKeyHint } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
 // Logo design
 // ---------------------------------------------------------------------------
 //
-// Logical 4×4 pixel grid (each cell = foreground+background color pair):
+// Logical 4×4 pixel grid (each cell = one foreground color):
 //
-//   Row 0: ░ ░ ▓ ▒  (top half-blocks: accent, accent, dim, dim)
-//   Row 1: ▓ ░ ░ ▒  (bottom half-blocks: dim, success, success, dim)
+//   Row 0: ░ ░ ▓ ▒  (top half-blocks: accent, accent, muted, muted)
+//   Row 1: ▓ ░ ░ ▒  (bottom half-blocks: muted, success, success, muted)
 //
 // Rendered as 2 text rows with 4 terminal cells per row:
-//   Line 0: ▀▀█▄  (▀ = upper-half, █ = full-block, ▄ = lower-half)
-//   Line 1: █▀▀▄  (same characters, different color pairing)
+//   Line 0: ▀▀█▄  (▀ = upper-half block, █ = full block, ▄ = lower-half block)
+//   Line 1: █▀▀▄  (alternating foreground colors per cell)
 //
 // Colors:
 //   - accent   = harness primary (teal in harness theme, adapts to user's theme)
 //   - success  = harness secondary (green in harness theme)
 //   - muted    = dim teal (for visual depth)
-//   - dim      = dim blue (for visual depth)
 //
-// The logo is NOT Pi's logo — it uses the same rendering technique only.
+// The fallback for non-color/headless modes uses an empty logo; renderCompact/Expanded
+// show the product name and version normally.
 
-// Logo glyphs documented in logoLines() for reference.
+// Logo glyphs defined inline in logoLines() — kept here for reference only.
 
-/** Harness primary color — uses theme "accent" (teal in harness theme) */
+/** Harness primary — accent color from active theme */
 function logoAccent(text: string, theme: Theme): string {
 	return theme.fg("accent", text);
 }
 
-/** Harness secondary color — uses theme "success" (green in harness theme) */
-function logoSecondary(text: string, theme: Theme): string {
+/** Harness secondary — success color from active theme */
+function logoSuccess(text: string, theme: Theme): string {
 	return theme.fg("success", text);
 }
 
-/** Dim foreground — uses theme "muted" for depth */
+/** Dim foreground — muted color for visual depth */
 function logoDim(text: string, theme: Theme): string {
 	return theme.fg("muted", text);
 }
@@ -61,29 +56,29 @@ function logoDim(text: string, theme: Theme): string {
 /**
  * Build the two colored logo lines for the Harness mark.
  *
- * Color segment per cell (each char = one terminal cell):
+ * Each character has its own foreground color:
  *   Line 0:  ▀▀█▄   →  ▀(accent) ▀(accent) █(muted) ▄(muted)
  *   Line 1:  █▀▀▄   →  █(muted) ▀(success) ▀(success) ▄(muted)
  */
 function logoLines(theme: Theme): [string, string] {
 	return [
 		logoAccent("▀", theme) +
-		logoAccent("▀", theme) +
+			logoAccent("▀", theme) +
+			logoDim("█", theme) +
+			logoDim("▄", theme),
 		logoDim("█", theme) +
-		logoDim("▄", theme),
-		logoDim("█", theme) +
-		logoSecondary("▀", theme) +
-		logoSecondary("▀", theme) +
-		logoDim("▄", theme),
+			logoSuccess("▀", theme) +
+			logoSuccess("▀", theme) +
+			logoDim("▄", theme),
 	];
 }
 
 // ---------------------------------------------------------------------------
-// Fallback (Apple Terminal, no half-block support, or print/RPC modes)
+// Fallback (Apple Terminal, no true-color, or non-TUI modes)
 // ---------------------------------------------------------------------------
 
-const FALLBACK_LOGO_LINE0 = "Harness";
-const FALLBACK_LOGO_LINE1 = "";
+const FALLBACK_LINE0 = "";
+const FALLBACK_LINE1 = "";
 
 // ---------------------------------------------------------------------------
 // HarnessHeader component
@@ -97,17 +92,16 @@ export interface HarnessHeaderOptions {
 
 export function createHarnessHeader(
 	_tui: TUI,
-	_theme: Theme,
+	theme: Theme,
 	options: HarnessHeaderOptions,
 ): HarnessHeaderComponent {
-	return new HarnessHeaderComponent(_theme, options);
+	return new HarnessHeaderComponent(theme, options);
 }
 
 class HarnessHeaderComponent implements Component {
 	private readonly theme: Theme;
 	private readonly options: Required<HarnessHeaderOptions>;
 	private expanded = false;
-	private supportsHalfBlocks = true;
 
 	constructor(theme: Theme, options: HarnessHeaderOptions) {
 		this.theme = theme;
@@ -121,25 +115,43 @@ class HarnessHeaderComponent implements Component {
 
 	// --- Component interface ---
 
-	render(_width: number): string[] {
+	render(width: number): string[] {
 		const { version, onboardingText } = this.options;
 
-		// Logo: half-block art or plain fallback
-		const [logoLine0, logoLine1] = this.supportsHalfBlocks
+		// Detect true-color support to enable/disable half-block rendering.
+		// Falls back to plain text when color mode is unavailable or mono.
+		const supportsHalfBlocks = this.theme.getColorMode() === "truecolor";
+
+		const [logoLine0, logoLine1] = supportsHalfBlocks
 			? logoLines(this.theme)
-			: [FALLBACK_LOGO_LINE0, FALLBACK_LOGO_LINE1];
+			: [FALLBACK_LINE0, FALLBACK_LINE1];
 
 		const versionStr = this.theme.fg("dim", `v${version}`);
 		const expandKey = keyText("app.tools.expand");
 		const onboarding = this.theme.fg("dim", onboardingText);
 
 		if (this.expanded) {
-			return this.renderExpanded(logoLine0, versionStr, expandKey, onboarding);
+			return this.renderExpanded(
+				width,
+				logoLine0,
+				logoLine1,
+				versionStr,
+				expandKey,
+				onboarding,
+			);
 		}
-		return this.renderCompact(logoLine0, logoLine1, versionStr, expandKey, onboarding);
+		return this.renderCompact(
+			width,
+			logoLine0,
+			logoLine1,
+			versionStr,
+			expandKey,
+			onboarding,
+		);
 	}
 
 	private renderCompact(
+		width: number,
 		logoLine0: string,
 		logoLine1: string,
 		versionStr: string,
@@ -151,72 +163,135 @@ class HarnessHeaderComponent implements Component {
 		// Build compact one-line shortcuts
 		const hints = [
 			keyHint("app.interrupt", "interrupt"),
-			rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+			rawKeyHint(
+				`${keyText("app.clear")}/${keyText("app.exit")}`,
+				"clear/exit",
+			),
 			rawKeyHint("/", "commands"),
 			rawKeyHint("!", "bash"),
 			keyHint("app.tools.expand", "more"),
 		].join(this.theme.fg("muted", " · "));
 
-		// Line 0: logo + product name + version
-		const line0 = `${logoLine0}  ${this.theme.fg("text", productName)} ${versionStr}`;
-
-		// Line 1: bottom logo row + compact hints
-		const line1 = `${logoLine1}  ${hints}`;
-
-		// Line 2: expand prompt
-		const line2 = this.theme.fg(
-			"dim",
-			`Press ${expandKey} to show full startup help and loaded resources.`,
+		// Build each line and truncate to width
+		const line0 = this.truncate(
+			`${logoLine0}  ${this.theme.fg("text", productName)} ${versionStr}`,
+			width,
 		);
-
-		// Line 4 (blank line 3): onboarding
-		const line4 = onboarding;
+		const line1 = this.truncate(`${logoLine1}  ${hints}`, width);
+		const line2 = this.truncate(
+			this.theme.fg(
+				"dim",
+				`Press ${expandKey} to show full startup help and loaded resources.`,
+			),
+			width,
+		);
+		const line4 = this.truncate(onboarding, width);
 
 		return ["", line0, line1, line2, "", line4, ""];
 	}
 
 	private renderExpanded(
+		width: number,
 		logoLine0: string,
+		logoLine1: string,
 		versionStr: string,
 		expandKey: string,
 		onboarding: string,
 	): string[] {
 		const { productName } = this.options;
 
-		// Line 0: logo + product name + version
-		const line0 = `${logoLine0}  ${this.theme.fg("text", productName)} ${versionStr}`;
+		// Build lines — both logo rows are preserved
+		const line0 = this.truncate(
+			`${logoLine0}  ${this.theme.fg("text", productName)} ${versionStr}`,
+			width,
+		);
+		const line1 = this.truncate(`${logoLine1}  `, width);
+		const line3 = this.truncate(
+			this.theme.fg("dim", `Press ${expandKey} to show compact header.`),
+			width,
+		);
+		const line5 = this.truncate(onboarding, width);
 
 		// Expanded: one shortcut per line
-		const expandedLines = [
+		const expandedHints = [
 			keyHint("app.interrupt", "abort the current agent turn"),
 			keyHint("app.clear", "clear the current session"),
 			keyHint("app.exit", "exit Pi"),
 			rawKeyHint("/", "show available slash commands"),
 			rawKeyHint("!", "open a bash shell"),
-			keyHint("app.tools.expand", "expand/collapse tool output and this header"),
+			keyHint(
+				"app.tools.expand",
+				"expand/collapse tool output and this header",
+			),
 			this.theme.fg("muted", `${expandKey} to collapse`),
 		];
 
-		// Line 2: expand prompt
-		const line2 = this.theme.fg("dim", `Press ${expandKey} to show compact header.`);
-
-		// Line 4: onboarding
-		const line4 = onboarding;
-
-		// Compose: blank, logo, blank, expanded hints (indented), blank, expand prompt, blank, onboarding, blank
+		// Compose: blank, logo row 1, logo row 2, blank, hints (indented), blank, expand prompt, blank, onboarding, blank
 		const result: string[] = [""];
 		result.push(line0);
+		result.push(line1);
 		result.push(""); // blank after logo
-		for (const hint of expandedLines) {
-			result.push(`  ${hint}`);
+		for (const hint of expandedHints) {
+			result.push(this.truncate(`  ${hint}`, width));
 		}
 		result.push("");
-		result.push(line2);
+		result.push(line3);
 		result.push("");
-		result.push(line4);
+		result.push(line5);
 		result.push("");
 
 		return result;
+	}
+
+	/**
+	 * Truncate a string to at most `maxWidth` visible characters.
+	 * ANSI escape sequences are excluded from the width count and preserved in the output.
+	 * If truncation occurs, a "…" (U+2026) is appended.
+	 */
+	private truncate(str: string, maxWidth: number): string {
+		if (maxWidth <= 0) return "";
+		const w = visibleWidth(str);
+		if (w <= maxWidth) return str;
+
+		// Collect characters up to maxWidth and append ellipsis
+		const ellipsis = "…";
+		const ellipsisWidth = visibleWidth(ellipsis);
+		const targetWidth = Math.max(1, maxWidth - ellipsisWidth);
+
+		let currentWidth = 0;
+		let inEscape = false;
+		let escapeBuffer = "";
+		const result: string[] = [];
+
+		for (const char of str) {
+			if (char === "\x1b") {
+				inEscape = true;
+				escapeBuffer = char;
+				continue;
+			}
+			if (inEscape) {
+				escapeBuffer += char;
+				if (/[a-zA-Z]/.test(char)) {
+					// End of CSI sequence
+					result.push(escapeBuffer);
+					inEscape = false;
+					escapeBuffer = "";
+				}
+				continue;
+			}
+			// Visible character
+			const charWidth = visibleWidth(char);
+			if (currentWidth + charWidth > targetWidth) {
+				break;
+			}
+			currentWidth += charWidth;
+			result.push(char);
+		}
+
+		// Always append a foreground reset so any open color is closed.
+		// If we broke out mid-escape, the partial escape buffer is discarded
+		// (it would be an incomplete sequence). The reset restores default.
+		return `${result.join("")}${ellipsis}\x1b[39m`;
 	}
 
 	invalidate(): void {
@@ -240,16 +315,20 @@ class HarnessHeaderComponent implements Component {
 }
 
 // ---------------------------------------------------------------------------
-// Visible width helper (ANSI-aware)
+// Visible width helpers (ANSI-aware)
 // ---------------------------------------------------------------------------
 
-/** Strip ANSI escape sequences to get visible character count. */
+/**
+ * Compute the visible character count of a string, excluding ANSI escape sequences.
+ * Uses `new RegExp()` to avoid Biome's no-control-characters-in-regex rule.
+ */
 export function visibleWidth(str: string): number {
-	// Remove all ANSI CSI sequences: \x1b[...X
-	return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").length;
+	// biome-ignore lint/complexity/useRegexLiterals: must use string constructor to avoid control-char-in-regex error
+	return str.replace(new RegExp("\x1b\\[[0-9;]*[a-zA-Z]", "g"), "").length;
 }
 
-/** Strip ANSI to get plain text for width/equality checks. */
+/** Strip all ANSI escape sequences from a string. */
 export function stripAnsi(str: string): string {
-	return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+	// biome-ignore lint/complexity/useRegexLiterals: must use string constructor to avoid control-char-in-regex error
+	return str.replace(new RegExp("\x1b\\[[0-9;]*[a-zA-Z]", "g"), "");
 }

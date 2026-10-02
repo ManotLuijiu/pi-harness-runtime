@@ -180,7 +180,7 @@ async function runDaemon(args: CliArgs): Promise<void> {
 	const daemon = new LoopDaemon({
 		maxIterations: args.maxIterations,
 		dryRun: args.dryRun,
-		sources: ["inbox", "bus"],
+		sources: ["inbox", "bus", "codex"],
 	});
 
 	// Graceful shutdown on SIGTERM / SIGINT

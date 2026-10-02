@@ -26,6 +26,7 @@
  * Wiki: wiki/auto-trigger-multi-agent.md
  */
 
+import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	existsSync,
@@ -34,42 +35,34 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import { execSync } from "node:child_process";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { LeaseManager } from "../../packages/autonomous-runtime/src/lease.js";
 import type { ApprovalClass } from "../../packages/autonomous-runtime/src/types.js";
 import {
+	type CodexSession,
+	startWatcher,
+	type WatcherHandle,
+} from "../../packages/codex-watcher/dist/src/index.js";
+import { classifyMessage } from "../../packages/codex-watcher/dist/src/parser.js";
+import {
+	createHerdrBus,
 	ensureHerdrWorkspace,
 	getHerdrWorkspace,
 	type HerdrEventBus,
 	type LoopVerdict,
-} from "../../packages/event-bus/src/herdr-bus.js";
-import {
-	createHerdrBus,
 	publishCodeWritten,
 	publishLoopFinished,
 	publishLoopStarted,
 	publishReviewCompleted,
 } from "../../packages/event-bus/src/herdr-bus.js";
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
-
 import {
-	invokeWithSurgeRetry,
-	invokeWithGLMRetry,
-	SurgeScheduler,
-	type SurgePolicy,
-} from "./surge.js";
-import type { LoopWidget } from "./widget.js";
-import { StatusLineManager, isPiLensAvailable } from "./status-line.js";
-import { createLoopCheckpointer } from "./checkpointer.js";
-
-import {
-	getTrajectoryStore,
 	getApprovedPatternStore,
+	getTrajectoryStore,
 } from "../../packages/trajectory/src/index.js";
-
+import { createLoopCheckpointer } from "./checkpointer.js";
 import {
 	buildDryRunDeps,
 	buildRealLoopDeps,
@@ -78,10 +71,19 @@ import {
 	type LoopState,
 	type WriteReviewLoop,
 } from "./graph.js";
+import { submitPingPongIntent } from "./ping-pong-middleware.js";
+import { isPiLensAvailable, StatusLineManager } from "./status-line.js";
+import {
+	invokeWithGLMRetry,
+	invokeWithSurgeRetry,
+	type SurgePolicy,
+	SurgeScheduler,
+} from "./surge.js";
+import type { LoopWidget } from "./widget.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-export type TriggerSource = "bd-tasks" | "inbox" | "bus" | "cron";
+export type TriggerSource = "bd-tasks" | "inbox" | "bus" | "cron" | "codex";
 
 export type ApprovalPolicy =
 	| "never" // fully autonomous; notify only on finish/blocked (default)
@@ -556,6 +558,73 @@ class BdTasksWatcher {
  * Drop a JSON file into the right bucket to schedule a task.
  * Set "enabled": false to pause without deleting.
  */
+
+// ─── Codex watcher ──────────────────────────────────────────────────────────
+
+/** Polls ~/.codex/sessions/ for active Codex CLI sessions.
+ *  When Codex emits a plan-type message, emits a TriggeredTask so the daemon
+ *  can qualify it via submitPingPongIntent and run the ping-pong loop.
+ */
+class CodexWatcher {
+	private readonly pollMs: number;
+	private handle: WatcherHandle | null = null;
+	private running = false;
+	private seenMsgs = new Set<string>();
+	private seenSessions = new Set<string>();
+
+	constructor(pollMs: number) {
+		this.pollMs = pollMs;
+	}
+
+	start(onTask: (task: TriggeredTask) => void): void {
+		if (this.running) return;
+		this.running = true;
+
+		this.handle = startWatcher({
+			pollIntervalMs: this.pollMs,
+			onMessages: (msgs) => {
+				// Get current session from handle for deduplication key
+				const session = this.handle?.latestSession();
+				const sessionId = session?.id ?? "unknown";
+
+				for (const msg of msgs) {
+					// Deduplicate by ordinal — Codex rewrites the last line on each turn
+					const msgKey = `${sessionId}:${msg.ordinal}`;
+					if (this.seenMsgs.has(msgKey)) continue;
+					this.seenMsgs.add(msgKey);
+
+					// Only emit plan-type messages
+					const classification = classifyMessage(msg.text);
+					if (classification !== "plan") continue;
+					if (!msg.text.trim()) continue;
+
+					const taskId = `codex-${sessionId}-${msg.ordinal}`;
+					onTask({
+						taskId,
+						request: msg.text.trim(),
+						source: "codex",
+						triggeredAt: msg.timestamp,
+					});
+				}
+			},
+			onSessionChange: (session: CodexSession | null) => {
+				if (!session) return;
+				if (this.seenSessions.has(session.id)) return;
+				this.seenSessions.add(session.id);
+				console.log(
+					`[codex-watcher] Session started: ${session.id} — "${session.threadName}"`,
+				);
+			},
+		});
+	}
+
+	stop(): void {
+		this.running = false;
+		this.handle?.stop();
+		this.handle = null;
+	}
+}
+
 class CronWatcher {
 	private readonly workspace: string;
 	private readonly scheduleMs: Record<string, number>;
@@ -814,6 +883,7 @@ export class LoopDaemon {
 	private readonly inboxWatcher: InboxWatcher;
 	private readonly busWatcher: BusWatcher;
 	private readonly bdWatcher: BdTasksWatcher;
+	private readonly codexWatcher: CodexWatcher | null;
 	private readonly cronWatcher: CronWatcher | null;
 	private readonly tunnelMonitor: TunnelMonitor | null;
 	private readonly statusLine: StatusLineManager | null;
@@ -858,9 +928,11 @@ export class LoopDaemon {
 
 		if (this.config.notificationConfig) {
 			this.notificationCenter = new NotificationCenter({
-				channels: this._buildChannels(this.config.notificationConfig) as Parameters<
-					typeof NotificationCenter.prototype.notify
-				>[0] extends { channels: infer C }
+				channels: this._buildChannels(
+					this.config.notificationConfig,
+				) as Parameters<typeof NotificationCenter.prototype.notify>[0] extends {
+					channels: infer C;
+				}
 					? C
 					: never,
 				enabled: true,
@@ -873,6 +945,9 @@ export class LoopDaemon {
 		this.widget = this.config.widget ?? null;
 		this.busWatcher = new BusWatcher(this.bus, this.config.pollMs);
 		this.bdWatcher = new BdTasksWatcher(this.config.pollMs);
+		this.codexWatcher = this.config.sources.includes("codex")
+			? new CodexWatcher(this.config.pollMs)
+			: null;
 		this.cronWatcher = this.config.sources.includes("cron")
 			? new CronWatcher(this.bus.getWorkspace())
 			: null;
@@ -920,6 +995,11 @@ export class LoopDaemon {
 			this.bdWatcher.start((t) => this._onTriggered(t));
 		}
 
+		if (this.config.sources.includes("codex")) {
+			console.log(`[daemon] Starting Codex CLI session watcher`);
+			this.codexWatcher?.start((t) => this._onTriggered(t));
+		}
+
 		this.tunnelMonitor?.start();
 		this.statusLine?.start();
 
@@ -934,6 +1014,7 @@ export class LoopDaemon {
 		this.inboxWatcher.stop();
 		this.busWatcher.stop();
 		this.bdWatcher.stop();
+		this.codexWatcher?.stop();
 		this.cronWatcher?.stop();
 		this.statusLine?.stop();
 		this.tunnelMonitor?.stop();
@@ -960,6 +1041,23 @@ export class LoopDaemon {
 
 	private _onTriggered(task: TriggeredTask): void {
 		if (this.stopped) return;
+
+		// ── Codex source: qualify via ping-pong middleware ──────────────────
+		if (task.source === "codex") {
+			const result = submitPingPongIntent(task.request, {
+				actorId: this.agentId,
+			});
+			console.log(
+				`[daemon] Ping-pong decision for [codex] ${task.taskId}: ${result.decision.decision} ` +
+					`(score=${result.decision.score.toFixed(1)}, ` +
+					`reasons=${result.decision.reasons.slice(0, 2).join("; ")}...)`,
+			);
+			console.log(`[daemon]   blackboard: ${result.blackboardFile}`);
+			console.log(`[daemon]   audit:      ${result.auditFile}`);
+			if (result.enqueued) {
+				console.log(`[daemon]   enqueued:   ${result.taskFile}`);
+			}
+		}
 
 		// Skip if already running this task
 		if (this.running.has(task.taskId)) {
@@ -1014,7 +1112,9 @@ export class LoopDaemon {
 			// ── Gate check (I7) ──────────────────────────────────────────────
 			const policy = effectivePolicy(task, this.config);
 			if (policy === "always" || policy === "on_blocked") {
-				log(`Gate policy=${policy} — waiting for human approval before starting`);
+				log(
+					`Gate policy=${policy} — waiting for human approval before starting`,
+				);
 				const approved = await waitForAck(
 					task,
 					this.config,
@@ -1079,7 +1179,9 @@ export class LoopDaemon {
 				}
 				return undefined; // default MemorySaver
 			})();
-			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, { checkpointer });
+			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, {
+				checkpointer,
+			});
 
 			// Persistent scheduler: attempt counter survives across multiple loop.invoke()
 			// calls within the same task. This enables true exponential escalation
@@ -1211,7 +1313,8 @@ export class LoopDaemon {
 						? "reviewer blocked the task"
 						: iterations >= this.config.maxIterations
 							? `max iterations (${iterations}) reached with changes still requested`
-							: comments.length > 0 && comments.every((c) => c.severity === "minor")
+							: comments.length > 0 &&
+									comments.every((c) => c.severity === "minor")
 								? `converged: only minor comments (${comments.length})`
 								: `stuck: changes still requested after ${iterations} iteration(s)`;
 

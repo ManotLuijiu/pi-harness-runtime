@@ -331,26 +331,15 @@ export function registerConfigCapture(
 		// Skip if already suggested in this session
 		if (documentedConfigs.has(configKey)) return;
 
-		// Log detection
-		if (cfg.debug) {
-			console.log(`[config-capture] Detected ${detection.configType} (${detection.confidence})`);
-			console.log(`[config-capture] Sample: ${detection.sampleData}`);
-		}
-
 		// Mark as documented
 		documentedConfigs.add(configKey);
 
-		// Log the suggestion - agent will notice this
-		console.log(`[config-capture] Config detected: ${detection.configType}`);
-		console.log(`[config-capture] Confidence: ${detection.confidence}`);
-		console.log(`[config-capture] Sample: ${detection.sampleData?.slice(0, 200)}`);
-
-		// Suggest action
-		const actionMsg = `[config-capture] Consider documenting this to AGENTS.md section "Discovered Configuration"`;
-		console.log(actionMsg);
+		// Detection is silent by default — set debug: true in registerConfigCapture() to enable logs.
+		if (cfg.debug) {
+			console.log(`[config-capture] Detected ${detection.configType} (${detection.confidence})`);
+			console.log(`[config-capture] Sample: ${detection.sampleData?.slice(0, 200)}`);
+		}
 	});
-
-	console.log("[config-capture] Started - detecting API config responses");
 }
 
 // Default export
