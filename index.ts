@@ -244,7 +244,6 @@ async function initQdrant(): Promise<void> {
 
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
-let _notificationCenter: unknown = null;
 async function initTelegram(): Promise<void> {
 	try {
 		const { NotificationCenter } = await import("./packages/notification/dist/index.js");
@@ -290,7 +289,7 @@ async function initTelegram(): Promise<void> {
 			return;
 		}
 
-		_notificationCenter = center;
+		// NotificationCenter is ready — Telegram messages will be sent via NotificationCenter API
 		logStartup(`[pi-harness] Telegram notifications ready`);
 	} catch (err) {
 		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
@@ -2354,6 +2353,46 @@ Run \`bd ready\` to see current bd issues.
 
 	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", async (_event, ctx) => {
+		// ── Auto-start LangChain loop daemon ───────────────────────────────────
+		// Spawns `bun harness/langchain/run.ts --daemon` as a detached background
+		// process if no daemon is currently running.  The daemon watches:
+		//   inbox/   → manual task files dropped by the user
+		//   bus/     → task.proposed events (herdr event bus)
+		//   codex/   → Codex CLI session plans (PING-PONG Planner)
+		// Detached pattern: spawn with detached:true + stdio:ignore + unref() so
+		// the extension process can exit without killing the daemon.
+		// PID file at ~/.pi-harness-runtime/daemon.pid prevents double-start.
+		const { readFileSync: dfs, existsSync: efs, writeFileSync: wfs, unlinkSync: ufs } = await import("node:fs");
+		const { spawn: spwn } = await import("node:child_process");
+		const { dirname } = await import("node:path");
+		const { fileURLToPath } = await import("node:url");
+		const runtimeRoot = dirname(fileURLToPath(import.meta.url));
+		const DAEMON_PID_FILE = `${process.env.HOME}/.pi-harness-runtime/daemon.pid`;
+		const DAEMON_SCRIPT = `${runtimeRoot}/harness/langchain/run.ts`;
+		const daemonPid = (() => {
+			try { return parseInt(dfs(DAEMON_PID_FILE, "utf8").trim(), 10); } catch { return 0; }
+		})();
+		if (daemonPid > 0) {
+			try { process.kill(daemonPid, 0); /* alive? */ } catch {
+				// Stale PID — daemon is gone, clear and fall through to start
+				try { ufs(DAEMON_PID_FILE); } catch { /* ignore */ }
+			}
+		}
+		// Only start if not already alive
+		if (daemonPid <= 0 || !efs(DAEMON_PID_FILE)) {
+			// Use detached: true + stdio: ignore so the daemon outlives this process
+			const daemonProc = spwn(
+				"bun",
+				["run", DAEMON_SCRIPT, "--daemon"],
+				{ detached: true, stdio: "ignore" },
+			);
+			daemonProc.unref(); // Don't wait for daemon to exit
+			try { wfs(DAEMON_PID_FILE, String(daemonProc.pid), "utf8"); } catch { /* ignore */ }
+			console.error("[pi-harness] LangChain daemon started (pid=%d)", daemonProc.pid);
+		} else {
+			console.error("[pi-harness] LangChain daemon already running (pid=%d)", daemonPid);
+		}
+
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(

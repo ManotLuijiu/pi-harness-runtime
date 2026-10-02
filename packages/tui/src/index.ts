@@ -5,5 +5,9 @@
  * startup banner with a harness-branded version using Unicode half-block art.
  */
 
-export { createHarnessHeader, type HarnessHeaderOptions } from "./harness-header.js";
-export { visibleWidth, stripAnsi } from "./harness-header.js";
+export {
+	createHarnessHeader,
+	type HarnessHeaderOptions,
+	stripAnsi,
+	visibleWidth,
+} from "./harness-header.js";

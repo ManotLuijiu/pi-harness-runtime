@@ -1,0 +1,14 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+	"files": {
+		"includes": [
+		"packages/tui/src/**",
+		"packages/tui/test/**",
+		"packages/codex-watcher/src/**",
+		"packages/codex-watcher/test/**",
+		"index.ts",
+		"harness/**/*.ts"
+	],
+		"experimentalScannerIgnores": ["**/dist/**", "**/node_modules/**"]
+	}
+}
