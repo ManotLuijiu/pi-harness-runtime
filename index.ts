@@ -227,21 +227,15 @@ async function initQdrant(): Promise<void> {
 			const { getOpenAIApiKey } = await import("./packages/qdrant-skills/src/embedder.js");
 			const embeddingKey = getOpenAIApiKey();
 			if (embeddingKey) {
-				console.error("[pi-harness] Qdrant vector search ready");
+				logStartup("[pi-harness] Qdrant vector search ready");
 			} else {
-				console.error("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
-				const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-				console.error('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
+				logStartup("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
+				logStartup('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
 			}
 		} else {
-			const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-			console.error("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
-			console.error(
-				`  echo "{cluster-url}" > ${home}/.pi-harness-runtime/keys/qdrant-cluster-url.txt`
-			);
-			console.error(
-				`  echo "{api-key}" > ${home}/.pi-harness-runtime/keys/qdrant-api-key.txt`
-			);
+			logStartup("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
+			logStartup(`  echo "{cluster-url}" > ~/.pi-harness-runtime/keys/qdrant-cluster-url.txt`);
+			logStartup(`  echo "{api-key}" > ~/.pi-harness-runtime/keys/qdrant-api-key.txt`);
 		}
 	} catch {
 		// qdrant-skills not available
@@ -250,7 +244,7 @@ async function initQdrant(): Promise<void> {
 
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
-let notificationCenter: unknown = null;
+let _notificationCenter: unknown = null;
 async function initTelegram(): Promise<void> {
 	try {
 		const { NotificationCenter } = await import("./packages/notification/dist/index.js");
@@ -262,19 +256,11 @@ async function initTelegram(): Promise<void> {
 		const chatIdPath = `${keysDir}/telegram-chat-id.txt`;
 
 		if (!existsSync(botTokenPath) || !existsSync(chatIdPath)) {
-			console.error("[pi-harness] Telegram notifications not configured:");
-			console.error(
-				`[pi-harness]   bot-token: create @BotFather bot → get token`
-			);
-			console.error(
-				`[pi-harness]   chat-id:  message @userinfobot → reply shows your ID`
-			);
-			console.error(
-				`[pi-harness]   echo "{bot-token}" > ${home}/.pi-harness-runtime/keys/telegram-bot-token.txt`
-			);
-			console.error(
-				`[pi-harness]   echo "{chat-id}" > ${home}/.pi-harness-runtime/keys/telegram-chat-id.txt`
-			);
+			logStartup("[pi-harness] Telegram notifications not configured:");
+			logStartup(`[pi-harness]   bot-token: create @BotFather bot → get token`);
+			logStartup(`[pi-harness]   chat-id:  message @userinfobot → reply shows your ID`);
+			logStartup(`[pi-harness]   echo "{bot-token}" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt`);
+			logStartup(`[pi-harness]   echo "{chat-id}" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt`);
 			return;
 		}
 
@@ -282,7 +268,7 @@ async function initTelegram(): Promise<void> {
 		const chatId = readFileSync(chatIdPath, "utf8").trim();
 
 		if (!botToken || !chatId) {
-			console.error("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
+			logStartup("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
 			return;
 		}
 
@@ -304,10 +290,10 @@ async function initTelegram(): Promise<void> {
 			return;
 		}
 
-		notificationCenter = center;
-		console.error(`[pi-harness] Telegram notifications ready`);
+		_notificationCenter = center;
+		logStartup(`[pi-harness] Telegram notifications ready`);
 	} catch (err) {
-		console.error("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
+		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
 	}
 }
 
@@ -321,17 +307,15 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
 
 	if (!existsSync(keyPath)) {
-		console.error("[pi-harness] Honcho memory not configured:");
-		console.error("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
-		console.error(
-			`[pi-harness]   Then: echo "{api-key}" > ${home}/.pi-harness-runtime/keys/honcho-api-key.txt`
-		);
+		logStartup("[pi-harness] Honcho memory not configured:");
+		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
+		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
 		return;
 	}
 
 	const apiKey = readFileSync(keyPath, "utf8").trim();
 	if (!apiKey) {
-		console.error("[pi-harness] Honcho: API key is empty — skipping");
+		logStartup("[pi-harness] Honcho: API key is empty — skipping");
 		return;
 	}
 
@@ -348,9 +332,9 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 			};
 			pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
 		});
-		console.error("[pi-harness] Honcho memory ready (peer/user memory via mcp.honcho.dev)");
+		logStartup("[pi-harness] Honcho memory ready (peer/user memory via mcp.honcho.dev)");
 	} catch (err) {
-		console.error("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
+		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
 	}
 }
 
@@ -812,6 +796,16 @@ import { join, dirname } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
+
+/** Startup messages collected during init — shown on session_start via ctx.ui.notify */
+const startupMessages: string[] = [];
+
+/** Log a harness startup message both to stderr (for logs) and to startupMessages (for UI) */
+function logStartup(...parts: string[]): void {
+	const msg = parts.join(" ");
+	console.error(msg);
+	startupMessages.push(msg);
+}
 
 interface HarnessSession {
 	jobId: string;
@@ -2336,6 +2330,14 @@ Run \`bd ready\` to see current bd issues.
 			hasCookieSource,
 			() => lastActiveProvider,
 		);
+
+		// --- Show collected startup messages --------------------------------
+		// These messages were collected during extension load but console.error
+		// was suppressed by pi.dev 1.0.0. Show them via ui.notify now.
+		if (startupMessages.length > 0) {
+			const header = `Harness v${HARNESS_VERSION} startup status:`;
+			ctx.ui.notify([header, ...startupMessages].join("\n"), "info");
+		}
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
