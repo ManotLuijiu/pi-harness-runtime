@@ -2319,8 +2319,41 @@ Run \`bd ready\` to see current bd issues.
 		},
 	});
 
+	// --- /harness-header — Toggle harness custom header vs built-in Pi header ----
+	pi.registerCommand("harness-header", {
+		description: "Toggle or restore header: /harness-header [harness|builtin]",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("Header control is only available in TUI mode.", "info");
+				return;
+			}
+
+			const mode = args.trim().toLowerCase();
+			if (mode === "builtin" || mode === "pi") {
+				ctx.ui.setHeader(undefined);
+				ctx.ui.notify("Built-in Pi header restored.", "info");
+			} else if (mode === "harness" || mode === "" || mode === "") {
+				const { createHarnessHeader } = await import("./packages/tui/src/harness-header.js");
+				ctx.ui.setHeader((tui, theme) =>
+					createHarnessHeader(tui, theme, {
+						version: HARNESS_VERSION,
+						productName: "Harness",
+					}),
+				);
+				ctx.ui.notify("Harness custom header installed.", "info");
+			} else {
+				ctx.ui.notify(
+					"Usage: /harness-header [harness|builtin]\n" +
+					"  harness  — install the Harness half-block logo header (default)\n" +
+					"  builtin  — restore Pi's built-in header",
+					"info",
+				);
+			}
+		},
+	});
+
 	// --- Footer status (persistent badge) --------------------------------
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
@@ -2330,6 +2363,19 @@ Run \`bd ready\` to see current bd issues.
 			hasCookieSource,
 			() => lastActiveProvider,
 		);
+
+		// --- Install Harness custom header ----------------------------------
+		// Replace Pi's built-in header with harness-branded half-block logo.
+		// Ctrl+O expansion works via setExpanded() on the component.
+		if (ctx.mode === "tui") {
+			const { createHarnessHeader } = await import("./packages/tui/src/harness-header.js");
+			ctx.ui.setHeader((tui, theme) =>
+				createHarnessHeader(tui, theme, {
+					version: HARNESS_VERSION,
+					productName: "Harness",
+				}),
+			);
+		}
 
 		// --- Show collected startup messages --------------------------------
 		// These messages were collected during extension load but console.error
