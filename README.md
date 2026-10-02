@@ -525,7 +525,7 @@ Install `pi-env` and add model settings to your `~/.pi/agent/settings.json`:
   "env": {
     "PLANNER_MODEL": "gpt-5.6-sol",
     "PLANNER_BASE_URL": "https://api.openai.com/v1",
-    "GLM_MODEL": "GLM-4.6",
+    "GLM_MODEL": "GLM-5.2",
     "GLM_BASE_URL": "https://api.z.ai/api/v1",
     "MINIMAX_MODEL": "MiniMax-M2",
     "MINIMAX_BASE_URL": "https://api.minimaxi.com/v1"
