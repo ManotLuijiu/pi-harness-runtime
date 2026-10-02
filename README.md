@@ -523,15 +523,17 @@ Install `pi-env` and add model settings to your `~/.pi/agent/settings.json`:
 ```json
 {
   "env": {
-    "PLANNER_MODEL": "gpt-4o",
+    "PLANNER_MODEL": "gpt-5.6-sol",
     "PLANNER_BASE_URL": "https://api.openai.com/v1",
-    "GLM_MODEL": "GLM-5.2",
+    "GLM_MODEL": "GLM-4.6",
     "GLM_BASE_URL": "https://api.z.ai/api/v1",
     "MINIMAX_MODEL": "MiniMax-M2",
     "MINIMAX_BASE_URL": "https://api.minimaxi.com/v1"
   }
 }
 ```
+
+> **Note:** Model names change fast. Check your provider's API dashboard for the latest model IDs. See `.env.example` in this repo for the most up-to-date reference.
 
 ```bash
 pi install npm:pi-env
