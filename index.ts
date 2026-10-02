@@ -355,14 +355,8 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 }
 
 // --- langchain-loop: Ping-pong write-review loop via harness/langchain/ -----------
-// Requires pi-env package + env vars in settings.json["env"] + API keys in keys/
-//
-// Env vars set by pi-env (install: pi install npm:pi-env):
-//   PLANNER_MODEL, PLANNER_BASE_URL
-//   GLM_MODEL, GLM_BASE_URL
-//   MINIMAX_MODEL, MINIMAX_BASE_URL
-//
-// API keys from: ~/.pi-harness-runtime/keys/{planner,reviewer,coder}-api-key.txt
+// Auto-detects models from ~/.pi/agent/models-store.json (configured via /model command).
+// Only needs API keys in ~/.pi-harness-runtime/keys/.
 function initLangChain(pi: {
 	registerCommand(
 		name: string,
@@ -380,24 +374,54 @@ function initLangChain(pi: {
 
 	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 	const keysDir = `${home}/.pi-harness-runtime/keys`;
+	const modelsStorePath = `${home}/.pi/agent/models-store.json`;
 
-	// Check env vars (set by pi-env from settings.json["env"])
-	const plannerEnv = process.env.PLANNER_MODEL && process.env.PLANNER_BASE_URL;
-	const reviewerEnv = process.env.GLM_MODEL && process.env.GLM_BASE_URL;
-	const coderEnv = process.env.MINIMAX_MODEL && process.env.MINIMAX_BASE_URL;
+	// Read models from pi's models-store.json (configured via /model command)
+	// Provider mapping: planner=GPT(openai-codex), reviewer=GLM(zai), coder=MiniMax(minimax)
+	let plannerModel = "";
+	let plannerUrl = "";
+	let reviewerModel = "";
+	let reviewerUrl = "";
+	let coderModel = "";
+	let coderUrl = "";
+
+	try {
+		if (existsSync(modelsStorePath)) {
+			const store = JSON.parse(readFileSync(modelsStorePath, "utf8"));
+
+			// Planner (GPT) — from openai-codex provider
+			const openaiModels = store["openai-codex"]?.models;
+			if (openaiModels?.length > 0) {
+				plannerModel = openaiModels[0].id;
+				plannerUrl = openaiModels[0].baseUrl ?? "https://api.openai.com/v1";
+			}
+
+			// Reviewer (GLM) — from zai provider
+			const zaiModels = store["zai"]?.models;
+			if (zaiModels?.length > 0) {
+				reviewerModel = zaiModels[0].id;
+				reviewerUrl = zaiModels[0].baseUrl ?? "https://api.z.ai/api/v1";
+			}
+
+			// Coder (MiniMax) — from minimax provider
+			const minimaxModels = store["minimax"]?.models;
+			if (minimaxModels?.length > 0) {
+				coderModel = minimaxModels[0].id;
+				coderUrl = minimaxModels[0].baseUrl ?? "https://api.minimaxi.com/v1";
+			}
+		}
+	} catch {
+		// models-store.json not readable — skip silently
+	}
 
 	// Check API keys (from keys/ dir)
 	const plannerKey = existsSync(`${keysDir}/planner-api-key.txt`);
 	const reviewerKey = existsSync(`${keysDir}/reviewer-api-key.txt`);
 	const coderKey = existsSync(`${keysDir}/coder-api-key.txt`);
 
-	if (!plannerEnv || !reviewerEnv || !coderEnv) {
-		console.error("[pi-harness] LangChain loop not configured (pi-env missing):");
-		console.error("[pi-harness]   1. Run: pi install npm:pi-env");
-		console.error("[pi-harness]   2. Add to ~/.pi/agent/settings.json under \"env\":");
-		console.error("[pi-harness]      PLANNER_MODEL, PLANNER_BASE_URL");
-		console.error("[pi-harness]      GLM_MODEL, GLM_BASE_URL");
-		console.error("[pi-harness]      MINIMAX_MODEL, MINIMAX_BASE_URL");
+	if (!plannerModel || !reviewerModel || !coderModel) {
+		console.error("[pi-harness] LangChain loop: no models configured.");
+		console.error("[pi-harness]   Use /model in pi to configure GPT (planner), GLM (reviewer), MiniMax (coder)");
 		return;
 	}
 
@@ -426,6 +450,14 @@ function initLangChain(pi: {
 			env.GLM_API_KEY = readFileSync(`${keysDir}/reviewer-api-key.txt`, "utf8").trim();
 			env.MINIMAX_API_KEY = readFileSync(`${keysDir}/coder-api-key.txt`, "utf8").trim();
 
+			// Inject auto-detected models and URLs
+			env.PLANNER_MODEL = plannerModel;
+			env.PLANNER_BASE_URL = plannerUrl;
+			env.GLM_MODEL = reviewerModel;
+			env.GLM_BASE_URL = reviewerUrl;
+			env.MINIMAX_MODEL = coderModel;
+			env.MINIMAX_BASE_URL = coderUrl;
+
 			if (existsSync(`${keysDir}/langsmith-api-key.txt`)) {
 				env.LANGSMITH_API_KEY = readFileSync(`${keysDir}/langsmith-api-key.txt`, "utf8").trim();
 			}
@@ -443,7 +475,7 @@ function initLangChain(pi: {
 		},
 	});
 
-	console.error("[pi-harness] LangChain loop ready (planner + reviewer + coder)");
+	console.error(`[pi-harness] LangChain loop ready (${plannerModel} + ${reviewerModel} + ${coderModel})`);
 }
 
 // --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
