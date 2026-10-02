@@ -807,7 +807,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
@@ -866,17 +866,20 @@ const TRAJECTORY_DIR = join(homedir(), ".pi-harness-runtime", "trajectory");
 const PI_SKILLS_DIR = join(homedir(), ".pi", "skills");
 
 // --- Print minimal ASCII banner (shows every startup, matching pi.dev style) -------
-function printBanner(): void {
-	const { readFileSync, existsSync } = require("node:fs");
-	const pkgPath = `${__dirname}/package.json`;
-	let version = "?.?.?";
+// --- Harness version (read once at load time) --------------------------------
+const HARNESS_VERSION = (() => {
+	const pkgPath = join(__dirname, "package.json");
 	try {
 		if (existsSync(pkgPath)) {
 			const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-			version = pkg.version ?? version;
+			return pkg.version ?? "?.?.?";
 		}
 	} catch { /* ignore */ }
-	console.error(`[Harness] v${version}`);
+	return "?.?.?";
+})();
+
+function printBanner(): void {
+	console.error(`[Harness] v${HARNESS_VERSION}`);
 }
 
 function ensureHarnessDir() {
@@ -2532,8 +2535,10 @@ function refreshFooterStatus(
 	// 	mirror ? JSON.stringify(mirror) : null,
 	// );
 	const freshness = mirrorStore.freshness(mirror, nowMs);
+	const statusValue = buildFooterStatusValue(local, mirror, freshness, hasCookieSource(), provider);
+	// Prepend harness version so it shows in the footer during startup
 	setStatus(
 		"harness-runtime",
-		buildFooterStatusValue(local, mirror, freshness, hasCookieSource(), provider),
+		`[Harness ${HARNESS_VERSION}] ${statusValue}`,
 	);
 }
