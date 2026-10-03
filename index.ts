@@ -2582,6 +2582,6 @@ function refreshFooterStatus(
 	// Prepend harness version so it shows in the footer during startup
 	setStatus(
 		"harness-runtime",
-		`[Harness ${HARNESS_VERSION}] ${statusValue}`,
+		statusValue,
 	);
 }
