@@ -2353,58 +2353,6 @@ Run \`bd ready\` to see current bd issues.
 
 	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", async (_event, ctx) => {
-		// ── Auto-start LangChain loop daemon ───────────────────────────────────
-		// Spawns `bun harness/langchain/run.ts --daemon` as a detached background
-		// process if no daemon is currently running.  The daemon watches:
-		//   inbox/   → manual task files dropped by the user
-		//   bus/     → task.proposed events (herdr event bus)
-		//   codex/   → Codex CLI session plans (PING-PONG Planner)
-		// Detached pattern: spawn with detached:true + stdio:ignore + unref() so
-		// the extension process can exit without killing the daemon.
-		// PID file at ~/.pi-harness-runtime/daemon.pid prevents double-start.
-		//
-		// SAFETY: fire-and-forget IIFE with try/catch.  Throwing from this handler
-		// crashes pi.dev and kicks the user out. NEVER let exceptions escape.
-		void (async () => {
-			try {
-				const { readFileSync: dfs, writeFileSync: wfs, unlinkSync: ufs } = await import("node:fs");
-				const { spawn: spwn } = await import("node:child_process");
-				const { dirname } = await import("node:path");
-				const { fileURLToPath } = await import("node:url");
-				const { freemem } = await import("node:os");
-				const runtimeRoot = dirname(fileURLToPath(import.meta.url));
-				const DAEMON_PID_FILE = `${process.env.HOME}/.pi-harness-runtime/daemon.pid`;
-				const DAEMON_SCRIPT = `${runtimeRoot}/harness/langchain/run.ts`;
-
-				// Memory guard: skip if system has < 1 GB free (daemon can spike to 500 MB+)
-				const FREE_RAM_MB = freemem() / (1024 * 1024);
-				const MIN_FREE_MB = 1024;
-				if (FREE_RAM_MB < MIN_FREE_MB) {
-					console.error(`[pi-harness] Daemon skipped: only ${FREE_RAM_MB.toFixed(0)} MB RAM free (need ${MIN_FREE_MB} MB). Run /langchain manually.`);
-					return;
-				}
-
-				let daemonPid = 0;
-				try { daemonPid = parseInt(dfs(DAEMON_PID_FILE, "utf8").trim(), 10); } catch { /* no PID file */ }
-				if (daemonPid > 0) {
-					try { process.kill(daemonPid, 0); /* alive? */ } catch {
-						try { ufs(DAEMON_PID_FILE); } catch { /* ignore */ }
-						daemonPid = 0;
-					}
-				}
-				if (daemonPid > 0) {
-					console.error(`[pi-harness] LangChain daemon already running (pid=${daemonPid})`);
-					return;
-				}
-				const daemonProc = spwn("bun", ["run", DAEMON_SCRIPT, "--daemon"], { detached: true, stdio: "ignore" });
-				daemonProc.unref();
-				try { wfs(DAEMON_PID_FILE, String(daemonProc.pid), "utf8"); } catch { /* ignore */ }
-				console.error(`[pi-harness] LangChain daemon started (pid=${daemonProc.pid})`);
-			} catch (err) {
-				// MUST NOT throw — throwing here crashes pi.dev and kicks the user out
-				console.error("[pi-harness] Daemon spawn failed (non-fatal):", err instanceof Error ? err.message : String(err));
-			}
-		})();
 
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
