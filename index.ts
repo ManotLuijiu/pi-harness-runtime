@@ -289,7 +289,7 @@ async function initTelegram(): Promise<void> {
 			return;
 		}
 
-		// NotificationCenter is ready — Telegram messages will be sent via NotificationCenter API
+		// NotificationCenter ready
 		logStartup(`[pi-harness] Telegram notifications ready`);
 	} catch (err) {
 		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
@@ -2367,7 +2367,7 @@ Run \`bd ready\` to see current bd issues.
 		// crashes pi.dev and kicks the user out. NEVER let exceptions escape.
 		void (async () => {
 			try {
-				const { readFileSync: dfs, existsSync: efs, writeFileSync: wfs, unlinkSync: ufs } = await import("node:fs");
+				const { readFileSync: dfs, writeFileSync: wfs, unlinkSync: ufs } = await import("node:fs");
 				const { spawn: spwn } = await import("node:child_process");
 				const { dirname } = await import("node:path");
 				const { fileURLToPath } = await import("node:url");
@@ -2384,13 +2384,13 @@ Run \`bd ready\` to see current bd issues.
 					}
 				}
 				if (daemonPid > 0) {
-					console.error("[pi-harness] LangChain daemon already running (pid=%d)", daemonPid);
+					console.error(`[pi-harness] LangChain daemon already running (pid=${daemonPid})`);
 					return;
 				}
 				const daemonProc = spwn("bun", ["run", DAEMON_SCRIPT, "--daemon"], { detached: true, stdio: "ignore" });
 				daemonProc.unref();
 				try { wfs(DAEMON_PID_FILE, String(daemonProc.pid), "utf8"); } catch { /* ignore */ }
-				console.error("[pi-harness] LangChain daemon started (pid=%d)", daemonProc.pid);
+				console.error(`[pi-harness] LangChain daemon started (pid=${daemonProc.pid})`);
 			} catch (err) {
 				// MUST NOT throw — throwing here crashes pi.dev and kicks the user out
 				console.error("[pi-harness] Daemon spawn failed (non-fatal):", err instanceof Error ? err.message : String(err));
