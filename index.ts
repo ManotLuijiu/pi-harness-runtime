@@ -2416,17 +2416,12 @@ Run \`bd ready\` to see current bd issues.
 			() => lastActiveProvider,
 		);
 
-		// --- Install Harness custom header ----------------------------------
-		// Replace Pi's built-in header with harness-branded half-block logo.
-		// Ctrl+O expansion works via setExpanded() on the component.
+		// --- Show harness branding as a compact line (pi header stays intact) ----
+		// Do NOT call setHeader() — that replaces pi's ASCII header which shows
+		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
+		// harness info as a small separate notify line.
 		if (ctx.mode === "tui") {
-			const { createHarnessHeader } = await import("./packages/tui/src/harness-header.js");
-			ctx.ui.setHeader((tui, theme) =>
-				createHarnessHeader(tui, theme, {
-					version: HARNESS_VERSION,
-					productName: "Harness",
-				}),
-			);
+			ctx.ui.notify(`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`, "info");
 		}
 
 		// --- Show collected startup messages --------------------------------
