@@ -2371,9 +2371,18 @@ Run \`bd ready\` to see current bd issues.
 				const { spawn: spwn } = await import("node:child_process");
 				const { dirname } = await import("node:path");
 				const { fileURLToPath } = await import("node:url");
+				const { freemem } = await import("node:os");
 				const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 				const DAEMON_PID_FILE = `${process.env.HOME}/.pi-harness-runtime/daemon.pid`;
 				const DAEMON_SCRIPT = `${runtimeRoot}/harness/langchain/run.ts`;
+
+				// Memory guard: skip if system has < 1 GB free (daemon can spike to 500 MB+)
+				const FREE_RAM_MB = freemem() / (1024 * 1024);
+				const MIN_FREE_MB = 1024;
+				if (FREE_RAM_MB < MIN_FREE_MB) {
+					console.error(`[pi-harness] Daemon skipped: only ${FREE_RAM_MB.toFixed(0)} MB RAM free (need ${MIN_FREE_MB} MB). Run /langchain manually.`);
+					return;
+				}
 
 				let daemonPid = 0;
 				try { daemonPid = parseInt(dfs(DAEMON_PID_FILE, "utf8").trim(), 10); } catch { /* no PID file */ }
