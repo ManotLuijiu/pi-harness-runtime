@@ -10,15 +10,19 @@
  */
 
 import type {
+	InlineKeyboardButton,
 	NotificationEvent,
 	NotificationPayload,
 	NotificationConfig,
 	NotificationChannelConfig,
 	NotificationResult,
 	NotificationContext,
+	TelegramCallbackHandler,
+	TelegramCallbackQuery,
 } from "./types.js";
 import type { ChannelAdapter } from "./base-adapter.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
+import { buildCallbackData, parseCallbackData, CallbackActions } from "./telegram-webhook-handler.js";
 import { LineAdapter } from "./adapters/line-adapter.js";
 import { NtfyAdapter } from "./adapters/ntfy-adapter.js";
 import { EmailAdapter } from "./adapters/email-adapter.js";
@@ -158,6 +162,132 @@ export class NotificationCenter {
 		return undefined;
 	}
 
+	/**
+	 * Get Telegram adapter for advanced operations (webhook setup, etc.)
+	 */
+	getTelegramAdapter(): TelegramAdapter | undefined {
+		const adapter = this.adapters.get("telegram");
+		if (adapter instanceof TelegramAdapter) {
+			return adapter;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Set callback handler for Telegram inline keyboard button clicks
+	 */
+	setTelegramCallbackHandler(handler: TelegramCallbackHandler): void {
+		const adapter = this.adapters.get("telegram");
+		if (adapter instanceof TelegramAdapter) {
+			adapter.setCallbackHandler(handler);
+		}
+	}
+
+	/**
+	 * Set webhook secret for Telegram updates verification
+	 */
+	setTelegramWebhookSecret(secret: string): void {
+		const adapter = this.adapters.get("telegram");
+		if (adapter instanceof TelegramAdapter) {
+			adapter.setWebhookSecret(secret);
+		}
+	}
+
+	/**
+	 * Setup Telegram webhook for receiving updates
+	 */
+	async setupTelegramWebhook(webhookUrl: string): Promise<boolean> {
+		const adapter = this.adapters.get("telegram");
+		if (adapter instanceof TelegramAdapter) {
+			return await adapter.setupWebhook(webhookUrl);
+		}
+		return false;
+	}
+
+	/**
+	 * Send notification with interactive Yes/No buttons
+	 */
+	async notifyWithApproval(
+		event: NotificationEvent,
+		context: NotificationContext,
+		options?: {
+			/** Custom button labels */
+			approveLabel?: string;
+			rejectLabel?: string;
+			/** Additional details for the message */
+			additionalDetails?: Record<string, unknown>;
+		},
+	): Promise<NotificationResult[]> {
+		const approveLabel = options?.approveLabel ?? "Yes";
+		const rejectLabel = options?.rejectLabel ?? "No";
+
+		// Build buttons
+		const buttons: InlineKeyboardButton[] = [
+			{ text: `\u2705 ${approveLabel}`, callbackData: buildCallbackData(CallbackActions.APPROVE, context.jobId) },
+			{ text: `\u274C ${rejectLabel}`, callbackData: buildCallbackData(CallbackActions.REJECT, context.jobId) },
+		];
+
+		// Send to each channel with buttons (Telegram only)
+		const results: NotificationResult[] = [];
+
+		for (const [id, adapter] of this.adapters.entries()) {
+			if (adapter instanceof TelegramAdapter) {
+				try {
+					const payload = this.buildPayload(event, context, {
+						enableInlineKeyboard: true,
+						actionButtons: buttons,
+						...(options?.additionalDetails && { additionalDetails: options.additionalDetails }),
+					});
+					const result = await adapter.send(payload);
+					results.push(result);
+				} catch (error) {
+					results.push({ success: false, channel: id, error: String(error) });
+				}
+			}
+		}
+
+		return results;
+	}
+
+	/**
+	 * Send interactive notification with custom buttons
+	 */
+	async notifyWithButtons(
+		event: NotificationEvent,
+		context: NotificationContext,
+		buttons: Array<{ text: string; action: string; targetId: string; url?: string }>,
+		options?: {
+			/** Additional details for the message */
+			additionalDetails?: Record<string, unknown>;
+		},
+	): Promise<NotificationResult[]> {
+		const results: NotificationResult[] = [];
+
+		for (const [id, adapter] of this.adapters.entries()) {
+			if (adapter instanceof TelegramAdapter) {
+				try {
+					const formattedButtons: InlineKeyboardButton[] = buttons.map((b) => ({
+						text: b.text,
+						callbackData: buildCallbackData(b.action, b.targetId),
+						url: b.url,
+					}));
+
+					const payload = this.buildPayload(event, context, {
+						enableInlineKeyboard: true,
+						actionButtons: formattedButtons,
+						...(options?.additionalDetails && { additionalDetails: options.additionalDetails }),
+					});
+					const result = await adapter.send(payload);
+					results.push(result);
+				} catch (error) {
+					results.push({ success: false, channel: id, error: String(error) });
+				}
+			}
+		}
+
+		return results;
+	}
+
 	// --- Private Methods ------------------------------------------------
 
 	private createAdapter(
@@ -192,6 +322,11 @@ export class NotificationCenter {
 	private buildPayload(
 		event: NotificationEvent,
 		context: NotificationContext,
+		options?: {
+			enableInlineKeyboard?: boolean;
+			actionButtons?: InlineKeyboardButton[];
+			additionalDetails?: Record<string, unknown>;
+		},
 	): NotificationPayload {
 		const { title, message } = this.getEventContent(event, context);
 
@@ -207,6 +342,10 @@ export class NotificationCenter {
 				...(context.taskId && { taskId: context.taskId }),
 				...(context.taskTitle && { taskTitle: context.taskTitle }),
 				...(context.error && { error: context.error }),
+				// Pass inline keyboard options to Telegram adapter
+				...(options?.enableInlineKeyboard && { _enableInlineKeyboard: true }),
+				...(options?.actionButtons && { _actionButtons: options.actionButtons }),
+				...(options?.additionalDetails && options.additionalDetails),
 			},
 		};
 	}

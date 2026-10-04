@@ -52,7 +52,49 @@ export interface TelegramConfig {
 	botToken: string;
 	chatId: string;
 	parseMode?: "MarkdownV2" | "HTML" | "Markdown";
+	// Inline keyboard support for 2-way communication
+	enableInlineKeyboard?: boolean;
+	actionButtons?: InlineKeyboardButton[];
 }
+
+/**
+ * Inline keyboard button for Telegram interactive messages
+ */
+export interface InlineKeyboardButton {
+	/** Button text displayed to user */
+	text: string;
+	/** Callback data sent when button is clicked */
+	callbackData: string;
+	/** Optional URL to open when button is clicked (mutually exclusive with callbackData) */
+	url?: string;
+}
+
+/**
+ * Callback query received from Telegram inline keyboard
+ */
+export interface TelegramCallbackQuery {
+	id: string;
+	from: {
+		id: number;
+		is_bot: boolean;
+		first_name: string;
+		username?: string;
+	};
+	chat_instance: string;
+	data: string;
+	message?: {
+		chat: { id: number };
+		message_id: number;
+	};
+}
+
+/**
+ * Callback handler function type
+ */
+export type TelegramCallbackHandler = (
+	callbackData: string,
+	query: TelegramCallbackQuery
+) => Promise<void> | void;
 
 export interface NtfyConfig {
 	server: string; // e.g., "https://ntfy.sh"
