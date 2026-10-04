@@ -301,26 +301,41 @@ export function hasPaperclipConfig(): boolean {
  * Get Paperclip config from environment / keys file
  */
 export function getPaperclipConfig(): PaperclipConfig | null {
-	const apiKey =
-		process.env.PAPERCLIP_API_KEY ||
-		process.env.PAPERCLIP_API_KEY;
-	const baseUrl =
-		process.env.PAPERCLIP_BASE_URL ||
-		"https://api.paperclip.inc/api";
+	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const keysDir = `${homedir}/.pi-harness-runtime/keys`;
 
-	if (!apiKey) {
-		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-		try {
-			const { readFileSync, existsSync } = require("fs");
-			const path = `${homedir}/.pi-harness-runtime/keys/paperclip-api-key.txt`;
-			if (!existsSync(path)) return null;
-			const key = readFileSync(path, "utf8").trim();
-			if (!key || key.length < 10) return null;
-			return { apiKey: key, baseUrl };
-		} catch {
-			return null;
+	try {
+		const { readFileSync, existsSync } = require("fs");
+
+		// Check for config file first (JSON with multiple settings)
+		const configPath = `${keysDir}/paperclip-config.json`;
+		if (existsSync(configPath)) {
+			const config = JSON.parse(readFileSync(configPath, "utf8"));
+			if (config.apiKey && config.baseUrl) {
+				return {
+					apiKey: config.apiKey,
+					baseUrl: config.baseUrl,
+					companyId: config.companyId,
+				};
+			}
 		}
-	}
 
-	return { apiKey, baseUrl };
+		// Fallback to individual files
+		const apiKeyPath = `${keysDir}/paperclip-api-key.txt`;
+		const baseUrlPath = `${keysDir}/paperclip-base-url.txt`;
+
+		if (!existsSync(apiKeyPath)) return null;
+
+		const apiKey = readFileSync(apiKeyPath, "utf8").trim();
+		if (!apiKey || apiKey.length < 10) return null;
+
+		// Default to self-hosted server URL
+		const baseUrl = existsSync(baseUrlPath)
+			? readFileSync(baseUrlPath, "utf8").trim()
+			: "https://paperclip.moo-vpn.online/api";
+
+		return { apiKey, baseUrl };
+	} catch {
+		return null;
+	}
 }
