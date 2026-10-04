@@ -297,7 +297,7 @@ async function initTelegram(): Promise<void> {
 
 		await center.initialize();
 		if (!center.hasChannels()) {
-			console.error("[pi-harness] Telegram: initialization failed — skipping");
+			logStartup("[pi-harness] Telegram: initialization failed — skipping");
 			return;
 		}
 
@@ -544,7 +544,7 @@ function initLangChain(pi: {
 		if (!coderKeyExists) missingKeys.push("coder-api-key.txt");
 		console.error(`[pi-harness] /langchain missing API keys: ${missingKeys.join(", ")}`);
 	} else {
-		console.error(`[pi-harness] /langchain ready (${activeConfig.planner.id} + ${activeConfig.coder.id} + ${activeConfig.reviewer.id})`);
+		logStartup(`[pi-harness] /langchain ready (${activeConfig.planner.id} + ${activeConfig.coder.id} + ${activeConfig.reviewer.id})`);
 	}
 
 	pi.registerCommand("langchain", {
@@ -762,19 +762,19 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 		// Scan skills from default locations
 		const result = initSkills();
-		console.error(`[pi-harness] Scanned ${result.skills.length} skills`);
+		logStartup(`[pi-harness] Scanned ${result.skills.length} skills`);
 
 		// Register /skill commands
 		try {
 			const { initSkillCommands } = await import("./packages/skills/src/skill-commands.js");
 			initSkillCommands(pi);
-			console.error("[pi-harness] Registered skill commands");
+			logStartup("[pi-harness] Registered skill commands");
 		} catch (err) {
-			console.error(`[pi-harness] Failed to register skill commands:`, err);
+			logStartup(`[pi-harness] Failed to register skill commands:`, err instanceof Error ? err.message : String(err));
 		}
 
 	} catch (err) {
-		console.error(`[pi-harness] Failed to initialize skills:`, err);
+		logStartup(`[pi-harness] Failed to initialize skills:`, err instanceof Error ? err.message : String(err));
 	}
 }
 
@@ -947,7 +947,7 @@ function ensureHarnessDir() {
 	}
 	// Create symlink so pi.dev discovers our skills
 	ensurePiSkillsSymlink();
-	console.error(
+	logStartup(
 		`[pi-harness] Initialized ~/.pi-harness-runtime/ with skills/, memory/, trajectory/, cookies/`,
 	);
 }
@@ -971,7 +971,7 @@ function ensurePiSkillsSymlink(): void {
 		
 		// Create symlink: ~/.pi/skills -> ~/.pi-harness-runtime/skills
 		symlinkSync(SKILLS_DIR, PI_SKILLS_DIR, "junction");
-		console.error(`[pi-harness] Created symlink: ~/.pi/skills -> ~/.pi-harness-runtime/skills`);
+		logStartup(`[pi-harness] Created skills symlink: ~/.pi/skills -> ~/.pi-harness-runtime/skills`);
 	} catch {
 		// Ignore errors (may fail due to permissions or existing file)
 		// User can create the symlink manually if needed
@@ -1157,6 +1157,9 @@ export default function (pi: ExtensionAPI) {
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
 
+	// Collect async init promises so we can wait for them before showing startup notification
+	const asyncInitPromises: Promise<unknown>[] = [];
+
 	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
 	// Start async init but don't await - runs in background
 	void initTodoBdSync(pi);
@@ -1177,16 +1180,17 @@ export default function (pi: ExtensionAPI) {
 	void initAutoContinue(pi);
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
-	void initQdrant();
+	// Collect promise so we can wait for initialization before showing startup notification
+	asyncInitPromises.push(initQdrant());
 
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
-	void initTelegram();
+	// Collect promise so we can wait for initialization before showing startup notification
+	asyncInitPromises.push(initTelegram());
 
 	// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
 	// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
 	// On plan detected: sends Telegram alert + steer message to pi.dev.
 	try {
-		let latestCodexSession = "";
 		let latestPlanOrdinal = 0;
 
 		const codexHandle = startWatcher({
@@ -1194,7 +1198,6 @@ export default function (pi: ExtensionAPI) {
 			maxIdlePolls: Infinity,
 			onSessionChange: (session) => {
 				if (session) {
-					latestCodexSession = session.id;
 					console.error(`[codex] Session started: ${session.threadName}`);
 					nc("CodexSessionStarted", {
 						requirement: session.threadName || "Codex session",
@@ -1236,15 +1239,14 @@ ${planPreview}`,
 		});
 
 		// Clean up when pi session ends
-		pi.on("session_end", () => {
-			codexHandle.stop();
-		});
+	pi.on("session_shutdown", () => codexHandle.stop());
 	} catch {
 		// Codex watcher unavailable (e.g. no codex package installed)
 	}
 
 	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
-	void initHoncho(pi);
+	// Collect promise so we can wait for initialization before showing startup notification
+	asyncInitPromises.push(initHoncho(pi));
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
 	void initMoocodingSyncHint();
@@ -1297,7 +1299,8 @@ ${planPreview}`,
 
 	// --- Hermes-style skills: Initialize skill system ----------------------
 	// Scan skills from ~/.pi-harness-runtime/skills/ and register with pi.dev
-	void initHermesSkills(pi);
+	// Collect promise so we can wait for initialization before showing startup notification
+	asyncInitPromises.push(initHermesSkills(pi));
 
 	// --- Job pipe watcher: Listen for Telegram callback commands -----------
 	// Watch for resume/cancel commands from telegram-callback-processor
@@ -2659,17 +2662,27 @@ Run \`bd ready\` to see current bd issues.
 		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
 		// harness info as a small separate notify line.
 		//
-		// Pi coalesces consecutive info notifications. We emit ONE combined block
-		// after the synchronous session_start listener sequence so it stays visible.
+		// Wait for all async init promises to complete so startupMessages includes
+		// messages from async initializations (Qdrant, Telegram, Honcho, HermesSkills).
+		// Use a timeout to avoid indefinite blocking if an init stalls.
 		if (ctx.hasUI) {
 			const notify = ctx.ui.notify.bind(ctx.ui);
-			const lines = [
-				`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
-				...startupMessages,
-			];
-			setTimeout(() => {
+
+			// Wait for async inits to complete, then emit notification
+			// Use Promise.race with a timeout to avoid indefinite blocking
+			const startupTimeout = new Promise<void>((resolve) => {
+				setTimeout(resolve, 5000); // 5 second timeout
+			});
+			Promise.race([
+				Promise.allSettled(asyncInitPromises),
+				startupTimeout,
+			]).then(() => {
+				const lines = [
+					`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
+					...startupMessages,
+				];
 				notify(lines.join("\n"), "info");
-			}, 0);
+			});
 		}
 	});
 
