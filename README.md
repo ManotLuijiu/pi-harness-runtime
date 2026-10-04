@@ -541,6 +541,51 @@ After reload, use the slash command:
 /langchain implement user authentication module
 ```
 
+## PaperClip Integration (Smart Listener)
+
+PaperClip can intelligently interpret user responses (Yes/No/Open questions) from Telegram and route them appropriately.
+
+### Setup
+
+After setting up PaperClip on your server:
+
+```bash
+# Create keys directory
+mkdir -p ~/.pi-harness-runtime/keys
+
+# Option 1: JSON config (recommended for multiple settings)
+cat > ~/.pi-harness-runtime/keys/paperclip-config.json << 'EOF'
+{
+  "apiKey": "your-agent-api-key-here",
+  "baseUrl": "https://paperclip.moo-vpn.online/api",
+  "companyId": "your-company-id"
+}
+EOF
+
+# Option 2: Individual files
+# echo "your-agent-api-key-here" > ~/.pi-harness-runtime/keys/paperclip-api-key.txt
+# echo "https://paperclip.moo-vpn.online/api" > ~/.pi-harness-runtime/keys/paperclip-base-url.txt
+```
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PaperClip (control plane)                                  │
+│  - Smart interpretation of responses                         │
+│  - Routes tasks to appropriate agents                       │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  pi-harness inbox watcher                                   │
+│  - Polls PaperClip for assigned tasks                       │
+│  - Routes to pi.dev                                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## herdr Integration (Clipboard Bridge)
 
 > **⚠️ This only applies when using herdr.dev**
