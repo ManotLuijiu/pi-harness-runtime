@@ -741,6 +741,34 @@ footer updates immediately and the data persists in `mirror.json`.
 
 Enable interactive Yes/No buttons in Telegram notifications for human approval.
 
+### Architecture (Per-User Setup)
+
+```
+USER A (you):
+┌─────────────────────────────────────────────────────┐
+│ Local Machine: ~/.pi-harness-runtime/                 │
+│   └── polls GET /api/pending-commands every 60s      │
+│   └── injects "resume" via steer on approval        │
+└─────────────────────────────────────────────────────┘
+                    ↕ (HTTPS polling)
+┌─────────────────────────────────────────────────────┐
+│ YOUR SERVER (e.g., your-vps.com)                    │
+│   ├── Telegram webhook (telegram.your-domain.com)  │
+│   ├── pi-harness API (GET /api/pending-commands)   │
+│   └── Callback processor                            │
+└─────────────────────────────────────────────────────┘
+                    ↕
+┌─────────────────────────────────────────────────────┐
+│ Telegram Bot                                         │
+│   └── Sends messages with Yes/No buttons           │
+└─────────────────────────────────────────────────────┘
+```
+
+**Each user needs their own server with:**
+1. Telegram bot token + chat ID
+2. Public HTTPS URL (for webhook)
+3. Running webhook server + callback processor
+
 ### Setup
 
 1. **Create Telegram Bot**

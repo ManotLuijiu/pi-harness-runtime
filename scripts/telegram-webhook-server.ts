@@ -64,11 +64,88 @@ interface QueuedCallback {
 
 // --- Parse callback data ---
 function parseCallbackData(data: string): { action: string; targetId: string } {
-  const parts = data.split("_");
-  return {
-    action: parts[0] || "",
-    targetId: parts[1] || "",
-  };
+  // Support both colon (approve:job-123) and underscore (approve_job-123) separators
+  // Also handle Telegram's underscore padding (approve:job-123_)
+  const cleanData = data.replace(/_+$/, ""); // Remove trailing underscores from Telegram padding
+  
+  // Split by first colon or underscore
+  const colonIdx = cleanData.indexOf(":");
+  const underscoreIdx = cleanData.indexOf("_");
+  
+  let action: string;
+  let targetId: string;
+  
+  if (colonIdx !== -1 && (underscoreIdx === -1 || colonIdx < underscoreIdx)) {
+    // Colon comes first or is the only separator
+    action = cleanData.slice(0, colonIdx);
+    targetId = cleanData.slice(colonIdx + 1);
+  } else if (underscoreIdx !== -1) {
+    // Underscore comes first or is the only separator
+    action = cleanData.slice(0, underscoreIdx);
+    targetId = cleanData.slice(underscoreIdx + 1);
+  } else {
+    // No separator found
+    action = cleanData;
+    targetId = "";
+  }
+  
+  return { action, targetId };
+}
+
+// --- Job Commands Management ---
+const JOB_COMMANDS_FILE = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "job-commands.jsonl");
+
+interface JobCommand {
+  command: string;
+  jobId: string;
+  userId: number;
+  timestamp: string;
+}
+
+/**
+ * Read unacknowledged job commands from file
+ */
+function readJobCommands(): JobCommand[] {
+  try {
+    if (!existsSync(JOB_COMMANDS_FILE)) {
+      return [];
+    }
+    const content = readFileSync(JOB_COMMANDS_FILE, "utf-8");
+    const lines = content.split("\n").filter(l => l.trim());
+    const commands: JobCommand[] = [];
+    
+    for (const line of lines) {
+      try {
+        commands.push(JSON.parse(line));
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    return commands;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Acknowledge (remove) processed job commands
+ */
+function acknowledgeJobCommands(jobIds: string[]): void {
+  try {
+    const commands = readJobCommands();
+    const remaining = commands.filter(cmd => !jobIds.includes(cmd.jobId));
+    
+    if (remaining.length === 0) {
+      // All commands processed - clear file
+      writeFileSync(JOB_COMMANDS_FILE, "", "utf-8");
+    } else {
+      // Keep unacknowledged commands
+      const newContent = remaining.map(cmd => JSON.stringify(cmd)).join("\n") + "\n";
+      writeFileSync(JOB_COMMANDS_FILE, newContent, "utf-8");
+    }
+  } catch {
+    // Ignore errors
+  }
 }
 
 // --- Queue callback to file ---
@@ -81,28 +158,91 @@ function queueCallback(callback: QueuedCallback): void {
   console.log(`[TelegramWebhook] Queued: ${callback.action}_${callback.targetId} from ${callback.username || callback.userId}`);
 }
 
+// --- Parse URL path ---
+function parseUrlPath(url: string): { path: string } {
+  const [pathPart] = url.split('?');
+  return { path: pathPart };
+}
+
 // --- HTTP Request Handler ---
 function handleRequest(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
-  // CORS preflight - only allow Telegram bot API
+  const { path } = parseUrlPath(req.url || '/');
+
+  // CORS preflight - allow Telegram bot API and pi-harness clients
   if (req.method === "OPTIONS") {
     const origin = req.headers.origin;
-    // Only allow requests from Telegram's servers
+    // Allow Telegram's servers and any pi-harness client
     const allowedOrigins = [
       "https://api.telegram.org",
       "https://web.telegram.org",
     ];
-    const corsOrigin = allowedOrigins.includes(origin || "") ? origin : "";
+    const corsOrigin = allowedOrigins.includes(origin || "") ? origin || "" : "*";
     
     res.writeHead(204, {
       "Access-Control-Allow-Origin": corsOrigin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, x-telegram-bot-api-secret-token",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-telegram-bot-api-secret-token, Authorization",
     });
     res.end();
     return;
   }
 
-  // Only accept POST
+  // --- API: Get pending commands (for pi-harness polling) ---
+  if (req.method === "GET" && path === "/api/pending-commands") {
+    // Verify API key header
+    const apiKey = req.headers["authorization"]?.replace("Bearer ", "");
+    if (apiKey !== WEBHOOK_SECRET) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      // Read job commands from file
+      const jobCommands = readJobCommands();
+      // Allow any origin for API access
+      // Note: Authentication is via Bearer token in Authorization header
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-cache",
+      });
+      res.end(JSON.stringify({ commands: jobCommands }));
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Internal error" }));
+    }
+    return;
+  }
+
+  // --- API: Acknowledge (consume) commands ---
+  if (req.method === "POST" && path === "/api/acknowledge-commands") {
+    const apiKey = req.headers["authorization"]?.replace("Bearer ", "");
+    if (apiKey !== WEBHOOK_SECRET) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    let body = "";
+    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const { jobIds } = JSON.parse(body);
+        if (Array.isArray(jobIds)) {
+          acknowledgeJobCommands(jobIds);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid request" }));
+      }
+    });
+    return;
+  }
+
+  // --- Webhook: Only accept POST ---
   if (req.method !== "POST") {
     res.writeHead(405, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Method not allowed" }));
