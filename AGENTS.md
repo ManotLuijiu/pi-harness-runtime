@@ -257,50 +257,6 @@ ssh -o BatchMode=yes user@host \
 timeout 60s ssh -o BatchMode=yes user@host "long-command; echo DONE"
 ```
 
-## Server 217.216.37.251 - Services Overview
-
-**Server SSH:** `ssh frappe@217.216.37.251`
-
-### Systemd Services (Outside Docker)
-
-| Service | Status | Description | Port |
-|---------|--------|-------------|------|
-| `amos-api-saas` | ✅ Running | FastAPI / uvicorn | - |
-| `amos-web-saas` | ✅ Running | Bun + Next.js | 3000 |
-| `amos-worker-saas` | ✅ Running | Video processor | - |
-| `telegram-webhook` | ✅ Running | Receives Telegram button clicks | 8443 |
-| `telegram-callback` | ✅ Running | Processes callbacks → job-commands.jsonl | - |
-| `paperclip` | ✅ Running | AI Control Plane (Node.js + embedded Postgres) | 3100 |
-
-### Docker Containers
-
-| Container | Purpose | Status |
-|-----------|---------|--------|
-| `inngest` | Event queue / workflow engine | ✅ Running |
-| `inngest-postgres-1` | Inngest database | ✅ Running |
-| `inngest-redis-1` | Inngest cache/queue | ✅ Running |
-
-### Check Service Status
-
-```bash
-# All systemd services
-systemctl list-units --type=service --state=running | grep -E 'amos|telegram|paperclip'
-
-# Docker containers
-docker ps
-
-# PaperClip (outside Docker)
-curl http://127.0.0.1:3100/api/health
-```
-
-### URLs
-
-| Service | URL |
-|---------|-----|
-| AMOS Web | https://api.moo-vpn.online |
-| Telegram Webhook | https://telegram.moo-vpn.online/api/telegram/webhook |
-| PaperClip | https://paperclip.moo-vpn.online |
-
 ### Status files
 
 The `.harness-status` file is consumed by the pi host, which adds its own UI. Keep daemon output plain ASCII:
