@@ -265,6 +265,18 @@ export class NotificationCenter {
 				title: "Job Cancelled",
 				message: `Job was cancelled: "${requirement}"`,
 			},
+			WaitingForUserInput: {
+				title: "Your Input Needed",
+				message: `Agent is waiting for your answer to continue: "${requirement}"`,
+			},
+			CodexSessionStarted: {
+				title: "Codex Session Started",
+				message: `Codex CLI session "${context.taskTitle ?? "new session"}" is now active`,
+			},
+			CodexPlanDetected: {
+				title: "Codex Plan Detected",
+				message: `Codex has a new plan ready for your review`,
+			},
 			Error: {
 				title: "Runtime Error",
 				message: `An error occurred${context.error ? `: ${context.error}` : ""}`,

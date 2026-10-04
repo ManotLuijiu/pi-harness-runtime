@@ -4,6 +4,8 @@
  * Sends notifications via Telegram Bot API.
  */
 
+/// <reference types="node" />
+
 import type {
 	NotificationPayload,
 	NotificationResult,
