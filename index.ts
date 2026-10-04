@@ -1035,6 +1035,62 @@ function isOutputLimitResumePromptMessage(message: {
 	);
 }
 
+// --- Job Pipe Watcher: Listen for Telegram callback commands -------------
+// This watches for resume/cancel commands from telegram-callback-processor
+function initJobPipeWatcher(pi: ExtensionAPI): void {
+	const pipeFile = join(homedir(), ".pi-harness-runtime", "job-commands.jsonl");
+	let lastReadPos = 0;
+
+	const processCommand = (line: string) => {
+		try {
+			const cmd = JSON.parse(line.trim());
+			console.error(`[JobPipe] Received: ${cmd.command} ${cmd.jobId} from user ${cmd.userId}`);
+
+			switch (cmd.command) {
+				case "resume": {
+					// Inject "resume" into agent conversation (same as auto-resume)
+					pi.sendUserMessage("resume", { deliverAs: "steer" });
+					console.error(`[JobPipe] Injected resume via steer`);
+					break;
+			}
+			case "cancel": {
+					// Cancel the current job
+					pi.sendUserMessage("/harness-cancel", { deliverAs: "steer" });
+					console.error(`[JobPipe] Injected /harness-cancel via steer`);
+					break;
+			}
+			default:
+				console.error(`[JobPipe] Unknown command: ${cmd.command}`);
+		}
+	} catch {
+			// Ignore parse errors
+	}
+};
+
+	const startWatcher = () => {
+		if (!existsSync(pipeFile)) {
+			return;
+		}
+
+		try {
+			const content = readFileSync(pipeFile, "utf-8");
+			const newContent = content.slice(lastReadPos);
+			lastReadPos = content.length;
+
+			const newLines = newContent.split("\n").filter((l) => l.trim());
+			for (const line of newLines) {
+				processCommand(line);
+			}
+		} catch {
+			// File might not exist yet, ignore
+		}
+	};
+
+	// Poll every second for new commands
+	setInterval(startWatcher, 1000);
+	console.error(`[JobPipe] Watching ${pipeFile}`);
+}
+
 export default function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
@@ -1181,6 +1237,10 @@ ${planPreview}`,
 	// --- Hermes-style skills: Initialize skill system ----------------------
 	// Scan skills from ~/.pi-harness-runtime/skills/ and register with pi.dev
 	void initHermesSkills(pi);
+
+	// --- Job pipe watcher: Listen for Telegram callback commands -----------
+	// Watch for resume/cancel commands from telegram-callback-processor
+	void initJobPipeWatcher(pi);
 
 	// --- TASK TRACKING TERMINOLOGY CLARIFICATION ------------------------
 	// CRITICAL: This project has TWO separate task trackers. Agents often confuse them.
