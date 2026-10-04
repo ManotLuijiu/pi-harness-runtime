@@ -69,6 +69,12 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
+import { startWatcher, classifyMessage } from "./packages/codex-watcher/dist/src/index.js";
+import {
+	getPaperclipConfig,
+	hasPaperclipConfig,
+	PaperclipWatcher,
+} from "./packages/paperclip-integration/dist/index.js";
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
@@ -91,7 +97,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 10;
 
 		if (!hasEnvKey && !hasFileKey) {
-			console.log(
+			console.error(
 				"[auto-continue] No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt"
 			);
 			return;
@@ -114,6 +120,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (hasContinuation && !waitingForUserSince) {
 				waitingForUserSince = new Date();
 				console.log("[auto-continue] Agent waiting for continuation confirmation");
+				// Emit WaitingForUserInput to Telegram so user knows to respond
+				nc("WaitingForUserInput", {
+					requirement: "Agent awaiting your response",
+					error: "Continue / proceed confirmation needed",
+				});
 			}
 		});
 
@@ -188,7 +199,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Start periodic check
 		setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
 
-		console.log("[auto-continue] Jev Auto-Continue initialized");
+		console.error("[auto-continue] Jev Auto-Continue initialized");
 	} catch {
 		// auto-continue not available
 	}
@@ -289,6 +300,13 @@ async function initTelegram(): Promise<void> {
 			console.error("[pi-harness] Telegram: initialization failed — skipping");
 			return;
 		}
+
+		// Wire to singleton nc() helper so all event emitters can reach Telegram
+		_nc = {
+			center,
+			notify: (event: string, ctx: Record<string, unknown>) =>
+				center.notify(event as never, ctx as never),
+		};
 
 		// Wire to GLMQuotaCountdown so it sends Telegram alerts
 		try {
@@ -820,6 +838,7 @@ function logStartup(...parts: string[]): void {
 
 interface HarnessSession {
 	jobId: string;
+	requirement: string;
 	machine: JobStateMachine;
 	graph: TaskGraphManager;
 	blackboard: SharedBlackboard;
@@ -828,6 +847,23 @@ interface HarnessSession {
 }
 
 let currentSession: HarnessSession | null = null;
+
+/** Singleton notification center — set by initTelegram(), used by all emit helpers */
+let _nc: { center: unknown; notify: (event: string, ctx: Record<string, unknown>) => Promise<unknown> } | null = null;
+
+/**
+ * Fire a Telegram notification event. Silently skips if Telegram is not configured.
+ */
+async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
+	if (!_nc) return;
+	try {
+		await (_nc as { notify: (e: string, c: Record<string, unknown>) => Promise<void> }).notify(event, ctx);
+	} catch {
+		// Never crash runtime on notification failure
+	}
+}
+
+
 
 /**
  * Safely extract a text view from an LLM message. Used to feed the TUI
@@ -1019,6 +1055,68 @@ export default function (pi: ExtensionAPI) {
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	void initTelegram();
 
+	// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
+	// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
+	// On plan detected: sends Telegram alert + steer message to pi.dev.
+	try {
+		let latestCodexSession = "";
+		let latestPlanOrdinal = 0;
+
+		const codexHandle = startWatcher({
+			pollIntervalMs: 5000,
+			maxIdlePolls: Infinity,
+			onSessionChange: (session) => {
+				if (session) {
+					latestCodexSession = session.id;
+					console.error(`[codex] Session started: ${session.threadName}`);
+					nc("CodexSessionStarted", {
+						requirement: session.threadName || "Codex session",
+						taskTitle: session.id,
+					});
+				}
+			},
+			onMessages: (msgs) => {
+				for (const msg of msgs) {
+					// Skip user messages — only track assistant plans
+					if (msg.role !== "assistant") continue;
+
+					const classification = classifyMessage(msg.text);
+					if (classification !== "plan" && classification !== "mixed") continue;
+					if (msg.ordinal <= latestPlanOrdinal) continue;
+
+					latestPlanOrdinal = msg.ordinal;
+
+					// Emit Telegram alert
+					nc("CodexPlanDetected", {
+						requirement: "Codex plan ready",
+						taskTitle: `Ordinal ${msg.ordinal}`,
+					});
+
+					// Inject plan into pi.dev as a steer message
+					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "
+..." : "");
+					try {
+						pi.sendUserMessage(
+							`[Codex plan detected — ordinal ${msg.ordinal}]
+
+${planPreview}`,
+							{ deliverAs: "steer" },
+						);
+					} catch {
+						// pi.dev may not be ready
+					}
+				}
+			},
+		});
+
+		// Clean up when pi session ends
+		pi.on("session_end", () => {
+			codexHandle.stop();
+		});
+	} catch {
+		// Codex watcher unavailable (e.g. no codex package installed)
+	}
+
 	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
 	void initHoncho(pi);
 
@@ -1027,6 +1125,46 @@ export default function (pi: ExtensionAPI) {
 
 	// --- langchain-loop: Ping-pong write-review loop (planner + reviewer + coder) ----
 	void initLangChain(pi);
+
+	// --- paperclip: Watch Paperclip inbox, route tasks to pi.dev + Telegram ------------
+	// Only starts if PAPERCLIP_API_KEY is set or keys file exists.
+	if (hasPaperclipConfig()) {
+		const paperclipConfig = getPaperclipConfig();
+		if (paperclipConfig) {
+			const watcher = new PaperclipWatcher(paperclipConfig, {
+				nc,
+				sendUserMessage: (content, opts) => {
+					try {
+						pi.sendUserMessage(content, opts as { deliverAs: "steer" });
+					} catch {
+						// pi.dev may not be ready
+					}
+				},
+				pollIntervalMs: 30_000,
+				onRouted: async (issue) => {
+					// Mark task as in_progress in Paperclip
+					try {
+						const config = getPaperclipConfig();
+						if (config) {
+							const { PaperclipClient } = await import(
+								"./packages/paperclip-integration/dist/index.js"
+							);
+							const client = new PaperclipClient(config);
+							await client.updateIssueStatus(issue.id, "in_progress");
+						}
+					} catch {
+						// Non-critical
+					}
+				},
+			});
+			void watcher.start();
+			pi.on("session_end", () => watcher.stop());
+		}
+	} else {
+		console.error(
+			"[paperclip] Not configured. Set PAPERCLIP_API_KEY or write API key to ~/.pi-harness-runtime/keys/paperclip-api-key.txt",
+		);
+	}
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
 	void initLoopCompletions(pi);
@@ -1266,7 +1404,12 @@ Run \`bd ready\` to see current bd issues.
 			outputLimitResumeAttempts += 1;
 			pendingOutputLimitResumeAfterCompact = true;
 			pendingOutputLimitResumeAfterSettled = true;
-			queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
+			await queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
+			// Emit OutputLimitContinued to Telegram
+			await nc("OutputLimitContinued", {
+				requirement: "Session output",
+				error: `Attempt ${outputLimitResumeAttempts}`,
+			});
 		} else if (
 			shouldQueueProviderOverloadResume(
 				m,
@@ -2082,6 +2225,9 @@ Run \`bd ready\` to see current bd issues.
 					return;
 				}
 
+				// Emit JobStarted to Telegram
+				await nc("JobStarted", { requirement, jobId });
+
 				// Create task graph using heuristic planner
 				const planner = new MasterPlanner();
 				const planResult = await planner.createPlan(
@@ -2108,6 +2254,7 @@ Run \`bd ready\` to see current bd issues.
 				// Store session
 				currentSession = {
 					jobId,
+					requirement,
 					machine,
 					graph: createTaskGraphManager(),
 					blackboard,
@@ -2319,6 +2466,7 @@ Run \`bd ready\` to see current bd issues.
 			}
 
 			cancelAutoResume(currentSession.jobId);
+			await nc("JobCancelled", { requirement: currentSession.requirement });
 			const sessionJobId = currentSession.jobId;
 			currentSession = null;
 
@@ -2415,7 +2563,7 @@ Run \`bd ready\` to see current bd issues.
 				return;
 			}
 			pendingOutputLimitResumeAfterSettled = false;
-			queueAutoResume(
+			void queueAutoResume(
 				"output-limit-settled",
 				OUTPUT_LIMIT_RESUME_PROMPT,
 				"followUp",
@@ -2423,7 +2571,7 @@ Run \`bd ready\` to see current bd issues.
 		}, 0);
 	});
 
-	pi.on("session_compact", (event, ctx) => {
+	pi.on("session_compact", async (event, ctx) => {
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		proactiveCompactInFlight = false;
@@ -2450,7 +2598,7 @@ Run \`bd ready\` to see current bd issues.
 		}
 
 		if (forceOutputLimitResume) {
-			queueAutoResume(
+			await queueAutoResume(
 				"post-compact-output-limit",
 				OUTPUT_LIMIT_RESUME_PROMPT,
 				event.willRetry ? "steer" : "followUp",
@@ -2460,7 +2608,7 @@ Run \`bd ready\` to see current bd issues.
 
 		outputLimitResumeAttempts = 0;
 		// pi.dev expects the literal "resume" command to continue after compaction.
-		queueAutoResume("post-compact", "resume", "followUp");
+		await queueAutoResume("post-compact", "resume", "followUp");
 	});
 
 	// --- Periodic quota refresh every 15 minutes ---
@@ -2503,7 +2651,7 @@ Run \`bd ready\` to see current bd issues.
 				console.error(`[pi-harness] Resume skipped: hasPendingMessages=true`);
 				return;
 			}
-			queueAutoResume(
+			void queueAutoResume(
 				"provider-overload",
 				PROVIDER_OVERLOAD_RESUME_PROMPT,
 				"followUp",
@@ -2511,13 +2659,17 @@ Run \`bd ready\` to see current bd issues.
 		}, delayMs);
 	}
 
-	function queueAutoResume(
+	async function queueAutoResume(
 		reason: string,
 		content: string,
 		deliverAs: "steer" | "followUp",
-	): void {
+	): Promise<void> {
 		try {
 			pi.sendUserMessage(content, { deliverAs });
+			await nc("ResumeScheduled", {
+				requirement: "Session auto-resume",
+				error: reason,
+			});
 		} catch (error) {
 			console.error(
 				`[pi-harness] Failed to queue ${reason} auto-resume:`,
@@ -2561,6 +2713,11 @@ Run \`bd ready\` to see current bd issues.
 				lastProactiveCompactAt = Date.now();
 				consecutiveCompactFailures = 0;
 				proactiveCompactCircuitReported = false;
+				// Emit ContextCompacted to Telegram
+				nc("ContextCompacted", {
+					requirement: "Session context",
+					error: "Proactive compact completed",
+				});
 			},
 			onError: (error) => {
 				proactiveCompactInFlight = false;

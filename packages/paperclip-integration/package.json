@@ -1,0 +1,20 @@
+{
+  "name": "@pi-harness/paperclip-integration",
+  "version": "0.9.4",
+  "description": "Paperclip API integration: poll agent inbox, route tasks to pi.dev, Telegram alerts",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --skipLibCheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

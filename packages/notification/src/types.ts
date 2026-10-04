@@ -16,6 +16,9 @@ export type NotificationEvent =
 	| "HumanReviewNeeded"
 	| "ReadyForClient"
 	| "JobCancelled"
+	| "WaitingForUserInput"
+	| "CodexSessionStarted"
+	| "CodexPlanDetected"
 	| "Error";
 
 export interface NotificationPayload {
