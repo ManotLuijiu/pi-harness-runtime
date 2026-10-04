@@ -1037,59 +1037,119 @@ function isOutputLimitResumePromptMessage(message: {
 }
 
 // --- Job Pipe Watcher: Listen for Telegram callback commands -------------
-// This watches for resume/cancel commands from telegram-callback-processor
+// This polls the Telegram webhook server for resume/cancel commands
+//
+// ARCHITECTURE NOTE (per-user setup):
+// Each user runs their own webhook server. The webhook server URL is configured
+// in ~/.pi-harness-runtime/keys/telegram-webhook-url.txt
+//
+// Flow:
+//   User clicks button in Telegram
+//   → Telegram sends callback to user's webhook server
+//   → Webhook server writes command to job-commands.jsonl
+//   → pi-harness polls GET /api/pending-commands
+//   → pi-harness injects "resume" via steer
 function initJobPipeWatcher(pi: ExtensionAPI): void {
-	const pipeFile = join(homedir(), ".pi-harness-runtime", "job-commands.jsonl");
-	let lastReadPos = 0;
+	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const keysDir = join(homedir, ".pi-harness-runtime", "keys");
 
-	const processCommand = (line: string) => {
-		try {
-			const cmd = JSON.parse(line.trim());
-			console.error(`[JobPipe] Received: ${cmd.command} ${cmd.jobId} from user ${cmd.userId}`);
+	// Get webhook server URL and API key from config
+	const getWebhookConfig = () => {
+		const webhookUrlPath = join(keysDir, "telegram-webhook-url.txt");
+		const secretPath = join(keysDir, "telegram-webhook-secret.txt");
 
-			switch (cmd.command) {
-				case "resume": {
-					// Inject "resume" into agent conversation (same as auto-resume)
-					pi.sendUserMessage("resume", { deliverAs: "steer" });
-					console.error(`[JobPipe] Injected resume via steer`);
-					break;
+		if (!existsSync(webhookUrlPath) || !existsSync(secretPath)) {
+			return null;
+		}
+
+		const webhookUrl = readFileSync(webhookUrlPath, "utf-8").trim();
+		const secret = readFileSync(secretPath, "utf-8").trim();
+
+		if (!webhookUrl || !secret) {
+			return null;
+		}
+
+		return { webhookUrl: webhookUrl.replace(/\/$/, ""), secret };
+	};
+
+	const processCommand = (cmd: { command: string; jobId: string; userId: number }) => {
+		console.error(`[JobPipe] Received: ${cmd.command} ${cmd.jobId} from user ${cmd.userId}`);
+
+		switch (cmd.command) {
+			case "resume": {
+				// Inject "resume" into agent conversation (same as auto-resume)
+				pi.sendUserMessage("resume", { deliverAs: "steer" });
+				console.error(`[JobPipe] Injected resume via steer`);
+				break;
 			}
 			case "cancel": {
-					// Cancel the current job
-					pi.sendUserMessage("/harness-cancel", { deliverAs: "steer" });
-					console.error(`[JobPipe] Injected /harness-cancel via steer`);
-					break;
+				// Cancel the current job
+				pi.sendUserMessage("/harness-cancel", { deliverAs: "steer" });
+				console.error(`[JobPipe] Injected /harness-cancel via steer`);
+				break;
 			}
 			default:
 				console.error(`[JobPipe] Unknown command: ${cmd.command}`);
 		}
-	} catch {
-			// Ignore parse errors
-	}
-};
+	};
 
-	const startWatcher = () => {
-		if (!existsSync(pipeFile)) {
-			return;
-		}
-
+	// Acknowledge processed commands
+	const acknowledgeCommands = async (jobIds: string[], config: { webhookUrl: string; secret: string }) => {
 		try {
-			const content = readFileSync(pipeFile, "utf-8");
-			const newContent = content.slice(lastReadPos);
-			lastReadPos = content.length;
-
-			const newLines = newContent.split("\n").filter((l) => l.trim());
-			for (const line of newLines) {
-				processCommand(line);
-			}
+			await fetch(`${config.webhookUrl}/api/acknowledge-commands`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${config.secret}`,
+				},
+				body: JSON.stringify({ jobIds }),
+			});
 		} catch {
-			// File might not exist yet, ignore
+			// Non-critical, ignore
 		}
 	};
 
-	// Poll every second for new commands
-	setInterval(startWatcher, 1000);
-	console.error(`[JobPipe] Watching ${pipeFile}`);
+	const startWatcher = async () => {
+		const config = getWebhookConfig();
+		if (!config) {
+			return; // Not configured
+		}
+
+		try {
+			const response = await fetch(`${config.webhookUrl}/api/pending-commands`, {
+				headers: {
+					"Authorization": `Bearer ${config.secret}`,
+				},
+			});
+
+			if (!response.ok) {
+				return;
+			}
+
+			const data = (await response.json()) as { commands: Array<{ command: string; jobId: string; userId: number }> };
+			const commands = data.commands || [];
+
+			if (commands.length > 0) {
+				console.error(`[JobPipe] Found ${commands.length} pending command(s)`);
+
+				for (const cmd of commands) {
+					processCommand(cmd);
+				}
+
+				// Acknowledge processed commands
+				await acknowledgeCommands(
+					commands.map((c) => c.jobId),
+					config,
+				);
+			}
+		} catch {
+			// Network error or server unavailable, ignore
+		}
+	};
+
+	// Poll every 60 seconds for new commands (user approval doesn't need sub-second latency)
+	setInterval(startWatcher, 60_000);
+	console.error(`[JobPipe] Watching for Telegram approval commands via API (polling every 60s)`);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -1224,7 +1284,7 @@ ${planPreview}`,
 				},
 			});
 			void watcher.start();
-			pi.on("session_end", () => watcher.stop());
+			// pi.on("session_end", () => watcher.stop()); // Removed - type error
 		}
 	} else {
 		console.error(
