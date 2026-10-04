@@ -27,7 +27,6 @@ packages/*/src/*.d.ts.map
 packages/*/src/*.js.map
 
 # Build outputs
-packages/*/dist/
 .pi-subagents/
 harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 
