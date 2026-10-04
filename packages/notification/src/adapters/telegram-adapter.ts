@@ -12,21 +12,30 @@ import type {
 import { BaseChannelAdapter } from "../base-adapter.js";
 
 export class TelegramAdapter extends BaseChannelAdapter {
-	readonly id = "telegram";
-	readonly type = "telegram";
+readonly id = "telegram";
+readonly type = "telegram";
+private _botUsername: string | undefined;
 
-	constructor(config: TelegramConfig) {
-		super({ id: "telegram", type: "telegram", enabled: true, config });
-	}
+constructor(config: TelegramConfig) {
+super({ id: "telegram", type: "telegram", enabled: true, config });
+}
+
+get botUsername(): string | undefined {
+return this._botUsername;
+}
 
 	async initialize(): Promise<boolean> {
 		try {
 			const cfg = this.config.config as TelegramConfig;
-			// Verify bot token by calling getMe
 			const response = await fetch(
 				`https://api.telegram.org/bot${cfg.botToken}/getMe`,
 			);
-			return response.ok;
+			if (!response.ok) return false;
+			const data = (await response.json()) as { ok: boolean; result?: { username?: string } };
+			if (data.ok && data.result?.username) {
+				this._botUsername = data.result.username;
+			}
+			return data.ok;
 		} catch {
 			return false;
 		}

@@ -147,6 +147,17 @@ export class NotificationCenter {
 		return Array.from(this.adapters.keys());
 	}
 
+	/**
+	 * Get Telegram bot username if configured
+	 */
+	getTelegramBotUsername(): string | undefined {
+		const adapter = this.adapters.get("telegram");
+		if (adapter instanceof TelegramAdapter) {
+			return adapter.botUsername;
+		}
+		return undefined;
+	}
+
 	// --- Private Methods ------------------------------------------------
 
 	private createAdapter(
