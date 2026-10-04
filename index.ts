@@ -255,11 +255,12 @@ async function initTelegram(): Promise<void> {
 		const chatIdPath = `${keysDir}/telegram-chat-id.txt`;
 
 		if (!existsSync(botTokenPath) || !existsSync(chatIdPath)) {
-			logStartup("[pi-harness] Telegram notifications not configured:");
-			logStartup(`[pi-harness]   bot-token: create @BotFather bot → get token`);
-			logStartup(`[pi-harness]   chat-id:  message @userinfobot → reply shows your ID`);
-			logStartup(`[pi-harness]   echo "{bot-token}" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt`);
-			logStartup(`[pi-harness]   echo "{chat-id}" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt`);
+			logStartup("[pi-harness] Telegram (@PiHarnessRuntimeBot) not configured:");
+			logStartup("[pi-harness]   1. DM @BotFather → /newbot → name it → get token");
+			logStartup("[pi-harness]   2. DM @userinfobot → reply shows your chat ID");
+			logStartup("[pi-harness]   3. echo \"{token}\" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt");
+			logStartup("[pi-harness]   4. echo \"{chat-id}\" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt");
+			logStartup("[pi-harness]   5. Reload pi — then DM @PiHarnessRuntimeBot to verify");
 			return;
 		}
 
@@ -289,12 +290,19 @@ async function initTelegram(): Promise<void> {
 			return;
 		}
 
-		// Wire to GLMQuotaCountdown so it can send Telegram alerts on quota pauses
+		// Wire to GLMQuotaCountdown so it sends Telegram alerts
 		try {
 			const { getGLMQuotaCountdown } = await import("./harness/index.js");
 			getGLMQuotaCountdown().setNotificationCenter(center);
 		} catch { /* not critical */ }
-		logStartup(`[pi-harness] Telegram notifications ready`);
+
+		// Log the actual bot username (fetched from Telegram API via getMe)
+		const botUsername = center.getTelegramBotUsername();
+		if (botUsername) {
+			logStartup(`[pi-harness] Telegram (@${botUsername}) ready — DM the bot to receive alerts`);
+		} else {
+			logStartup(`[pi-harness] Telegram notifications ready`);
+		}
 	} catch (err) {
 		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
 	}
