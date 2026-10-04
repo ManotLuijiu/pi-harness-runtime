@@ -83,10 +83,18 @@ function queueCallback(callback: QueuedCallback): void {
 
 // --- HTTP Request Handler ---
 function handleRequest(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
-  // CORS preflight
+  // CORS preflight - only allow Telegram bot API
   if (req.method === "OPTIONS") {
+    const origin = req.headers.origin;
+    // Only allow requests from Telegram's servers
+    const allowedOrigins = [
+      "https://api.telegram.org",
+      "https://web.telegram.org",
+    ];
+    const corsOrigin = allowedOrigins.includes(origin || "") ? origin : "";
+    
     res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": corsOrigin,
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, x-telegram-bot-api-secret-token",
     });
