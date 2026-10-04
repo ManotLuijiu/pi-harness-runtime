@@ -2654,20 +2654,22 @@ Run \`bd ready\` to see current bd issues.
 			() => lastActiveProvider,
 		);
 
-		// --- Show harness branding as a compact line (pi header stays intact) ----
+		// --- Show harness startup block (pi header stays intact) -----------
 		// Do NOT call setHeader() — that replaces pi's ASCII header which shows
 		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
 		// harness info as a small separate notify line.
+		//
+		// Pi coalesces consecutive info notifications. We emit ONE combined block
+		// after the synchronous session_start listener sequence so it stays visible.
 		if (ctx.hasUI) {
-			ctx.ui.notify(`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`, "info");
-		}
-
-		// --- Show collected startup messages --------------------------------
-		// These messages were collected during extension load but console.error
-		// was suppressed by pi.dev 1.0.0. Show them via ui.notify now.
-		if (ctx.hasUI && startupMessages.length > 0) {
-			const header = `Harness v${HARNESS_VERSION} startup status:`;
-			ctx.ui.notify([header, ...startupMessages].join("\n"), "info");
+			const notify = ctx.ui.notify.bind(ctx.ui);
+			const lines = [
+				`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
+				...startupMessages,
+			];
+			setTimeout(() => {
+				notify(lines.join("\n"), "info");
+			}, 0);
 		}
 	});
 
