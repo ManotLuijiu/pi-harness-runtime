@@ -289,7 +289,11 @@ async function initTelegram(): Promise<void> {
 			return;
 		}
 
-		// NotificationCenter ready
+		// Wire to GLMQuotaCountdown so it can send Telegram alerts on quota pauses
+		try {
+			const { getGLMQuotaCountdown } = await import("./harness/index.js");
+			getGLMQuotaCountdown().setNotificationCenter(center);
+		} catch { /* not critical */ }
 		logStartup(`[pi-harness] Telegram notifications ready`);
 	} catch (err) {
 		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
