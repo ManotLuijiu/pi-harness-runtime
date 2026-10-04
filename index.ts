@@ -1093,8 +1093,7 @@ export default function (pi: ExtensionAPI) {
 					});
 
 					// Inject plan into pi.dev as a steer message
-					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "
-..." : "");
+					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "\n..." : "");
 					try {
 						pi.sendUserMessage(
 							`[Codex plan detected — ordinal ${msg.ordinal}]
@@ -2528,14 +2527,14 @@ Run \`bd ready\` to see current bd issues.
 		// Do NOT call setHeader() — that replaces pi's ASCII header which shows
 		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
 		// harness info as a small separate notify line.
-		if (ctx.mode === "tui") {
+		if (ctx.hasUI) {
 			ctx.ui.notify(`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`, "info");
 		}
 
 		// --- Show collected startup messages --------------------------------
 		// These messages were collected during extension load but console.error
 		// was suppressed by pi.dev 1.0.0. Show them via ui.notify now.
-		if (startupMessages.length > 0) {
+		if (ctx.hasUI && startupMessages.length > 0) {
 			const header = `Harness v${HARNESS_VERSION} startup status:`;
 			ctx.ui.notify([header, ...startupMessages].join("\n"), "info");
 		}
