@@ -854,10 +854,20 @@ let _nc: { center: unknown; notify: (event: string, ctx: Record<string, unknown>
 /**
  * Fire a Telegram notification event. Silently skips if Telegram is not configured.
  */
+/** Events that require user approval — send inline Yes/No buttons */
+const APPROVAL_EVENTS = new Set(["HumanReviewNeeded", "WaitingForUserInput"]);
+
 async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
 	if (!_nc) return;
 	try {
-		await (_nc as { notify: (e: string, c: Record<string, unknown>) => Promise<void> }).notify(event, ctx);
+		const nc = _nc as { center: { notifyWithApproval: Function; notify: Function } };
+
+		// Use notifyWithApproval() for events that need user input
+		if (APPROVAL_EVENTS.has(event)) {
+			await nc.center.notifyWithApproval(event as never, ctx as never);
+		} else {
+			await nc.center.notify(event as never, ctx as never);
+		}
 	} catch {
 		// Never crash runtime on notification failure
 	}
