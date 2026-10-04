@@ -7,8 +7,11 @@
 /// <reference types="node" />
 
 import type {
+	InlineKeyboardButton,
 	NotificationPayload,
 	NotificationResult,
+	TelegramCallbackHandler,
+	TelegramCallbackQuery,
 	TelegramConfig,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
@@ -17,9 +20,25 @@ export class TelegramAdapter extends BaseChannelAdapter {
 readonly id = "telegram";
 readonly type = "telegram";
 private _botUsername: string | undefined;
+private _callbackHandler: TelegramCallbackHandler | undefined;
+private _webhookSecret: string | undefined;
 
 constructor(config: TelegramConfig) {
 super({ id: "telegram", type: "telegram", enabled: true, config });
+}
+
+/**
+ * Register a callback handler for inline keyboard button clicks
+ */
+setCallbackHandler(handler: TelegramCallbackHandler): void {
+	this._callbackHandler = handler;
+}
+
+/**
+ * Set webhook secret for verification
+ */
+setWebhookSecret(secret: string): void {
+	this._webhookSecret = secret;
 }
 
 get botUsername(): string | undefined {
@@ -43,21 +62,32 @@ return this._botUsername;
 		}
 	}
 
+	/**
+	 * Send a message with optional inline keyboard buttons
+	 */
 	async send(payload: NotificationPayload): Promise<NotificationResult> {
 		try {
 			const cfg = this.config.config as TelegramConfig;
 			const message = this.formatMessage(payload);
+
+			// Build request body
+			const body: Record<string, unknown> = {
+				chat_id: cfg.chatId,
+				text: message,
+				parse_mode: cfg.parseMode ?? "MarkdownV2",
+			};
+
+			// Add inline keyboard if enabled and buttons are configured
+			if (cfg.enableInlineKeyboard && (cfg.actionButtons?.length ?? 0) > 0) {
+				body.reply_markup = this.buildInlineKeyboard(cfg.actionButtons!);
+			}
 
 			const response = await fetch(
 				`https://api.telegram.org/bot${cfg.botToken}/sendMessage`,
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						chat_id: cfg.chatId,
-						text: message,
-						parse_mode: cfg.parseMode ?? "MarkdownV2",
-					}),
+					body: JSON.stringify(body),
 				},
 			);
 
@@ -77,6 +107,158 @@ return this._botUsername;
 				channel: this.id,
 				error: String(error),
 			};
+		}
+	}
+
+	/**
+	 * Build inline keyboard markup from button configuration
+	 */
+	private buildInlineKeyboard(
+		buttons: InlineKeyboardButton[],
+	): { inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> } {
+		// Group buttons into rows of up to 3 buttons each (Telegram limit)
+		const ROW_SIZE = 3;
+		const rows: Array<Array<{ text: string; callback_data?: string; url?: string }>> = [];
+
+		for (let i = 0; i < buttons.length; i += ROW_SIZE) {
+			const row = buttons.slice(i, i + ROW_SIZE).map((btn) => ({
+				text: btn.text,
+				...(btn.url ? { url: btn.url } : { callback_data: btn.callbackData }),
+			}));
+			rows.push(row);
+		}
+
+		return { inline_keyboard: rows };
+	}
+
+	/**
+	 * Process incoming webhook update from Telegram
+	 */
+	async handleWebhookUpdate(update: Record<string, unknown>): Promise<void> {
+		// Verify secret token if set
+		if (this._webhookSecret) {
+			const secretToken = (update as { secret_token?: string }).secret_token;
+			if (secretToken !== this._webhookSecret) {
+				console.error("[TelegramAdapter] Invalid webhook secret");
+				return;
+			}
+		}
+
+		// Handle callback query (button click)
+		const callbackQuery = update.callback_query as Record<string, unknown> | undefined;
+		if (callbackQuery && this._callbackHandler) {
+			const query = this.parseCallbackQuery(callbackQuery);
+			if (query) {
+				await this._callbackHandler(query.data, query);
+				await this.answerCallbackQuery(query.id);
+			}
+		}
+
+		// Handle regular messages (future: user can type commands)
+		const message = update.message as Record<string, unknown> | undefined;
+		if (message) {
+			console.log("[TelegramAdapter] Received message:", message.text);
+		}
+	}
+
+	/**
+	 * Parse callback query from webhook update
+	 */
+	private parseCallbackQuery(
+		raw: Record<string, unknown>,
+	): TelegramCallbackQuery | null {
+		try {
+			const from = raw.from as Record<string, unknown>;
+			const message = raw.message as Record<string, unknown> | undefined;
+			const chat = message?.chat as Record<string, unknown> | undefined;
+
+			return {
+				id: String(raw.id),
+				from: {
+					id: Number(from?.id),
+					is_bot: Boolean(from?.is_bot),
+					first_name: String(from?.first_name ?? ""),
+					username: from?.username ? String(from.username) : undefined,
+				},
+				chat_instance: String(raw.chat_instance ?? ""),
+				data: String(raw.data ?? ""),
+				message: message
+					? {
+							chat: { id: Number(chat?.id) },
+							message_id: Number(message?.message_id),
+						}
+					: undefined,
+			};
+		} catch {
+			console.error("[TelegramAdapter] Failed to parse callback query");
+			return null;
+		}
+	}
+
+	/**
+	 * Answer a callback query to remove loading state
+	 */
+	private async answerCallbackQuery(callbackQueryId: string): Promise<void> {
+		try {
+			const cfg = this.config.config as TelegramConfig;
+			await fetch(
+				`https://api.telegram.org/bot${cfg.botToken}/answerCallbackQuery`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ callback_query_id: callbackQueryId }),
+				},
+			);
+		} catch (error) {
+			console.error("[TelegramAdapter] Failed to answer callback query:", error);
+		}
+	}
+
+	/**
+	 * Setup webhook for receiving updates
+	 */
+	async setupWebhook(webhookUrl: string): Promise<boolean> {
+		try {
+			const cfg = this.config.config as TelegramConfig;
+			const response = await fetch(
+				`https://api.telegram.org/bot${cfg.botToken}/setWebhook`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						url: webhookUrl,
+						secret_token: this._webhookSecret,
+					}),
+				},
+			);
+
+			if (!response.ok) {
+				console.error("[TelegramAdapter] Webhook setup failed:", await response.text());
+				return false;
+			}
+
+			console.log(`[TelegramAdapter] Webhook set to: ${webhookUrl}`);
+			return true;
+		} catch (error) {
+			console.error("[TelegramAdapter] Webhook setup error:", error);
+			return false;
+		}
+	}
+
+	/**
+	 * Get current webhook info
+	 */
+	async getWebhookInfo(): Promise<Record<string, unknown> | null> {
+		try {
+			const cfg = this.config.config as TelegramConfig;
+			const response = await fetch(
+				`https://api.telegram.org/bot${cfg.botToken}/getWebhookInfo`,
+			);
+
+			if (!response.ok) return null;
+			return (await response.json()) as Record<string, unknown>;
+		} catch {
+			return null;
 		}
 	}
 

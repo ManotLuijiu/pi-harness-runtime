@@ -692,6 +692,46 @@ footer updates immediately and the data persists in `mirror.json`.
 - [ ] Production stress testing
 - [ ] RFC-0101: Autonomous Operations Runtime (background execution, task inbox, lease protocol)
 
+## Telegram 2-Way Communication
+
+Enable interactive Yes/No buttons in Telegram notifications for human approval.
+
+### Setup
+
+1. **Create Telegram Bot**
+   ```bash
+   # DM @BotFather → /newbot → get token
+   # DM @userinfobot → get your chat ID
+   echo "YOUR_BOT_TOKEN" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt
+   echo "YOUR_CHAT_ID" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt
+   ```
+
+2. **Start Webhook Server**
+   ```bash
+   TELEGRAM_BOT_TOKEN="xxx" \
+   TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 16)" \
+   TELEGRAM_WEBHOOK_URL="https://yourdomain.com/api/telegram/webhook" \
+   bun run scripts/telegram-webhook-server.ts
+   ```
+
+3. **Start Callback Processor**
+   ```bash
+   bun run scripts/telegram-callback-processor.ts
+   ```
+
+4. **Send Approval Requests**
+   ```typescript
+   import { NotificationCenter } from "@pi-harness/notification";
+
+   // Send with Yes/No buttons
+   await center.notifyWithApproval("HumanReviewNeeded", {
+     jobId: "job-123",
+     requirement: "Review code before deployment",
+   });
+   ```
+
+See [docs/Telegram-2-Way-Setup.md](docs/Telegram-2-Way-Setup.md) for full guide.
+
 ## License
 
 MIT © 2026 MooCoding
