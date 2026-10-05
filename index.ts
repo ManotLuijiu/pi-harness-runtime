@@ -648,6 +648,27 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+// --- agent-policy: Mandatory rule delivery and mutation gating ------------------
+// Lazy import - only loads when packages/agent-policy exists
+// This replaces firstAgentStart-only injection with:
+// - System prompt injection on EVERY agent start (not just first)
+// - Policy receipt tracking per session
+// - Mutation gating until policy revision is confirmed received
+// - harness_rules tool for rule retrieval and acknowledgement
+async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
+	try {
+		const { registerAgentPolicy } = await import("./packages/agent-policy/src/extension.js");
+		registerAgentPolicy(pi, {
+			harnessRulesPath: new URL("./AGENTS.md", import.meta.url),
+			requireReceiptBeforeMutation: true,
+			lspMode: "pi-lens",
+		});
+		logStartup("[pi-harness] Agent policy initialized");
+	} catch (err) {
+		logStartup(`[pi-harness] Agent policy init failed: ${err}`);
+	}
+}
+
 // --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
 // Prevents 2000+ second hangs when SSH background commands aren't detached.
 // Intercepts every bash tool call before execution and rewrites risky SSH commands.
@@ -1172,6 +1193,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
+
+	// --- agent-policy: Mandatory rule delivery and mutation gating -------------
+	void initAgentPolicy(pi);
 
 	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
 	void initSshDetachInterceptor(pi);
