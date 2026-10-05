@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.139](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.150...v1.1.139) (2026-10-05)
+
+
+### Features
+
+* **agent-policy:** Add mandatory policy delivery and mutation gating ([19d2399](https://github.com/ManotLuijiu/pi-harness-runtime/commit/19d23997d6de8e62bf97a67daf51b5cba42c9615))
+
 ### [1.1.138](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.147...v1.1.138) (2026-10-04)
 
 ### [1.1.75](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.75) (2026-09-29)
