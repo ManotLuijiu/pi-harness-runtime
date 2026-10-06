@@ -30,6 +30,7 @@ const KEY_FILE_MAP: Record<string, string> = {
 	PLANNER_BASE_URL: "planner-base-url.txt",
 	GLM_API_KEY: "glm-api-key.txt",
 	GLM_MODEL: "glm-model.txt",
+	GLM_BASE_URL: "glm-base-url.txt",
 	MINIMAX_API_KEY: "minimax-api-key.txt",
 };
 
