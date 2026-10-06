@@ -21,8 +21,8 @@ console.log("Sending test Telegram notification...");
 
 const context: NotificationContext = {
   jobId: "test-123",
-  requirement: "Test request for Telegram - is this working?",
-  taskTitle: "Testing Telegram"
+  requirement: "Testing Telegram notification",
+  taskTitle: "Test"
 };
 
 nc.notify("HumanReviewNeeded", context).then((results) => {
