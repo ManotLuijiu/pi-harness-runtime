@@ -137,6 +137,19 @@ function createDefaultConfigs(): void {
     writeFileSync(glmBaseUrlFile, "https://api.z.ai/api/v1");
     console.log(`[sync-keys] Created ${glmBaseUrlFile} (default: z.ai)`);
   }
+
+  // MiniMax defaults
+  const minimaxModelFile = join(KEYS_DIR, "minimax-model.txt");
+  if (!existsSync(minimaxModelFile)) {
+    writeFileSync(minimaxModelFile, "MiniMax-Text-01");
+    console.log(`[sync-keys] Created ${minimaxModelFile} (default: MiniMax-Text-01)`);
+  }
+
+  const minimaxBaseUrlFile = join(KEYS_DIR, "minimax-base-url.txt");
+  if (!existsSync(minimaxBaseUrlFile)) {
+    writeFileSync(minimaxBaseUrlFile, "https://api.minimax.chat/v1");
+    console.log(`[sync-keys] Created ${minimaxBaseUrlFile} (default: minimax.chat)`);
+  }
 }
 
 /**
