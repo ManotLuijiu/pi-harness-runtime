@@ -3,6 +3,9 @@
  *
  * Sends notifications via Telegram Bot API.
  */
+/// <reference types="node" />
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { BaseChannelAdapter } from "../base-adapter.js";
 export class TelegramAdapter extends BaseChannelAdapter {
     id = "telegram";
@@ -73,6 +76,57 @@ export class TelegramAdapter extends BaseChannelAdapter {
                     channel: this.id,
                     error: `Telegram API error: ${error}`,
                 };
+            }
+            return { success: true, channel: this.id };
+        }
+        catch (error) {
+            return {
+                success: false,
+                channel: this.id,
+                error: String(error),
+            };
+        }
+    }
+    /**
+     * Send a question that expects a text response from the user.
+     * Writes response metadata to a file for polling.
+     */
+    async sendQuestion(payload, responseDir = "/tmp/pi-harness-responses") {
+        try {
+            const cfg = this.config.config;
+            const message = this.formatMessage(payload);
+            const body = {
+                chat_id: cfg.chatId,
+                text: message,
+                parse_mode: cfg.parseMode ?? "MarkdownV2",
+            };
+            const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const error = await response.text();
+                return {
+                    success: false,
+                    channel: this.id,
+                    error: `Telegram API error: ${error}`,
+                };
+            }
+            const resultData = (await response.json());
+            const messageId = resultData.result?.message_id;
+            // Write response marker file
+            if (messageId) {
+                if (!existsSync(responseDir)) {
+                    mkdirSync(responseDir, { recursive: true });
+                }
+                writeFileSync(join(responseDir, `${payload.jobId}.json`), JSON.stringify({
+                    status: "waiting",
+                    messageId,
+                    chatId: cfg.chatId,
+                    expectedFormat: payload.details?.expectedFormat,
+                    timestamp: new Date().toISOString(),
+                }));
             }
             return { success: true, channel: this.id };
         }
