@@ -25,11 +25,14 @@ const OVERLOADED_PATTERNS: RegExp[] = [
 	/overloaded_error/i,
 	/peak.?hour.*surge/i,
 	/(?:overload|surge|busy)/i,
+	/(?:request )?timed?\s*out/i,
 ];
 
 const RECOVERY_RANGE = /recovers? within (\d+)\s*[\u2013-]\s*(\d+)\s*minutes/i;
 const SIMPLE_DELAY = /retry (?:after|in) (\d+)\s*(seconds?|secs?|s)\b/i;
 const RETRY_AFTER_MS = /retry.?after[^0-9]{0,12}(\d{4,})\s*ms/i;
+const TIMEOUT_DURATION_MS = /timed?\s*out(?: after)?[^0-9]*(\d+)\s*(ms|milliseconds?)/i;
+const TIMEOUT_DURATION_S = /timed?\s*out(?: after)?[^0-9]*(\d+)\s*(seconds?|secs?|s)\b/i;
 
 /**
  * Classify an unknown error as a transient provider surge (MiniMax).
@@ -80,6 +83,24 @@ export function classifySurge(err: unknown): SurgeSignal | null {
 		const val = Number.parseInt(ms[1] as string, 10);
 		if (Number.isFinite(val) && val > 0) {
 			return { retryAfterMs: val, explicit: true, sourceText };
+		}
+	}
+
+	// "timed out after Xms" → use that duration
+	const timeoutMs = sourceText.match(TIMEOUT_DURATION_MS);
+	if (timeoutMs) {
+		const val = Number.parseInt(timeoutMs[1] as string, 10);
+		if (Number.isFinite(val) && val > 0) {
+			return { retryAfterMs: val, explicit: true, sourceText };
+		}
+	}
+
+	// "timed out after X seconds" → convert to ms
+	const timeoutSecs = sourceText.match(TIMEOUT_DURATION_S);
+	if (timeoutSecs) {
+		const val = Number.parseInt(timeoutSecs[1] as string, 10);
+		if (Number.isFinite(val) && val > 0) {
+			return { retryAfterMs: val * 1000, explicit: true, sourceText };
 		}
 	}
 
@@ -188,7 +209,7 @@ export interface SurgePolicy {
 const DEFAULT_SURGE_POLICY: SurgePolicy = {
 	multiplier: 2,
 	minDelayMs: 30_000,
-	maxDelayMs: 15 * 60_000,
+	maxDelayMs: 15 * 60 * 1000,
 	jitterRatio: 0.2,
 	maxAttempts: 5,
 };
