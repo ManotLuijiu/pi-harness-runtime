@@ -326,10 +326,13 @@ class InboxWatcher {
 						return;
 				}
 				const files = readdirSync(this.inboxDir);
-				console.log(`[inbox-watcher] seeding ${files.length} existing files`);
+				console.log(`[inbox-watcher] seeding ${files.length} files: ${JSON.stringify(files)}`);
 				for (const file of files) {
-						if (!file.endsWith(".md")) continue;
-						if (file.startsWith("ack-")) continue;
+						const isMd = file.endsWith(".md");
+						const isAck = file.startsWith("ack-");
+						console.log(`[inbox-watcher] checking: "${file}" isMd=${isMd} isAck=${isAck}`);
+						if (!isMd) continue;
+						if (isAck) continue;
 						this.seen.set(file, {
 								taskId: file,
 								source: "inbox",
