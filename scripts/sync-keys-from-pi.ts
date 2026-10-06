@@ -138,7 +138,7 @@ function createDefaultConfigs(): void {
     console.log(`[sync-keys] Created ${glmBaseUrlFile} (default: z.ai)`);
   }
 
-  // MiniMax defaults
+  // MiniMax defaults (OpenAI-compatible API)
   const minimaxModelFile = join(KEYS_DIR, "minimax-model.txt");
   if (!existsSync(minimaxModelFile)) {
     writeFileSync(minimaxModelFile, "MiniMax-M2.7");
@@ -148,7 +148,7 @@ function createDefaultConfigs(): void {
   const minimaxBaseUrlFile = join(KEYS_DIR, "minimax-base-url.txt");
   if (!existsSync(minimaxBaseUrlFile)) {
     writeFileSync(minimaxBaseUrlFile, "https://api.minimax.io/v1");
-    console.log(`[sync-keys] Created ${minimaxBaseUrlFile} (default: api.minimax.io)`);
+    console.log(`[sync-keys] Created ${minimaxBaseUrlFile} (default: api.minimax.io/v1 OpenAI-compatible)`);
   }
 }
 
