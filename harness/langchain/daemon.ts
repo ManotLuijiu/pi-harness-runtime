@@ -321,33 +321,23 @@ class InboxWatcher {
 	}
 
 		private _seedSeen(): void {
-				if (!existsSync(this.inboxDir)) {
-						console.log(`[inbox-watcher] inbox dir does not exist: ${this.inboxDir}`);
-						return;
-				}
-				const files = readdirSync(this.inboxDir);
-				console.log(`[inbox-watcher] seeding ${files.length} files: ${JSON.stringify(files)}`);
-				for (const file of files) {
-						const isMd = file.endsWith(".md");
-						const isAck = file.startsWith("ack-");
-						console.log(`[inbox-watcher] checking: "${file}" isMd=${isMd} isAck=${isAck}`);
-						if (!isMd) continue;
-						if (isAck) continue;
+				if (!existsSync(this.inboxDir)) return;
+				for (const file of readdirSync(this.inboxDir)) {
+						if (!file.endsWith(".md")) continue;
+						if (file.startsWith("ack-")) continue;
 						this.seen.set(file, {
 								taskId: file,
 								source: "inbox",
 								seenAt: new Date().toISOString(),
 						});
 				}
-				console.log(`[inbox-watcher] seeded ${this.seen.size} files as seen`);
 		}
 
 	private _poll(onTask: (task: TriggeredTask) => void): void {
 		if (!this.running) return;
 		try {
 			if (existsSync(this.inboxDir)) {
-				const files = readdirSync(this.inboxDir);
-				for (const file of files) {
+				for (const file of readdirSync(this.inboxDir)) {
 					if (!file.endsWith(".md")) continue;
 					if (file.startsWith("ack-")) continue;
 					if (this.seen.has(file)) continue;
