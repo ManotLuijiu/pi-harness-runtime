@@ -193,6 +193,11 @@ async function runDaemon(args: CliArgs): Promise<void> {
 	// Load API keys from ~/.pi-harness-runtime/keys/ into process.env
 	loadKeys();
 
+	// Debug: Log key env vars
+	console.log(`[run] PLANNER_API_KEY=${process.env.PLANNER_API_KEY?.slice(0, 10)}...`);
+	console.log(`[run] PLANNER_MODEL=${process.env.PLANNER_MODEL}`);
+	console.log(`[run] PLANNER_BASE_URL=${process.env.PLANNER_BASE_URL}`);
+
 	const { LoopDaemon } = await import("./daemon.js");
 	const daemon = new LoopDaemon({
 		maxIterations: args.maxIterations,
