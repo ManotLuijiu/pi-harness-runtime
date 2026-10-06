@@ -121,7 +121,7 @@ export function isFreshProviderOverloadError(
 		text.includes("peak-hour surge") ||
 		text.includes("temporarily busy") ||
 		text.includes("server is temporarily busy") ||
-		text.includes("try again shortly");
+		text.includes("try again shortly") || /timed.s*out/i.test(text); // timeout errors are retryable
 	// But NOT if it's a "Retry failed" report (that means our retry already failed)
 	const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
 	// Extract request_id for logging
@@ -148,7 +148,7 @@ export function isProviderOverloadAssistantMessage(
 		return false;
 	}
 
-	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|\b529\b|\b2064\b/i.test(
+	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly|\b529\b|\b2064\b|timed.s*out/i.test(
 		readAssistantStopText(message),
 	);
 }

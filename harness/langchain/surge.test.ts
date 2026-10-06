@@ -76,6 +76,48 @@ describe("T1 — classifySurge", () => {
 		assert.equal(classifySurge(new Error("ECONNREFUSED")), null);
 		assert.equal(classifySurge("file not found"), null);
 	});
+
+	it("classifies 'Request timed out.'", () => {
+		const sig = classifySurge(new Error("Request timed out."));
+		assert.ok(sig, "should classify timeout");
+		assert.equal(sig?.explicit, false); // no stated delay → 2 min default
+		assert.equal(sig?.retryAfterMs, 120_000);
+	});
+
+	it("classifies 'timed out' without 'request' prefix", () => {
+		const sig = classifySurge(new Error("timed out"));
+		assert.ok(sig, "should classify");
+		assert.equal(sig?.retryAfterMs, 120_000);
+	});
+
+	it("parses 'timed out after Xms'", () => {
+		const sig = classifySurge(new Error("timed out after 30000ms"));
+		assert.ok(sig);
+		assert.equal(sig?.retryAfterMs, 30_000);
+		assert.equal(sig?.explicit, true);
+	});
+
+	it("parses 'Request timed out after X seconds'", () => {
+		const sig = classifySurge(new Error("Request timed out after 60 seconds"));
+		assert.ok(sig);
+		assert.equal(sig?.retryAfterMs, 60_000);
+		assert.equal(sig?.explicit, true);
+	});
+
+	it("parses 'timed out after Xms' (milliseconds keyword)", () => {
+		const sig = classifySurge(new Error("command timed out after 15000 milliseconds"));
+		assert.ok(sig);
+		assert.equal(sig?.retryAfterMs, 15_000);
+		assert.equal(sig?.explicit, true);
+	});
+
+	it("'Retry failed after 3 attempts: Request timed out.'", () => {
+		const sig = classifySurge(
+			new Error("Retry failed after 3 attempts: Request timed out."),
+		);
+		assert.ok(sig, "should classify inner timeout");
+		assert.equal(sig?.retryAfterMs, 120_000);
+	});
 });
 
 // ─── T2/T3 Delay computation & escalation ────────────────────────────────────
