@@ -6,10 +6,10 @@
  *   loadKeys(); // Loads all keys into process.env
  *
  * Environment variables set:
- *   TELEGRAM_BOT_TOKEN    → telegram-bot-token.txt
- *   TELEGRAM_CHAT_ID      → telegram-chat-id.txt
- *   TELEGRAM_WEBHOOK_URL  → telegram-webhook-url.txt
- *   TELEGRAM_WEBHOOK_SECRET → telegram-webhook-secret.txt
+ *   Telegram:    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_URL, TELEGRAM_WEBHOOK_SECRET
+ *   Models:      PLANNER_API_KEY, PLANNER_MODEL, PLANNER_BASE_URL
+ *                GLM_API_KEY
+ *                MINIMAX_API_KEY
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -19,10 +19,17 @@ import { homedir } from "node:os";
 const KEYS_DIR = join(homedir(), ".pi-harness-runtime", "keys");
 
 const KEY_FILE_MAP: Record<string, string> = {
+	// Telegram notification keys
 	TELEGRAM_BOT_TOKEN: "telegram-bot-token.txt",
 	TELEGRAM_CHAT_ID: "telegram-chat-id.txt",
 	TELEGRAM_WEBHOOK_URL: "telegram-webhook-url.txt",
 	TELEGRAM_WEBHOOK_SECRET: "telegram-webhook-secret.txt",
+	// Model API keys (for daemon loop)
+	PLANNER_API_KEY: "planner-api-key.txt",
+	PLANNER_MODEL: "planner-model.txt",
+	PLANNER_BASE_URL: "planner-base-url.txt",
+	GLM_API_KEY: "glm-api-key.txt",
+	MINIMAX_API_KEY: "minimax-api-key.txt",
 };
 
 /**
