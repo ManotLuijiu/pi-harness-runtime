@@ -19,6 +19,7 @@ import {
 	buildWriteReviewLoop,
 	type LoopState,
 } from "./graph.js";
+import { loadKeys } from "../key-loader.js";
 
 interface CliArgs {
 	mode: "graph" | "supervisor";
@@ -26,6 +27,10 @@ interface CliArgs {
 	maxIterations: number;
 	dryRun: boolean;
 	daemon: boolean;
+	/** Telegram bot token for notifications. */
+	telegramBotToken?: string;
+	/** Telegram chat ID for notifications. */
+	telegramChatId?: string;
 	/** If true, remaining args are passed to the cron subcommand handler. */
 	cronArgs?: string[];
 }
@@ -37,6 +42,8 @@ function parseArgs(argv: string[]): CliArgs {
 		maxIterations: 3,
 		dryRun: false,
 		daemon: false,
+		telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+		telegramChatId: process.env.TELEGRAM_CHAT_ID,
 	};
 	// Normalize space-separated flags (--mode graph) into --mode=graph form
 	const normalized: string[] = [];
@@ -78,8 +85,12 @@ function parseArgs(argv: string[]): CliArgs {
 		} else if (arg === "--dry-run") {
 			args.dryRun = true;
 		} else if (arg === "--daemon") {
-			args.daemon = true;
-		} else if (arg === "--help" || arg === "-h") {
+				args.daemon = true;
+			} else if (arg.startsWith("--telegram-bot-token=")) {
+				args.telegramBotToken = arg.slice("--telegram-bot-token=".length);
+			} else if (arg.startsWith("--telegram-chat-id=")) {
+				args.telegramChatId = arg.slice("--telegram-chat-id=".length);
+			} else if (arg === "--help" || arg === "-h") {
 			console.log(
 				[
 					"Usage: bun harness/langchain/run.ts [options]",
@@ -89,7 +100,10 @@ function parseArgs(argv: string[]): CliArgs {
 					'  --request="..."           The feature request',
 					"  --max-iterations=N        Max write-review rounds (default: 3)",
 					"  --dry-run                 Deterministic stubs, no API calls",
-					"  --daemon                  Start as a long-running daemon (auto-trigger loop)",
+				"  --daemon                  Start as a long-running daemon (auto-trigger loop)",
+					"  --telegram-bot-token=...   Telegram bot token for notifications",
+					"  --telegram-chat-id=...     Telegram chat ID for notifications",
+					"  (or set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars)",
 				].join("\n"),
 			);
 			process.exit(0);
@@ -176,11 +190,18 @@ async function runSupervisor(args: CliArgs): Promise<void> {
 }
 
 async function runDaemon(args: CliArgs): Promise<void> {
+	// Load API keys from ~/.pi-harness-runtime/keys/ into process.env
+	loadKeys();
+
 	const { LoopDaemon } = await import("./daemon.js");
 	const daemon = new LoopDaemon({
 		maxIterations: args.maxIterations,
 		dryRun: args.dryRun,
 		sources: ["inbox", "bus", "codex"],
+		notificationConfig:
+			args.telegramBotToken && args.telegramChatId
+				? { telegramBotToken: args.telegramBotToken, telegramChatId: args.telegramChatId }
+				: undefined,
 	});
 
 	// Graceful shutdown on SIGTERM / SIGINT
