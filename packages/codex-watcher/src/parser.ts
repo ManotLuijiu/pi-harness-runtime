@@ -197,11 +197,52 @@ export function extractCodeBlocks(text: string): string[] {
 export function classifyMessage(
 	text: string,
 ): "plan" | "code" | "mixed" | "unknown" {
+	// Skip empty or very short messages
+	if (!text || text.trim().length < 20) return "unknown";
+
+	// Skip guardian review / risk assessment JSON responses
+	// These have fields like "risk_level", "outcome", "user_authorization"
+	if (/^\s*\{[^}]*"risk_level"[\s\S]*"outcome"[\s\S]*\}\.?\s*$/.test(text.trim())) {
+		return "unknown";
+	}
+
+	// Skip pure JSON responses (generic check)
+	if (/^\s*\{[^}]+\}\s*$/.test(text.trim()) && text.includes(":")) {
+		const firstChar = text.trim()[0];
+		if (firstChar === "{" || firstChar === "[") {
+			return "unknown";
+		}
+	}
+
+	// Skip messages that look like system status updates
+	if (/^(Ready|Error|Failed|Processing|Thinking|In progress)/i.test(text.trim())) {
+		return "unknown";
+	}
+
+	// Skip guardian/system prompts (not real user requests)
+	if (/^The following is the (Codex )?agent history/i.test(text.trim()) ||
+	    /^Codex agent history/i.test(text.trim()) ||
+	    /^Additional context from (the )?agent/i.test(text.trim()) ||
+	    /^Your task is to/i.test(text.trim()) ||
+	    /^You are judging/i.test(text.trim())) {
+		return "unknown";
+	}
+
+	// Check for markdown headings (strong indicator of planning)
+	const headingCount = (text.match(/^#{1,3}\s+/gm) || []).length;
+	const bulletCount = (text.match(/^[\s]*[-*+]\s+/gm) || []).length;
+	const numberedCount = (text.match(/^[\s]*\d+\.\s+/gm) || []).length;
+
 	const codeBlocks = extractCodeBlocks(text);
 	const codeCharCount = codeBlocks.join("").replace(/\s/g, "").length;
 	const nonCodeCharCount = text
 		.replace(/```[\s\S]*?```/g, "")
 		.replace(/\s/g, "").length;
+
+	// If has headings/bullets and no/minimal code, likely a plan
+	if ((headingCount >= 2 || bulletCount >= 3 || numberedCount >= 2) && codeCharCount < 100) {
+		return "plan";
+	}
 
 	if (codeCharCount === 0 && nonCodeCharCount > 0) return "plan";
 	if (nonCodeCharCount === 0 && codeCharCount > 0) return "code";
