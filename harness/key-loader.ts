@@ -32,6 +32,8 @@ const KEY_FILE_MAP: Record<string, string> = {
 	GLM_MODEL: "glm-model.txt",
 	GLM_BASE_URL: "glm-base-url.txt",
 	MINIMAX_API_KEY: "minimax-api-key.txt",
+	MINIMAX_MODEL: "minimax-model.txt",
+	MINIMAX_BASE_URL: "minimax-base-url.txt",
 };
 
 /**
