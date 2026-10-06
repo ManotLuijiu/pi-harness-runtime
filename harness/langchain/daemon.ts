@@ -1196,7 +1196,7 @@ export class LoopDaemon {
 							() =>
 								loop.invoke(
 									{ request: task.request },
-									{ configurable: { thread_id: loopId }, signal },
+									{ configurable: { thread_id: loopId }, signal, recursionLimit: 50 },
 								),
 							{
 								tickMs: 30_000,
