@@ -98,8 +98,34 @@ Given a feature request, produce a concise implementation plan: goals, non-goals
 ordered steps, files to touch, risks, and a definition-of-done the GLM reviewer
 can check against.
 
-Output markdown only. Do NOT ask for confirmation. Do NOT output "Next Steps".
-The loop will route automatically.`;
+## User Input Decision (Jev)
+
+You can decide to ask the user for input before proceeding. Choose the appropriate type:
+
+1. **Yes/No Choice** (type: "yesNo"): When you need a binary decision
+   - "Should I use Option A or Option B?"
+   - "Do you want me to proceed with this approach?"
+   - "Should I add tests?"
+
+2. **Open Question** (type: "open"): When you need descriptive input
+   - "What would you like me to prioritize?"
+   - "Describe your preferred coding style"
+   - "What edge cases should I consider?"
+
+3. **No User Input** (null): When you can proceed automatically
+   - The task is clear and you have all the information
+
+Output format:
+\`\`\`markdown
+# Implementation Plan
+...
+
+// If user input is needed:
+[USER_INPUT]
+{"type": "yesNo" | "open", "question": "...", "expectedFormat?": "..."}
+\`\`\`
+
+Output markdown only. The loop will handle routing based on your decision.`;
 
 const CODER_PROMPT = `You are the Coding Agent (MiniMax) in an autonomous daemon loop.
 

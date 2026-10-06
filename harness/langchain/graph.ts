@@ -64,7 +64,25 @@ const LoopState = Annotation.Root({
 		reducer: (_prev, next) => next,
 		default: () => ({}),
 	}),
+	/** User input request - when Jev decides to ask the user.
+	 *  null = no user input needed (continue automatically)
+	 *  { type: "yesNo", question, choices? } = binary choice
+	 *  { type: "open", question, expectedFormat? } = free text response */
+	userInput: Annotation<UserInput | null>({
+		reducer: (_prev, next) => next,
+		default: () => null,
+	}),
+	/** User's response to the question */
+	userResponse: Annotation<string | null>({
+		reducer: (_prev, next) => next,
+		default: () => null,
+	}),
 });
+
+/** User input types that Jev can request */
+export type UserInput =
+	| { type: "yesNo"; question: string; yesLabel?: string; noLabel?: string }
+	| { type: "open"; question: string; expectedFormat?: string };
 
 export type LoopState = typeof LoopState.State;
 
