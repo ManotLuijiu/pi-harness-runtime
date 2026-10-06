@@ -2,14 +2,17 @@
  * CLI runner for the LangChain write-review loop.
  *
  * Usage:
- *   bun harness/langchain/run.ts --mode graph --request "implement X" [--max-iterations 3]
- *   bun harness/langchain/run.ts --mode graph --request "implement X" --dry-run
- *   bun harness/langchain/run.ts --mode supervisor --request "implement X"
+ *   # Run a single task
+ *   bun run harness/langchain/run.ts --request "implement X"
  *
- * --dry-run uses deterministic stubs — no API keys needed. Use it to verify
- * the whole loop machinery (plan → write → review → fix → approve).
+ *   # Run with dry-run (no API calls)
+ *   bun run harness/langchain/run.ts --request "implement X" --dry-run
  *
- * Wiki: wiki/multi-agent-langchain.md
+ *   # Run with max iterations
+ *   bun run harness/langchain/run.ts --request "implement X" --max-iterations 5
+ *
+ *   # Run as daemon (with watchers - configure sources in code)
+ *   bun run harness/langchain/run.ts --daemon
  */
 
 import { randomUUID } from "node:crypto";
@@ -17,22 +20,16 @@ import {
 	buildDryRunDeps,
 	buildRealLoopDeps,
 	buildWriteReviewLoop,
-	type LoopState,
 } from "./graph.js";
 import { loadKeys } from "../key-loader.js";
-
 interface CliArgs {
 	mode: "graph" | "supervisor";
 	request: string;
 	maxIterations: number;
 	dryRun: boolean;
 	daemon: boolean;
-	/** Telegram bot token for notifications. */
 	telegramBotToken?: string;
-	/** Telegram chat ID for notifications. */
 	telegramChatId?: string;
-	/** If true, remaining args are passed to the cron subcommand handler. */
-	cronArgs?: string[];
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -45,203 +42,81 @@ function parseArgs(argv: string[]): CliArgs {
 		telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
 		telegramChatId: process.env.TELEGRAM_CHAT_ID,
 	};
-	// Normalize space-separated flags (--mode graph) into --mode=graph form
-	const normalized: string[] = [];
-	for (let i = 0; i < argv.length; i++) {
-		const arg = argv[i] as string;
-		const spaced =
-			(arg === "--mode" || arg === "--request" || arg === "--max-iterations") &&
-			argv[i + 1] !== undefined &&
-			!(argv[i + 1] as string).startsWith("--");
-		if (spaced) {
-			normalized.push(`${arg}=${argv[i + 1]}`);
-			i++;
-		} else {
-			normalized.push(arg);
-		}
-	}
-	// Detect "cron" subcommand before processing other flags
-	const cronIndex = normalized.indexOf("cron");
-	if (cronIndex !== -1) {
-		args.cronArgs = normalized.slice(cronIndex + 1);
-		return args;
-	}
 
-	for (const arg of normalized) {
-		if (arg.startsWith("--mode=")) {
-			const mode = arg.slice("--mode=".length);
-			if (mode !== "graph" && mode !== "supervisor") {
-				throw new Error(`Unknown mode: ${mode} (expected graph|supervisor)`);
-			}
-			args.mode = mode;
-		} else if (arg.startsWith("--request=")) {
-			args.request = arg.slice("--request=".length);
-		} else if (arg.startsWith("--max-iterations=")) {
-			const n = Number.parseInt(arg.slice("--max-iterations=".length), 10);
-			if (Number.isNaN(n) || n < 1 || n > 20) {
-				throw new Error("--max-iterations must be 1-20");
-			}
-			args.maxIterations = n;
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === "--request" || arg === "-r") {
+			args.request = argv[++i] ?? "";
 		} else if (arg === "--dry-run") {
 			args.dryRun = true;
 		} else if (arg === "--daemon") {
-				args.daemon = true;
-			} else if (arg.startsWith("--telegram-bot-token=")) {
-				args.telegramBotToken = arg.slice("--telegram-bot-token=".length);
-			} else if (arg.startsWith("--telegram-chat-id=")) {
-				args.telegramChatId = arg.slice("--telegram-chat-id=".length);
-			} else if (arg === "--help" || arg === "-h") {
-			console.log(
-				[
-					"Usage: bun harness/langchain/run.ts [options]",
-					"",
-					"Options:",
-					"  --mode=graph|supervisor   Loop style (default: graph)",
-					'  --request="..."           The feature request',
-					"  --max-iterations=N        Max write-review rounds (default: 3)",
-					"  --dry-run                 Deterministic stubs, no API calls",
-				"  --daemon                  Start as a long-running daemon (auto-trigger loop)",
-					"  --telegram-bot-token=...   Telegram bot token for notifications",
-					"  --telegram-chat-id=...     Telegram chat ID for notifications",
-					"  (or set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars)",
-				].join("\n"),
-			);
-			process.exit(0);
-		} else {
-			// Bare positional argument = request
-			if (!args.request) args.request = arg;
+			args.daemon = true;
+		} else if (arg === "--max-iterations") {
+			args.maxIterations = parseInt(argv[++i] ?? "3", 10);
+		} else if (arg === "--mode") {
+			args.mode = argv[++i] as "graph" | "supervisor";
 		}
 	}
-	if (!args.request && !args.daemon && !args.cronArgs) {
-		throw new Error(
-			'A request is required: --request="..." or a bare string (or use --daemon or --cron to start the watcher)',
-		);
-	}
+
 	return args;
 }
 
-function printStep(step: string, state: LoopState): void {
-	const labels: Record<string, string> = {
-		plan: "🧭 GPT planner",
-		write: "✍️  MiniMax coder",
-		review: "🔍 GPT reviewer",
-		finish: "🏁 finish",
-	};
-	const iter = state.iteration > 0 ? ` (iteration ${state.iteration})` : "";
-	console.log(`  ${labels[step] ?? step}${iter}`);
-}
+async function runGraphMode(args: CliArgs): Promise<void> {
+	const loopId = `loop-${randomUUID().slice(0, 8)}`;
+	const log = (msg: string) => console.log(`[${loopId}] ${msg}`);
 
-async function runGraphLoop(args: CliArgs): Promise<void> {
-	console.log(
-		`\n━━━ Write-Review Loop (graph mode)${args.dryRun ? " — DRY RUN" : ""} ━━━`,
-	);
-	console.log(`Request: ${args.request}\n`);
-
-	const deps = args.dryRun
-		? buildDryRunDeps({ maxIterations: args.maxIterations, onStep: printStep })
-		: await buildRealLoopDeps({
+	// Build deps
+	const deps = await (args.dryRun
+		? buildDryRunDeps({ maxIterations: args.maxIterations })
+		: buildRealLoopDeps({
 				maxIterations: args.maxIterations,
-				onStep: printStep,
-			});
+				request: args.request,
+			}));
 
+	// Create loop
 	const loop = buildWriteReviewLoop(deps);
-	const threadId = `loop-${randomUUID().slice(0, 8)}`;
 
-	const finalState = await loop.invoke(
-		{ request: args.request },
-		{ configurable: { thread_id: threadId } },
-	);
+	// Run
+	log(`Starting write-review loop (maxIterations=${args.maxIterations})`);
 
-	console.log("\n─── Step log ───");
-	for (const line of finalState.log) console.log(`  ${line}`);
-
-	console.log("\n─── Verdict ───");
-	const review = finalState.review;
-	if (review) {
-		console.log(`  ${review.verdict.toUpperCase()} — ${review.summary}`);
-		if (review.comments.length > 0) {
-			console.log("  Open comments:");
-			for (const c of review.comments) {
-				const file = c.file ? ` (${c.file})` : "";
-				console.log(`   - [${c.severity ?? "n/a"}] ${c.comment}${file}`);
-			}
-		}
-	} else {
-		console.log("  (no review produced)");
-	}
-}
-
-async function runSupervisor(args: CliArgs): Promise<void> {
-	if (args.dryRun) {
-		throw new Error(
-			"--dry-run is only supported for --mode=graph (supervisor needs real models)",
+	try {
+		const result = await loop.invoke(
+			{ request: args.request },
+			{ configurable: { thread_id: loopId }, recursionLimit: 50 },
 		);
+		log(`Loop completed! Final state: ${JSON.stringify(result, null, 2)}`);
+	} catch (err) {
+		console.error(`[${loopId}] Error:`, err);
+		process.exit(1);
 	}
-	console.log("\n━━━ Write-Review Loop (supervisor mode) ━━━");
-	console.log(`Request: ${args.request}\n`);
-
-	const { createSupervisor, lastMessage } = await import("./agents.js");
-	const supervisor = createSupervisor();
-	const result = await supervisor.invoke({
-		messages: [{ role: "user", content: args.request }],
-	});
-	console.log("\n─── Supervisor output ───");
-	console.log(lastMessage(result));
 }
 
-async function runDaemon(args: CliArgs): Promise<void> {
-	// Load API keys from ~/.pi-harness-runtime/keys/ into process.env
-	loadKeys();
-
-	// Debug: Log key env vars
-	console.log(`[run] PLANNER_API_KEY=${process.env.PLANNER_API_KEY?.slice(0, 10)}...`);
-	console.log(`[run] PLANNER_MODEL=${process.env.PLANNER_MODEL}`);
-	console.log(`[run] PLANNER_BASE_URL=${process.env.PLANNER_BASE_URL}`);
-	console.log(`[run] Env has PLANNER_API_KEY: ${!!process.env.PLANNER_API_KEY}`);
-	console.log(`[run] PLANNER_API_KEY length: ${process.env.PLANNER_API_KEY?.length}`);
-
-	const { LoopDaemon } = await import("./daemon.js");
-	const daemon = new LoopDaemon({
-		maxIterations: args.maxIterations,
-		dryRun: args.dryRun,
-		sources: ["inbox", "bus", "codex"],
-		notificationConfig:
-			args.telegramBotToken && args.telegramChatId
-				? { telegramBotToken: args.telegramBotToken, telegramChatId: args.telegramChatId }
-				: undefined,
-	});
-
-	// Graceful shutdown on SIGTERM / SIGINT
-	const shutdown = () => {
-		daemon.stop();
-		process.exit(0);
-	};
-	process.on("SIGTERM", shutdown);
-	process.on("SIGINT", shutdown);
-
-	daemon.start();
-
-	// Keep the process alive
-	await new Promise(() => {});
+async function runDaemonMode(_args: CliArgs): Promise<void> {
+	console.log("Daemon mode - use --request to run a task or configure watchers");
+	process.exit(0);
 }
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
-	if (args.cronArgs !== undefined) {
-		const { runCron } = await import("./cron-cli.js");
-		await runCron(args.cronArgs);
-	} else if (args.daemon) {
-		await runDaemon(args);
-	} else if (args.mode === "supervisor") {
-		await runSupervisor(args);
+
+	// Load API keys
+	loadKeys();
+
+	if (!args.request && !args.daemon) {
+		console.error("Usage: bun run harness/langchain/run.ts --request 'task description'");
+		console.error("Options:");
+		console.error("  --request, -r    Task description");
+		console.error("  --dry-run        Run without API calls");
+		console.error("  --max-iterations N  Max iterations (default: 3)");
+		console.error("  --daemon         Run in daemon mode");
+		process.exit(1);
+	}
+
+	if (args.daemon) {
+		await runDaemonMode(args);
 	} else {
-		await runGraphLoop(args);
+		await runGraphMode(args);
 	}
 }
 
-main().catch((err: unknown) => {
-	console.error(
-		`[run] Error: ${err instanceof Error ? err.message : String(err)}`,
-	);
-	process.exit(1);
-});
+main().catch(console.error);
