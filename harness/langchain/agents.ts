@@ -37,7 +37,7 @@ export const ReviewVerdictSchema = z.object({
 	comments: z
 		.array(
 			z.object({
-				file: z.string().optional().describe("Affected file, if known"),
+				file: z.string().describe("Affected file, if known"),
 				comment: z.string().describe("Actionable change request"),
 				severity: z.enum(["critical", "major", "minor"]).optional(),
 			}),
@@ -283,7 +283,7 @@ export async function parallelReview(
 		comments: unknown[],
 		type: SpecialistType,
 	): {
-		file?: string;
+		file: string;
 		comment: string;
 		severity: "critical" | "major" | "minor";
 	}[] =>
@@ -294,7 +294,7 @@ export async function parallelReview(
 				severity?: "critical" | "major" | "minor";
 			};
 			return {
-				file: comment.file,
+				file: comment.file ?? "",
 				comment: `[${type}] ${comment.comment}`,
 				severity: comment.severity ?? "minor",
 			};
