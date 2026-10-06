@@ -197,6 +197,8 @@ async function runDaemon(args: CliArgs): Promise<void> {
 	console.log(`[run] PLANNER_API_KEY=${process.env.PLANNER_API_KEY?.slice(0, 10)}...`);
 	console.log(`[run] PLANNER_MODEL=${process.env.PLANNER_MODEL}`);
 	console.log(`[run] PLANNER_BASE_URL=${process.env.PLANNER_BASE_URL}`);
+	console.log(`[run] Env has PLANNER_API_KEY: ${!!process.env.PLANNER_API_KEY}`);
+	console.log(`[run] PLANNER_API_KEY length: ${process.env.PLANNER_API_KEY?.length}`);
 
 	const { LoopDaemon } = await import("./daemon.js");
 	const daemon = new LoopDaemon({
