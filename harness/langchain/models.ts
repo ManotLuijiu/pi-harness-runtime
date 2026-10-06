@@ -98,7 +98,6 @@ export function createPlannerModel(
 	const resolved = "baseURL" in opts ? opts : readEnv("PLANNER", process.env);
 	// resolved.baseURL is always a string (readEnv throws if absent); cast is safe
 	const baseURL = (opts.baseURL ?? resolved.baseURL) as string;
-	console.log(`[models] createPlannerModel - apiKey=${((opts.apiKey ?? resolved.apiKey) as string)?.slice(0,10)}..., model=${opts.model ?? resolved.model}, baseURL=${baseURL}`);
 	return new ChatOpenAI({
 		model: opts.model ?? resolved.model,
 		apiKey: opts.apiKey ?? resolved.apiKey,
