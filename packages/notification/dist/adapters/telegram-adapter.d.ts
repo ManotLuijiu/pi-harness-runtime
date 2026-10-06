@@ -27,6 +27,11 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      */
     send(payload: NotificationPayload): Promise<NotificationResult>;
     /**
+     * Send a question that expects a text response from the user.
+     * Writes response metadata to a file for polling.
+     */
+    sendQuestion(payload: NotificationPayload, responseDir?: string): Promise<NotificationResult>;
+    /**
      * Build inline keyboard markup from button configuration
      */
     private buildInlineKeyboard;

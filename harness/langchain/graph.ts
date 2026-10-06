@@ -26,6 +26,17 @@ import {
 	type ReviewVerdict,
 	ReviewVerdictSchema,
 } from "./agents.js";
+
+// ─── Module-level state for Jev provider selection ──────────────────────────
+let _currentProvider: "minimax" | "gpt" = "minimax";
+
+export function setJevProvider(provider: "minimax" | "gpt"): void {
+	_currentProvider = provider;
+}
+
+export function getJevProvider(): "minimax" | "gpt" {
+	return _currentProvider;
+}
 import { readFileSync } from "node:fs";
 import { WriteReviewBlackboard } from "../../packages/write-review/src/blackboard.js";
 import { getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
@@ -437,16 +448,35 @@ export async function buildRealLoopDeps(
 		maxIterations: options.maxIterations ?? 3,
 		onStep,
 		plan: async (request) => {
-			// P1-2: detect autonomy signal in the request and unlock full autonomous mode
-			_directive = isAutonomyRequest(request) ? autonomyDirective() : "";
-			return lastMessage(
-				await planner.invoke({
+				// P1-2: detect autonomy signal in the request and unlock full autonomous mode
+				_directive = isAutonomyRequest(request) ? autonomyDirective() : "";
+				const plannerResponse = await planner.invoke({
 					messages: [
 						{ role: "user", content: _directive + withScoreboard(request) },
 					],
-				}),
-			);
-		},
+				});
+				const planOutput = lastMessage(plannerResponse) ?? "";
+
+				// Import and use Jev logger (async - logs to file + Telegram)
+				try {
+					const { logJevDecision, parseJevDecision } = await import("./jev-logger.js");
+					const jevDecision = parseJevDecision(planOutput);
+					setJevProvider(jevDecision.provider);
+					await logJevDecision({
+						timestamp: new Date().toISOString(),
+						request,
+						provider: jevDecision.provider,
+						reason: jevDecision.reason,
+						userInput: jevDecision.userInput,
+						escalate: false,
+						raw: planOutput,
+					});
+				} catch (logErr) {
+					console.error("[JEV] Logger error:", (logErr as Error).message);
+				}
+
+				return planOutput;
+			},
 		write: async (plan, review) => {
 			const userMsg = review
 				? `## Plan\n${plan}\n\n## Review comments to address\n${review.comments

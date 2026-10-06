@@ -69,6 +69,19 @@ export declare class NotificationCenter {
         additionalDetails?: Record<string, unknown>;
     }): Promise<NotificationResult[]>;
     /**
+     * Send a question that expects a text response from the user.
+     * Unlike notifyWithApproval (Yes/No buttons), this sends a plain message
+     * and waits for the user to type their response.
+     */
+    notifyWithQuestion(event: NotificationEvent, context: NotificationContext, options?: {
+        /** Custom question to ask */
+        question?: string;
+        /** Hint for expected response format */
+        expectedFormat?: string;
+        /** Response directory for tracking */
+        responseDir?: string;
+    }): Promise<NotificationResult[]>;
+    /**
      * Send interactive notification with custom buttons
      */
     notifyWithButtons(event: NotificationEvent, context: NotificationContext, buttons: Array<{
