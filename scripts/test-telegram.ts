@@ -11,7 +11,7 @@ const nc = new NotificationCenter({
       config: {
         botToken: "0000000000:REDACTED-TOKEN",
         chatId: "1234567890",
-        parseMode: undefined // Disable markdown to avoid escaping issues
+        parseMode: "HTML" as const // Use HTML mode instead of MarkdownV2
       }
     }
   ]
