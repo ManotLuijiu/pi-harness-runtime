@@ -1179,7 +1179,8 @@ export class LoopDaemon {
 				}
 				return undefined; // default MemorySaver
 			})();
-			const loop: WriteReviewLoop = buildWriteReviewLoop(deps, {
+			console.log(`[${loopId}] Using models - PLANNER=${process.env.PLANNER_MODEL} (${process.env.PLANNER_BASE_URL}), GLM=${process.env.GLM_MODEL} (${process.env.GLM_BASE_URL}), MINIMAX=${process.env.MINIMAX_MODEL} (${process.env.MINIMAX_BASE_URL})`);
+		const loop: WriteReviewLoop = buildWriteReviewLoop(deps, {
 				checkpointer,
 			});
 
