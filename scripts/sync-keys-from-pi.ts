@@ -112,18 +112,30 @@ function syncKey(providerName: string, filename: string): boolean {
  * Create default config files for required but missing keys
  */
 function createDefaultConfigs(): void {
-  // Create planner-model.txt if missing
+  // Planner defaults
   const plannerModelFile = join(KEYS_DIR, "planner-model.txt");
   if (!existsSync(plannerModelFile)) {
     writeFileSync(plannerModelFile, "gpt-4o");
     console.log(`[sync-keys] Created ${plannerModelFile} (default: gpt-4o)`);
   }
 
-  // Create planner-base-url.txt if missing
   const plannerBaseUrlFile = join(KEYS_DIR, "planner-base-url.txt");
   if (!existsSync(plannerBaseUrlFile)) {
     writeFileSync(plannerBaseUrlFile, "https://api.openai.com/v1");
     console.log(`[sync-keys] Created ${plannerBaseUrlFile} (default: OpenAI)`);
+  }
+
+  // GLM defaults (zai)
+  const glmModelFile = join(KEYS_DIR, "glm-model.txt");
+  if (!existsSync(glmModelFile)) {
+    writeFileSync(glmModelFile, "glm-4");
+    console.log(`[sync-keys] Created ${glmModelFile} (default: glm-4)`);
+  }
+
+  const glmBaseUrlFile = join(KEYS_DIR, "glm-base-url.txt");
+  if (!existsSync(glmBaseUrlFile)) {
+    writeFileSync(glmBaseUrlFile, "https://api.z.ai/api/v1");
+    console.log(`[sync-keys] Created ${glmBaseUrlFile} (default: z.ai)`);
   }
 }
 
