@@ -250,6 +250,59 @@ export class NotificationCenter {
 	}
 
 	/**
+	 * Send a question that expects a text response from the user.
+	 * Unlike notifyWithApproval (Yes/No buttons), this sends a plain message
+	 * and waits for the user to type their response.
+	 */
+	async notifyWithQuestion(
+		event: NotificationEvent,
+		context: NotificationContext,
+		options?: {
+			/** Custom question to ask */
+			question?: string;
+			/** Hint for expected response format */
+			expectedFormat?: string;
+			/** Response directory for tracking */
+			responseDir?: string;
+		},
+	): Promise<NotificationResult[]> {
+		const question = options?.question ?? `Question for task ${context.jobId}`;
+		const hint = options?.expectedFormat
+			? `\n\nPlease reply with: ${options.expectedFormat}`
+			: "\n\nPlease type your response below.";
+		const fullMessage = `${question}${hint}`;
+
+		const results: NotificationResult[] = [];
+
+		for (const [id, adapter] of this.adapters.entries()) {
+			if (adapter instanceof TelegramAdapter) {
+				try {
+					const payload: NotificationPayload = {
+						event,
+						jobId: context.jobId,
+						timestamp: new Date().toISOString(),
+						title: `Question from ${context.jobId}`,
+						message: fullMessage,
+						details: {
+							waitForResponse: true,
+							expectedFormat: options?.expectedFormat,
+						},
+					};
+					const result = await adapter.sendQuestion(
+						payload,
+						options?.responseDir,
+					);
+					results.push(result);
+				} catch (error) {
+					results.push({ success: false, channel: id, error: String(error) });
+				}
+			}
+		}
+
+		return results;
+	}
+
+	/**
 	 * Send interactive notification with custom buttons
 	 */
 	async notifyWithButtons(
