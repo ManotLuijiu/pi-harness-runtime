@@ -39,7 +39,7 @@ export const ReviewVerdictSchema = z.object({
 			z.object({
 				file: z.string().describe("Affected file, if known"),
 				comment: z.string().describe("Actionable change request"),
-				severity: z.enum(["critical", "major", "minor"]).optional(),
+				severity: z.enum(["critical", "major", "minor"]),
 			}),
 		)
 		.describe("Comments to send back to the coder (empty when approved)"),
