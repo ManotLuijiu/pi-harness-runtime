@@ -120,24 +120,23 @@ function formatTelegramMessage(entry: JevLogEntry): string {
  * Send message to Telegram (async, queued)
  */
 async function sendToTelegram(message: string): Promise<void> {
-	if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-		// Try to configure from environment if not set
-		if (!TELEGRAM_BOT_TOKEN) {
-			TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-		}
-		if (!TELEGRAM_CHAT_ID) {
-			TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-		}
-	}
+	// Always try to load from env first
+	TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? TELEGRAM_BOT_TOKEN;
+	TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? TELEGRAM_CHAT_ID;
 
 	if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-		return; // Telegram not configured
+		console.log("[JEV] Telegram not configured - skipping");
+		return;
 	}
 
+	console.log(`[JEV] Telegram sending: ${TELEGRAM_BOT_TOKEN?.slice(0, 10)}... to ${TELEGRAM_CHAT_ID}`);
 	telegramQueue.push(message);
 
 	// Process queue sequentially
-	if (telegramSending) return;
+	if (telegramSending) {
+		console.log("[JEV] Telegram already sending, queued");
+		return;
+	}
 	telegramSending = true;
 
 	while (telegramQueue.length > 0) {
@@ -158,6 +157,8 @@ async function sendToTelegram(message: string): Promise<void> {
 
 			if (!response.ok) {
 				console.error(`[JEV] Telegram send failed: ${response.status}`);
+			} else {
+				console.log("[JEV] Telegram sent successfully");
 			}
 		} catch (err) {
 			console.error(`[JEV] Telegram error:`, err);
@@ -179,9 +180,12 @@ export async function logJevDecision(decision: JevLogEntry): Promise<void> {
 
 	// Send to Telegram (async, non-blocking for main flow)
 	const telegramMsg = formatTelegramMessage(decision);
+	// Fire-and-forget: don't await, let it run in background
 	sendToTelegram(telegramMsg).catch((err) => {
 		console.error("[JEV] Failed to send Telegram notification:", err);
 	});
+	// Also await briefly for testing, then let process exit handle it
+	await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
 /**
