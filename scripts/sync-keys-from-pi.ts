@@ -22,12 +22,12 @@ const PI_AUTH_FILE = join(homedir(), ".pi", "agent", "auth.json");
 const KEYS_DIR = join(homedir(), ".pi-harness-runtime", "keys");
 
 // Key mappings: pi provider name -> key file name
+// Note: openai-codex uses OAuth access token (not api_key)
 const KEY_MAPPINGS: Record<string, string> = {
   // Model API keys (for daemon loop)
   minimax: "minimax-api-key.txt",
   zai: "glm-api-key.txt", // zai = GLM for review
-  openai: "planner-api-key.txt", // OpenAI can be used as planner
-  openaiCodex: "codex-api-key.txt", // Codex CLI key
+  "openai-codex": "planner-api-key.txt", // OpenAI OAuth access token as planner
 
   // Other services
   qdrant: "qdrant-api-key.txt",
