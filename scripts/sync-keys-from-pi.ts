@@ -147,7 +147,7 @@ function createDefaultConfigs(): void {
 
   const minimaxBaseUrlFile = join(KEYS_DIR, "minimax-base-url.txt");
   if (!existsSync(minimaxBaseUrlFile)) {
-    writeFileSync(minimaxBaseUrlFile, "https://api.minimax.io");
+    writeFileSync(minimaxBaseUrlFile, "https://api.minimax.io/v1");
     console.log(`[sync-keys] Created ${minimaxBaseUrlFile} (default: api.minimax.io)`);
   }
 }
