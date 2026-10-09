@@ -903,9 +903,18 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 			// Register harness services diagnostic commands
 			try {
-				const { initServiceCommands } = await import("./harness/service-commands.js");
-				initServiceCommands(pi);
-				logStartup("[pi-harness] Registered service diagnostic commands");
+			const { initServiceCommands } = await import("./harness/service-commands.js");
+			initServiceCommands(pi);
+			logStartup("[pi-harness] Registered service diagnostic commands");
+
+			// Register Infisical setup command
+			try {
+			const { registerInfisicalSetup } = await import("./harness/infisical-setup.js");
+			registerInfisicalSetup(pi);
+			logStartup("[pi-harness] Registered /setup-infisical command");
+		} catch (err) {
+			logStartup("[pi-harness] Infisical setup not available:", err instanceof Error ? err.message : String(err));
+		}
 			} catch (err) {
 				logStartup(`[pi-harness] Failed to register service commands:`, err instanceof Error ? err.message : String(err));
 			}
