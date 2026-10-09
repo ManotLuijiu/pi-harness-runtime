@@ -771,6 +771,8 @@ async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
 async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 	try {
 		const { registerAgentPolicy } = await import("./packages/agent-policy/src/extension.js");
+		const { resetPolicyStore } = await import("./packages/agent-policy/src/policy-store.js");
+		resetPolicyStore(); // Auto-reset so new sessions don't need re-acknowledgment
 		registerAgentPolicy(pi, {
 			harnessRulesPath: new URL("./AGENTS.md", import.meta.url),
 			requireReceiptBeforeMutation: false, // Git guard handles git operations; build/dev commands allowed
