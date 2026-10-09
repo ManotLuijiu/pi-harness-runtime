@@ -4,6 +4,24 @@
  * Before sending to Telegram, this module analyzes content for sensitive
  * credentials that should NOT be transmitted.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+/**
+ * Get API key from key file
+ */
+function getKeyFromFile(keyName) {
+    const keyPath = join(homedir(), ".pi-harness-runtime", "keys", `${keyName}.txt`);
+    if (existsSync(keyPath)) {
+        try {
+            return readFileSync(keyPath, "utf8").trim();
+        }
+        catch {
+            return undefined;
+        }
+    }
+    return undefined;
+}
 /**
  * Extract text content from notification payload
  */
@@ -14,7 +32,7 @@ function extractContent(payload) {
     if (payload.message)
         parts.push(payload.message);
     if (payload.details) {
-        for (const [key, value] of Object.entries(payload.details)) {
+        for (const [_key, value] of Object.entries(payload.details)) {
             if (typeof value === "string" && value) {
                 parts.push(value);
             }
@@ -69,8 +87,8 @@ function heuristicCheck(content) {
  * Call Jev to analyze content for sensitive credentials
  */
 async function callJev(content) {
-    // Get API key from environment
-    const apiKey = process.env.TYPESAFE_API_KEY;
+    // Get API key from environment or key file
+    const apiKey = process.env.TYPESAFE_API_KEY || getKeyFromFile("jev-api-key") || getKeyFromFile("typesafe-api-key");
     if (!apiKey) {
         return null; // Jev not available
     }
