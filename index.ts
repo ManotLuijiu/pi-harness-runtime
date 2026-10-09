@@ -433,7 +433,10 @@ async function initTelegram(): Promise<void> {
 /** Module-level Honcho memory instance */
 let _honchoMemory: import("./harness/honcho-memory.js").HonchoMemory | null = null;
 
-async function initHoncho(pi: { events: { emit(name: string, data: unknown): void }; on(event: string, cb: () => void): void }): Promise<void> {
+async function initHoncho(pi: { events: { emit(name: string, data: unknown): void }; on(event: string, cb: () => void): Promise<void> {
+	// Import HonchoMemory module to trigger auto-creation of MCP config
+	await import("./harness/honcho-memory.js");
+
 	const { readFileSync, existsSync } = await import("node:fs");
 	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
