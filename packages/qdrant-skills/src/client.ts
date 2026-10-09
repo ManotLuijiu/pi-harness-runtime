@@ -73,6 +73,98 @@ export async function createCollection(
 }
 
 /**
+ * Get collection info (vector size, distance, point count)
+ */
+export async function getCollectionInfo(
+  client: QdrantClient,
+  name: string
+): Promise<{
+  exists: boolean;
+  vectorsSize?: number;
+  vectorsDistance?: string;
+  pointsCount?: number;
+} | null> {
+  try {
+    const info = await client.getCollection(name) as Record<string, unknown>;
+    // Vectors config can be a named config or default { size, distance }
+    const vectorsConfig = info.vectors as Record<string, unknown> | undefined;
+    let vectorsSize: number | undefined;
+    let vectorsDistance: string | undefined;
+
+    if (vectorsConfig) {
+      // Handle both { size: number, distance: string } and named config { config: { size, distance } }
+      vectorsSize = (vectorsConfig.size ?? (vectorsConfig.config as Record<string, unknown>)?.size) as number | undefined;
+      vectorsDistance = (vectorsConfig.distance ?? (vectorsConfig.config as Record<string, unknown>)?.distance) as string | undefined;
+    }
+
+    // Points count might be in different locations depending on Qdrant version
+    const pointsCount = (info.points ?? info.num_points ?? info.points_count) as number | undefined;
+
+    return {
+      exists: true,
+      vectorsSize,
+      vectorsDistance,
+      pointsCount,
+    };
+  } catch (err) {
+    if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      return { exists: false };
+    }
+    // Return null on other errors
+    return null;
+  }
+}
+
+/**
+ * Validate collection schema matches expected embedding model
+ */
+export async function validateCollectionSchema(
+  client: QdrantClient,
+  name: string,
+  expectedDimensions: number,
+  expectedDistance: string = "Cosine"
+): Promise<{
+  valid: boolean;
+  error?: string;
+  actualDimensions?: number;
+  actualDistance?: string;
+}> {
+  const info = await getCollectionInfo(client, name);
+
+  if (!info) {
+    return { valid: false, error: "Could not retrieve collection info" };
+  }
+
+  if (!info.exists) {
+    return { valid: false, error: "Collection does not exist" };
+  }
+
+  if (info.vectorsSize !== expectedDimensions) {
+    return {
+      valid: false,
+      error: `Dimension mismatch: expected ${expectedDimensions}, got ${info.vectorsSize}`,
+      actualDimensions: info.vectorsSize,
+      actualDistance: info.vectorsDistance,
+    };
+  }
+
+  if (info.vectorsDistance && info.vectorsDistance !== expectedDistance) {
+    return {
+      valid: false,
+      error: `Distance mismatch: expected ${expectedDistance}, got ${info.vectorsDistance}`,
+      actualDimensions: info.vectorsSize,
+      actualDistance: info.vectorsDistance,
+    };
+  }
+
+  return {
+    valid: true,
+    actualDimensions: info.vectorsSize,
+    actualDistance: info.vectorsDistance,
+  };
+}
+
+/**
  * Delete a collection
  */
 export async function deleteCollection(
