@@ -1,0 +1,27 @@
+{
+  "name": "@pi-harness/webmcp-tester",
+  "version": "1.1.0",
+  "description": "WebMCP-powered E2E testing for pi-harness - natural language test scenarios",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "webmcp",
+    "testing",
+    "e2e",
+    "automation"
+  ],
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

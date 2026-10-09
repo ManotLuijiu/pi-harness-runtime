@@ -931,6 +931,15 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 		} catch (err) {
 			logStartup("[pi-harness] Infisical setup not available:", err instanceof Error ? err.message : String(err));
 		}
+
+		// Register E2E testing commands
+		try {
+			const { registerE2ECommands } = await import("./harness/e2e-commands.js");
+			registerE2ECommands(pi);
+			logStartup("[pi-harness] Registered /e2e commands");
+		} catch (err) {
+			logStartup("[pi-harness] Infisical setup not available:", err instanceof Error ? err.message : String(err));
+		}
 			} catch (err) {
 				logStartup(`[pi-harness] Failed to register service commands:`, err instanceof Error ? err.message : String(err));
 			}
