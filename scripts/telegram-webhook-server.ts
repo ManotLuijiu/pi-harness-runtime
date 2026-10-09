@@ -200,11 +200,16 @@ function handleRequest(req: import("node:http").IncomingMessage, res: import("no
     try {
       // Read job commands from file
       const jobCommands = readJobCommands();
-      // Allow any origin for API access
-      // Note: Authentication is via Bearer token in Authorization header
+      // Restrict CORS to same origin or configured allowed origins
+      const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+      const origin = req.headers.origin;
+      const isAllowedOrigin = !origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin);
+      const corsHeader = isAllowedOrigin ? (origin || '*') : '';
+
       res.writeHead(200, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": corsHeader,
+        "Access-Control-Allow-Credentials": "true",
         "Cache-Control": "no-cache",
       });
       res.end(JSON.stringify({ commands: jobCommands }));
@@ -361,8 +366,8 @@ async function main(): Promise<void> {
   console.log("=".repeat(60));
   console.log("Telegram Webhook Server — RFC-0022");
   console.log("=".repeat(60));
-  console.log(`Bot token: ${BOT_TOKEN!.slice(0, 10)}...`);
-  console.log(`Webhook secret: ${WEBHOOK_SECRET.slice(0, 8)}...`);
+  console.log(`Bot token: ${BOT_TOKEN ? '[REDACTED]' : 'MISSING'}`);
+  console.log(`Webhook secret: ${WEBHOOK_SECRET ? '[REDACTED]' : 'MISSING'}`);
   console.log(`Callback queue: ${CALLBACK_QUEUE_FILE}`);
   console.log(`Port: ${PORT}`);
   console.log("=".repeat(60));
