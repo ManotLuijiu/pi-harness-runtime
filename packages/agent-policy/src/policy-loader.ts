@@ -389,11 +389,25 @@ export class PolicyLoader {
  * Create a PolicyLoader with the standard harness configuration.
  */
 export function createPolicyLoader(): PolicyLoader {
-  // Resolve harness AGENTS.md relative to the package root (pi-harness-runtime/)
+  // Resolve harness rules relative to the package root (pi-harness-runtime/)
   // import.meta.url is packages/agent-policy/src/policy-loader.ts
   // So we go up 3 levels to reach the package root
   const packageRoot = new URL("../../..", import.meta.url);
-  const harnessRulesPath = new URL("AGENTS.md", packageRoot);
+
+  // Check for AGENTS.md first, then RULES.md as fallback
+  const agentsPath = new URL("AGENTS.md", packageRoot);
+  const rulesPath = new URL("RULES.md", packageRoot);
+
+  // Use whichever exists
+  const harnessRulesPath = existsSync(agentsPath) ? agentsPath : rulesPath;
+
+  // Log which file we're using (for debugging)
+  const usingFile = harnessRulesPath.toString().includes("AGENTS") ? "AGENTS.md" : "RULES.md";
+  if (existsSync(harnessRulesPath)) {
+    console.log(`[agent-policy] Using harness rules: ${usingFile}`);
+  } else {
+    console.warn(`[agent-policy] WARNING: Neither AGENTS.md nor RULES.md found in package root`);
+  }
 
   return new PolicyLoader({
     harnessRulesPath,

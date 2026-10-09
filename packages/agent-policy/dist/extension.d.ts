@@ -13,7 +13,8 @@ import type { AgentPolicyConfig } from "./types.js";
  */
 export declare function registerAgentPolicy(pi: ExtensionAPI, config: AgentPolicyConfig): void;
 /**
- * Register with default configuration pointing to harness AGENTS.md.
+ * Register with default configuration pointing to harness rules.
+ * Checks for AGENTS.md first, then RULES.md as fallback.
  */
 export declare function registerDefault(pi: ExtensionAPI): void;
 //# sourceMappingURL=extension.d.ts.map
