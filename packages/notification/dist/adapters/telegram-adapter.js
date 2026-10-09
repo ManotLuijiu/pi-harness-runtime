@@ -271,24 +271,29 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
     }
     formatMessage(payload) {
-        const emoji = this.getEmoji(payload.event);
-        const title = `${emoji} ${payload.title}`;
-        // Mask any secrets in message before sending to Telegram
+        // Mask all fields before rendering - defense in depth
+        const maskedTitle = maskString(payload.title);
         const maskedMessage = maskString(payload.message);
+        const taskTitle = payload.details?.taskTitle;
+        const jobId = payload.details?.jobId;
+        const errorVal = payload.details?.error;
+        const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
+        const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
+        const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
+        const emoji = this.getEmoji(payload.event);
+        const title = `${emoji} ${maskedTitle}`;
         const lines = [title, "", maskedMessage];
-        if (payload.details?.taskTitle) {
-            lines.push("", `Task: ${payload.details.taskTitle}`);
+        if (maskedTaskTitle) {
+            lines.push("", `Task: ${maskedTaskTitle}`);
         }
-        if (payload.details?.jobId) {
-            lines.push(`Job: ${payload.details.jobId}`);
+        if (maskedJobId) {
+            lines.push(`Job: ${maskedJobId}`);
         }
-        if (payload.details?.error) {
-            // Mask secrets in error messages too
-            const errorStr = String(payload.details.error);
-            const maskedError = maskString(errorStr);
+        if (maskedError) {
             lines.push("", `Error: ${maskedError}`);
         }
-        return lines.filter(Boolean).join("\n");
+        // Final mask pass on the complete rendered string
+        return maskString(lines.filter(Boolean).join("\n"));
     }
     getEmoji(event) {
         const map = {

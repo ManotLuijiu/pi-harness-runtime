@@ -17,7 +17,8 @@ import { createServer } from "node:http";
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "default-secret-change-me";
+// SECURITY: Require webhook secret - fail closed if not set
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 const WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const CALLBACK_QUEUE_FILE = process.env.CALLBACK_QUEUE_FILE || join(process.env.HOME || "/tmp", ".pi-harness-runtime", "callback-queue.jsonl");
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -26,8 +27,68 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 if (!BOT_TOKEN) {
   console.error("[TelegramWebhook] ERROR: TELEGRAM_BOT_TOKEN not set");
   console.error("[TelegramWebhook] Usage:");
-  console.error("[TelegramWebhook]   TELEGRAM_BOT_TOKEN=xxx bun run scripts/telegram-webhook-server.ts");
+  console.error("[TelegramWebhook]   TELEGRAM_BOT_TOKEN=xxx TELEGRAM_WEBHOOK_SECRET=xxx bun run scripts/telegram-webhook-server.ts");
   process.exit(1);
+}
+
+// SECURITY: Require webhook secret - fail closed in production
+if (!WEBHOOK_SECRET) {
+  console.error("[TelegramWebhook] ERROR: TELEGRAM_WEBHOOK_SECRET not set");
+  console.error("[TelegramWebhook] SECURITY: Webhook secret is required for production");
+  console.error("[TelegramWebhook] Usage:");
+  console.error("[TelegramWebhook]   TELEGRAM_WEBHOOK_SECRET=<high-entropy-secret> bun run scripts/telegram-webhook-server.ts");
+  process.exit(1);
+}
+
+// --- Authorization helpers ---
+function getAllowedUserIds(): Set<number> {
+  const ids = new Set<number>();
+
+  // Priority 1: Environment variable
+  const envUsers = process.env.TELEGRAM_ALLOWED_USERS;
+  if (envUsers) {
+    for (const part of envUsers.split(",")) {
+      const num = parseInt(part.trim(), 10);
+      if (!isNaN(num) && num > 0) ids.add(num);
+    }
+  }
+
+  // Priority 2: Key file (telegram-allowed-users.txt)
+  const allowedFile = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "keys", "telegram-allowed-users.txt");
+  if (existsSync(allowedFile)) {
+    const content = readFileSync(allowedFile, "utf8").trim();
+    for (const part of content.split(",")) {
+      const num = parseInt(part.trim(), 10);
+      if (!isNaN(num) && num > 0) ids.add(num);
+    }
+  }
+
+  // Priority 3: Legacy chat ID file
+  const legacyFile = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "keys", "telegram-chat-id.txt");
+  if (existsSync(legacyFile) && ids.size === 0) {
+    const content = readFileSync(legacyFile, "utf8").trim();
+    const num = parseInt(content, 10);
+    if (!isNaN(num) && num > 0) ids.add(num);
+  }
+
+  return ids;
+}
+
+function isAuthorizedUser(userId: number): boolean {
+  const allowed = getAllowedUserIds();
+  // SECURITY: Fail closed - deny if no allowlist configured
+  if (allowed.size === 0) {
+    console.warn("[TelegramWebhook] SECURITY: No TELEGRAM_ALLOWED_USERS configured - denying access");
+    return false;
+  }
+  return allowed.has(userId);
+}
+
+// SECURITY: Sanitize URLs from error messages
+function sanitizeError(error: unknown): string {
+  const msg = String(error);
+  // Remove any bot token URLs
+  return msg.replace(/https?:\/\/[^/]*\/bot[^/]+\/[^\s]*/gi, "[REDACTED_URL]");
 }
 
 // --- Types ---
@@ -275,7 +336,24 @@ function handleRequest(req: import("node:http").IncomingMessage, res: import("no
         const cq = update.callback_query;
         const parsed = parseCallbackData(cq.data);
 
-        console.log(`[TelegramWebhook] Callback: ${cq.data} from ${cq.from.username || cq.from.first_name}`);
+        // SECURITY: Validate sender is authorized user
+        if (!isAuthorizedUser(cq.from.id)) {
+          console.warn(`[TelegramWebhook] Unauthorized user: ${cq.from.id} (${cq.from.username || cq.from.first_name})`);
+          // Answer callback query to remove loading state
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              callback_query_id: cq.id,
+              text: "Unauthorized. Please contact the bot owner.",
+            }),
+          });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        console.log(`[TelegramWebhook] Callback: ${cq.data} from user_id=${cq.from.id}`);
 
         // Queue for pi-harness to process
         const queued: QueuedCallback = {
@@ -318,7 +396,7 @@ function handleRequest(req: import("node:http").IncomingMessage, res: import("no
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     } catch (err) {
-      console.error("[TelegramWebhook] Error:", err);
+      console.error("[TelegramWebhook] Error:", sanitizeError(err));
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Internal error" }));
     }
@@ -330,7 +408,8 @@ async function setupWebhook(): Promise<void> {
   if (!WEBHOOK_URL) {
     console.log("[TelegramWebhook] TELEGRAM_WEBHOOK_URL not set — skipping webhook setup");
     console.log("[TelegramWebhook] To set webhook manually:");
-    console.log(`[TelegramWebhook]   curl -X POST https://api.telegram.org/bot${BOT_TOKEN}/setWebhook -d '{"url":"YOUR_WEBHOOK_URL","secret_token":"${WEBHOOK_SECRET}"}'`);
+    console.log("[TelegramWebhook]   Configure webhook URL via environment or secret provider");
+    console.log("[TelegramWebhook]   Then run: curl -X POST https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook -d json_with_secrets_removed");
     return;
   }
 
@@ -347,7 +426,7 @@ async function setupWebhook(): Promise<void> {
   if (result.ok) {
     console.log(`[TelegramWebhook] Webhook set to: ${WEBHOOK_URL}`);
   } else {
-    console.error(`[TelegramWebhook] Webhook setup failed: ${result.description}`);
+    console.error(`[TelegramWebhook] Webhook setup failed: ${sanitizeError(result.description)}`);
   }
 }
 
