@@ -9,6 +9,8 @@
  * Patterns that match sensitive values
  */
 const SENSITIVE_PATTERNS: RegExp[] = [
+	// Telegram bot tokens: format is \d+:[-A-Za-z0-9_]{35,}
+	/\d+:[-A-Za-z0-9_]{35,}/g,
 	// Generic API keys, tokens, secrets
 	/[a-zA-Z0-9_-]{32,}/g,                    // Long alphanumeric strings (likely keys)
 	/[A-Fa-f0-9]{32,}/g,                     // Hex strings (likely hashes/keys)
@@ -47,6 +49,13 @@ const SENSITIVE_FIELD_PATTERNS = [
  * Mask a value showing first and last characters
  */
 export function maskValue(value: string): string {
+	// Telegram bot tokens use the format \d+:[-A-Za-z0-9_]{35,}
+	// Mask these completely - no prefix/suffix preserved
+	if (/^\d+:[-A-Za-z0-9_]+$/.test(value)) {
+		return "[REDACTED]";
+	}
+
+	// For other values, show first 4 + last 4
 	if (!value || value.length <= 8) {
 		return "****";
 	}
@@ -129,7 +138,8 @@ export function maskObject(obj: unknown, depth: number = 0): Record<string, unkn
 		return result as Record<string, unknown>;
 	}
 
-	return obj;
+	// SAFETY: obj is one of the primitive types at this point
+	return obj as unknown as (Record<string, unknown> | unknown[] | string | number | boolean | null);
 }
 
 /**
