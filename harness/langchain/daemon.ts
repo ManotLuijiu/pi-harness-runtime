@@ -1123,7 +1123,7 @@ export class LoopDaemon {
 				);
 				if (!approved) {
 					log(`Human denied approval — parking task`);
-					this._notifyHumanReviewNeeded(
+					await this._notifyHumanReviewNeeded(
 						task,
 						"Human denied approval for task start",
 					);
@@ -1282,7 +1282,7 @@ export class LoopDaemon {
 					log("Task timed out — releasing lease and cleaning up");
 					this._releaseLease(task.taskId);
 					this.running.delete(task.taskId);
-					this._notifyHumanReviewNeeded(
+					await this._notifyHumanReviewNeeded(
 						task,
 						`Task timed out after ${this.config.taskTimeoutMs}ms — manual review needed`,
 					);
@@ -1399,18 +1399,18 @@ export class LoopDaemon {
 
 			// ── Notify on blocked / max-iterations ─────────────────────────────
 			if (verdict === "blocked") {
-				this._notifyHumanReviewNeeded(
+				await this._notifyHumanReviewNeeded(
 					task,
 					`Loop blocked: ${finalState.review?.summary ?? "no details"}`,
 				);
 			} else if (verdict === "changes_requested") {
-				this._notifyHumanReviewNeeded(
+				await this._notifyHumanReviewNeeded(
 					task,
 					`${iterations} iteration(s) exhausted with changes still requested: ${finalState.review?.comments.map((c) => c.comment).join("; ") ?? "no details"}`,
 				);
 			} else {
 				// approved
-				this._notifyReadyForClient(task);
+				await this._notifyReadyForClient(task);
 			}
 
 			// ── Notify agent of loop completion (TUI todo count) ───────────────
@@ -1536,19 +1536,33 @@ export class LoopDaemon {
 
 	// ─── Notifications ────────────────────────────────────────────────────
 
-	private _notifyHumanReviewNeeded(task: TriggeredTask, reason: string): void {
+	private async _notifyHumanReviewNeeded(task: TriggeredTask, reason: string): Promise<void> {
 		if (!this.notificationCenter) return;
 		console.log(`[daemon] Notifying HumanReviewNeeded: ${reason}`);
-		this.notificationCenter
-			.notify("HumanReviewNeeded", {
+		try {
+			const results = await this.notificationCenter.notify("HumanReviewNeeded", {
 				jobId: task.taskId,
 				requirement: task.request,
 				taskId: task.taskId,
 				error: reason,
-			})
-			.catch((err) => {
-				console.warn(`[daemon] Notification failed: ${err}`);
 			});
+			for (const result of results) {
+				if (!result.success) {
+					// Redact sensitive data — do not log token, chat ID, or full payload
+					const category = result.error?.includes("401") || result.error?.includes("403")
+						? "auth"
+						: result.error?.includes("400")
+							? "bad_request"
+							: result.error?.includes("429")
+								? "rate_limit"
+								: "unknown";
+					console.warn(`[daemon] Notification failed to ${result.channel} (${category}): ${result.error}`);
+				}
+			}
+		}
+		catch (err) {
+			console.warn(`[daemon] Notification threw: ${err}`);
+		}
 	}
 
 	private _closeBdIssue(taskId: string, verdict: string): void {
@@ -1572,18 +1586,31 @@ export class LoopDaemon {
 		}
 	}
 
-	private _notifyReadyForClient(task: TriggeredTask): void {
+	private async _notifyReadyForClient(task: TriggeredTask): Promise<void> {
 		if (!this.notificationCenter) return;
 		console.log(`[daemon] Notifying ReadyForClient`);
-		this.notificationCenter
-			.notify("ReadyForClient", {
+		try {
+			const results = await this.notificationCenter.notify("ReadyForClient", {
 				jobId: task.taskId,
 				requirement: task.request,
 				taskId: task.taskId,
-			})
-			.catch((err) => {
-				console.warn(`[daemon] Notification failed: ${err}`);
 			});
+			for (const result of results) {
+				if (!result.success) {
+					const category = result.error?.includes("401") || result.error?.includes("403")
+						? "auth"
+						: result.error?.includes("400")
+							? "bad_request"
+							: result.error?.includes("429")
+								? "rate_limit"
+								: "unknown";
+					console.warn(`[daemon] Notification failed to ${result.channel} (${category}): ${result.error}`);
+				}
+			}
+		}
+		catch (err) {
+			console.warn(`[daemon] Notification threw: ${err}`);
+		}
 	}
 
 	/**
