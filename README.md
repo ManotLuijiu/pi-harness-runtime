@@ -844,6 +844,27 @@ USER A (you):
 
 See [docs/Telegram-2-Way-Setup.md](docs/Telegram-2-Way-Setup.md) for full guide.
 
+### User Authorization
+
+Telegram callbacks are validated against an allowlist. Sources checked in order:
+
+1. `TELEGRAM_ALLOWED_USERS` environment variable (comma-separated IDs)
+2. `telegram-allowed-users.txt` key file (comma-separated IDs)
+3. `telegram-chat-id.txt` (legacy fallback, single ID)
+
+```bash
+# Option 1: Environment variable
+TELEGRAM_ALLOWED_USERS=123456789,987654321
+
+# Option 2: Key file (~/.pi-harness-runtime/keys/)
+echo "123456789,987654321" > ~/.pi-harness-runtime/keys/telegram-allowed-users.txt
+
+# Option 3: Legacy single user
+echo "123456789" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt
+```
+
+Unauthorized callback queries are rejected before processing.
+
 ## License
 
 MIT © 2026 MooCoding
