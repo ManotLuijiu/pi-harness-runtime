@@ -322,8 +322,11 @@ export class PolicyLoader {
  * Create a PolicyLoader with the standard harness configuration.
  */
 export function createPolicyLoader() {
-    // Resolve harness AGENTS.md relative to the package directory
-    const harnessRulesPath = new URL("../../AGENTS.md", import.meta.url);
+    // Resolve harness AGENTS.md relative to the package root (pi-harness-runtime/)
+    // import.meta.url is packages/agent-policy/src/policy-loader.ts
+    // So we go up 3 levels to reach the package root
+    const packageRoot = new URL("../../..", import.meta.url);
+    const harnessRulesPath = new URL("AGENTS.md", packageRoot);
     return new PolicyLoader({
         harnessRulesPath,
     });
