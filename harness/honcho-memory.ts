@@ -48,6 +48,7 @@ function ensureMcpConfig(): void {
 			honcho: {
 				url: "https://mcp.honcho.dev",
 				auth: "bearer",
+				bearerToken: "YOUR_HONCHO_API_KEY", // Replace with your key from ~/.pi-harness-runtime/keys/honcho-api-key.txt
 			},
 		},
 	};
@@ -55,6 +56,7 @@ function ensureMcpConfig(): void {
 	try {
 		writeFileSync(MCP_CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o644 });
 		console.log("[honcho] MCP config created at:", MCP_CONFIG_FILE);
+		console.log("[honcho] NOTE: Replace YOUR_HONCHO_API_KEY with your actual key");
 	} catch (err) {
 		console.warn("[honcho] Failed to create MCP config:", err);
 	}
