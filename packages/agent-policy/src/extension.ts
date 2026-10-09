@@ -403,8 +403,12 @@ async function checkForBlockingFindings(
  * Register with default configuration pointing to harness AGENTS.md.
  */
 export function registerDefault(pi: ExtensionAPI): void {
-  const harnessRulesPath = new URL("../../../AGENTS.md", import.meta.url);
-  
+  // Resolve AGENTS.md relative to the package root (pi-harness-runtime/)
+  // import.meta.url is packages/agent-policy/src/extension.ts
+  // So we go up 3 levels to reach the package root
+  const packageRoot = new URL("../../..", import.meta.url);
+  const harnessRulesPath = new URL("AGENTS.md", packageRoot);
+
   registerAgentPolicy(pi, {
     harnessRulesPath,
     requireReceiptBeforeMutation: true,
