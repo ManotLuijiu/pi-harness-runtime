@@ -27,6 +27,7 @@
   },
   "files": [
     "*.ts",
+    "*.md",
     "harness/**/*.ts",
     "packages/**/src/**/*.{ts,js}",
     "packages/**/dist/**/*.{js,d.ts,js.map,d.ts.map}",
@@ -36,6 +37,7 @@
     ".pi/plugins/**/*",
     "package.json",
     "README.md",
+    "AGENTS.md",
     "CHANGELOG.md",
     "LICENSE",
     "config.toml.example"

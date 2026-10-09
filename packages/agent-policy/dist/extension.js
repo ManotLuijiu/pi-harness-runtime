@@ -309,14 +309,19 @@ async function checkForBlockingFindings(_ctx, piLensAvailable) {
 // Convenience Export
 // ---------------------------------------------------------------------------
 /**
- * Register with default configuration pointing to harness AGENTS.md.
+ * Register with default configuration pointing to harness rules.
+ * Checks for AGENTS.md first, then RULES.md as fallback.
  */
 export function registerDefault(pi) {
-    // Resolve AGENTS.md relative to the package root (pi-harness-runtime/)
+    // Resolve harness rules relative to the package root (pi-harness-runtime/)
     // import.meta.url is packages/agent-policy/src/extension.ts
     // So we go up 3 levels to reach the package root
     const packageRoot = new URL("../../..", import.meta.url);
-    const harnessRulesPath = new URL("AGENTS.md", packageRoot);
+    const { existsSync } = require("node:fs");
+    // Check for AGENTS.md first, then RULES.md as fallback
+    const agentsPath = new URL("AGENTS.md", packageRoot);
+    const rulesPath = new URL("RULES.md", packageRoot);
+    const harnessRulesPath = existsSync(agentsPath) ? agentsPath : rulesPath;
     registerAgentPolicy(pi, {
         harnessRulesPath,
         requireReceiptBeforeMutation: true,
