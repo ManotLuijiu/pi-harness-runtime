@@ -2,13 +2,16 @@
  * Jev Judge - Main API
  *
  * Structured decision model for agent routing, E2E testing, and automated decisions.
- * Uses TypeSafe Jev via OpenRouter for fast, calibrated, hallucination-free decisions.
+ * Uses TypeSafe Jev via:
+ * - Primary: TypeSafe direct API (https://api.typesafe.ai/v1/systemone)
+ * - Fallback: OpenRouter API (https://openrouter.ai/api/v1)
  *
  * @example
  * ```typescript
  * import { JevJudge } from "@pi-harness/jev-judge";
  *
- * const judge = new JevJudge({ apiKey: process.env.OPENROUTER_API_KEY! });
+ * // Auto-detects TypeSafe vs OpenRouter based on API key and baseUrl
+ * const judge = new JevJudge({ apiKey: process.env.TYPESAFE_API_KEY! });
  *
  * // Ask multiple questions at once
  * const result = await judge.evaluate(
@@ -49,10 +52,16 @@ export declare function hasJevApiKey(): boolean;
 export declare function createJevJudge(config?: Partial<JevJudgeConfig>): JevJudge;
 /**
  * JevJudge - Main class for making structured decisions with Jev
+ *
+ * Supports two providers:
+ * - TypeSafe direct API (primary, recommended)
+ * - OpenRouter API (fallback for backwards compatibility)
  */
 export declare class JevJudge {
-    private client;
+    private typesafeJudge?;
+    private openrouterClient?;
     private config;
+    private provider;
     constructor(config: JevJudgeConfig);
     /**
      * Evaluate state against questions
@@ -99,4 +108,6 @@ export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { TodoItem, WrapUpResult } from "./wrap-up-judge.js";
 export { EnvironmentJudge } from "./environment-judge.js";
 export type { EnvironmentContext, EnvironmentDecision, SafetyCheck, EnvironmentConfig } from "./environment-judge.js";
+export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
+export type { TypeSafeConfig } from "./typesafe-provider.js";
 //# sourceMappingURL=index.d.ts.map
