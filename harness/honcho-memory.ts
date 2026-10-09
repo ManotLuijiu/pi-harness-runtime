@@ -82,6 +82,90 @@ function ensureMcpConfig(): void {
 // Auto-create MCP config on module load
 ensureMcpConfig();
 
+// Start periodic health checks
+startHonchoHealthCheck();
+
+// ---------------------------------------------------------------------------
+// Honcho Health Check - Detect suspended accounts
+// ----------------------------------------------------------------------------
+
+interface HonchoHealthResponse {
+  status: string;
+  suspended?: boolean;
+  message?: string;
+}
+
+let _honchoHealthInterval: ReturnType<typeof setInterval> | null = null;
+const HONCHO_HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+const HONCHO_HEALTH_ENDPOINT = "https://api.honcho.dev/v1/health";
+
+async function checkHonchoHealth(): Promise<void> {
+  const apiKey = existsSync(HONCHO_KEY_FILE)
+    ? readFileSync(HONCHO_KEY_FILE, "utf8").trim()
+    : null;
+
+  if (!apiKey) {
+    return; // No key, skip health check
+  }
+
+  try {
+    const response = await fetch(HONCHO_HEALTH_ENDPOINT, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      console.warn("[honcho] WARNING: API key may be invalid or account suspended");
+      console.warn("[honcho] Please reactivate at: https://app.honcho.dev");
+      return;
+    }
+
+    const data = await response.json().catch(() => ({})) as HonchoHealthResponse;
+
+    if (data.suspended || data.status === "suspended") {
+      console.warn("[honcho] WARNING: Honcho account is suspended due to inactivity");
+      console.warn("[honcho] Reactivate at: https://app.honcho.dev");
+      console.warn("[honcho] Memory features will be unavailable until reactivated");
+    }
+  } catch (err) {
+    // Network errors are not critical, just log
+    console.debug("[honcho] Health check failed:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Start periodic Honcho health checks
+ */
+export function startHonchoHealthCheck(): void {
+  if (_honchoHealthInterval) {
+    return; // Already running
+  }
+
+  // Initial check
+  void checkHonchoHealth();
+
+  // Periodic check
+  _honchoHealthInterval = setInterval(() => {
+    void checkHonchoHealth();
+  }, HONCHO_HEALTH_CHECK_INTERVAL);
+
+  console.log("[honcho] Health check started (every 5 minutes)");
+}
+
+/**
+ * Stop periodic Honcho health checks
+ */
+export function stopHonchoHealthCheck(): void {
+  if (_honchoHealthInterval) {
+    clearInterval(_honchoHealthInterval);
+    _honchoHealthInterval = null;
+    console.log("[honcho] Health check stopped");
+  }
+}
+
 /**
  * Honcho memory configuration
  */
