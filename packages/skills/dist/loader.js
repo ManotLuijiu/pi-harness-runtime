@@ -74,21 +74,37 @@ export class SkillRegistry {
     loading = new Map();
     // Qdrant state (lazily initialized on first register if configured)
     _qdrant = null;
-    _qdrantInitAttempted = false;
+    _qdrantInitPromise = null;
+    _qdrantInitFailed = false;
+    /**
+     * Check if Qdrant initialization has failed (useful for diagnostics).
+     */
+    isQdrantFailed() {
+        return this._qdrantInitFailed;
+    }
     /**
      * Initialize Qdrant client if configured.
-     * Called lazily on first skill registration.
+     * Uses a shared init promise to prevent race conditions when multiple
+     * skills are registered during initialization.
      */
     async _ensureQdrant() {
-        if (this._qdrantInitAttempted)
-            return;
-        this._qdrantInitAttempted = true;
+        // Return existing promise if init is in progress
+        if (this._qdrantInitPromise)
+            return this._qdrantInitPromise;
+        // Start init and store the promise so concurrent callers can await the same init
+        this._qdrantInitPromise = this._doQdrantInit();
+        return this._qdrantInitPromise;
+    }
+    async _doQdrantInit() {
         const config = getQdrantConfig();
-        if (!config)
+        if (!config) {
+            this._qdrantInitFailed = true;
             return;
+        }
         const mods = await resolveQdrantModules();
         if (!mods) {
             console.debug("[skills] Qdrant package not found — skipping vector indexing");
+            this._qdrantInitFailed = true;
             return;
         }
         try {
@@ -106,6 +122,7 @@ export class SkillRegistry {
         }
         catch (err) {
             console.error("[skills] Qdrant init failed:", err instanceof Error ? err.message : String(err));
+            this._qdrantInitFailed = true;
         }
     }
     /**
@@ -284,7 +301,7 @@ export class SkillRegistry {
             const queryOpts = { query: embedding, limit, with_payload: true };
             const raw = await this._qdrant.client.query(this._qdrant.collection, queryOpts);
             const results = [];
-            for (const pt of raw.result?.points ?? []) {
+            for (const pt of raw.points ?? []) {
                 if (pt.score < threshold)
                     continue;
                 const name = pt.payload?.name;

@@ -1,20 +1,21 @@
 /**
- * Jev Logger - Exclusive logging for Jev's decisions
+ * Planner Logger - Logs LangChain planner decisions
  *
- * Logs all Jev decisions:
+ * Logs planner output:
  * - Provider selection (minimax vs gpt)
  * - User input decisions
  * - Escalation triggers
  * - Reasoning
  *
- * Sends to both file and Telegram for real-time monitoring.
+ * NOTE: This logs the LangChain planner's output, not TypeSafe Jev service calls.
+ * The TypeSafe Jev service is tracked separately in the auto-continue system.
  */
 
 import { mkdirSync, appendFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export interface JevDecision {
+export interface PlannerDecision {
 	timestamp: string;
 	request: string;
 	provider: "minimax" | "gpt";
@@ -27,12 +28,12 @@ export interface JevDecision {
 	escalateReason?: string;
 }
 
-export interface JevLogEntry extends JevDecision {
+export interface PlannerLogEntry extends PlannerDecision {
 	raw?: string; // Raw planner output for debugging
 }
 
 const LOG_DIR = join(homedir(), ".pi-harness-runtime", "logs");
-const LOG_FILE = join(LOG_DIR, "jev.log");
+const LOG_FILE = join(LOG_DIR, "planner.log");
 
 // Telegram config (loaded from environment)
 let TELEGRAM_BOT_TOKEN: string | undefined;
@@ -54,20 +55,20 @@ function ensureLogDir(): void {
 /**
  * Format decision for file log (detailed, multi-line)
  */
-function formatFileLog(entry: JevLogEntry): string {
+function formatFileLog(entry: PlannerLogEntry): string {
 	const lines = [
 		`═══════════════════════════════════════════════════════════════`,
-		`[JEV] ${entry.timestamp}`,
+		`[PLANNER] ${entry.timestamp}`,
 		`═══════════════════════════════════════════════════════════════`,
 		``,
 		`## Request`,
 		`${entry.request}`,
 		``,
-		`## Jev Provider Decision`,
+		`## Provider Decision`,
 		`Provider: ${entry.provider.toUpperCase()}`,
 		`Reason:   ${entry.reason}`,
 		``,
-		`## Jev User Input Decision`,
+		`## User Input Decision`,
 		`Type:     ${entry.userInput?.type ?? "none (proceed automatically)"}`,
 		entry.userInput?.question ? `Question: ${entry.userInput.question}` : ``,
 		``,
@@ -92,12 +93,12 @@ function formatFileLog(entry: JevLogEntry): string {
 /**
  * Format decision for Telegram (compact, single message)
  */
-function formatTelegramMessage(entry: JevLogEntry): string {
+function formatTelegramMessage(entry: PlannerLogEntry): string {
 	const providerIcon = entry.provider === "gpt" ? "🤖" : "⚡";
 	const escalateIcon = entry.escalate ? " ↑ ESCALATE" : "";
 
 	const parts = [
-		`${providerIcon} *JEV DECISION*`,
+		`${providerIcon} *PLANNER DECISION*`,
 		`\n*Provider:* ${entry.provider.toUpperCase()}${escalateIcon}`,
 		`\n*Reason:* ${entry.reason}`,
 	];
@@ -125,16 +126,16 @@ async function sendToTelegram(message: string): Promise<void> {
 	TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? TELEGRAM_CHAT_ID;
 
 	if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-		console.log("[JEV] Telegram not configured - skipping");
+		console.log("[PLANNER] Telegram not configured - skipping");
 		return;
 	}
 
-	console.log(`[JEV] Telegram sending: ${TELEGRAM_BOT_TOKEN?.slice(0, 10)}... to ${TELEGRAM_CHAT_ID}`);
+	console.log(`[PLANNER] Telegram sending: ${TELEGRAM_BOT_TOKEN?.slice(0, 10)}... to ${TELEGRAM_CHAT_ID}`);
 	telegramQueue.push(message);
 
 	// Process queue sequentially
 	if (telegramSending) {
-		console.log("[JEV] Telegram already sending, queued");
+		console.log("[PLANNER] Telegram already sending, queued");
 		return;
 	}
 	telegramSending = true;
@@ -156,12 +157,12 @@ async function sendToTelegram(message: string): Promise<void> {
 			);
 
 			if (!response.ok) {
-				console.error(`[JEV] Telegram send failed: ${response.status}`);
+				console.error(`[PLANNER] Telegram send failed: ${response.status}`);
 			} else {
-				console.log("[JEV] Telegram sent successfully");
+				console.log("[PLANNER] Telegram sent successfully");
 			}
 		} catch (err) {
-			console.error(`[JEV] Telegram error:`, err);
+			console.error(`[PLANNER] Telegram error:`, err);
 		}
 		// Rate limit: 1 message per second
 		await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -170,7 +171,7 @@ async function sendToTelegram(message: string): Promise<void> {
 	telegramSending = false;
 }
 
-export async function logJevDecision(decision: JevLogEntry): Promise<void> {
+export async function logPlannerDecision(decision: PlannerLogEntry): Promise<void> {
 	ensureLogDir();
 
 	// Always log to file (sync)
@@ -182,25 +183,25 @@ export async function logJevDecision(decision: JevLogEntry): Promise<void> {
 	const telegramMsg = formatTelegramMessage(decision);
 	// Fire-and-forget: don't await, let it run in background
 	sendToTelegram(telegramMsg).catch((err) => {
-		console.error("[JEV] Failed to send Telegram notification:", err);
+		console.error("[PLANNER] Failed to send Telegram notification:", err);
 	});
 	// Also await briefly for testing, then let process exit handle it
 	await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
 /**
- * Parse Jev's decision from planner output
+ * Parse planner's decision from output
  * Looks for [JEVO] and [USER_INPUT] markers
  */
-export function parseJevDecision(planOutput: string): {
+export function parsePlannerDecision(planOutput: string): {
 	provider: "minimax" | "gpt";
 	reason: string;
-	userInput: JevDecision["userInput"];
+	userInput: PlannerDecision["userInput"];
 } {
 	const result: {
 		provider: "minimax" | "gpt";
 		reason: string;
-		userInput: JevDecision["userInput"];
+		userInput: PlannerDecision["userInput"];
 	} = {
 		provider: "minimax",
 		reason: "default (no explicit decision)",

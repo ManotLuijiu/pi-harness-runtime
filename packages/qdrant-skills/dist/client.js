@@ -78,9 +78,9 @@ export async function searchSkills(client, collectionName, query, model = "sente
         limit,
         with_payload: true,
     });
-    // Parse response: { result: { points: [...] } }
+    // Parse response: SDK already unwraps HTTP response, QueryResponse has points directly
     const typedResults = results;
-    const points = typedResults?.result?.points || [];
+    const points = typedResults?.points || [];
     return points.map((point) => ({
         id: point.id,
         name: point.payload?.name || `skill-${point.id}`,
@@ -97,8 +97,9 @@ export async function getAllSkills(client, collectionName) {
         limit: 100,
         with_payload: true,
     });
+    // Parse response: SDK already unwraps HTTP response, QueryResponse has points directly
     const typedResults = results;
-    const points = typedResults?.result?.points || [];
+    const points = typedResults?.points || [];
     return points.map((point) => ({
         id: point.id,
         name: point.payload?.name || `skill-${point.id}`,

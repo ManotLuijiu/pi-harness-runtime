@@ -22,12 +22,19 @@ export declare class SkillRegistry {
     private index;
     private loading;
     private _qdrant;
-    private _qdrantInitAttempted;
+    private _qdrantInitPromise;
+    private _qdrantInitFailed;
+    /**
+     * Check if Qdrant initialization has failed (useful for diagnostics).
+     */
+    isQdrantFailed(): boolean;
     /**
      * Initialize Qdrant client if configured.
-     * Called lazily on first skill registration.
+     * Uses a shared init promise to prevent race conditions when multiple
+     * skills are registered during initialization.
      */
     private _ensureQdrant;
+    private _doQdrantInit;
     /**
      * Index a single skill into Qdrant (non-blocking).
      */

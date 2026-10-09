@@ -127,18 +127,16 @@ export async function searchSkills(
     with_payload: true,
   } as Parameters<typeof client.query>[1]);
 
-  // Parse response: { result: { points: [...] } }
+  // Parse response: SDK already unwraps HTTP response, QueryResponse has points directly
   const typedResults = results as {
-    result?: {
-      points?: Array<{
-        id: number;
-        score: number;
-        payload?: Record<string, unknown>;
-      }>;
-    };
+    points?: Array<{
+      id: number;
+      score: number;
+      payload?: Record<string, unknown>;
+    }>;
   };
 
-  const points = typedResults?.result?.points || [];
+  const points = typedResults?.points || [];
 
   return points.map((point) => ({
     id: point.id,
@@ -161,17 +159,16 @@ export async function getAllSkills(
     with_payload: true,
   } as Parameters<typeof client.query>[1]);
 
+  // Parse response: SDK already unwraps HTTP response, QueryResponse has points directly
   const typedResults = results as {
-    result?: {
-      points?: Array<{
-        id: number;
-        score: number;
-        payload?: Record<string, unknown>;
-      }>;
-    };
+    points?: Array<{
+      id: number;
+      score: number;
+      payload?: Record<string, unknown>;
+    }>;
   };
 
-  const points = typedResults?.result?.points || [];
+  const points = typedResults?.points || [];
 
   return points.map((point) => ({
     id: point.id,
