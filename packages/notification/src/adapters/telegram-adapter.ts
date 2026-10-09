@@ -19,6 +19,7 @@ import type {
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
+import { filterTelegramContent, getSafeNotificationLog } from "../telegram-content-filter.js";
 
 export class TelegramAdapter extends BaseChannelAdapter {
 readonly id = "telegram";
@@ -71,6 +72,21 @@ return this._botUsername;
 	 */
 	async send(payload: NotificationPayload): Promise<NotificationResult> {
 		try {
+			// SECURITY: Jev-powered content filter - block if contains sensitive credentials
+			const filterResult = await filterTelegramContent(payload);
+			if (!filterResult.shouldSend) {
+				console.warn(
+					`[TelegramAdapter] BLOCKED by Jev judgment=${filterResult.judgment} reason=${filterResult.reason} job=${payload.jobId}`,
+				);
+				// Log safe notification metadata (no secrets)
+				console.log(`[TelegramAdapter] ${getSafeNotificationLog(payload)}`);
+				return {
+					success: false,
+					channel: this.id,
+					error: "Content blocked: sensitive credentials detected",
+				};
+			}
+
 			const cfg = this.config.config as TelegramConfig;
 			const message = this.formatMessage(payload);
 

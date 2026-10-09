@@ -10,4 +10,5 @@ export * from "./telegram-webhook-handler.js";
 export { LineAdapter } from "./adapters/line-adapter.js";
 export { TelegramAdapter } from "./adapters/telegram-adapter.js";
 export { maskString, maskValue, maskObject, maskPayload, isSensitiveField, } from "./mask-secrets.js";
+export { filterTelegramContent, getSafeNotificationLog, } from "./telegram-content-filter.js";
 //# sourceMappingURL=index.d.ts.map

@@ -17,3 +17,7 @@ export {
 	maskPayload,
 	isSensitiveField,
 } from "./mask-secrets.js";
+export {
+	filterTelegramContent,
+	getSafeNotificationLog,
+} from "./telegram-content-filter.js";
