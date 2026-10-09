@@ -533,6 +533,45 @@ echo "{coder-api-key}" > ~/.pi-harness-runtime/keys/coder-api-key.txt
 echo "{langsmith-key}" > ~/.pi-harness-runtime/keys/langsmith-api-key.txt
 ```
 
+### 3. Infisical Secrets (Optional — Centralized Key Management)
+
+For centralized secret management via Infisical Cloud:
+
+```bash
+# Auto-creates ~/.pi-harness-runtime/infisical/ on first run
+
+# Create config
+cat > ~/.pi-harness-runtime/infisical/config.json << 'EOF'
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "site": "us",
+  "projectId": "YOUR_PROJECT_ID",
+  "environment": "production",
+  "secretPath": "/harness",
+  "authMethod": "universal",
+  "bootstrapRef": { "type": "env", "name": "INFISICAL_CLIENT_SECRET" },
+  "services": [
+    { "service": "jev", "required": true, "keys": { "TYPESAFE_API_KEY": "TYPESAFE_API_KEY" } }
+  ],
+  "sourcePolicy": { "remoteAuthoritative": true, "envOverride": false }
+}
+EOF
+
+# Set bootstrap credentials
+export INFISICAL_CLIENT_ID="your-client-id"
+export INFISICAL_CLIENT_SECRET="your-client-secret"
+
+# Refresh secrets
+/setup-infisical refresh
+```
+
+Commands:
+- `/setup-infisical status` — Show current status
+- `/setup-infisical test` — Test Varlock connectivity
+- `/setup-infisical refresh` — Refresh secrets from Infisical
+- `/setup-infisical disable` — Disable and use file-based keys
+
 ### Usage
 
 After reload, use the slash command:
