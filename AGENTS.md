@@ -270,3 +270,42 @@ The `.harness-status` file is consumed by the pi host, which adds its own UI. Ke
 🧭 planning  |  MiniMax: 5h: 89% left
 ✍️  coding   |  MiniMax: 5h: 89% left
 ```
+
+---
+
+## Default Habits
+
+These habits are automatically enforced by the harness:
+
+### 1. Policy Acknowledgment
+On session start, if `[POLICY REQUIRED]` appears:
+```
+1. Run: harness_rules({ action: "manifest" })
+2. Then run: harness_rules({ action: "acknowledge", revision: "..." })
+```
+This is a one-time step per session.
+
+### 2. Pre-Commit Checklist
+BEFORE any `git commit`, `git push`, or `bench build`:
+1. Run `bd ready` to check for pending tasks
+2. Mark completed todos with `bd close <id>`
+3. Ensure all blockers are tracked in bd
+
+### 3. Context-Mode Tool Priority
+Use tools in this order (highest to lowest priority):
+1. **`ctx_batch_execute`** — Multiple commands with queries in one call
+2. **`ctx_execute`** — Single command or data derivation
+3. **`ctx_execute_file`** — Read/analyze file before editing
+4. **`ctx_search`** — Query indexed knowledge base
+
+**File operations**: Always use `ctx_execute_file` to read/analyze files before editing.
+
+### 4. Secret Management
+- **Never hardcode secrets** in source code
+- Store secrets in `~/.pi-harness-runtime/keys/`
+- Use key file pattern: `~/.pi-harness-runtime/keys/<service>-api-key.txt`
+- Reference keys via `key-loader.ts` helper
+
+### 5. Document-Only Changes
+- Wiki/documentation changes go in `wiki/` (gitignored)
+- API keys, tokens, credentials: **never commit**
