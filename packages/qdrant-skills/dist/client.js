@@ -41,6 +41,71 @@ export async function createCollection(client, name, dimensions = 384 // all-Min
     }
 }
 /**
+ * Get collection info (vector size, distance, point count)
+ */
+export async function getCollectionInfo(client, name) {
+    try {
+        const info = await client.getCollection(name);
+        // Vectors config can be a named config or default { size, distance }
+        const vectorsConfig = info.vectors;
+        let vectorsSize;
+        let vectorsDistance;
+        if (vectorsConfig) {
+            // Handle both { size: number, distance: string } and named config { config: { size, distance } }
+            vectorsSize = (vectorsConfig.size ?? vectorsConfig.config?.size);
+            vectorsDistance = (vectorsConfig.distance ?? vectorsConfig.config?.distance);
+        }
+        // Points count might be in different locations depending on Qdrant version
+        const pointsCount = (info.points ?? info.num_points ?? info.points_count);
+        return {
+            exists: true,
+            vectorsSize,
+            vectorsDistance,
+            pointsCount,
+        };
+    }
+    catch (err) {
+        if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+            return { exists: false };
+        }
+        // Return null on other errors
+        return null;
+    }
+}
+/**
+ * Validate collection schema matches expected embedding model
+ */
+export async function validateCollectionSchema(client, name, expectedDimensions, expectedDistance = "Cosine") {
+    const info = await getCollectionInfo(client, name);
+    if (!info) {
+        return { valid: false, error: "Could not retrieve collection info" };
+    }
+    if (!info.exists) {
+        return { valid: false, error: "Collection does not exist" };
+    }
+    if (info.vectorsSize !== expectedDimensions) {
+        return {
+            valid: false,
+            error: `Dimension mismatch: expected ${expectedDimensions}, got ${info.vectorsSize}`,
+            actualDimensions: info.vectorsSize,
+            actualDistance: info.vectorsDistance,
+        };
+    }
+    if (info.vectorsDistance && info.vectorsDistance !== expectedDistance) {
+        return {
+            valid: false,
+            error: `Distance mismatch: expected ${expectedDistance}, got ${info.vectorsDistance}`,
+            actualDimensions: info.vectorsSize,
+            actualDistance: info.vectorsDistance,
+        };
+    }
+    return {
+        valid: true,
+        actualDimensions: info.vectorsSize,
+        actualDistance: info.vectorsDistance,
+    };
+}
+/**
  * Delete a collection
  */
 export async function deleteCollection(client, name) {

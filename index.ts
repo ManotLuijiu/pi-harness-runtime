@@ -424,9 +424,15 @@ async function initTelegram(): Promise<void> {
 }
 
 // --- honcho-memory: Honcho MCP for peer/user memory via https://mcp.honcho.dev ------
-// Registers Honcho MCP server (honcho_profile, honcho_search, honcho_context,
-// honcho_conclude) via pi-mcp-adapter if the user has an API key.
-// Hybrid: Honcho = peer/user memory; memory-engine = structured project knowledge.
+// Registers Honcho MCP server and implements automatic memory lifecycle:
+// - Ingest sanitized messages on completed turns
+// - Retrieve relevant context before agent execution
+// - Deduplication by message ID
+// - Bounded context injection with provenance
+
+/** Module-level Honcho memory instance */
+let _honchoMemory: import("./harness/honcho-memory.js").HonchoMemory | null = null;
+
 async function initHoncho(pi: { events: { emit(name: string, data: unknown): void }; on(event: string, cb: () => void): void }): Promise<void> {
 	const { readFileSync, existsSync } = await import("node:fs");
 	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
@@ -894,6 +900,15 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 			const { initSkillCommands } = await import("./packages/skills/src/skill-commands.js");
 			initSkillCommands(pi);
 			logStartup("[pi-harness] Registered skill commands");
+
+			// Register harness services diagnostic commands
+			try {
+				const { initServiceCommands } = await import("./harness/service-commands.js");
+				initServiceCommands(pi);
+				logStartup("[pi-harness] Registered service diagnostic commands");
+			} catch (err) {
+				logStartup(`[pi-harness] Failed to register service commands:`, err instanceof Error ? err.message : String(err));
+			}
 		} catch (err) {
 			logStartup(`[pi-harness] Failed to register skill commands:`, err instanceof Error ? err.message : String(err));
 		}

@@ -25,6 +25,8 @@ export {
   createQdrantClient,
   createCollection,
   deleteCollection,
+  getCollectionInfo,
+  validateCollectionSchema,
   upsertSkills,
   searchSkills,
   getAllSkills,

@@ -50,17 +50,22 @@ export function initSkillCommands(
 
   // Register /skill command for listing
   pi.registerCommand("skill", {
-    description: "Interact with skills. Usage: /skill [list|search <query>|info <name>]",
+    description: "Interact with skills. Usage: /skill [list|search [--vector] <query>|info <name>]",
     handler: async (args: string, ctx: ExtensionContext) => {
       const parts = args.trim().split(/\s+/);
       const subcommand = parts[0] || "list";
-      const query = parts.slice(1).join(" ");
+
+      // Check for --vector flag
+      const useVector = parts.includes("--vector");
+      // Remove flags for query
+      const queryParts = parts.slice(1).filter(p => !p.startsWith("--"));
+      const query = queryParts.join(" ");
 
       switch (subcommand) {
         case "list":
           return handleSkillList(registry, ctx as ExtensionCommandContext);
         case "search":
-          return handleSkillSearch(registry, query, ctx as ExtensionCommandContext);
+          return handleSkillSearch(registry, query, ctx as ExtensionCommandContext, useVector);
         case "info":
           return handleSkillInfo(registry, query, ctx as ExtensionCommandContext);
         default:
@@ -225,34 +230,61 @@ async function handleSkillList(
 async function handleSkillSearch(
   registry: ReturnType<typeof getGlobalSkillRegistry>,
   query: string,
-  ctx: ExtensionCommandContext
+  ctx: ExtensionCommandContext,
+  useVector = false
 ): Promise<void> {
   if (!query) {
-    ctx.ui.notify("Usage: /skill search <query>", "warning");
+    ctx.ui.notify("Usage: /skill search <query> [--vector]", "warning");
     return;
   }
 
-  const results = registry.find(query, { threshold: 0.2 });
+  let backend: "vector" | "keyword" = "keyword";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let results: Array<{ skill: any; score: number; matchedTriggers?: string[] }> = [];
 
+  // Try vector search if requested and available
+  if (useVector && registry.isQdrantReady) {
+    const vectorResults = await registry.findVector(query, 5, 0.5);
+    if (vectorResults.length > 0) {
+      backend = "vector";
+      results = vectorResults.map(r => ({ skill: r.skill, score: r.score }));
+    } else {
+      // Vector search returned empty, fall back to keyword
+      ctx.ui.notify("[skills] Vector search returned no results, falling back to keyword search", "info");
+    }
+  }
+
+  // Keyword fallback or if vector not requested
+  if (results.length === 0) {
+    const keywordResults = registry.find(query, { threshold: 0.2 });
+    results = keywordResults;
+    backend = "keyword";
+  }
 
   if (results.length === 0) {
-    ctx.ui.notify(`No skills found matching: ${query}`, "info");
+    ctx.ui.notify(`No skills found matching: ${query} [${backend}]`, "info");
     return;
   }
 
-
-  const lines: string[] = [`# Skills matching: ${query}`, ""];
+  const lines: string[] = [`# Skills matching: ${query} [${backend}]`, ""];
 
   for (const result of results.slice(0, 10)) {
     lines.push(`## ${result.skill.frontmatter.name} (${Math.round(result.score * 100)}% match)`);
     lines.push(result.skill.frontmatter.description);
-    if (result.matchedTriggers.length > 0) {
+    if (result.matchedTriggers && result.matchedTriggers.length > 0) {
       lines.push(`Matched: ${result.matchedTriggers.join(", ")}`);
     }
     lines.push("");
   }
 
-  ctx.ui.notify(`Found ${results.length} matching skills. Use /skill info <name> for details.`, "info");
+  const vectorNote = useVector && !registry.isQdrantReady
+    ? " (vector unavailable)"
+    : "";
+  ctx.ui.notify(
+    `Found ${results.length} skills via ${backend} search${vectorNote}. ` +
+    `Use /skill info <name> for details.`,
+    "info"
+  );
 }
 
 /**

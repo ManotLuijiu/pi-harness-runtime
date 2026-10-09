@@ -33,6 +33,24 @@ export declare function createQdrantClient(config: QdrantConfig): QdrantClient;
  */
 export declare function createCollection(client: QdrantClient, name: string, dimensions?: number): Promise<void>;
 /**
+ * Get collection info (vector size, distance, point count)
+ */
+export declare function getCollectionInfo(client: QdrantClient, name: string): Promise<{
+    exists: boolean;
+    vectorsSize?: number;
+    vectorsDistance?: string;
+    pointsCount?: number;
+} | null>;
+/**
+ * Validate collection schema matches expected embedding model
+ */
+export declare function validateCollectionSchema(client: QdrantClient, name: string, expectedDimensions: number, expectedDistance?: string): Promise<{
+    valid: boolean;
+    error?: string;
+    actualDimensions?: number;
+    actualDistance?: string;
+}>;
+/**
  * Delete a collection
  */
 export declare function deleteCollection(client: QdrantClient, name: string): Promise<void>;

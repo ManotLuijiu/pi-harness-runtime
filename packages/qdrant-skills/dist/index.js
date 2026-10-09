@@ -20,6 +20,6 @@
  * await upsertSkills(client, 'my-skills', [{ id: 1, name: 'test', description: '...', body: '...', text: '...' }]);
  * ```
  */
-export { createQdrantClient, createCollection, deleteCollection, upsertSkills, searchSkills, getAllSkills, } from './client.js';
+export { createQdrantClient, createCollection, deleteCollection, getCollectionInfo, validateCollectionSchema, upsertSkills, searchSkills, getAllSkills, } from './client.js';
 export { createEmbedding, embedSkillDocument, embedSkillsBatch, getOpenAIApiKey, } from './embedder.js';
 //# sourceMappingURL=index.js.map
