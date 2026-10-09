@@ -54,13 +54,14 @@ function ensureMcpConfig(): void {
 		}
 	}
 
-	// Create config with real key or placeholder
+	// Create config with proper Honcho MCP headers
 	const config = {
 		mcpServers: {
 			honcho: {
 				url: "https://mcp.honcho.dev",
-				auth: "bearer",
-				bearerToken: apiKey || "YOUR_HONCHO_API_KEY",
+				headers: {
+					Authorization: `Bearer ${apiKey || "YOUR_HONCHO_API_KEY"}`,
+				},
 			},
 		},
 	};
