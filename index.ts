@@ -78,6 +78,48 @@ import {
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
+
+/**
+ * Get tasks from bd (beads) for Jev decision context.
+ * Returns { completed, remaining } arrays of task descriptions.
+ */
+async function getTaskContext(): Promise<{
+	completed: string[];
+	remaining: string[];
+	total: number;
+}> {
+	try {
+		const { execSync } = await import("node:child_process");
+		// Get open (pending + in_progress) tasks
+		const output = execSync("bd list --json 2>/dev/null", {
+			encoding: "utf8",
+			timeout: 5000,
+		});
+		const tasks = JSON.parse(output) as Array<{ title?: string; status?: string }>;
+
+		const completed: string[] = [];
+		const remaining: string[] = [];
+
+		for (const task of tasks ?? []) {
+			if (!task.title) continue;
+			if (task.status === "closed" || task.status === "done") {
+				completed.push(task.title);
+			} else {
+				remaining.push(task.title);
+			}
+		}
+
+		return {
+			completed,
+			remaining,
+			total: completed.length + remaining.length,
+		};
+	} catch {
+		// bd not available or error - return empty context
+		return { completed: [], remaining: [], total: 0 };
+	}
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	try {
 		// Check if Jev API key is available (env var or keys file)
@@ -113,6 +155,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
 		let lastUserMessage: Date | null = null;
+		let autoContinueTimer: NodeJS.Timeout | null = null;
+		let _inferenceInProgress = false; // Track for overlap prevention
+		let _sessionId = Date.now().toString(36); // Track session for cancellation
 
 		// Detect when agent asks for continuation
 		pi.on("message_end", async (event) => {
@@ -162,7 +207,16 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
 
 		const checkAndAutoContinue = async () => {
+			// Prevent overlap if inference is already in progress
+			if (_inferenceInProgress) {
+				console.log("[auto-continue] Inference in progress, skipping this check");
+				return;
+			}
+
 			if (!waitingForUserSince) return;
+
+			// Capture session ID at check time for post-inference validation
+			const checkSessionId = _sessionId;
 
 			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
 			if (waitMinutes < MIN_WAIT_MINUTES) return;
@@ -170,20 +224,46 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			console.log(`[auto-continue] Checking after ${waitMinutes.toFixed(0)} minutes wait...`);
 
 			try {
+				// Mark inference as in progress to prevent overlap
+				_inferenceInProgress = true;
+
 				const judge = new mod.AutoContinueJudge({
 					apiKey: resolvedApiKey,
 					proceedThreshold: 0.7,
 					maxWaitMinutes: 30,
 				});
 
+				// Get real task context from bd
+				const taskContext = await getTaskContext();
+
+				// Guard against empty task list
+				if (taskContext.total === 0) {
+					console.log("[auto-continue] No tasks to decide on — skipping");
+					_inferenceInProgress = false;
+					return;
+				}
+
 				const taskState = mod.createTaskState(
-					[], // completed tasks
-					[], // remaining tasks
+					taskContext.completed,
+					taskContext.remaining,
 					lastUserMessage || undefined,
 					new Date(Date.now() - waitMinutes * 60000),
 				);
 
 				const decision = await judge.decide(taskState);
+
+				// Check session validity and user response before applying
+				if (checkSessionId !== _sessionId) {
+					console.log("[auto-continue] Session changed during inference — cancelling");
+					_inferenceInProgress = false;
+					return;
+				}
+
+				if (!waitingForUserSince) {
+					console.log("[auto-continue] User responded during inference — cancelling");
+					_inferenceInProgress = false;
+					return;
+				}
 
 				console.log(
 					`[auto-continue] Decision: ${decision.action} (${(decision.probability * 100).toFixed(0)}% confidence)`,
@@ -214,7 +294,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		};
 
 		// Start periodic check
-		setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
+		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
 
 		console.error("[auto-continue] Jev Auto-Continue initialized");
 	} catch {

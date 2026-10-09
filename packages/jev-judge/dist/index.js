@@ -2,13 +2,16 @@
  * Jev Judge - Main API
  *
  * Structured decision model for agent routing, E2E testing, and automated decisions.
- * Uses TypeSafe Jev via OpenRouter for fast, calibrated, hallucination-free decisions.
+ * Uses TypeSafe Jev via:
+ * - Primary: TypeSafe direct API (https://api.typesafe.ai/v1/systemone)
+ * - Fallback: OpenRouter API (https://openrouter.ai/api/v1)
  *
  * @example
  * ```typescript
  * import { JevJudge } from "@pi-harness/jev-judge";
  *
- * const judge = new JevJudge({ apiKey: process.env.OPENROUTER_API_KEY! });
+ * // Auto-detects TypeSafe vs OpenRouter based on API key and baseUrl
+ * const judge = new JevJudge({ apiKey: process.env.TYPESAFE_API_KEY! });
  *
  * // Ask multiple questions at once
  * const result = await judge.evaluate(
@@ -29,6 +32,7 @@
 // OpenAI SDK (OpenRouter is OpenAI-compatible)
 // @ts-ignore - openai is installed at workspace root
 import OpenAI from "openai";
+import { TypeSafeJudge } from "./typesafe-provider.js";
 /**
  * Environment variable keys for API keys
  */
@@ -88,27 +92,55 @@ export function createJevJudge(config) {
  * Default configuration
  */
 const DEFAULT_CONFIG = {
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "typesafe/jev-1.13",
+    baseUrl: "https://api.typesafe.ai", // TypeSafe direct API as default
+    model: "typesafe/systemone",
     defaultThreshold: 0.7,
     timeoutMs: 30000,
 };
 /**
+ * Detect provider from baseUrl
+ */
+function detectProvider(baseUrl) {
+    if (baseUrl.includes("typesafe.ai"))
+        return "typesafe";
+    if (baseUrl.includes("openrouter"))
+        return "openrouter";
+    return "openrouter"; // Default to OpenRouter for backwards compatibility
+}
+/**
  * JevJudge - Main class for making structured decisions with Jev
+ *
+ * Supports two providers:
+ * - TypeSafe direct API (primary, recommended)
+ * - OpenRouter API (fallback for backwards compatibility)
  */
 export class JevJudge {
-    client;
+    typesafeJudge;
+    openrouterClient;
     config;
+    provider;
     constructor(config) {
         this.config = {
             ...DEFAULT_CONFIG,
             ...config,
         };
-        this.client = new OpenAI({
-            apiKey: this.config.apiKey,
-            baseURL: this.config.baseUrl,
-            timeout: this.config.timeoutMs,
-        });
+        this.provider = detectProvider(this.config.baseUrl);
+        if (this.provider === "typesafe") {
+            // Use TypeSafe direct API
+            this.typesafeJudge = new TypeSafeJudge({
+                apiKey: this.config.apiKey,
+                baseUrl: this.config.baseUrl,
+                timeoutMs: this.config.timeoutMs,
+            });
+        }
+        else {
+            // Use OpenRouter
+            this.openrouterClient = new OpenAI({
+                apiKey: this.config.apiKey,
+                baseURL: this.config.baseUrl,
+                timeout: this.config.timeoutMs,
+            });
+        }
     }
     /**
      * Evaluate state against questions
@@ -118,10 +150,18 @@ export class JevJudge {
      * @returns Evaluation result with decisions
      */
     async evaluate(state, questions) {
+        // Use TypeSafe provider if configured
+        if (this.provider === "typesafe" && this.typesafeJudge) {
+            return this.typesafeJudge.evaluate(state, questions);
+        }
+        // Fall back to OpenRouter
+        if (!this.openrouterClient) {
+            throw new Error("No Jev provider configured");
+        }
         const startTime = Date.now();
         // Convert state to string if object
         const stateStr = typeof state === "string" ? state : JSON.stringify(state);
-        // Build questions array for API
+        // Build questions array for OpenRouter API
         const questionsArray = Object.entries(questions).map(([id, q]) => {
             const questionObj = q;
             const entry = { id };
@@ -145,7 +185,7 @@ export class JevJudge {
             return entry;
         });
         // Call Jev via OpenRouter
-        const response = await this.client.chat.completions.create({
+        const response = await this.openrouterClient.chat.completions.create({
             model: this.config.model,
             messages: [
                 {
@@ -304,4 +344,6 @@ export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 // Export EnvironmentJudge
 export { EnvironmentJudge } from "./environment-judge.js";
+// Export TypeSafeJudge
+export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
 //# sourceMappingURL=index.js.map
