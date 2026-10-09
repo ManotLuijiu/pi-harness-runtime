@@ -779,6 +779,17 @@ async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 			lspMode: "pi-lens",
 		});
 		logStartup("[pi-harness] Agent policy initialized");
+
+		// Notify via Telegram that policy is ready
+		pi.on("session_start", () => {
+			logStartup("[pi-harness] Policy ready - all operations allowed");
+
+			// Send Telegram notification
+			void nc("policy_acknowledged", {
+				title: "Harness Policy",
+				message: "Policy auto-acknowledged. All operations allowed.",
+			});
+		});
 	} catch (err) {
 		logStartup(`[pi-harness] Agent policy init failed: ${err}`);
 	}
