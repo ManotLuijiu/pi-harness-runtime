@@ -457,22 +457,22 @@ export async function buildRealLoopDeps(
 				});
 				const planOutput = lastMessage(plannerResponse) ?? "";
 
-				// Import and use Jev logger (async - logs to file + Telegram)
+				// Import and use planner logger (async - logs to file + Telegram)
 				try {
-					const { logJevDecision, parseJevDecision } = await import("./jev-logger.js");
-					const jevDecision = parseJevDecision(planOutput);
-					setJevProvider(jevDecision.provider);
-					await logJevDecision({
+					const { logPlannerDecision, parsePlannerDecision } = await import("./planner-logger.js");
+					const plannerDecision = parsePlannerDecision(planOutput);
+					setJevProvider(plannerDecision.provider);
+					await logPlannerDecision({
 						timestamp: new Date().toISOString(),
 						request,
-						provider: jevDecision.provider,
-						reason: jevDecision.reason,
-						userInput: jevDecision.userInput,
+						provider: plannerDecision.provider,
+						reason: plannerDecision.reason,
+						userInput: plannerDecision.userInput,
 						escalate: false,
 						raw: planOutput,
 					});
 				} catch (logErr) {
-					console.error("[JEV] Logger error:", (logErr as Error).message);
+					console.error("[PLANNER] Logger error:", (logErr as Error).message);
 				}
 
 				return planOutput;

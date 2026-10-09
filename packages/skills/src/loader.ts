@@ -128,22 +128,41 @@ export class SkillRegistry {
     collection: string;
     ready: boolean;
   } | null = null;
-  private _qdrantInitAttempted = false;
+  private _qdrantInitPromise: Promise<void> | null = null;
+  private _qdrantInitFailed = false;
+
+  /**
+   * Check if Qdrant initialization has failed (useful for diagnostics).
+   */
+  isQdrantFailed(): boolean {
+    return this._qdrantInitFailed;
+  }
 
   /**
    * Initialize Qdrant client if configured.
-   * Called lazily on first skill registration.
+   * Uses a shared init promise to prevent race conditions when multiple
+   * skills are registered during initialization.
    */
   private async _ensureQdrant(): Promise<void> {
-    if (this._qdrantInitAttempted) return;
-    this._qdrantInitAttempted = true;
+    // Return existing promise if init is in progress
+    if (this._qdrantInitPromise) return this._qdrantInitPromise;
 
+    // Start init and store the promise so concurrent callers can await the same init
+    this._qdrantInitPromise = this._doQdrantInit();
+    return this._qdrantInitPromise;
+  }
+
+  private async _doQdrantInit(): Promise<void> {
     const config = getQdrantConfig();
-    if (!config) return;
+    if (!config) {
+      this._qdrantInitFailed = true;
+      return;
+    }
 
     const mods = await resolveQdrantModules();
     if (!mods) {
       console.debug("[skills] Qdrant package not found — skipping vector indexing");
+      this._qdrantInitFailed = true;
       return;
     }
 
@@ -161,6 +180,7 @@ export class SkillRegistry {
       };
     } catch (err) {
       console.error("[skills] Qdrant init failed:", err instanceof Error ? err.message : String(err));
+      this._qdrantInitFailed = true;
     }
   }
 
@@ -365,10 +385,10 @@ export class SkillRegistry {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const queryOpts: any = { query: embedding, limit, with_payload: true };
       const raw = await this._qdrant.client.query(this._qdrant.collection, queryOpts) as {
-        result?: { points?: Array<{ id: number; score: number; payload?: Record<string, unknown> }> } };
+        points?: Array<{ id: number; score: number; payload?: Record<string, unknown> }> };
 
       const results: Array<{ skill: Skill; score: number }> = [];
-      for (const pt of raw.result?.points ?? []) {
+      for (const pt of raw.points ?? []) {
         if (pt.score < threshold) continue;
         const name = pt.payload?.name as string | undefined;
         const skill = name ? this.skills.get(name) : undefined;

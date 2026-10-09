@@ -103,6 +103,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			return;
 		}
 
+		// Resolve the actual API key: env takes priority, file is fallback
+		const resolvedApiKey = process.env.TYPESAFE_API_KEY ||
+			process.env.OPENROUTER_API_KEY ||
+			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim();
+
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
 
 		// Track waiting state
@@ -111,10 +116,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Detect when agent asks for continuation
 		pi.on("message_end", async (event) => {
-			const msg = event.message as { role?: string; content?: string } | undefined;
+			const msg = event.message as { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined;
 			if (!msg || msg.role !== "assistant") return;
 
-			const content = typeof msg.content === "string" ? msg.content : "";
+			// Extract text from array content (TextContent blocks) or legacy string
+			let content = "";
+			if (typeof msg.content === "string") {
+				content = msg.content;
+			} else if (Array.isArray(msg.content)) {
+				// Extract text from TextContent blocks only; ignore thinking/tool calls
+				content = msg.content
+					.filter((block): block is { type: "text"; text: string } =>
+						block.type === "text" && typeof block.text === "string"
+					)
+					.map(block => block.text)
+					.join("\n");
+			}
 			const hasContinuation = /continue|proceed|next phase|next step/i.test(content);
 
 			if (hasContinuation && !waitingForUserSince) {
@@ -154,7 +171,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 			try {
 				const judge = new mod.AutoContinueJudge({
-					apiKey: process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY!,
+					apiKey: resolvedApiKey,
 					proceedThreshold: 0.7,
 					maxWaitMinutes: 30,
 				});
@@ -336,7 +353,7 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
 
 	if (!existsSync(keyPath)) {
-		logStartup("[pi-harness] Honcho memory not configured:");
+		logStartup("[pi-harness] Honcho not configured:");
 		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
 		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
 		return;
@@ -356,12 +373,19 @@ async function initHoncho(pi: { events: { emit(name: string, data: unknown): voi
 				name: "honcho",
 				definition: {
 					url: "https://mcp.honcho.dev",
-					auth: { header: `Bearer ${apiKey}` },
+					auth: "bearer" as const,
+					bearerToken: apiKey,
 				},
 			};
+
+			// Emit registration request — pi-mcp-adapter will respond with
+			// pi-mcp-adapter:runtime-register-result event on completion
 			pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
+			console.log("[honcho] MCP registration emitted (awaiting adapter ack)");
 		});
-		logStartup("[pi-harness] Honcho memory ready (peer/user memory via mcp.honcho.dev)");
+
+		// Report pending state — actual memory active requires explicit lifecycle
+		logStartup("[pi-harness] Honcho registered (awaiting adapter connection)");
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
 	}
