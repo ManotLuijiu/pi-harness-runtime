@@ -331,9 +331,9 @@ Use harness_rules to check policy status.
   // ---------------------------------------------------------------------------
   // agent_end: Cleanup
   // ---------------------------------------------------------------------------
-  
+
   pi.on("agent_end", () => {
-    console.log("[agent-policy] Agent ended");
+    // Cleanup is silent - verbose logging is noisy in TUI
   });
 
   console.log("[agent-policy] Registered agent policy runtime");
