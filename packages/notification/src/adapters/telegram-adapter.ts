@@ -18,6 +18,7 @@ import type {
 	TelegramConfig,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
+import { maskString } from "../mask-secrets.js";
 
 export class TelegramAdapter extends BaseChannelAdapter {
 readonly id = "telegram";
@@ -336,7 +337,9 @@ return this._botUsername;
 	private formatMessage(payload: NotificationPayload): string {
 		const emoji = this.getEmoji(payload.event);
 		const title = `${emoji} ${payload.title}`;
-		const lines = [title, "", payload.message];
+		// Mask any secrets in message before sending to Telegram
+		const maskedMessage = maskString(payload.message);
+		const lines = [title, "", maskedMessage];
 
 		if (payload.details?.taskTitle) {
 			lines.push("", `Task: ${payload.details.taskTitle}`);
@@ -345,7 +348,10 @@ return this._botUsername;
 			lines.push(`Job: ${payload.details.jobId}`);
 		}
 		if (payload.details?.error) {
-			lines.push("", `Error: ${payload.details.error}`);
+			// Mask secrets in error messages too
+			const errorStr = String(payload.details.error);
+			const maskedError = maskString(errorStr);
+			lines.push("", `Error: ${maskedError}`);
 		}
 
 		return lines.filter(Boolean).join("\n");
