@@ -1,0 +1,22 @@
+{
+  "name": "@pi-harness/telegram",
+  "version": "1.1.168",
+  "description": "pi-harness-runtime — Telegram inbound/outbound",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {}
+}
