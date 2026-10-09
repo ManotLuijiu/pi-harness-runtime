@@ -86,8 +86,10 @@ Use harness_rules to check policy status.
                     : `Policy revision ${manifest.revision} not yet delivered`;
                 console.log(`[agent-policy] Blocked ${toolName}: ${blockReason}`);
                 const reason = `[POLICY REQUIRED] ${blockReason}\n\n` +
-                    `Call harness_rules action=read to load the current rules, then retry this operation.\n` +
-                    `Or call harness_rules action=manifest to see the current policy status.`;
+                    `To proceed, you must acknowledge the harness rules:\n` +
+                    `1. Run: harness_rules({ action: "manifest" })\n` +
+                    `2. Then run: harness_rules({ action: "acknowledge", revision: "${manifest.revision}" })\n\n` +
+                    `This is a one-time acknowledgment per session.`;
                 return { block: true, reason };
             }
             // Optional: Check git guard
