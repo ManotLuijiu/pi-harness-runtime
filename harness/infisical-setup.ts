@@ -78,7 +78,30 @@ async function handleStatus(ctx: ExtensionContext): Promise<void> {
 
   if (!config || !config.enabled) {
     lines.push("Infisical is **not configured**.");
-    lines.push("Run `/setup-infisical` to configure.");
+    lines.push("");
+    lines.push("**Quick setup:** Run this command to create config:");
+    lines.push("");
+    lines.push('```bash');
+    lines.push('cat > ~/.pi-harness-runtime/infisical/config.json << \'EOF\'');
+    lines.push('{');
+    lines.push('  "schemaVersion": 1,');
+    lines.push('  "enabled": true,');
+    lines.push('  "site": "us",');
+    lines.push('  "projectId": "YOUR_PROJECT_ID",');
+    lines.push('  "environment": "production",');
+    lines.push('  "secretPath": "/harness",');
+    lines.push('  "authMethod": "universal",');
+    lines.push('  "bootstrapRef": { "type": "env", "name": "INFISICAL_CLIENT_SECRET" },');
+    lines.push('  "services": [');
+    lines.push('    { "service": "jev", "required": true, "keys": { "TYPESAFE_API_KEY": "TYPESAFE_API_KEY" } }');
+    lines.push('  ],');
+    lines.push('  "sourcePolicy": { "remoteAuthoritative": true, "envOverride": false }');
+    lines.push('}');
+    lines.push('EOF');
+    lines.push('```');
+    lines.push("");
+    lines.push("Then: `export INFISICAL_CLIENT_ID=xxx INFISICAL_CLIENT_SECRET=xxx`");
+    lines.push("Then: `/setup-infisical refresh`");
     ctx.ui.notify(lines.join("\n"), "info");
     return;
   }
@@ -238,7 +261,7 @@ export function registerInfisicalSetup(pi: ExtensionAPI): void {
   pi.registerCommand("setup-infisical", {
     description: "Configure Infisical secrets. Usage: /setup-infisical [status|test|refresh|disable]",
     handler: async (args: string, ctx: ExtensionContext): Promise<void> => {
-      const { subcommand, flags } = parseArgs(args);
+      const { subcommand, flags: _flags } = parseArgs(args);
 
       switch (subcommand) {
         case "status":
