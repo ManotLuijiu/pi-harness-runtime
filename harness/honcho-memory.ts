@@ -12,6 +12,56 @@
  */
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+// ---------------------------------------------------------------------------
+// Auto-create MCP config for Honcho Cloud
+// ----------------------------------------------------------------------------
+
+const MCP_CONFIG_DIR = join(homedir(), ".config", "mcp");
+const MCP_CONFIG_FILE = join(MCP_CONFIG_DIR, "mcp.json");
+
+function ensureMcpConfig(): void {
+	// Create config directory if needed
+	if (!existsSync(MCP_CONFIG_DIR)) {
+		mkdirSync(MCP_CONFIG_DIR, { recursive: true, mode: 0o755 });
+	}
+
+	// Check if Honcho MCP is already configured
+	if (existsSync(MCP_CONFIG_FILE)) {
+		try {
+			const content = readFileSync(MCP_CONFIG_FILE, "utf8");
+			const config = JSON.parse(content);
+			if (config.mcpServers?.honcho) {
+				return; // Already configured
+			}
+		} catch {
+			// Invalid JSON, will overwrite
+		}
+	}
+
+	// Create minimal config with Honcho MCP
+	const config = {
+		mcpServers: {
+			honcho: {
+				url: "https://mcp.honcho.dev",
+				auth: "bearer",
+			},
+		},
+	};
+
+	try {
+		writeFileSync(MCP_CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o644 });
+		console.log("[honcho] MCP config created at:", MCP_CONFIG_FILE);
+	} catch (err) {
+		console.warn("[honcho] Failed to create MCP config:", err);
+	}
+}
+
+// Auto-create MCP config on module load
+ensureMcpConfig();
 
 /**
  * Honcho memory configuration
