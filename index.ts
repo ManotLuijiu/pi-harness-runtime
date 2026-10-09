@@ -773,7 +773,7 @@ async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 		const { registerAgentPolicy } = await import("./packages/agent-policy/src/extension.js");
 		registerAgentPolicy(pi, {
 			harnessRulesPath: new URL("./AGENTS.md", import.meta.url),
-			requireReceiptBeforeMutation: true,
+			requireReceiptBeforeMutation: false, // Git guard handles git operations; build/dev commands allowed
 			lspMode: "pi-lens",
 		});
 		logStartup("[pi-harness] Agent policy initialized");
