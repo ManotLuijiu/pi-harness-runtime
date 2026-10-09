@@ -393,3 +393,10 @@ export function isConfigured(): boolean {
   const config = loadConfig();
   return config !== null && config.enabled;
 }
+
+// Auto-create directories on module load (like cookies pattern)
+try {
+  ensureDirectories();
+} catch {
+  // Ignore errors during auto-init
+}
