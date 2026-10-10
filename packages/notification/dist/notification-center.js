@@ -428,6 +428,14 @@ export class NotificationCenter {
                 title: "Your Input Needed",
                 message: `Agent needs your input: "${requirement}"${context.error ? ` (${context.error})` : ""}`,
             },
+            AssistantResponse: {
+                title: "Assistant",
+                message: requirement,
+            },
+            ToolSummary: {
+                title: "Tool",
+                message: requirement,
+            },
             CodexSessionStarted: {
                 title: "Codex Session Started",
                 message: `Codex CLI session "${context.taskTitle ?? "new session"}" is now active`,

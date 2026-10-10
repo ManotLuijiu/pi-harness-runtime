@@ -19,6 +19,8 @@ export type NotificationEvent =
 	| "WaitingForUserInput"
 	| "CodexSessionStarted"
 	| "CodexPlanDetected"
+	| "AssistantResponse"
+	| "ToolSummary"
 	| "Error";
 
 export interface NotificationPayload {

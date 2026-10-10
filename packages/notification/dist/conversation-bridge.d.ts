@@ -62,7 +62,7 @@ export declare class ConversationBridge {
      */
     private finalizePendingMessages;
     /**
-     * Flush pending messages without sending (on compaction)
+     * Flush pending messages (on compaction) - send before clearing
      */
     private flushPendingMessages;
     /**
