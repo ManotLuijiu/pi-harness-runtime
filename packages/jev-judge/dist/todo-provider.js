@@ -78,8 +78,42 @@ export class MockTodoProvider {
  * Create a todo provider based on available tools
  */
 export function createTodoProvider(pi) {
-    // For now, return mock provider
-    // TODO: Integrate with actual Pi todo extension when available
-    return new MockTodoProvider();
+    // Check if Pi exposes a todo API
+    // For now, Pi does not expose a todo extension API
+    // Return a provider that reports unavailability
+    return new PiUnavailableTodoProvider();
+}
+/**
+ * Provider that reports Pi todo extension is not available
+ */
+class PiUnavailableTodoProvider {
+    async availability() {
+        return {
+            available: false,
+            error: "Pi does not expose a todo extension API. Todo state is not available.",
+            provider: "pi-todo",
+        };
+    }
+    async getSnapshot() {
+        throw new Error("Pi todo extension is not available");
+    }
+    async getByStatus(_status) {
+        return [];
+    }
+    async getInProgress() {
+        return [];
+    }
+    async getPending() {
+        return [];
+    }
+    async getCompleted() {
+        return [];
+    }
+    async getReady() {
+        return [];
+    }
+    async getBlocked() {
+        return [];
+    }
 }
 //# sourceMappingURL=todo-provider.js.map

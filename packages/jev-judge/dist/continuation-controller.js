@@ -21,7 +21,6 @@ export class TodoContinuationController {
     pi;
     config;
     todoProvider = createTodoProvider();
-    jevJudge;
     state = {
         sessionId: "",
         generation: 0,
@@ -33,6 +32,7 @@ export class TodoContinuationController {
         userPaused: false,
         lastSteerMessage: null,
         steerAttempts: 0,
+        lastEvaluationResult: null,
     };
     constructor(pi, config) {
         this.pi = pi;
@@ -85,117 +85,82 @@ export class TodoContinuationController {
         console.log("[TodoContinuation] Lifecycle hooks registered");
     }
     /**
-     * Evaluate continuation decision
+     * Evaluate continuation decision and execute it
      */
     async evaluateContinuation() {
         // 1. Check user pause
         if (this.state.userPaused) {
-            return { action: "stop", reason: "User paused" };
+            console.log("[TodoContinuation] User paused, stopping");
+            return;
         }
         // 2. Get current todo snapshot
         const availability = await this.todoProvider.availability();
         if (!availability.available) {
+            // No todo provider - don't auto-continue
             console.log("[TodoContinuation] Todo provider unavailable:", availability.error);
-            return { action: "stop", reason: "Todo provider unavailable" };
+            return;
         }
-        const snapshot = await this.todoProvider.getSnapshot();
-        // 3. Check if state changed significantly
-        if (snapshot.revision === this.state.todoRevision && this.state.nextItemId) {
-            // Same todo state, try to continue next item
+        try {
+            // Get snapshot for state tracking
+            await this.todoProvider.getSnapshot();
+            // 3. Get in-progress and pending items
+            const inProgressItems = await this.todoProvider.getByStatus("in_progress");
+            const pendingItems = await this.todoProvider.getPending();
+            const completedItems = await this.todoProvider.getCompleted();
+            // 4. If there's work in progress, continue it
+            if (inProgressItems.length > 0) {
+                const item = inProgressItems[0];
+                console.log(`[TodoContinuation] In-progress item: ${item.subject}`);
+                await this.continueItem(item);
+                return;
+            }
+            // 5. Determine action based on state
+            const totalItems = completedItems.length + pendingItems.length + inProgressItems.length;
+            const hasWork = pendingItems.length > 0 || inProgressItems.length > 0;
+            if (!hasWork && totalItems === 0) {
+                console.log("[TodoContinuation] All items complete");
+                return;
+            }
+            if (pendingItems.length > 0) {
+                // Check if items are blocked
+                const blockedItems = await this.todoProvider.getBlocked();
+                if (blockedItems.length === pendingItems.length) {
+                    // All pending items are blocked
+                    const blocker = blockedItems[0];
+                    console.log("[TodoContinuation] Items blocked:", blocker?.subject);
+                    // Don't auto-continue when blocked
+                    return;
+                }
+                // Continue the first non-blocked pending item
+                const readyItems = await this.todoProvider.getReady();
+                if (readyItems.length > 0) {
+                    await this.continueItem(readyItems[0]);
+                }
+            }
         }
-        else {
-            // Todo state changed, recalculate
-            this.state.todoRevision = snapshot.revision;
-            this.state.currentItemId = null;
-            this.state.nextItemId = null;
+        catch (err) {
+            console.error("[TodoContinuation] Evaluation error:", err);
         }
-        // 4. Get ready items
-        const readyItems = await this.todoProvider.getReady();
-        const completedItems = await this.todoProvider.getCompleted();
-        const pendingItems = await this.todoProvider.getPending();
-        // 5. Determine action
-        if (readyItems.length === 0 && pendingItems.length === 0) {
-            console.log("[TodoContinuation] All items complete");
-            return { action: "stop", reason: "All todos complete" };
-        }
-        if (readyItems.length === 0 && pendingItems.length > 0) {
-            // Items exist but all blocked
-            const blockedItems = await this.todoProvider.getBlocked();
-            const blocker = blockedItems[0];
-            console.log("[TodoContinuation] Items blocked:", blocker?.subject);
-            return {
-                action: "blocked",
-                question: `Task "${blocker?.subject}" is blocked. What is needed to unblock it?`,
-                reason: `Blocked by dependencies`,
-            };
-        }
-        // 6. Select next ready item
-        const nextItem = this.state.nextItemId
-            ? readyItems.find((i) => i.id === this.state.nextItemId) ?? readyItems[0]
-            : readyItems[0];
-        if (!nextItem) {
-            return { action: "stop", reason: "No ready items" };
-        }
-        // 7. Check if current item should be marked complete
-        if (this.state.currentItemId && this.state.currentItemId !== nextItem.id) {
-            // Item changed, mark previous complete
-            console.log(`[TodoContinuation] Item ${this.state.currentItemId} complete`);
-        }
-        // 8. Update state
-        this.state.currentItemId = nextItem.id;
-        this.state.nextItemId = readyItems.length > 1 ? readyItems[1].id : null;
-        // 9. Determine if we should continue or ask
-        const shouldContinue = await this.shouldAutoContinue(nextItem);
-        if (shouldContinue.continue) {
-            console.log(`[TodoContinuation] Continuing item ${nextItem.id}: ${nextItem.subject}`);
-            return { action: "continue", nextItemId: nextItem.id };
-        }
-        // 10. Jev says ask user
-        return {
-            action: "ask",
-            nextItemId: nextItem.id,
-            question: shouldContinue.question,
-            reason: shouldContinue.reason,
-        };
     }
     /**
-     * Determine if we should auto-continue
+     * Continue a specific todo item
      */
-    async shouldAutoContinue(item) {
-        // If no current work, continue is routine
-        if (!this.state.currentItemId) {
-            return { continue: true };
+    async continueItem(item) {
+        if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
+            console.warn("[TodoContinuation] Max steer attempts reached");
+            return;
         }
-        // If completing current item and next is ready, continue is routine
-        if (this.state.currentItemId !== item.id && this.state.nextItemId === item.id) {
-            return { continue: true };
-        }
-        // Check if we're mid-item
-        if (this.state.currentItemId === item.id) {
-            // Already working on this item, continue
-            return { continue: true };
-        }
-        // For ambiguous cases, use Jev
-        if (this.config.enableJev && this.jevJudge) {
-            const decision = await this.jevJudge.decide({
-                completedTasks: [],
-                remainingTasks: [item.subject],
-                totalTasks: 1,
-                waitTimeMinutes: 0,
-                userResponded: false,
-                sessionStartTime: new Date(),
-            });
-            if (decision.action === "proceed") {
-                return { continue: true };
-            }
-            return {
-                continue: false,
-                question: `Ready to continue: "${item.subject}"?`,
-                reason: decision.reasoning,
-            };
-        }
-        // Default: continue for ready items
-        return { continue: true };
+        this.state.steerAttempts++;
+        this.state.continuationQueued = true;
+        // Build continuation message
+        const message = item.description
+            ? `Continue task: ${item.subject}\n\n${item.description}`
+            : `Continue task: ${item.subject}`;
+        this.state.lastSteerMessage = message;
+        console.log(`[TodoContinuation] Continuing: ${item.subject}`);
+        console.log(`[TodoContinuation] Message: ${message}`);
+        // Note: Pi does not expose sendUserMessage API.
+        // The Telegram notification system will prompt user for ambiguous cases.
     }
     /**
      * Steer to continue a todo item
@@ -247,6 +212,7 @@ export class TodoContinuationController {
             userPaused: false,
             lastSteerMessage: null,
             steerAttempts: 0,
+            lastEvaluationResult: null,
         };
     }
     /**

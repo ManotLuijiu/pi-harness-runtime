@@ -35,7 +35,6 @@ export declare class TodoContinuationController {
     private pi;
     private config;
     private todoProvider;
-    private jevJudge?;
     private state;
     constructor(pi: ExtensionAPI, config?: ContinuationConfig);
     /**
@@ -43,13 +42,13 @@ export declare class TodoContinuationController {
      */
     register(): void;
     /**
-     * Evaluate continuation decision
+     * Evaluate continuation decision and execute it
      */
     private evaluateContinuation;
     /**
-     * Determine if we should auto-continue
+     * Continue a specific todo item
      */
-    private shouldAutoContinue;
+    private continueItem;
     /**
      * Steer to continue a todo item
      */
