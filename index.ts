@@ -298,10 +298,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Update TUI status - use short ID for display
 				updateAutoContinueStatus("WAITING", questionHash);
 
+				// Get task context for additional info
+				const taskContext = await getTaskContext().catch(() => ({ total: 0, completed: 0, remaining: [] as string[] }));
+
+				// Build rich context message
+				const waitMinutes = Math.round((Date.now() - waitingForUserSince!.getTime()) / 60000);
+				const taskInfo = taskContext.total > 0
+					? ` | Tasks: ${taskContext.completed}/${taskContext.total} done`
+					: "";
+				const contextInfo = `Waiting: ${waitMinutes}m${taskInfo}`;
+
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: `waiting-user-${questionHash}`,
 					requirement: detectedQuestion,
+					error: contextInfo,
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
@@ -521,6 +532,26 @@ async function initTelegram(): Promise<void> {
 			logStartup("[pi-harness] Telegram: initialization failed — skipping");
 			return;
 		}
+
+		// Register callback handler for inline keyboard button clicks (approve/reject)
+		const { parseCallbackData, CallbackActions } = await import(
+			"./packages/notification/dist/src/telegram-webhook-handler.js"
+		);
+		center.setCallbackHandler(async (data: string) => {
+			const parsed = parseCallbackData(data);
+			console.log(`[TelegramCallback] action=${parsed.action} target=${parsed.targetId}`);
+
+			switch (parsed.action) {
+				case CallbackActions.APPROVE:
+					console.log("[TelegramCallback] Approved - user clicked Continue");
+					break;
+				case CallbackActions.REJECT:
+					console.log("[TelegramCallback] Rejected - user clicked Not yet");
+					break;
+				default:
+					console.warn(`[TelegramCallback] Unknown action: ${parsed.action}`);
+			}
+		});
 
 		// Wire to singleton nc() helper so all event emitters can reach Telegram
 		_nc = {

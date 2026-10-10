@@ -62,6 +62,17 @@ export class NotificationCenter {
         }
     }
     /**
+     * Set callback handler for Telegram adapters
+     * Enables handling of inline keyboard button clicks (approve/reject)
+     */
+    setCallbackHandler(handler) {
+        for (const [, adapter] of this.adapters) {
+            if (adapter instanceof TelegramAdapter) {
+                adapter.setCallbackHandler(handler);
+            }
+        }
+    }
+    /**
      * Send a notification to all configured channels
      */
     async notify(event, context) {
@@ -69,7 +80,7 @@ export class NotificationCenter {
         const results = [];
         // Send to all adapters in parallel
         const adapterEntries = Array.from(this.adapters.entries());
-        const promises = adapterEntries.map(async ([id, adapter]) => {
+        await Promise.all(adapterEntries.map(async ([id, adapter]) => {
             try {
                 // Redact sensitive data
                 const redactedPayload = this.redact(payload);
@@ -84,8 +95,7 @@ export class NotificationCenter {
                     error: String(error),
                 });
             }
-        });
-        await Promise.all(promises);
+        }));
         return results;
     }
     /**
@@ -348,7 +358,7 @@ export class NotificationCenter {
             },
             WaitingForUserInput: {
                 title: "Your Input Needed",
-                message: `Agent is waiting for your answer to continue: "${requirement}"`,
+                message: `Agent needs your input: "${requirement}"${context.error ? ` (${context.error})` : ""}`,
             },
             CodexSessionStarted: {
                 title: "Codex Session Started",
