@@ -29,9 +29,15 @@ const HONCHO_KEY_FILE = join(homedir(), ".pi-harness-runtime", "keys", "honcho-a
  * Secrets to redact from messages before transmission.
  * These patterns are checked case-insensitively.
  * Matches: key=VALUE, key: VALUE, key: Bearer VALUE, etc.
+ * For compound keys like api_key, match the full key name.
  */
 const SECRET_PATTERNS: (string | RegExp)[] = [
+	// Compound patterns (check first, more specific)
 	"api[_-]?key",
+	"honcho[_-]?api[_-]?key",
+	"minimax[_-]?api[_-]?key",
+	"openai[_-]?api[_-]?key",
+	// Simple patterns
 	"auth",
 	"authorization",
 	"bearer",
@@ -39,14 +45,11 @@ const SECRET_PATTERNS: (string | RegExp)[] = [
 	"secret",
 	"password",
 	"credential",
-	/honcho[_-]?api[_-]?key/i,
-	/minimax[_-]?api[_-]?key/i,
-	/openai[_-]?api[_-]?key/i,
 ];
 
 /**
  * Redact secrets from text content.
- * Replaces secret VALUES (not labels) with [REDACTED].
+ * Replaces secret VALUES with [REDACTED].
  * Handles: password=VALUE, password: VALUE, auth: Bearer VALUE, etc.
  */
 function redactSecrets(text: string): string {
@@ -55,10 +58,11 @@ function redactSecrets(text: string): string {
 		if (typeof pattern === "string") {
 			// Escape special regex chars in pattern string
 			const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			// Match key=VALUE or key: VALUE or key: Bearer VALUE patterns
+			// Match key=VALUE, key: VALUE, key: Bearer VALUE patterns
 			// Allow optional space after colon and multi-word values
+			// The separator can be =, :, or _ (for compound keys like api_key_value)
 			const regex = new RegExp(
-				`(${escaped})(?:=|:\\s*)(\\S+(?:\\s+\\S+)*)`,
+				`(${escaped})(?:[_=:]\\s*)(\\S+(?:\\s+\\S+)*)`,
 				"gi"
 			);
 			result = result.replace(regex, "$1=[REDACTED]");

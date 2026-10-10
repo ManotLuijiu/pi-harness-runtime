@@ -88,8 +88,11 @@ let _honchoMemory: HonchoMemory | null = null;
 /** Owned registration handle for disposal */
 let _honchoRegistration: { dispose(): Promise<void> } | null = null;
 
-/** Whether initHoncho has been called */
+/** Whether initHoncho has been called (attempted) */
 let _initialized = false;
+
+/** Whether initHoncho succeeded (can retry if false) */
+let _initSucceeded = false;
 
 /** Stored pi.events for use in tool calls */
 let _piEvents: PiEvents | null = null;
@@ -381,11 +384,18 @@ export async function initHoncho(options?: {
     return null;
   }
 
-  if (_initialized) {
+  // Allow retry if previous init failed
+  if (_initialized && _initSucceeded) {
     console.debug("[honcho] Already initialized, returning existing instance");
     return _honchoMemory;
   }
+
+  // Reset state if retrying
+  if (_initialized && !_initSucceeded) {
+    console.info("[honcho] Retrying initialization...");
+  }
   _initialized = true;
+  _initSucceeded = false;
 
   console.info("[honcho] Initializing Honcho MCP integration...");
 
@@ -538,6 +548,16 @@ export async function initHoncho(options?: {
     sessionId: honchoSessionId,
   });
 
+  // Mark initialization as successful
+  _initSucceeded = true;
+
+  return _honchoMemory;
+}
+
+/**
+ * Get the current Honcho memory instance
+ */
+export function getHonchoMemory(): HonchoMemory | null {
   return _honchoMemory;
 }
 
@@ -546,13 +566,6 @@ export async function initHoncho(options?: {
  */
 export function getHonchoIdentity(): HonchoIdentity | null {
   return _identity;
-}
-
-/**
- * Get the Honcho memory instance (if initialized)
- */
-export function getHonchoMemory(): HonchoMemory | null {
-  return _honchoMemory;
 }
 
 /**
@@ -698,6 +711,34 @@ export function registerHonchoLifecycle(
   // Shutdown at session shutdown
   pi.on("session_shutdown", async () => {
     await shutdownHoncho();
+  });
+
+  // Ingest assistant messages at message_end
+  pi.on("message_end", async (event: unknown) => {
+    const msgEvent = event as { message?: { role?: string; content?: string | Array<{ type?: string; text?: string }> } } | undefined;
+    if (!msgEvent?.message || msgEvent.message.role !== "assistant") return;
+
+    const memory = getHonchoMemory();
+    if (!memory?.isReady()) return;
+
+    const msg = msgEvent.message;
+
+    // Extract text content
+    let content = "";
+    if (typeof msg.content === "string") {
+      content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      content = msg.content
+        .filter((block): block is { type: "text"; text: string } =>
+          block.type === "text" && typeof block.text === "string"
+        )
+        .map(block => block.text)
+        .join("\n");
+    }
+
+    if (content) {
+      await memory.ingestMessage("assistant", content);
+    }
   });
 
   console.info("[honcho] Lifecycle hooks registered");

@@ -173,19 +173,28 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			ERROR: "WARN",
 		} as const;
 
+		// Status message for each state
+		const AC_STATE_MESSAGES = {
+			IDLE: "",
+			WAITING: "Awaiting your response",
+			CHECKING: "Evaluating continuation",
+			CONTINUING: "Continuing autonomously",
+			ERROR: "Auto-continue unavailable",
+		} as const;
+
 		// Update auto-continue status in TUI footer
-		function updateAutoContinueStatus(state: keyof typeof AC_STATE, requestId?: string): void {
+		function updateAutoContinueStatus(state: keyof typeof AC_STATE_MESSAGES, requestId?: string): void {
 			if (!_setAutoContinueStatus) return;
 
-			const newState = AC_STATE[state];
+			const message = AC_STATE_MESSAGES[state];
 			if (state === "IDLE") {
 				// Clear status
 				_setAutoContinueStatus(undefined);
 				_currentAutoContinueState = "";
 			} else {
 				const statusText = requestId
-					? `[${newState}] Awaiting your response | ${requestId}`
-					: `[${newState}] Awaiting your response`;
+					? `[${AC_STATE[state]}] ${message} | ${requestId}`
+					: `[${AC_STATE[state]}] ${message}`;
 
 				// Only update if state changed (prevent flicker)
 				if (statusText !== _currentAutoContinueState) {
@@ -202,13 +211,25 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
-		// Clear status on session shutdown
+		// Clear status and cancel background work on session shutdown
 		pi.on("session_shutdown", () => {
+			// Cancel the auto-continue interval
+			if (autoContinueTimer) {
+				clearInterval(autoContinueTimer);
+				autoContinueTimer = null;
+			}
+
+			// Clear UI binding and status
 			if (_setAutoContinueStatus) {
 				_setAutoContinueStatus(undefined);
 				_setAutoContinueStatus = null;
 			}
 			_currentAutoContinueState = "";
+
+			// Reset state
+			waitingForUserSince = null;
+			_lastNotifiedQuestion = "";
+			_inferenceInProgress = false;
 		});
 
 		// Extract assistant message text and detect actual confirmation requests
@@ -231,25 +252,25 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Detect actual confirmation requests (questions, not progress statements)
 		// Must be a question ending with ? AND contain both a request word AND user intent
 		function detectConfirmationRequest(text: string): string | null {
-			// Split into sentences and check each
-			const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
-			
-			for (const sentence of sentences) {
-				// Must end with ? (actual question)
-				if (!sentence.endsWith("?")) continue;
-				
+			// Find questions ending with ? and check each
+			// Use regex to match question sentences (ending with ?)
+			const questionPattern = /([^?]*\?)/g;
+			const matches = text.matchAll(questionPattern);
+
+			for (const match of matches) {
+				const sentence = match[1].trim();
 				const lower = sentence.toLowerCase();
-				
+
 				// Must contain request words AND user intent words
 				const hasRequest = /\b(continue|proceed|next|wait|pause|stop|hold|resume|repeat|rephrase|clarify|explain)\b/i.test(lower);
 				const hasUserIntent = /\b(should|would|could|shall|may i|do you|would you|should i|could we|can i|can we|would like)\b/i.test(lower);
-				
+
 				if (hasRequest && hasUserIntent) {
-					// Return the question for deduplication
+					// Return the question for deduplication (with the ? preserved)
 					return sentence;
 				}
 			}
-			
+
 			return null;
 		}
 
@@ -266,8 +287,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				_lastNotifiedQuestion = detectedQuestion;
 				waitingForUserSince = new Date();
 
-				// Create stable jobId from question hash for deduplication
-				const questionHash = detectedQuestion.replace(/\s+/g, "_").substring(0, 30);
+				// Create stable jobId from question content hash (callback-safe: digits only)
+				const questionHash = Math.abs(
+					detectedQuestion.split("").reduce((a, c) => {
+						a = ((a << 5) - a) + c.charCodeAt(0);
+						return a & a;
+					}, 0)
+				).toString(36);
 
 				// Update TUI status - use short ID for display
 				updateAutoContinueStatus("WAITING", questionHash);
@@ -310,7 +336,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 			// Capture session ID at check time for post-inference validation
 			const checkSessionId = _sessionId;
-			const questionHash = _lastNotifiedQuestion.replace(/\s+/g, "_").substring(0, 30);
+			// Use same hash algorithm as detection
+			const questionHash = _lastNotifiedQuestion
+				? Math.abs(_lastNotifiedQuestion.split("").reduce((a, c) => {
+						a = ((a << 5) - a) + c.charCodeAt(0);
+						return a & a;
+					}, 0)).toString(36)
+				: "";
 
 			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
 			if (waitMinutes < MIN_WAIT_MINUTES) return;
