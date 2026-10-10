@@ -679,25 +679,24 @@ export async function honchoToolCall(
   return await callHonchoTool(toolName, args);
 }
 
+/**
+ * Register Honcho lifecycle hooks using pi.on.
+ * Must be called before Pi emits session_start.
+ * @param pi ExtensionAPI instance from startup
+ */
 export function registerHonchoLifecycle(
-  getPiEvents: () => {
+  pi: {
     on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
-  } | undefined
-): void {
-  const events = getPiEvents();
-  if (!events) {
-    console.warn("[honcho] Cannot register lifecycle: pi.events not available");
-    return;
   }
-
+): void {
   // Initialize at session start
-  events.on("session_start", async () => {
+  pi.on("session_start", async () => {
     console.info("[honcho] Session started, initializing...");
     await initHoncho();
   });
 
   // Shutdown at session shutdown
-  events.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async () => {
     await shutdownHoncho();
   });
 
