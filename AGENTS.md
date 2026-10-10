@@ -218,6 +218,31 @@ todo create "Replace Film icon with themed icon"
 
 **IMPORTANT**: The `todo` tool and `bd` commands are DIFFERENT systems. Use `todo` for local task tracking.
 
+---
+
+### Habit: Detect New Tasks from User Prompts (CRITICAL)
+
+**When a new user prompt arrives with tasks that differ from the current in-progress task — add ALL new tasks to the todo list immediately.**
+
+**Trigger**: User prompt arrives while current task is not completed.
+
+**Rule**:
+1. Compare new prompt tasks vs current in-progress task
+2. If they are different/unrelated tasks → call `todo create` for EACH new task BEFORE starting work
+3. Do NOT start working on new tasks until they are tracked
+
+**Why**: Agents often start working on new prompts immediately and forget to track them. This habit ensures nothing slips through.
+
+**Example**:
+```text
+User: "Also, can you check the logs for errors?"
+# Current task: Building auth feature (in_progress)
+# New task: Check logs for errors (DIFFERENT task)
+# → MUST call todo create "Check logs for errors" FIRST
+```
+
+**Tip**: You may assign this habit to Jev to consider this strictly. If another prompt comes in before the current task is done, Jev should flag that new tasks need to be added to the todo list.
+
 ## Remote Server Commands (SSH)
 
 **ALWAYS use detached SSH pattern to prevent long hangs.**
