@@ -12,6 +12,7 @@
  */
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
+import { honchoToolCall } from "./honcho-init.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -47,11 +48,14 @@ function redactSecrets(text: string): string {
 	let result = text;
 	for (const pattern of SECRET_PATTERNS) {
 		if (typeof pattern === "string") {
-			// Redact lines containing the pattern (case-insensitive)
-			const regex = new RegExp(`^.*${pattern}.*$`, "gi");
+			// Escape special regex chars in pattern string
+			const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			// Redact ALL occurrences of the pattern (including multiline)
+			// Using 'g' flag to replace all occurrences, not just first
+			const regex = new RegExp(escaped, "gi");
 			result = result.replace(regex, "[REDACTED]");
 		} else {
-			// Redact matches of regex pattern
+			// Redact matches of regex pattern (regex already has its own flags)
 			result = result.replace(pattern, "[REDACTED]");
 		}
 	}
@@ -382,19 +386,13 @@ export class HonchoMemory {
 
   /**
    * Call a Honcho MCP tool through the adapter.
-   * Returns actual result, never fabricates content.
+   * Uses the honchoToolCall from honcho-init.ts.
    */
   private async callHonchoTool(
-    _toolName: string,
-    _args: Record<string, unknown>
+    toolName: string,
+    args: Record<string, unknown>
   ): Promise<{ success: boolean; result?: unknown; error?: string }> {
-    // This will be implemented when the MCP adapter integration is complete
-    // The adapter provides runtime-tool-call:v1 event for this
-    // For now, return failure to prevent fake success
-    return {
-      success: false,
-      error: "MCP adapter integration not yet implemented",
-    };
+    return await honchoToolCall(toolName, args);
   }
 
   /**
@@ -449,7 +447,7 @@ export class HonchoMemory {
 
     try {
       // Call Honcho MCP tool through the adapter
-      const result = await this.callHonchoTool("add_messages_to_session", {
+      const result = await this.callHonchoTool("add_message", {
         session_id: this.workspaceId,
         role,
         content: sanitized,
@@ -535,7 +533,7 @@ export class HonchoMemory {
 
     try {
       // Call Honcho get_session_context tool through the adapter
-      const result = await this.callHonchoTool("get_session_context", {
+      const result = await this.callHonchoTool("get_context", {
         session_id: this.workspaceId,
         query,
         limit: 10,

@@ -183,7 +183,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				waitingForUserSince = new Date();
 				console.log("[auto-continue] Agent waiting for continuation confirmation");
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
-				nc.notifyWithApproval("WaitingForUserInput", {
+				_nc?.notifyWithApproval("WaitingForUserInput", {
 					requirement: "Agent awaiting your response",
 				}, {
 					approveLabel: "Continue",
@@ -441,9 +441,10 @@ async function initTelegram(): Promise<void> {
 let _honchoMemory: import("./harness/honcho-memory.js").HonchoMemory | null = null;
 
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
-	// Import HonchoMemory module to trigger auto-creation of MCP config
-	await import("./harness/honcho-memory.js");
+	// Import new Honcho integration module
+	const { initHoncho: honchoInit, registerHonchoLifecycle } = await import("./harness/honcho-init.js");
 
+	// Check for API key
 	const { readFileSync, existsSync } = await import("node:fs");
 	const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
@@ -462,26 +463,13 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 	}
 
 	try {
-		// Register Honcho MCP server with pi-mcp-adapter at session start
-		pi.on("session_start", () => {
-			const request = {
-				version: 1 as const,
-				name: "honcho",
-				definition: {
-					url: "https://mcp.honcho.dev",
-					auth: "bearer" as const,
-					bearerToken: apiKey,
-				},
-			};
+		// Register lifecycle hooks using the new integration
+		registerHonchoLifecycle(() => pi.events);
 
-			// Emit registration request — pi-mcp-adapter will respond with
-			// pi-mcp-adapter:runtime-register-result event on completion
-			pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
-			console.log("[honcho] MCP registration emitted (awaiting adapter ack)");
-		});
+		// Initialize Honcho with the API key
+		await honchoInit({ apiKey });
 
-		// Report pending state — actual memory active requires explicit lifecycle
-		logStartup("[pi-harness] Honcho registered (awaiting adapter connection)");
+		logStartup("[pi-harness] Honcho integration ready");
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
 	}

@@ -134,20 +134,19 @@ async function callHonchoTool(
   // Emit tool call
   piEvents.emit(MCP_RUNTIME_TOOL_CALL_EVENT, request);
 
-  // Wait for result (adapter resolves synchronously)
-  // Check after a microtask to allow adapter to populate result
-  await new Promise(resolve => setImmediate(resolve));
-
+  // Wait for result - adapter assigns a Promise to request.result
   if (request.result === undefined) {
     return { success: false, error: "No response from MCP adapter" };
   }
 
-  if (!request.result.ok) {
-    const resultError = (request.result as { error?: Error }).error;
-  return { success: false, error: resultError?.message ?? "Unknown error" };
+  // request.result is a Promise from the adapter
+  const result = await request.result;
+
+  if (!result.ok) {
+    return { success: false, error: result.error?.message ?? "Unknown error" };
   }
 
-  return { success: true, result: request.result.result };
+  return { success: true, result: result.result };
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +651,16 @@ export async function shutdownHoncho(): Promise<void> {
  *
  * @param getPiEvents Function that returns pi.events when available
  */
+/**
+ * Call a Honcho MCP tool (exported for honcho-memory.ts)
+ */
+export async function honchoToolCall(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<{ success: boolean; result?: unknown; error?: string }> {
+  return await callHonchoTool(toolName, args);
+}
+
 export function registerHonchoLifecycle(
   getPiEvents: () => {
     on: (event: string, handler: () => void | Promise<void>) => void;
