@@ -15,7 +15,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { NotificationCenter } from "./notification-center.js";
-import type { NotificationPayload } from "./types.js";
 
 /**
  * Configuration for the conversation bridge
@@ -53,7 +52,6 @@ export class ConversationBridge {
 	private pendingMessages: Map<string, PendingMessage> = new Map();
 	private deliveredMessageIds: Set<string> = new Set();
 	private sessionStartTime: number = Date.now();
-	private lastMessageId: string | null = null;
 
 	constructor(
 		pi: ExtensionAPI,
@@ -99,11 +97,9 @@ export class ConversationBridge {
 		});
 
 		// Message start - track new message
-		this.pi.on("message_start", (event) => {
-			const msg = event.message as { id?: string; role?: string };
-			if (msg?.role === "assistant" && msg?.id) {
-				this.lastMessageId = msg.id;
-			}
+		// Track message start for assistant messages
+		this.pi.on("message_start", (_event) => {
+			// Message tracking is handled in message_end
 		});
 
 		// Message end - capture final assistant response
@@ -114,7 +110,7 @@ export class ConversationBridge {
 			const content = this.extractMessageContent(msg);
 			if (!content || content.length < 10) return; // Skip empty/too short
 
-			const messageId = msg.id ?? `msg-${Date.now()}`;
+			const messageId = msg.id ?? `msg-${this.sessionStartTime}`;
 
 			// Deduplicate
 			if (this.deliveredMessageIds.has(messageId)) {
@@ -140,15 +136,9 @@ export class ConversationBridge {
 			);
 		});
 
-		// Tool execution end - capture tool summaries
-		if (this.config.sendToolSummaries) {
-			this.pi.on("tool_execution_end", (event) => {
-				const summary = this.formatToolSummary(event);
-				if (summary) {
-					this.sendToolSummary(summary);
-				}
-			});
-		}
+		// Tool execution end - DISABLED by default (too noisy)
+		// Tool summaries spam Telegram with every tool call
+		// Enable only if explicitly configured and user wants verbose output
 
 		// Agent settled - finalize and send pending messages
 		this.pi.on("agent_settled", () => {
@@ -190,54 +180,6 @@ export class ConversationBridge {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Format a tool execution summary
-	 */
-	private formatToolSummary(event: {
-		toolName: string;
-		result?: unknown;
-		isError: boolean;
-	}): string {
-		const status = event.isError ? "FAILED" : "DONE";
-		const resultPreview = this.truncate(
-			JSON.stringify(event.result ?? ""),
-			100,
-		);
-		return `[Tool] ${event.toolName}: ${status}${resultPreview ? ` - ${resultPreview}` : ""}`;
-	}
-
-	/**
-	 * Send a tool summary to Telegram
-	 */
-	private async sendToolSummary(summary: string): Promise<void> {
-		if (!this.center.hasHealthyChannels()) return;
-
-		const payload: NotificationPayload = {
-			event: "CodexSessionStarted", // Reusing existing event
-			jobId: `tool-${Date.now()}`,
-			timestamp: new Date().toISOString(),
-			title: "Tool Executed",
-			message: summary,
-		};
-
-		try {
-			const results = await this.center.notify("CodexSessionStarted", {
-				jobId: payload.jobId,
-				requirement: payload.message,
-			});
-
-			for (const result of results) {
-				if (result.success) {
-					console.log(`[ConversationBridge] Tool summary sent`);
-				} else {
-					console.warn(`[ConversationBridge] Tool summary failed: ${result.error}`);
-				}
-			}
-		} catch (err) {
-			console.error("[ConversationBridge] Failed to send tool summary:", err);
-		}
 	}
 
 	/**
@@ -383,20 +325,11 @@ export class ConversationBridge {
 	}
 
 	/**
-	 * Truncate a string
-	 */
-	private truncate(str: string, maxLen: number): string {
-		if (str.length <= maxLen) return str;
-		return str.substring(0, maxLen - 3) + "...";
-	}
-
-	/**
 	 * Reset state for new session
 	 */
 	private reset(): void {
 		this.pendingMessages.clear();
 		this.deliveredMessageIds.clear();
-		this.lastMessageId = null;
 		this.sessionStartTime = Date.now();
 	}
 
