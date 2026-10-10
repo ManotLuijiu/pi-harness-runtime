@@ -61,22 +61,11 @@ export class PolicyLoader {
      * Load policy for a specific target file (considers scoped rules).
      */
     async loadForTarget(projectRoot, targetPath) {
-        if (!targetPath) {
-            return this.load(projectRoot);
-        }
-        // Check if target is in a specific scope
-        const relativePath = relative(projectRoot, targetPath);
-        const scope = this.inferScope(relativePath);
-        const manifest = await this.load(projectRoot);
-        // Filter sources to only those applicable to this scope
-        if (scope) {
-            manifest.sources = manifest.sources.filter(s => s.scope === "" || scope.startsWith(s.scope) || s.scope.startsWith(scope));
-            // Recompute revision if sources changed
-            if (manifest.sources.length > 0) {
-                manifest.revision = this.computeRevision(manifest.sources);
-            }
-        }
-        return manifest;
+        // The current loader collects only project-root and ancestor rules, all of
+        // which apply to every target. Use the same manifest as harness_rules.
+        // Filtering here mutated the cached manifest, dropped ancestor rules, and
+        // hashed advisory sources that load() deliberately excludes from revision.
+        return this.load(projectRoot);
     }
     /**
      * Invalidate cache for a project root.

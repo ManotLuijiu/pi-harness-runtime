@@ -24,6 +24,7 @@ import {
   renderFullRules, 
 } from "./policy-renderer.js";
 import { classifyToolCall } from "./types.js";
+import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Extension Registration
@@ -43,6 +44,7 @@ export function registerAgentPolicy(
   
   const store = getPolicyStore();
   const toolClassifier = config.toolClassifier ?? classifyToolCall;
+  const fallbackSessionId = `policy-${randomUUID()}`;
 
   // Track if pi-lens is available
   let piLensAvailable = false;
@@ -65,7 +67,7 @@ export function registerAgentPolicy(
       const manifest = await loader.load(cwd);
       
       // Record delivery in store
-      const sessionId = getSessionIdFromCtx(ctx);
+      const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
       const receipt = store.noteDelivered(
         sessionId,
         manifest,
@@ -113,7 +115,7 @@ Use harness_rules to check policy status.
     }
 
     const cwd = getCwdFromContext(ctx);
-    const sessionId = getSessionIdFromCtx(ctx);
+    const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
     const targetPath = capability.affectedPaths?.[0];
 
     try {
@@ -121,7 +123,7 @@ Use harness_rules to check policy status.
       const receipt = store.getReceipt(sessionId, manifest.projectRoot);
 
       // Check if current revision is covered
-      if (!receipt || receipt.revision !== manifest.revision) {
+      if (config.requireReceiptBeforeMutation && (!receipt || receipt.revision !== manifest.revision)) {
         const blockReason = receipt
           ? `Policy revision changed (expected ${manifest.revision}, received ${receipt.revision})`
           : `Policy revision ${manifest.revision} not yet delivered`;
@@ -200,8 +202,8 @@ Use harness_rules to check policy status.
     } as const,
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const cwd = ctx.cwd;
-      const sessionId = getSessionIdFromCtx(ctx);
+      const cwd = getCwdFromContext(ctx);
+      const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
 
       try {
         const input = params as HarnessRulesInput;
@@ -324,7 +326,7 @@ Use harness_rules to check policy status.
   // ---------------------------------------------------------------------------
   
   pi.on("session_start", (_event: SessionStartEvent, ctx: unknown) => {
-    const sessionId = getSessionIdFromCtx(ctx);
+    const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
     const cwd = getCwdFromContext(ctx);
     
     console.log(`[agent-policy] Session started: ${sessionId} in ${cwd}`);
@@ -348,8 +350,13 @@ Use harness_rules to check policy status.
 /**
  * Extract session ID from context.
  */
-function getSessionIdFromCtx(ctx: unknown): string {
+function getSessionIdFromCtx(ctx: unknown, fallbackSessionId: string): string {
   const ctxObj = ctx as Record<string, unknown>;
+  const manager = ctxObj?.sessionManager as { getSessionId?: () => string } | undefined;
+  const managedId = manager?.getSessionId?.();
+  if (typeof managedId === "string" && managedId) {
+    return managedId;
+  }
   
   if (typeof ctxObj?.sessionId === "string") {
     return ctxObj.sessionId;
@@ -359,8 +366,8 @@ function getSessionIdFromCtx(ctx: unknown): string {
     return ctxObj.id;
   }
   
-  // Fallback to a generated ID
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Legacy hosts without session identity must reuse the registration's ID.
+  return fallbackSessionId;
 }
 
 /**
