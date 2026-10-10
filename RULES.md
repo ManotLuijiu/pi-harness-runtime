@@ -2,38 +2,44 @@
 
 ## Version Management
 
-### NPM and GitHub Version Sync
+### NPM Publishing via GitHub Actions
 
-**Versions MUST match between npm and GitHub tags before push.**
+**GitHub Actions automatically publishes to npm when you push to `develop` branch.**
 
-Before pushing any version bump:
-1. Check current npm version: `npm view pi-harness-runtime version`
-2. Use the next version number (e.g., if npm is 1.1.184, bump to 1.1.185)
-3. Never reuse a version number that's already on npm
+After every `git push` to `develop`:
+1. GitHub Actions detects the push
+2. Runs build and tests
+3. Publishes to npm automatically
+
+You do NOT need to manually run `npm publish`.
+
+### Version Bump Process
+
+**Before pushing a version bump, check npm to use the correct next version:**
 
 ```bash
-# Check npm version
+# 1. Check current npm version
 npm view pi-harness-runtime version
+# Example output: 1.1.184
 
-# Update package.json BEFORE git add/commit
-sed -i 's/"version": "X.X.X"/"version": "Y.Y.Y"/' package.json
+# 2. Update package.json to next version (npm + 1)
+sed -i 's/"version": "1.1.184"/"version": "1.1.185"/' package.json
 
-# Commit and tag with SAME version
-git add -A && git commit -m "bump: version to Y.Y.Y"
-git tag vY.Y.Y
+# 3. Commit and tag with SAME version
+git add -A && git commit -m "bump: version to 1.1.185"
+git tag v1.1.185
 git push origin develop --tags
 ```
 
+**Important:**
+- Never reuse a version number already on npm
+- Use patch-level only (`1.1.x`) until production-ready
+- GitHub Actions reads the `tag` event to trigger npm publish
+
 ### Why This Matters
 
-- GitHub Actions reads the `tag` event to trigger npm publish
 - If the tag already exists on npm, publish fails with: `You cannot publish over the previously published versions`
-- Using a new version ensures clean publish
-
-## Patch Version Convention
-
-- Use only **patch-level updates** (`1.1.x`) until production-ready
-- This allows rapid iteration without version conflicts
+- Using a new unique version ensures clean publish
 
 ## Commit Messages
 
