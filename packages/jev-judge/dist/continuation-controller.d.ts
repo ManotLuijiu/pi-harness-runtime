@@ -1,30 +1,42 @@
-/**
- * Todo-Driven Continuation Controller
- *
- * Executes authorized todo items without repeated prompts.
- * Uses deterministic rules + optional Jev for ambiguous cases.
- *
- * Architecture:
- * A. Read real todo state (not bd)
- * B. Deterministic continuation on agent_settled
- * C. Jev for ambiguous classification only
- * D. Single continuation controller
- * E. Update prompts/Telegram/status together
- */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type TodoItem } from "./todo-provider.js";
+import type { TodoItem } from "./todo-provider.js";
 /**
- * Continuation controller configuration
+ * Continuation configuration
  */
-interface ContinuationConfig {
-    /** Minimum wait time before Jev fallback (ms) */
+export interface ContinuationConfig {
+    /** Minimum wait before Jev fallback (ms) */
     jevFallbackMinWaitMs?: number;
-    /** Jev probability threshold for routine continuation */
+    /** Threshold for routine continuation */
     routineThreshold?: number;
-    /** Max steer attempts before reporting blocker */
+    /** Max steer attempts per session */
     maxSteerAttempts?: number;
-    /** Enable Jev classification for ambiguous cases */
+    /** Enable Jev for ambiguous cases */
     enableJev?: boolean;
+}
+/**
+ * Continuation state
+ */
+export interface ContinuationState {
+    sessionId: string;
+    generation: number;
+    todoRevision: number;
+    currentItemId: number | null;
+    nextItemId: number | null;
+    lastMessageId: string | null;
+    continuationQueued: boolean;
+    userPaused: boolean;
+    lastSteerMessage: string | null;
+    steerAttempts: number;
+    lastEvaluationResult: string | null;
+}
+/**
+ * Continuation result
+ */
+export interface ContinuationResult {
+    action: "continue" | "stop" | "blocked" | "ask";
+    nextItemId?: number;
+    question?: string;
+    reason?: string;
 }
 /**
  * Todo-Driven Continuation Controller
@@ -56,7 +68,7 @@ export declare class TodoContinuationController {
     /**
      * Mark a todo item as complete
      */
-    markComplete(itemId: number): Promise<void>;
+    markComplete(_itemId: number): Promise<void>;
     /**
      * User paused
      */
@@ -82,5 +94,4 @@ export declare class TodoContinuationController {
  * Create and register a todo continuation controller
  */
 export declare function createTodoContinuation(pi: ExtensionAPI, config?: ContinuationConfig): TodoContinuationController;
-export {};
 //# sourceMappingURL=continuation-controller.d.ts.map
