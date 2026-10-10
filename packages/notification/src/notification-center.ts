@@ -115,7 +115,7 @@ export class NotificationCenter {
 					const redactedPayload = this.redact(payload);
 					const result = await adapter.send(redactedPayload);
 					results.push(result);
-			} catch (error) {
+				} catch (error) {
 					// Never crash the runtime due to notification failure
 					results.push({
 						success: false,
