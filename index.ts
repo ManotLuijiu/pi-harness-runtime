@@ -184,6 +184,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				console.log("[auto-continue] Agent waiting for continuation confirmation");
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
+					jobId: `waiting-user-${Date.now()}`,
 					requirement: "Agent awaiting your response",
 				}, {
 					approveLabel: "Continue",
@@ -437,9 +438,6 @@ async function initTelegram(): Promise<void> {
 // - Deduplication by message ID
 // - Bounded context injection with provenance
 
-/** Module-level Honcho memory instance */
-let _honchoMemory: import("./harness/honcho-memory.js").HonchoMemory | null = null;
-
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
 	// Import new Honcho integration module
 	const { initHoncho: honchoInit, registerHonchoLifecycle } = await import("./harness/honcho-init.js");
@@ -466,10 +464,15 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		// Register lifecycle hooks using the new integration
 		registerHonchoLifecycle(() => pi.events);
 
-		// Initialize Honcho with the API key
-		await honchoInit({ apiKey });
+		// Initialize Honcho with the API key and pi.events
+		// SAFETY: pi.events implements the required on/emit interface
+		const result = await honchoInit({ apiKey, piEvents: pi.events });
 
-		logStartup("[pi-harness] Honcho integration ready");
+		if (result) {
+			logStartup("[pi-harness] Honcho integration ready");
+		} else {
+			logStartup("[pi-harness] Honcho: initialization returned null");
+		}
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
 	}

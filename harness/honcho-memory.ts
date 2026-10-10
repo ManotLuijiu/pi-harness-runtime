@@ -43,6 +43,8 @@ const SECRET_PATTERNS: (string | RegExp)[] = [
 
 /**
  * Redact secrets from text content.
+ * Replaces secret VALUES (not labels) with [REDACTED].
+ * Handles: password=VALUE, token:VALUE, api_key=VALUE, etc.
  */
 function redactSecrets(text: string): string {
 	let result = text;
@@ -50,13 +52,19 @@ function redactSecrets(text: string): string {
 		if (typeof pattern === "string") {
 			// Escape special regex chars in pattern string
 			const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			// Redact ALL occurrences of the pattern (including multiline)
-			// Using 'g' flag to replace all occurrences, not just first
-			const regex = new RegExp(escaped, "gi");
-			result = result.replace(regex, "[REDACTED]");
+			// Match key=VALUE or key:VALUE patterns (case-insensitive)
+			// Capture the key (label) and redact only the value
+			const regex = new RegExp(
+				`(${escaped})(?:=|:)(\\S+)`,
+				"gi"
+			);
+			result = result.replace(regex, "$1=[REDACTED]");
 		} else {
-			// Redact matches of regex pattern (regex already has its own flags)
-			result = result.replace(pattern, "[REDACTED]");
+			// For regex patterns, redact the entire match
+			// Add 'g' flag if not present
+			const flags = pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g";
+			const globalPattern = new RegExp(pattern.source, flags);
+			result = result.replace(globalPattern, "[REDACTED]");
 		}
 	}
 	return result;
@@ -234,6 +242,8 @@ export interface HonchoMemoryConfig {
   userPeerId?: string;
   /** Assistant peer ID */
   assistantPeerId?: string;
+  /** Session ID for memory storage */
+  sessionId?: string;
   /** Max context size to inject (chars) */
   maxContextChars?: number;
   /** Enable auto-ingestion */
@@ -257,6 +267,7 @@ export class HonchoMemory {
   private isConnected = false;
   private toolsDiscovered = false;
   private workspaceId: string | null = null;
+  private sessionId: string | null = null;
   private _disposed = false;
 
   constructor(config: HonchoMemoryConfig) {
@@ -265,6 +276,8 @@ export class HonchoMemory {
       autoIngest: true,
       ...config,
     };
+    // Store session ID from config
+    this.sessionId = config.sessionId ?? null;
   }
 
   /**
@@ -312,6 +325,21 @@ export class HonchoMemory {
       operation: "workspace_created",
       phase: "completed",
       workspaceId,
+    });
+  }
+
+  /**
+   * Set session ID for memory storage
+   */
+  setSession(sessionId: string): void {
+    this.sessionId = sessionId;
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "session_created",
+      phase: "completed",
+      sessionId,
     });
   }
 
@@ -447,8 +475,10 @@ export class HonchoMemory {
 
     try {
       // Call Honcho MCP tool through the adapter
+      // Use sessionId if available, fall back to workspaceId
+      const targetSessionId = this.sessionId ?? this.workspaceId;
       const result = await this.callHonchoTool("add_message", {
-        session_id: this.workspaceId,
+        session_id: targetSessionId,
         role,
         content: sanitized,
         message_id: messageId,
@@ -533,8 +563,10 @@ export class HonchoMemory {
 
     try {
       // Call Honcho get_session_context tool through the adapter
+      // Use sessionId if available, fall back to workspaceId
+      const targetSessionId = this.sessionId ?? this.workspaceId;
       const result = await this.callHonchoTool("get_context", {
-        session_id: this.workspaceId,
+        session_id: targetSessionId,
         query,
         limit: 10,
       });

@@ -28,7 +28,10 @@ import {
 interface McpRuntimeRegistrationRequest {
   version: 1;
   name: string;
-  definition: { url: string };
+  definition: {
+    url: string;
+    headers?: Record<string, string>;
+  };
   result?:
     | { ok: true; registration: { dispose(): Promise<void> } }
     | { ok: false; error: Error };
@@ -88,6 +91,9 @@ let _honchoRegistration: { dispose(): Promise<void> } | null = null;
 /** Whether initHoncho has been called */
 let _initialized = false;
 
+/** Stored pi.events for use in tool calls */
+let _piEvents: PiEvents | null = null;
+
 /** Current Honcho identity (workspace, peers, session) */
 let _identity: HonchoIdentity | null = null;
 
@@ -110,18 +116,11 @@ async function callHonchoTool(
     return { success: false, error: "Honcho integration disposed" };
   }
 
-  // Get pi.events for cross-extension tool calls
-  const piEvents = (globalThis as {
-    pi?: {
-      events?: {
-        emit: (event: string, req: unknown) => void;
-      };
-    };
-  }).pi?.events;
-
-  if (!piEvents) {
+  // Use stored pi.events from initHoncho
+  if (!_piEvents) {
     return { success: false, error: "pi.events not available" };
   }
+  const piEvents = _piEvents;
 
   // Create tool call request
   const request: McpToolCallRequest = {
@@ -361,12 +360,21 @@ async function getContext(
  * @param options Initialization options
  * @returns Promise resolving to the memory instance (or null if registration failed)
  */
+/**
+ * Pi events interface for lifecycle hooks
+ */
+interface PiEvents {
+  on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
+  emit: (event: string, ...args: unknown[]) => void;
+}
+
 export async function initHoncho(options?: {
   workspaceName?: string;
   assistantName?: string;
   userName?: string;
   sessionId?: string;
   apiKey?: string;
+  piEvents?: PiEvents;
 }): Promise<HonchoMemory | null> {
   if (_disposed) {
     console.error("[honcho] Integration has been disposed, cannot reinitialize");
@@ -392,6 +400,11 @@ export async function initHoncho(options?: {
 
   honchoStatus.setConfigured(true);
 
+  // Store pi.events for use in tool calls
+  if (options?.piEvents) {
+    _piEvents = options.piEvents;
+  }
+
   // Ensure MCP config directory exists (non-destructive)
   ensureMcpConfigDirectory();
 
@@ -404,14 +417,8 @@ export async function initHoncho(options?: {
     // Continue anyway - adapter may use its own config
   }
 
-  // Get pi.events for cross-extension registration
-  const piEvents = (globalThis as {
-    pi?: {
-      events?: {
-        emit: (event: string, req: unknown) => void;
-      };
-    };
-  }).pi?.events;
+  // Get pi.events from options (passed from startup) or fall back to global
+  const piEvents = options?.piEvents ?? (globalThis as { pi?: { events?: PiEvents } }).pi?.events;
 
   if (!piEvents) {
     console.error("[honcho] pi.events not available - MCP adapter may not be installed");
@@ -419,12 +426,15 @@ export async function initHoncho(options?: {
     return null;
   }
 
-  // Create registration request
+  // Create registration request with bearer token authentication
   const request: McpRuntimeRegistrationRequest = {
     version: 1,
     name: HONCHO_SERVER_NAME,
     definition: {
       url: "https://mcp.honcho.dev",
+      headers: {
+        Authorization: `Bearer ${key}`,
+      },
     },
   };
 
@@ -441,14 +451,21 @@ export async function initHoncho(options?: {
 
   if (!request.result.ok) {
     const errorMsg = request.result.error?.message ?? "Unknown registration error";
-    console.error(`[honcho] Registration failed: ${errorMsg}`);
-    honchoStatus.recordFailure("init", "registration_rejected", { error: errorMsg });
-    return null;
+    
+    // Check for duplicate name - an existing server may already be registered
+    if (errorMsg.includes("already") || errorMsg.includes("duplicate")) {
+      console.warn(`[honcho] Server already registered (duplicate name), continuing...`);
+      // Continue with memory initialization - the existing server should work
+    } else {
+      console.error(`[honcho] Registration failed: ${errorMsg}`);
+      honchoStatus.recordFailure("init", "registration_rejected", { error: errorMsg });
+      return null;
+    }
+  } else {
+    // Registration accepted - store handle for disposal
+    _honchoRegistration = request.result.registration;
+    console.info("[honcho] MCP server registered");
   }
-
-  // Registration accepted - store handle for disposal
-  _honchoRegistration = request.result.registration;
-  console.info("[honcho] MCP server registered");
 
   // Create memory instance
   _honchoMemory = new HonchoMemory({
@@ -507,10 +524,11 @@ export async function initHoncho(options?: {
     sessionId: honchoSessionId,
   };
 
-  // Update memory state
+  // Update memory state with all identities
   _honchoMemory.setConnected(true);
   _honchoMemory.setToolsDiscovered(true);
   _honchoMemory.setWorkspace(workspaceId);
+  _honchoMemory.setSession(honchoSessionId);
 
   console.info("[honcho] Memory ready");
   honchoStatus.recordSuccess("init", undefined, {
@@ -663,7 +681,7 @@ export async function honchoToolCall(
 
 export function registerHonchoLifecycle(
   getPiEvents: () => {
-    on: (event: string, handler: () => void | Promise<void>) => void;
+    on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
   } | undefined
 ): void {
   const events = getPiEvents();
@@ -678,8 +696,8 @@ export function registerHonchoLifecycle(
     await initHoncho();
   });
 
-  // Shutdown at session end
-  events.on("session_end", async () => {
+  // Shutdown at session shutdown
+  events.on("session_shutdown", async () => {
     await shutdownHoncho();
   });
 

@@ -103,9 +103,13 @@ return this._botUsername;
 				body.parse_mode = cfg.parseMode;
 			}
 
+			// Read buttons from payload.details (set by notifyWithApproval)
+			const enableInlineKeyboard = (payload.details?._enableInlineKeyboard as boolean) ?? cfg.enableInlineKeyboard;
+			const actionButtons = (payload.details?._actionButtons as InlineKeyboardButton[]) ?? cfg.actionButtons;
+
 			// Add inline keyboard if enabled and buttons are configured
-			if (cfg.enableInlineKeyboard && (cfg.actionButtons?.length ?? 0) > 0) {
-				body.reply_markup = this.buildInlineKeyboard(cfg.actionButtons!);
+			if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
+				body.reply_markup = this.buildInlineKeyboard(actionButtons);
 			}
 
 			const response = await fetch(

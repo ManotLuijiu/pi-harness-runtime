@@ -79,9 +79,12 @@ export class TelegramAdapter extends BaseChannelAdapter {
             if (cfg.parseMode) {
                 body.parse_mode = cfg.parseMode;
             }
+            // Read buttons from payload.details (set by notifyWithApproval)
+            const enableInlineKeyboard = payload.details?._enableInlineKeyboard ?? cfg.enableInlineKeyboard;
+            const actionButtons = payload.details?._actionButtons ?? cfg.actionButtons;
             // Add inline keyboard if enabled and buttons are configured
-            if (cfg.enableInlineKeyboard && (cfg.actionButtons?.length ?? 0) > 0) {
-                body.reply_markup = this.buildInlineKeyboard(cfg.actionButtons);
+            if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
+                body.reply_markup = this.buildInlineKeyboard(actionButtons);
             }
             const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
                 method: "POST",
