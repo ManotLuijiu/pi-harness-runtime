@@ -524,11 +524,19 @@ export class GLMQuotaCountdown {
 					: "1 minute";
 
 		try {
-			await this.notificationCenter.notify("QuotaPaused", {
+			const results = await this.notificationCenter.notify("QuotaPaused", {
 				jobId: this.jobContext?.jobId ?? jobId,
 				requirement: this.jobContext?.requirement ?? "GLM Quota",
 				error: `GLM quota reset in ${label} (${formatCountdown(remainingSeconds)}). Auto-resume pending.`,
 			});
+			// Log notification results for observability
+			for (const result of results) {
+				if (result.success) {
+					console.debug(`[notification] Sent ${result.channel} notification`);
+				} else {
+					console.warn(`[notification] Failed ${result.channel}: ${result.error}`);
+				}
+			}
 			logNotificationSent(jobId, remainingSeconds);
 		} catch (error) {
 			logNotificationFailed(jobId, String(error));

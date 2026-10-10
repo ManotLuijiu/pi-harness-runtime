@@ -91,11 +91,17 @@ return this._botUsername;
 			const message = this.formatMessage(payload);
 
 			// Build request body
+			// Use plain text by default to avoid MarkdownV2 escaping issues with dynamic content
+			// If parseMode is explicitly set, use it (caller is responsible for escaping)
 			const body: Record<string, unknown> = {
 				chat_id: cfg.chatId,
 				text: message,
-				parse_mode: cfg.parseMode ?? "MarkdownV2",
 			};
+
+			// Only add parse_mode if explicitly configured
+			if (cfg.parseMode) {
+				body.parse_mode = cfg.parseMode;
+			}
 
 			// Add inline keyboard if enabled and buttons are configured
 			if (cfg.enableInlineKeyboard && (cfg.actionButtons?.length ?? 0) > 0) {
@@ -145,8 +151,12 @@ return this._botUsername;
 			const body: Record<string, unknown> = {
 				chat_id: cfg.chatId,
 				text: message,
-				parse_mode: cfg.parseMode ?? "MarkdownV2",
 			};
+
+			// Only add parse_mode if explicitly configured
+			if (cfg.parseMode) {
+				body.parse_mode = cfg.parseMode;
+			}
 
 			const response = await fetch(
 				`https://api.telegram.org/bot${cfg.botToken}/sendMessage`,
@@ -362,8 +372,8 @@ return this._botUsername;
 		const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
 		const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
 
-		const emoji = this.getEmoji(payload.event);
-		const title = `${emoji} ${maskedTitle}`;
+		const label = this.getStatusLabel(payload.event);
+		const title = `${label} ${maskedTitle}`;
 		const lines = [title, "", maskedMessage];
 
 		if (maskedTaskTitle) {
@@ -380,21 +390,23 @@ return this._botUsername;
 		return maskString(lines.filter(Boolean).join("\n"));
 	}
 
-	private getEmoji(event: NotificationPayload["event"]): string {
-		const map: Record<string, string> = {
-			JobStarted: "🚀",
-			TaskCompleted: "✅",
-			TaskFailed: "❌",
-			QuotaPaused: "⏸️",
-			ResumeScheduled: "▶️",
-			ContextCompacted: "📦",
-			OutputLimitContinued: "🔄",
-			E2EFailed: "🧪",
-			HumanReviewNeeded: "👤",
-			ReadyForClient: "🎉",
-			JobCancelled: "🚫",
-			Error: "⚠️",
+	private getStatusLabel(event: NotificationPayload["event"]): string {
+		// Use ASCII labels per AGENTS.md convention
+		// Avoid emoji which renders inconsistently across terminals
+		const labels: Record<string, string> = {
+			JobStarted: "[START]",
+			TaskCompleted: "[OK]",
+			TaskFailed: "[FAIL]",
+			QuotaPaused: "[PAUSE]",
+			ResumeScheduled: "[RESUME]",
+			ContextCompacted: "[COMPACT]",
+			OutputLimitContinued: "[CONTINUE]",
+			E2EFailed: "[TEST]",
+			HumanReviewNeeded: "[REVIEW]",
+			ReadyForClient: "[DONE]",
+			JobCancelled: "[CANCEL]",
+			Error: "[ERROR]",
 		};
-		return map[event] ?? "📢";
+		return labels[event] ?? "[MSG]";
 	}
 }

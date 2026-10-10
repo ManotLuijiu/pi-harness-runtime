@@ -56,6 +56,6 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      */
     getWebhookInfo(): Promise<Record<string, unknown> | null>;
     private formatMessage;
-    private getEmoji;
+    private getStatusLabel;
 }
 //# sourceMappingURL=telegram-adapter.d.ts.map

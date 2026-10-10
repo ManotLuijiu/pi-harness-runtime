@@ -12,79 +12,132 @@
  */
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 // ---------------------------------------------------------------------------
-// Auto-create MCP config for Honcho Cloud
-// ----------------------------------------------------------------------------
+// Honcho MCP Configuration (non-destructive)
+// ---------------------------------------------------------------------------
 
 const MCP_CONFIG_DIR = join(homedir(), ".config", "mcp");
 const MCP_CONFIG_FILE = join(MCP_CONFIG_DIR, "mcp.json");
 const HONCHO_KEY_FILE = join(homedir(), ".pi-harness-runtime", "keys", "honcho-api-key.txt");
 
-function ensureMcpConfig(): void {
-	// Create config directory if needed
+/**
+ * Secrets to redact from messages before transmission.
+ * These patterns are checked case-insensitively.
+ */
+const SECRET_PATTERNS: (string | RegExp)[] = [
+	"api[_-]?key",
+	"bearer",
+	"token",
+	"secret",
+	"password",
+	"credential",
+	/honcho[_-]?api[_-]?key/i,
+	/minimax[_-]?api[_-]?key/i,
+	/openai[_-]?api[_-]?key/i,
+];
+
+/**
+ * Redact secrets from text content.
+ */
+function redactSecrets(text: string): string {
+	let result = text;
+	for (const pattern of SECRET_PATTERNS) {
+		if (typeof pattern === "string") {
+			// Redact lines containing the pattern (case-insensitive)
+			const regex = new RegExp(`^.*${pattern}.*$`, "gi");
+			result = result.replace(regex, "[REDACTED]");
+		} else {
+			// Redact matches of regex pattern
+			result = result.replace(pattern, "[REDACTED]");
+		}
+	}
+	return result;
+}
+
+/**
+ * Ensure MCP config directory exists (non-destructive).
+ * Does NOT write config at import time.
+ */
+export function ensureMcpConfigDirectory(): void {
 	if (!existsSync(MCP_CONFIG_DIR)) {
 		mkdirSync(MCP_CONFIG_DIR, { recursive: true, mode: 0o755 });
 	}
+}
 
-	// Check if Honcho MCP is already configured with real key
-	if (existsSync(MCP_CONFIG_FILE)) {
-		try {
-			const content = readFileSync(MCP_CONFIG_FILE, "utf8");
-			const config = JSON.parse(content);
-			if (config.mcpServers?.honcho?.bearerToken &&
-				config.mcpServers.honcho.bearerToken !== "YOUR_HONCHO_API_KEY") {
-				return; // Already configured with real key
-			}
-		} catch {
-			// Invalid JSON, will overwrite
-		}
-	}
-
-	// Try to read API key from keys directory
-	let apiKey = "";
+/**
+ * Load Honcho API key from keys directory.
+ * Does NOT write config files.
+ */
+export function loadHonchoApiKey(): string | undefined {
 	if (existsSync(HONCHO_KEY_FILE)) {
 		try {
-			apiKey = readFileSync(HONCHO_KEY_FILE, "utf8").trim();
+			return readFileSync(HONCHO_KEY_FILE, "utf8").trim() || undefined;
 		} catch {
-			// Will use placeholder
+			return undefined;
 		}
 	}
+	return undefined;
+}
 
-	// Create config with proper Honcho MCP headers
-	const config = {
-		mcpServers: {
-			honcho: {
-				url: "https://mcp.honcho.dev",
-				headers: {
-					Authorization: `Bearer ${apiKey || "YOUR_HONCHO_API_KEY"}`,
-				},
-			},
-		},
-	};
-
+/**
+ * Read existing MCP config (non-destructive).
+ * Returns null if config doesn't exist or is invalid.
+ */
+export function readMcpConfig(): Record<string, unknown> | null {
+	if (!existsSync(MCP_CONFIG_FILE)) {
+		return null;
+	}
 	try {
-		writeFileSync(MCP_CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o644 });
-		if (apiKey) {
-			console.log("[honcho] MCP config created with key from:", HONCHO_KEY_FILE);
-		} else {
-			console.log("[honcho] MCP config created at:", MCP_CONFIG_FILE);
-			console.log("[honcho] NOTE: Run: echo \"YOUR_KEY\" > ~/.pi-harness-runtime/keys/honcho-api-key.txt");
-		}
-	} catch (err) {
-		console.warn("[honcho] Failed to create MCP config:", err);
+		const content = readFileSync(MCP_CONFIG_FILE, "utf8");
+		return JSON.parse(content);
+	} catch {
+		return null;
 	}
 }
 
-// Auto-create MCP config on module load
-ensureMcpConfig();
+/**
+ * Write MCP config atomically (non-destructive).
+ * Only updates the Honcho server entry, preserves other entries.
+ */
+export function writeHonchoMcpConfig(apiKey: string): void {
+	ensureMcpConfigDirectory();
+
+	// Read existing config or create new one
+	let config: Record<string, unknown> = readMcpConfig() || { mcpServers: {} };
+	if (!config.mcpServers || typeof config.mcpServers !== "object") {
+		config = { mcpServers: {} };
+	}
+
+	// Update Honcho entry
+	const mcpServers = config.mcpServers as Record<string, unknown>;
+	mcpServers.honcho = {
+		url: "https://mcp.honcho.dev",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+		},
+	};
+
+	// Atomic write with temp file
+	const tempFile = `${MCP_CONFIG_FILE}.tmp`;
+	writeFileSync(tempFile, JSON.stringify(config, null, 2), { mode: 0o644 });
+	try {
+		// Verify the temp file is valid JSON before renaming
+		JSON.parse(readFileSync(tempFile, "utf8"));
+		renameSync(tempFile, MCP_CONFIG_FILE);
+	} catch {
+		// Clean up invalid temp file
+		try { unlinkSync(tempFile); } catch { /* ignore */ }
+		throw new Error("Failed to write valid MCP config");
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Honcho Health Check - Detect suspended accounts
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 interface HonchoHealthResponse {
   status: string;
@@ -96,13 +149,8 @@ let _honchoHealthInterval: ReturnType<typeof setInterval> | null = null;
 const HONCHO_HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 const HONCHO_HEALTH_ENDPOINT = "https://api.honcho.dev/v1/health";
 
-// Start only after the timer state and health-check constants are initialized.
-startHonchoHealthCheck();
-
 async function checkHonchoHealth(): Promise<void> {
-  const apiKey = existsSync(HONCHO_KEY_FILE)
-    ? readFileSync(HONCHO_KEY_FILE, "utf8").trim()
-    : null;
+  const apiKey = loadHonchoApiKey();
 
   if (!apiKey) {
     return; // No key, skip health check
@@ -166,6 +214,10 @@ export function stopHonchoHealthCheck(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Honcho Memory Implementation
+// ---------------------------------------------------------------------------
+
 /**
  * Honcho memory configuration
  */
@@ -201,6 +253,7 @@ export class HonchoMemory {
   private isConnected = false;
   private toolsDiscovered = false;
   private workspaceId: string | null = null;
+  private _disposed = false;
 
   constructor(config: HonchoMemoryConfig) {
     this.config = {
@@ -266,15 +319,18 @@ export class HonchoMemory {
   }
 
   /**
-   * Generate deduplication ID for a message
+   * Generate stable deduplication ID for a message.
+   * Uses content hash + event identity (not current time) for retry stability.
    */
-  private generateMessageId(
+  generateMessageId(
+    eventId: string,
     role: string,
     content: string,
     timestamp: Date
   ): string {
-    // Simple hash-based ID for deduplication
-    const data = `${role}:${content}:${timestamp.toISOString()}`;
+    // Stable hash: eventId ensures retry stability
+    // timestamp is from the original event, not Date.now()
+    const data = `${eventId}:${role}:${content}:${timestamp.toISOString()}`;
     let hash = 0;
     for (let i = 0; i < data.length; i++) {
       const char = data.charCodeAt(i);
@@ -285,39 +341,76 @@ export class HonchoMemory {
   }
 
   /**
-   * Sanitize message content for storage
-   * Removes sensitive data, tool calls, etc.
+   * Sanitize message content for storage.
+   * Redacts secrets and enforces total payload bound.
    */
-  private sanitizeContent(
+  sanitizeContent(
     content: string | Array<{ type?: string; text?: string }>
-  ): string {
+  ): { text: string; originalLength: number } {
+    let text: string;
+
     if (typeof content === "string") {
-      // Truncate very long messages
-      return content.slice(0, 2000);
-    }
-
-    // Handle array content (TextContent blocks)
-    if (Array.isArray(content)) {
-      return content
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
         .filter((block) => block.type === "text")
-        .map((block) => {
-          const text = (block as { text?: string }).text ?? "";
-          return text.slice(0, 2000);
-        })
+        .map((block) => (block as { text?: string }).text ?? "")
         .join("\n");
+    } else {
+      text = String(content);
     }
 
-    return String(content).slice(0, 2000);
+    const originalLength = text.length;
+
+    // Step 1: Redact secrets before truncation
+    text = redactSecrets(text);
+
+    // Step 2: Truncate to per-block limit
+    const BLOCK_LIMIT = 2000;
+    if (text.length > BLOCK_LIMIT) {
+      text = text.slice(0, BLOCK_LIMIT) + "...[truncated]";
+    }
+
+    // Step 3: Enforce total payload bound (separate limit for ingestion vs retrieval)
+    const TOTAL_LIMIT = 10000;
+    if (text.length > TOTAL_LIMIT) {
+      text = text.slice(0, TOTAL_LIMIT) + "...[payload truncated]";
+    }
+
+    return { text, originalLength };
   }
 
   /**
-   * Ingest a completed turn message
+   * Call a Honcho MCP tool through the adapter.
+   * Returns actual result, never fabricates content.
+   */
+  private async callHonchoTool(
+    _toolName: string,
+    _args: Record<string, unknown>
+  ): Promise<{ success: boolean; result?: unknown; error?: string }> {
+    // This will be implemented when the MCP adapter integration is complete
+    // The adapter provides runtime-tool-call:v1 event for this
+    // For now, return failure to prevent fake success
+    return {
+      success: false,
+      error: "MCP adapter integration not yet implemented",
+    };
+  }
+
+  /**
+   * Ingest a completed turn message through Honcho MCP.
+   * Persists only after verified successful response.
    */
   async ingestMessage(
     role: "user" | "assistant",
     content: string | Array<{ type?: string; text?: string }>,
-    timestamp: Date = new Date()
+    timestamp: Date = new Date(),
+    eventId: string = `msg-${timestamp.getTime()}`
   ): Promise<{ success: boolean; deduped: boolean; error?: string }> {
+    if (this._disposed) {
+      return { success: false, deduped: false, error: "memory disposed" };
+    }
+
     if (!this.isReady()) {
       return { success: false, deduped: false, error: "memory not ready" };
     }
@@ -326,9 +419,10 @@ export class HonchoMemory {
       return { success: false, deduped: false, error: "auto-ingest disabled" };
     }
 
-    const messageId = this.generateMessageId(role, String(content), timestamp);
+    const { text: sanitized, originalLength } = this.sanitizeContent(content);
+    const messageId = this.generateMessageId(eventId, role, sanitized, timestamp);
 
-    // Check deduplication
+    // Check deduplication BEFORE any remote call
     if (this.ingestedMessages.has(messageId)) {
       logServiceEvent({
         ts: new Date().toISOString(),
@@ -342,22 +436,32 @@ export class HonchoMemory {
       return { success: true, deduped: true };
     }
 
-    const sanitized = this.sanitizeContent(content);
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "ingest_started",
+      phase: "start",
+      role,
+      messageLength: sanitized.length,
+      originalLength,
+    });
 
     try {
-      // Call Honcho add_messages_to_session tool
-      // Note: This assumes the MCP tool is available through the adapter
-      logServiceEvent({
-        ts: new Date().toISOString(),
-        level: "info",
-        service: "honcho",
-        operation: "ingest_started",
-        phase: "start",
+      // Call Honcho MCP tool through the adapter
+      const result = await this.callHonchoTool("add_messages_to_session", {
+        session_id: this.workspaceId,
         role,
-        messageLength: sanitized.length,
+        content: sanitized,
+        message_id: messageId,
+        timestamp: timestamp.toISOString(),
       });
 
-      // Store message for deduplication
+      if (!result.success) {
+        throw new Error(result.error || "Tool call failed");
+      }
+
+      // Record success ONLY after verified response
       this.ingestedMessages.set(messageId, {
         id: messageId,
         ingestedAt: timestamp,
@@ -403,7 +507,8 @@ export class HonchoMemory {
   }
 
   /**
-   * Retrieve relevant context before agent execution
+   * Retrieve relevant context from Honcho MCP.
+   * Returns real retrieved content, never fabricates.
    */
   async retrieveContext(query: string): Promise<{
     success: boolean;
@@ -411,24 +516,53 @@ export class HonchoMemory {
     empty: boolean;
     error?: string;
   }> {
+    if (this._disposed) {
+      return { success: false, context: "", empty: true, error: "memory disposed" };
+    }
+
     if (!this.isReady()) {
       return { success: false, context: "", empty: true, error: "memory not ready" };
     }
 
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "retrieve_started",
+      phase: "start",
+      queryLength: query.length,
+    });
+
     try {
-      logServiceEvent({
-        ts: new Date().toISOString(),
-        level: "info",
-        service: "honcho",
-        operation: "retrieve_started",
-        phase: "start",
-        queryLength: query.length,
+      // Call Honcho get_session_context tool through the adapter
+      const result = await this.callHonchoTool("get_session_context", {
+        session_id: this.workspaceId,
+        query,
+        limit: 10,
       });
 
-      // Call Honcho get_session_context tool
-      // Note: This assumes the MCP tool is available through the adapter
+      if (!result.success) {
+        throw new Error(result.error || "Tool call failed");
+      }
 
-      const context = `Retrieved context for: ${query.slice(0, 100)}...`;
+      // Parse actual response content
+      let context = "";
+      if (result.result && typeof result.result === "object") {
+        const response = result.result as Record<string, unknown>;
+        // Extract context from response based on actual Honcho API shape
+        context = (response.content as string) ||
+                  (response.messages as string[])?.join("\n") ||
+                  JSON.stringify(response);
+      }
+
+      // Apply max context chars limit
+      const maxChars = this.config.maxContextChars ?? 4000;
+      if (context.length > maxChars) {
+        context = context.slice(0, maxChars) + "...[context truncated]";
+      }
+
+      // Empty retrieval is a valid result, not a fabricated context
+      const isEmpty = context.trim().length === 0;
 
       logServiceEvent({
         ts: new Date().toISOString(),
@@ -437,6 +571,7 @@ export class HonchoMemory {
         operation: "retrieve_succeeded",
         phase: "completed",
         contextLength: context.length,
+        empty: isEmpty,
       });
 
       honchoStatus.recordSuccess("retrieve", undefined, { contextLength: context.length });
@@ -444,7 +579,7 @@ export class HonchoMemory {
       return {
         success: true,
         context,
-        empty: context.length === 0,
+        empty: isEmpty,
       };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -459,6 +594,7 @@ export class HonchoMemory {
 
       honchoStatus.recordFailure("retrieve", "unknown", { error });
 
+      // On failure, return empty context (don't fabricate)
       return { success: false, context: "", empty: true, error };
     }
   }
@@ -481,4 +617,24 @@ export class HonchoMemory {
       ingestedCount: this.ingestedMessages.size,
     };
   }
+
+  /**
+   * Dispose of the memory instance.
+   * Stops timers, clears state, prevents further operations.
+   */
+  dispose(): void {
+    this._disposed = true;
+    this.ingestedMessages.clear();
+    honchoStatus.setConnected(false);
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "disposed",
+      phase: "completed",
+    });
+  }
 }
+
+// Export redactSecrets for testing
+export { redactSecrets };
