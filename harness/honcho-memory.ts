@@ -28,9 +28,12 @@ const HONCHO_KEY_FILE = join(homedir(), ".pi-harness-runtime", "keys", "honcho-a
 /**
  * Secrets to redact from messages before transmission.
  * These patterns are checked case-insensitively.
+ * Matches: key=VALUE, key: VALUE, key: Bearer VALUE, etc.
  */
 const SECRET_PATTERNS: (string | RegExp)[] = [
 	"api[_-]?key",
+	"auth",
+	"authorization",
 	"bearer",
 	"token",
 	"secret",
@@ -44,7 +47,7 @@ const SECRET_PATTERNS: (string | RegExp)[] = [
 /**
  * Redact secrets from text content.
  * Replaces secret VALUES (not labels) with [REDACTED].
- * Handles: password=VALUE, token:VALUE, api_key=VALUE, etc.
+ * Handles: password=VALUE, password: VALUE, auth: Bearer VALUE, etc.
  */
 function redactSecrets(text: string): string {
 	let result = text;
@@ -52,10 +55,10 @@ function redactSecrets(text: string): string {
 		if (typeof pattern === "string") {
 			// Escape special regex chars in pattern string
 			const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			// Match key=VALUE or key:VALUE patterns (case-insensitive)
-			// Capture the key (label) and redact only the value
+			// Match key=VALUE or key: VALUE or key: Bearer VALUE patterns
+			// Allow optional space after colon and multi-word values
 			const regex = new RegExp(
-				`(${escaped})(?:=|:)(\\S+)`,
+				`(${escaped})(?:=|:\\s*)(\\S+(?:\\s+\\S+)*)`,
 				"gi"
 			);
 			result = result.replace(regex, "$1=[REDACTED]");

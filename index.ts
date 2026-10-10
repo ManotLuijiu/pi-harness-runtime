@@ -158,18 +158,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let autoContinueTimer: NodeJS.Timeout | null = null;
 		let _inferenceInProgress = false; // Track for overlap prevention
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
+		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
 
-		// Detect when agent asks for continuation
-		pi.on("message_end", async (event) => {
-			const msg = event.message as { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined;
-			if (!msg || msg.role !== "assistant") return;
-
-			// Extract text from array content (TextContent blocks) or legacy string
+		// Extract assistant message text and detect actual confirmation requests
+		function extractAssistantText(msg: { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined): string {
+			if (!msg) return "";
 			let content = "";
 			if (typeof msg.content === "string") {
 				content = msg.content;
 			} else if (Array.isArray(msg.content)) {
-				// Extract text from TextContent blocks only; ignore thinking/tool calls
 				content = msg.content
 					.filter((block): block is { type: "text"; text: string } =>
 						block.type === "text" && typeof block.text === "string"
@@ -177,15 +174,55 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					.map(block => block.text)
 					.join("\n");
 			}
-			const hasContinuation = /continue|proceed|next phase|next step/i.test(content);
+			return content;
+		}
 
-			if (hasContinuation && !waitingForUserSince) {
+		// Detect actual confirmation requests (questions, not progress statements)
+		// Must be a question ending with ? AND contain both a request word AND user intent
+		function detectConfirmationRequest(text: string): string | null {
+			// Split into sentences and check each
+			const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+			
+			for (const sentence of sentences) {
+				// Must end with ? (actual question)
+				if (!sentence.endsWith("?")) continue;
+				
+				const lower = sentence.toLowerCase();
+				
+				// Must contain request words AND user intent words
+				const hasRequest = /\b(continue|proceed|next|wait|pause|stop|hold|resume|repeat|rephrase|clarify|explain)\b/i.test(lower);
+				const hasUserIntent = /\b(should|would|could|shall|may i|do you|would you|should i|could we|can i|can we|would like)\b/i.test(lower);
+				
+				if (hasRequest && hasUserIntent) {
+					// Return the question for deduplication
+					return sentence;
+				}
+			}
+			
+			return null;
+		}
+
+		// Detect when agent asks for continuation
+		pi.on("message_end", async (event) => {
+			const msg = event.message as { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined;
+			if (!msg || msg.role !== "assistant") return;
+
+			const content = extractAssistantText(msg);
+			const detectedQuestion = detectConfirmationRequest(content);
+
+			// Only trigger if: we found a question AND it's different from last notification
+			if (detectedQuestion && detectedQuestion !== _lastNotifiedQuestion && !waitingForUserSince) {
+				_lastNotifiedQuestion = detectedQuestion;
 				waitingForUserSince = new Date();
-				console.log("[auto-continue] Agent waiting for continuation confirmation");
+				console.log(`[auto-continue] Agent asking: "${detectedQuestion.substring(0, 50)}..."`);
+				
+				// Create stable jobId from question hash for deduplication
+				const questionHash = detectedQuestion.replace(/\s+/g, "_").substring(0, 30);
+				
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
-					jobId: `waiting-user-${Date.now()}`,
-					requirement: "Agent awaiting your response",
+					jobId: `waiting-user-${questionHash}`,
+					requirement: detectedQuestion,
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
@@ -462,7 +499,8 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 
 	try {
 		// Register lifecycle hooks using the new integration
-		registerHonchoLifecycle(() => pi.events);
+		// SAFETY: pi.on accepts these event names at runtime
+		registerHonchoLifecycle(pi as unknown as { on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void });
 
 		// Initialize Honcho with the API key and pi.events
 		// SAFETY: pi.events implements the required on/emit interface
