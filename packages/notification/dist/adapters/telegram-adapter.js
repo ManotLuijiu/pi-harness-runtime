@@ -41,19 +41,26 @@ export class TelegramAdapter extends BaseChannelAdapter {
         try {
             const cfg = this.config.config;
             const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getMe`);
-            if (!response.ok)
+            if (!response.ok) {
+                console.warn(`[TelegramAdapter] getMe failed: HTTP ${response.status}`);
                 return false;
-            const data = (await response.json());
-            if (data.ok && data.result?.username) {
-                this._botUsername = data.result.username;
             }
+            const data = (await response.json());
+            if (!data.ok || !data.result?.username) {
+                console.warn(`[TelegramAdapter] getMe returned ok=false`);
+                return false;
+            }
+            this._botUsername = data.result.username;
+            this.markHealthy(); // Mark as healthy after successful getMe
+            console.log(`[TelegramAdapter] Bot @${this._botUsername} verified successfully`);
             // Start polling for callback queries if handler is registered
             if (this._callbackHandler) {
                 this.startPolling();
             }
-            return data.ok;
+            return true;
         }
-        catch {
+        catch (err) {
+            console.error(`[TelegramAdapter] Initialize failed:`, err);
             return false;
         }
     }

@@ -175,6 +175,18 @@ export class NotificationCenter {
         return this.adapters.size > 0;
     }
     /**
+     * Check if any adapter is healthy (initialized and working)
+     * Unlike hasChannels(), this verifies actual health, not just config
+     */
+    hasHealthyChannels() {
+        for (const [, adapter] of this.adapters) {
+            if (adapter.isHealthy()) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
      * List all configured channels
      */
     listChannels() {
