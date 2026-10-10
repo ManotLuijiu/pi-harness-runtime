@@ -1,10 +1,9 @@
 /**
  * Telegram Conversation Bridge
  *
- * Sends assistant responses and tool activity to Telegram.
+ * Sends assistant responses to Telegram.
  * Hooks into Pi lifecycle events to capture:
  * - message_end: Final assistant responses
- * - agent_end: When agent finishes a turn
  * - agent_settled: When agent fully settles
  *
  * Features:
@@ -20,12 +19,8 @@ import type { NotificationCenter } from "./notification-center.js";
 export interface ConversationBridgeConfig {
     /** Whether to send assistant final responses */
     sendAssistantResponses: boolean;
-    /** Whether to send tool summaries */
-    sendToolSummaries: boolean;
     /** Max message length before chunking */
     maxMessageLength: number;
-    /** Minimum confidence to send a message */
-    minConfidence: number;
 }
 /**
  * Conversation Bridge
