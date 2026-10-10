@@ -182,10 +182,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (hasContinuation && !waitingForUserSince) {
 				waitingForUserSince = new Date();
 				console.log("[auto-continue] Agent waiting for continuation confirmation");
-				// Emit WaitingForUserInput to Telegram so user knows to respond
-				nc("WaitingForUserInput", {
+				// Emit WaitingForUserInput to Telegram with Yes/No buttons
+				nc.notifyWithApproval("WaitingForUserInput", {
 					requirement: "Agent awaiting your response",
-					error: "Continue / proceed confirmation needed",
+				}, {
+					approveLabel: "Continue",
+					rejectLabel: "Not yet",
 				});
 			}
 		});
@@ -403,6 +405,11 @@ async function initTelegram(): Promise<void> {
 			center,
 			notify: (event: string, ctx: Record<string, unknown>) =>
 				center.notify(event as never, ctx as never),
+			notifyWithApproval: (
+				event: string,
+				ctx: Record<string, unknown>,
+				options?: { approveLabel?: string; rejectLabel?: string },
+			) => center.notifyWithApproval(event as never, ctx as never, options as never),
 		};
 
 		// Wire to GLMQuotaCountdown so it sends Telegram alerts
@@ -1023,7 +1030,15 @@ interface HarnessSession {
 let currentSession: HarnessSession | null = null;
 
 /** Singleton notification center — set by initTelegram(), used by all emit helpers */
-let _nc: { center: unknown; notify: (event: string, ctx: Record<string, unknown>) => Promise<unknown> } | null = null;
+let _nc: {
+	center: unknown;
+	notify: (event: string, ctx: Record<string, unknown>) => Promise<unknown>;
+	notifyWithApproval: (
+		event: string,
+		ctx: Record<string, unknown>,
+		options?: { approveLabel?: string; rejectLabel?: string },
+	) => Promise<unknown>;
+} | null = null;
 
 /**
  * Fire a Telegram notification event. Silently skips if Telegram is not configured.
