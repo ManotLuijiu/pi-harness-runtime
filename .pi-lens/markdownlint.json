@@ -1,0 +1,17 @@
+{
+  "MD013": false,
+  "MD024": {
+    "siblings_only": true
+  },
+  "AGENTS001": {
+    "patterns": [
+      "There are \\d+ issues?",
+      "There are \\d+ problems?",
+      "Let me fix these",
+      "Here are the tasks",
+      "\\d+\\) .+"
+    ],
+    "description": "Detected task list in prose - must use todo create instead",
+    "severity": "error"
+  }
+}

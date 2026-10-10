@@ -31,6 +31,7 @@ export function renderSystemContract(manifest: PolicyManifest): string {
   lines.push("- Treat [BLOCKING] code findings as completion gates.");
   lines.push("- Treat [DEGRADED] as incomplete evidence, never as clean.");
   lines.push("- Re-read a file after the harness reports an automatic mutation.");
+  lines.push("- When a new user prompt arrives with different tasks before current task is done, add ALL new tasks to the todo list immediately. Do NOT start working until tasks are tracked.");
   lines.push("");
 
   // Tool reference
