@@ -18,19 +18,96 @@ import type {
 	NotificationResult,
 	NotificationContext,
 	TelegramCallbackHandler,
-	TelegramCallbackQuery,
 } from "./types.js";
 import type { ChannelAdapter } from "./base-adapter.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
-import { buildCallbackData, parseCallbackData, CallbackActions } from "./telegram-webhook-handler.js";
+import { buildCallbackData, CallbackActions } from "./telegram-webhook-handler.js";
 import { LineAdapter } from "./adapters/line-adapter.js";
 import { NtfyAdapter } from "./adapters/ntfy-adapter.js";
 import { EmailAdapter } from "./adapters/email-adapter.js";
 import { WebhookAdapter } from "./adapters/webhook-adapter.js";
 
+/**
+ * Pending approval request
+ */
+export interface PendingApproval {
+	jobId: string;
+	event: string;
+	context: NotificationContext;
+	createdAt: Date;
+	resolved: boolean;
+	result?: "approved" | "rejected";
+}
+
 export class NotificationCenter {
 	private adapters: Map<string, ChannelAdapter> = new Map();
 	private redactPatterns: RegExp[];
+	/** Pending approval requests keyed by jobId */
+	private pendingApprovals: Map<string, PendingApproval> = new Map();
+
+	/**
+	 * Track a new pending approval request
+	 */
+	trackPendingApproval(
+		jobId: string,
+		event: NotificationEvent,
+		context: NotificationContext,
+	): void {
+		this.pendingApprovals.set(jobId, {
+			jobId,
+			event,
+			context,
+			createdAt: new Date(),
+			resolved: false,
+		});
+	}
+
+	/**
+	 * Resolve a pending approval request
+	 * @returns true if the request was found and resolved, false otherwise
+	 */
+	resolvePendingApproval(
+		jobId: string,
+		result: "approved" | "rejected",
+	): boolean {
+		const pending = this.pendingApprovals.get(jobId);
+		if (!pending || pending.resolved) {
+			return false;
+		}
+		pending.resolved = true;
+		pending.result = result;
+		return true;
+	}
+
+	/**
+	 * Get a pending approval request
+	 */
+	getPendingApproval(jobId: string): PendingApproval | undefined {
+		return this.pendingApprovals.get(jobId);
+	}
+
+	/**
+	 * Check if a pending approval exists and is unresolved
+	 */
+	isPendingApproval(jobId: string): boolean {
+		const pending = this.pendingApprovals.get(jobId);
+		return !!pending && !pending.resolved;
+	}
+
+	/**
+	 * Clear resolved pending approvals older than maxAgeMs
+	 */
+	cleanupResolvedApprovals(maxAgeMs = 60000): void {
+		const now = Date.now();
+		for (const [jobId, pending] of this.pendingApprovals.entries()) {
+			if (
+				pending.resolved &&
+				now - pending.createdAt.getTime() > maxAgeMs
+			) {
+				this.pendingApprovals.delete(jobId);
+			}
+		}
+	}
 
 	constructor(config?: NotificationConfig) {
 		this.redactPatterns =
@@ -114,17 +191,19 @@ export class NotificationCenter {
 					// Redact sensitive data
 					const redactedPayload = this.redact(payload);
 					const result = await adapter.send(redactedPayload);
-					results.push(result);
+					return { success: true, channel: id, result };
 				} catch (error) {
 					// Never crash the runtime due to notification failure
-					results.push({
+					return {
 						success: false,
 						channel: id,
 						error: String(error),
-					});
+					};
 				}
 			})
-		);
+		).then((adapterResults) => {
+			results.push(...adapterResults);
+		});
 		return results;
 	}
 
@@ -238,6 +317,9 @@ export class NotificationCenter {
 			{ text: `\u2705 ${approveLabel}`, callbackData: buildCallbackData(CallbackActions.APPROVE, context.jobId) },
 			{ text: `\u274C ${rejectLabel}`, callbackData: buildCallbackData(CallbackActions.REJECT, context.jobId) },
 		];
+
+		// Track this pending approval so callback can resolve it
+		this.trackPendingApproval(context.jobId, event, context);
 
 		// Send to each channel with buttons (Telegram only)
 		const results: NotificationResult[] = [];

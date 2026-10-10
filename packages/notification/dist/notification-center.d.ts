@@ -10,9 +10,43 @@
  */
 import type { NotificationEvent, NotificationConfig, NotificationChannelConfig, NotificationResult, NotificationContext, TelegramCallbackHandler } from "./types.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
+/**
+ * Pending approval request
+ */
+export interface PendingApproval {
+    jobId: string;
+    event: string;
+    context: NotificationContext;
+    createdAt: Date;
+    resolved: boolean;
+    result?: "approved" | "rejected";
+}
 export declare class NotificationCenter {
     private adapters;
     private redactPatterns;
+    /** Pending approval requests keyed by jobId */
+    private pendingApprovals;
+    /**
+     * Track a new pending approval request
+     */
+    trackPendingApproval(jobId: string, event: NotificationEvent, context: NotificationContext): void;
+    /**
+     * Resolve a pending approval request
+     * @returns true if the request was found and resolved, false otherwise
+     */
+    resolvePendingApproval(jobId: string, result: "approved" | "rejected"): boolean;
+    /**
+     * Get a pending approval request
+     */
+    getPendingApproval(jobId: string): PendingApproval | undefined;
+    /**
+     * Check if a pending approval exists and is unresolved
+     */
+    isPendingApproval(jobId: string): boolean;
+    /**
+     * Clear resolved pending approvals older than maxAgeMs
+     */
+    cleanupResolvedApprovals(maxAgeMs?: number): void;
     constructor(config?: NotificationConfig);
     /**
      * Register a new adapter

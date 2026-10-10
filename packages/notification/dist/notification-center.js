@@ -17,6 +17,58 @@ import { WebhookAdapter } from "./adapters/webhook-adapter.js";
 export class NotificationCenter {
     adapters = new Map();
     redactPatterns;
+    /** Pending approval requests keyed by jobId */
+    pendingApprovals = new Map();
+    /**
+     * Track a new pending approval request
+     */
+    trackPendingApproval(jobId, event, context) {
+        this.pendingApprovals.set(jobId, {
+            jobId,
+            event,
+            context,
+            createdAt: new Date(),
+            resolved: false,
+        });
+    }
+    /**
+     * Resolve a pending approval request
+     * @returns true if the request was found and resolved, false otherwise
+     */
+    resolvePendingApproval(jobId, result) {
+        const pending = this.pendingApprovals.get(jobId);
+        if (!pending || pending.resolved) {
+            return false;
+        }
+        pending.resolved = true;
+        pending.result = result;
+        return true;
+    }
+    /**
+     * Get a pending approval request
+     */
+    getPendingApproval(jobId) {
+        return this.pendingApprovals.get(jobId);
+    }
+    /**
+     * Check if a pending approval exists and is unresolved
+     */
+    isPendingApproval(jobId) {
+        const pending = this.pendingApprovals.get(jobId);
+        return !!pending && !pending.resolved;
+    }
+    /**
+     * Clear resolved pending approvals older than maxAgeMs
+     */
+    cleanupResolvedApprovals(maxAgeMs = 60000) {
+        const now = Date.now();
+        for (const [jobId, pending] of this.pendingApprovals.entries()) {
+            if (pending.resolved &&
+                now - pending.createdAt.getTime() > maxAgeMs) {
+                this.pendingApprovals.delete(jobId);
+            }
+        }
+    }
     constructor(config) {
         this.redactPatterns =
             config?.redactPatterns ?? this.getDefaultRedactPatterns();
@@ -85,17 +137,19 @@ export class NotificationCenter {
                 // Redact sensitive data
                 const redactedPayload = this.redact(payload);
                 const result = await adapter.send(redactedPayload);
-                results.push(result);
+                return { success: true, channel: id, result };
             }
             catch (error) {
                 // Never crash the runtime due to notification failure
-                results.push({
+                return {
                     success: false,
                     channel: id,
                     error: String(error),
-                });
+                };
             }
-        }));
+        })).then((adapterResults) => {
+            results.push(...adapterResults);
+        });
         return results;
     }
     /**
@@ -185,6 +239,8 @@ export class NotificationCenter {
             { text: `\u2705 ${approveLabel}`, callbackData: buildCallbackData(CallbackActions.APPROVE, context.jobId) },
             { text: `\u274C ${rejectLabel}`, callbackData: buildCallbackData(CallbackActions.REJECT, context.jobId) },
         ];
+        // Track this pending approval so callback can resolve it
+        this.trackPendingApproval(context.jobId, event, context);
         // Send to each channel with buttons (Telegram only)
         const results = [];
         for (const [id, adapter] of this.adapters.entries()) {
