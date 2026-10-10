@@ -28,9 +28,17 @@ export interface ChannelAdapter {
 	 * Check if the adapter is properly configured
 	 */
 	isConfigured(): boolean;
+
+	/**
+	 * Check if the adapter is healthy (initialized and working)
+	 * Returns true if initialized successfully, false otherwise
+	 */
+	isHealthy(): boolean;
 }
 
-export abstract class BaseChannelAdapter implements ChannelAdapter {
+	export abstract class BaseChannelAdapter implements ChannelAdapter {
+	protected _healthy = false;
+
 	abstract readonly id: string;
 	abstract readonly type: string;
 
@@ -41,6 +49,20 @@ export abstract class BaseChannelAdapter implements ChannelAdapter {
 
 	isConfigured(): boolean {
 		return this.config.enabled;
+	}
+
+	/**
+	 * Default health check - subclasses should override for actual health verification
+	 */
+	isHealthy(): boolean {
+		return this._healthy;
+	}
+
+	/**
+	 * Mark adapter as healthy (called after successful initialize)
+	 */
+	protected markHealthy(): void {
+		this._healthy = true;
 	}
 
 	/**

@@ -74,6 +74,11 @@ export declare class NotificationCenter {
      */
     hasChannels(): boolean;
     /**
+     * Check if any adapter is healthy (initialized and working)
+     * Unlike hasChannels(), this verifies actual health, not just config
+     */
+    hasHealthyChannels(): boolean;
+    /**
      * List all configured channels
      */
     listChannels(): string[];

@@ -5,11 +5,24 @@
  */
 export class BaseChannelAdapter {
     config;
+    _healthy = false;
     constructor(config) {
         this.config = config;
     }
     isConfigured() {
         return this.config.enabled;
+    }
+    /**
+     * Default health check - subclasses should override for actual health verification
+     */
+    isHealthy() {
+        return this._healthy;
+    }
+    /**
+     * Mark adapter as healthy (called after successful initialize)
+     */
+    markHealthy() {
+        this._healthy = true;
     }
     /**
      * Redact sensitive data from payload before sending
