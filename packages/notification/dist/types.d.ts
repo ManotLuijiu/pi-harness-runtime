@@ -3,7 +3,7 @@
  *
  * Type definitions for notification events, channels, and payloads.
  */
-export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "Error";
+export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "AssistantResponse" | "ToolSummary" | "Error";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;
