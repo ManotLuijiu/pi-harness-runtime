@@ -160,6 +160,57 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
 		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
 
+		// UI status for auto-continue (captured from session_start ctx)
+		let _setAutoContinueStatus: ((text: string | undefined) => void) | null = null;
+		let _currentAutoContinueState = ""; // Track current state for deduplication
+
+		// Auto-continue state labels
+		const AC_STATE = {
+			IDLE: "",
+			WAITING: "WAIT",
+			CHECKING: "CHECK",
+			CONTINUING: "RUN",
+			ERROR: "WARN",
+		} as const;
+
+		// Update auto-continue status in TUI footer
+		function updateAutoContinueStatus(state: keyof typeof AC_STATE, requestId?: string): void {
+			if (!_setAutoContinueStatus) return;
+
+			const newState = AC_STATE[state];
+			if (state === "IDLE") {
+				// Clear status
+				_setAutoContinueStatus(undefined);
+				_currentAutoContinueState = "";
+			} else {
+				const statusText = requestId
+					? `[${newState}] Awaiting your response | ${requestId}`
+					: `[${newState}] Awaiting your response`;
+
+				// Only update if state changed (prevent flicker)
+				if (statusText !== _currentAutoContinueState) {
+					_setAutoContinueStatus(statusText);
+					_currentAutoContinueState = statusText;
+				}
+			}
+		}
+
+		// Capture UI context from session_start
+		pi.on("session_start", (_event, ctx) => {
+			if (ctx.hasUI && ctx.ui) {
+				_setAutoContinueStatus = ctx.ui.setStatus.bind(ctx.ui, "harness-auto-continue");
+			}
+		});
+
+		// Clear status on session shutdown
+		pi.on("session_shutdown", () => {
+			if (_setAutoContinueStatus) {
+				_setAutoContinueStatus(undefined);
+				_setAutoContinueStatus = null;
+			}
+			_currentAutoContinueState = "";
+		});
+
 		// Extract assistant message text and detect actual confirmation requests
 		function extractAssistantText(msg: { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined): string {
 			if (!msg) return "";
@@ -214,11 +265,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (detectedQuestion && detectedQuestion !== _lastNotifiedQuestion && !waitingForUserSince) {
 				_lastNotifiedQuestion = detectedQuestion;
 				waitingForUserSince = new Date();
-				console.log(`[auto-continue] Agent asking: "${detectedQuestion.substring(0, 50)}..."`);
-				
+
 				// Create stable jobId from question hash for deduplication
 				const questionHash = detectedQuestion.replace(/\s+/g, "_").substring(0, 30);
-				
+
+				// Update TUI status - use short ID for display
+				updateAutoContinueStatus("WAITING", questionHash);
+
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: `waiting-user-${questionHash}`,
@@ -236,8 +289,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (msg?.role === "user") {
 				lastUserMessage = new Date();
 				if (waitingForUserSince) {
-					console.log("[auto-continue] User responded, cancelling wait");
 					waitingForUserSince = null;
+					_lastNotifiedQuestion = "";
+					updateAutoContinueStatus("IDLE");
 				}
 			}
 		});
@@ -249,7 +303,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const checkAndAutoContinue = async () => {
 			// Prevent overlap if inference is already in progress
 			if (_inferenceInProgress) {
-				console.log("[auto-continue] Inference in progress, skipping this check");
 				return;
 			}
 
@@ -257,11 +310,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 			// Capture session ID at check time for post-inference validation
 			const checkSessionId = _sessionId;
+			const questionHash = _lastNotifiedQuestion.replace(/\s+/g, "_").substring(0, 30);
 
 			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
 			if (waitMinutes < MIN_WAIT_MINUTES) return;
 
-			console.log(`[auto-continue] Checking after ${waitMinutes.toFixed(0)} minutes wait...`);
+			// Update status to checking
+			updateAutoContinueStatus("CHECKING", questionHash);
 
 			try {
 				// Mark inference as in progress to prevent overlap
@@ -278,7 +333,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				// Guard against empty task list
 				if (taskContext.total === 0) {
-					console.log("[auto-continue] No tasks to decide on — skipping");
 					_inferenceInProgress = false;
 					return;
 				}
@@ -294,49 +348,47 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				// Check session validity and user response before applying
 				if (checkSessionId !== _sessionId) {
-					console.log("[auto-continue] Session changed during inference — cancelling");
 					_inferenceInProgress = false;
+					updateAutoContinueStatus("IDLE");
 					return;
 				}
 
 				if (!waitingForUserSince) {
-					console.log("[auto-continue] User responded during inference — cancelling");
 					_inferenceInProgress = false;
+					updateAutoContinueStatus("IDLE");
 					return;
 				}
 
-				console.log(
-					`[auto-continue] Decision: ${decision.action} (${(decision.probability * 100).toFixed(0)}% confidence)`,
-				);
+				if (decision.action === "proceed" || decision.action === "proceed_with_caution") {
+					// Update status to continuing
+					updateAutoContinueStatus("CONTINUING", questionHash);
 
-				if (decision.action === "proceed") {
 					// Send steer message to continue
 					pi.sendUserMessage(
-						"User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
-							`Decision: ${decision.reasoning}\n` +
-							"Continue with remaining tasks.",
+						decision.action === "proceed"
+							? "User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
+								  `Decision: ${decision.reasoning}\n` +
+								  "Continue with remaining tasks."
+							: "User is unavailable. Proceeding with caution - will log each significant step.\n" +
+								  `Risk level: ${decision.riskLevel}\n` +
+								  "Continue with remaining tasks, reporting progress.",
 						{ deliverAs: "steer" },
 					);
 					waitingForUserSince = null;
-				} else if (decision.action === "proceed_with_caution") {
-					pi.sendUserMessage(
-						"User is unavailable. Proceeding with caution - will log each significant step.\n" +
-						`Risk level: ${decision.riskLevel}\n` +
-						"Continue with remaining tasks, reporting progress.",
-						{ deliverAs: "steer" },
-					);
-					waitingForUserSince = null;
+					_lastNotifiedQuestion = "";
+
+					// Clear status after short delay
+					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
 				}
-				// If action is "wait", do nothing and check again later
-			} catch (error) {
-				console.error("[auto-continue] Error:", error);
+				_inferenceInProgress = false;
+			} catch {
+				_inferenceInProgress = false;
+				updateAutoContinueStatus("ERROR");
 			}
 		};
 
 		// Start periodic check
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
-
-		console.error("[auto-continue] Jev Auto-Continue initialized");
 	} catch {
 		// auto-continue not available
 	}
