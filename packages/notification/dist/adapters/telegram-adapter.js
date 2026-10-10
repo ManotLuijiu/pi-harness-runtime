@@ -69,11 +69,16 @@ export class TelegramAdapter extends BaseChannelAdapter {
             const cfg = this.config.config;
             const message = this.formatMessage(payload);
             // Build request body
+            // Use plain text by default to avoid MarkdownV2 escaping issues with dynamic content
+            // If parseMode is explicitly set, use it (caller is responsible for escaping)
             const body = {
                 chat_id: cfg.chatId,
                 text: message,
-                parse_mode: cfg.parseMode ?? "MarkdownV2",
             };
+            // Only add parse_mode if explicitly configured
+            if (cfg.parseMode) {
+                body.parse_mode = cfg.parseMode;
+            }
             // Add inline keyboard if enabled and buttons are configured
             if (cfg.enableInlineKeyboard && (cfg.actionButtons?.length ?? 0) > 0) {
                 body.reply_markup = this.buildInlineKeyboard(cfg.actionButtons);
@@ -112,8 +117,11 @@ export class TelegramAdapter extends BaseChannelAdapter {
             const body = {
                 chat_id: cfg.chatId,
                 text: message,
-                parse_mode: cfg.parseMode ?? "MarkdownV2",
             };
+            // Only add parse_mode if explicitly configured
+            if (cfg.parseMode) {
+                body.parse_mode = cfg.parseMode;
+            }
             const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -293,8 +301,8 @@ export class TelegramAdapter extends BaseChannelAdapter {
         const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
         const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
         const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
-        const emoji = this.getEmoji(payload.event);
-        const title = `${emoji} ${maskedTitle}`;
+        const label = this.getStatusLabel(payload.event);
+        const title = `${label} ${maskedTitle}`;
         const lines = [title, "", maskedMessage];
         if (maskedTaskTitle) {
             lines.push("", `Task: ${maskedTaskTitle}`);
@@ -308,22 +316,24 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Final mask pass on the complete rendered string
         return maskString(lines.filter(Boolean).join("\n"));
     }
-    getEmoji(event) {
-        const map = {
-            JobStarted: "🚀",
-            TaskCompleted: "✅",
-            TaskFailed: "❌",
-            QuotaPaused: "⏸️",
-            ResumeScheduled: "▶️",
-            ContextCompacted: "📦",
-            OutputLimitContinued: "🔄",
-            E2EFailed: "🧪",
-            HumanReviewNeeded: "👤",
-            ReadyForClient: "🎉",
-            JobCancelled: "🚫",
-            Error: "⚠️",
+    getStatusLabel(event) {
+        // Use ASCII labels per AGENTS.md convention
+        // Avoid emoji which renders inconsistently across terminals
+        const labels = {
+            JobStarted: "[START]",
+            TaskCompleted: "[OK]",
+            TaskFailed: "[FAIL]",
+            QuotaPaused: "[PAUSE]",
+            ResumeScheduled: "[RESUME]",
+            ContextCompacted: "[COMPACT]",
+            OutputLimitContinued: "[CONTINUE]",
+            E2EFailed: "[TEST]",
+            HumanReviewNeeded: "[REVIEW]",
+            ReadyForClient: "[DONE]",
+            JobCancelled: "[CANCEL]",
+            Error: "[ERROR]",
         };
-        return map[event] ?? "📢";
+        return labels[event] ?? "[MSG]";
     }
 }
 //# sourceMappingURL=telegram-adapter.js.map

@@ -116,6 +116,8 @@ async function handleTestJev(ctx: ExtensionContext, flags: Record<string, string
 
 /**
  * Handle /harness-services test honcho --read-only
+ * Makes a real bounded initialize/discovery check through the MCP adapter.
+ * Does NOT create sessions/peers, write messages, or claim success when only flags were inspected.
  */
 async function handleTestHoncho(ctx: ExtensionContext, flags: Record<string, string | boolean>): Promise<void> {
   if (flags.read_only !== true && flags.read_only !== "true") {
@@ -126,9 +128,68 @@ async function handleTestHoncho(ctx: ExtensionContext, flags: Record<string, str
   ctx.ui.notify("[services] Testing Honcho MCP connection...", "info");
 
   try {
-    ctx.ui.notify("[services] Honcho status: registered=true, connected=" + honchoStatus.connected, "info");
-    ctx.ui.notify("[services] Honcho tools discovery: would call tools/list if --read-only not set", "info");
-    ctx.ui.notify("[services] Honcho test completed (read-only mode)", "info");
+    // Report actual registration status from the status tracker
+    ctx.ui.notify(`[services] Honcho configured: ${honchoStatus.configured}`, "info");
+    ctx.ui.notify(`[services] Honcho connected: ${honchoStatus.connected}`, "info");
+
+    // Make a real read-only discovery call through the MCP adapter
+    // This actually initializes the connection and lists tools without writing memory
+    const MCP_RUNTIME_TOOL_CALL_EVENT = "pi-mcp-adapter:runtime-tool-call:v1";
+
+    // Emit the tool call request
+    const request: {
+      version: 1;
+      server: string;
+      tool: string;
+      args: Record<string, unknown>;
+      result?: { ok?: boolean; error?: Error; result?: { tools?: unknown[] } };
+    } = {
+      version: 1,
+      server: "honcho",
+      tool: "tools/list",
+      args: {},
+    };
+
+    // Emit and wait for result (synchronous per adapter contract)
+    const piEvents = (globalThis as { pi?: { events?: { emit: (event: string, req: unknown) => void } } }).pi?.events;
+
+    if (!piEvents) {
+      ctx.ui.notify("[services] Honcho test skipped: MCP adapter not available", "warning");
+      ctx.ui.notify("[services] Note: Install pi-mcp-adapter to enable Honcho MCP", "info");
+      return;
+    }
+
+    // Emit the tool call
+    piEvents.emit(MCP_RUNTIME_TOOL_CALL_EVENT, request);
+
+    // Check if request.result was populated (adapter responded synchronously)
+    if (request.result) {
+      if ((request.result as { ok?: boolean }).ok) {
+        const result = request.result as { ok: true; result?: { tools?: unknown[] } };
+        const toolCount = result.result?.tools?.length ?? 0;
+        ctx.ui.notify(`[services] Honcho MCP connected: ${toolCount} tool(s) discovered`, "info");
+
+        // Verify required memory tools exist
+        const toolNames = (result.result?.tools as Array<{ name?: string }> | undefined)?.map(t => t.name) ?? [];
+        const hasIngest = toolNames.includes("add_messages_to_session");
+        const hasRetrieve = toolNames.includes("get_session_context");
+
+        if (hasIngest && hasRetrieve) {
+          ctx.ui.notify("[services] Honcho memory tools available", "info");
+        } else {
+          ctx.ui.notify(`[services] Honcho memory tools: ingest=${hasIngest}, retrieve=${hasRetrieve}`, "warning");
+        }
+
+        ctx.ui.notify("[services] Honcho test completed successfully", "info");
+      } else {
+        const result = request.result as { ok: false; error?: Error };
+        ctx.ui.notify(`[services] Honcho MCP error: ${result.error?.message ?? "Unknown error"}`, "error");
+      }
+    } else {
+      // No result means the adapter didn't respond (not installed or not connected)
+      ctx.ui.notify("[services] Honcho test skipped: MCP adapter not responding", "warning");
+      ctx.ui.notify("[services] Connection not verified - memory features unavailable", "info");
+    }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     ctx.ui.notify(`[services] Honcho test failed: ${error}`, "error");
