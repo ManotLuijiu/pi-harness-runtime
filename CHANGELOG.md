@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.140](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.184...v1.1.140) (2026-10-10)
+
+
+### Bug Fixes
+
+* **honcho:** implement proper MCP registration and truthful status ([844182d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/844182df4822185204e6a43e94702afcf9fb1f5f)), closes [#1-10](https://github.com/ManotLuijiu/pi-harness-runtime/issues/1-10) [#12-14](https://github.com/ManotLuijiu/pi-harness-runtime/issues/12-14)
+
 ### [1.1.139](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.150...v1.1.139) (2026-10-05)
 
 
