@@ -11,6 +11,10 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     private _botUsername;
     private _callbackHandler;
     private _webhookSecret;
+    private _pollInterval;
+    private _lastUpdateId;
+    private _pollTimeoutMs;
+    private _pollLimit;
     constructor(config: TelegramConfig);
     /**
      * Register a callback handler for inline keyboard button clicks
@@ -22,6 +26,22 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     setWebhookSecret(secret: string): void;
     get botUsername(): string | undefined;
     initialize(): Promise<boolean>;
+    /**
+     * Start polling for Telegram updates (callback queries, etc.)
+     */
+    startPolling(): void;
+    /**
+     * Stop polling
+     */
+    stopPolling(): void;
+    /**
+     * Poll for updates using getUpdates
+     */
+    private poll;
+    /**
+     * Process a single Telegram update
+     */
+    private processUpdate;
     /**
      * Send a message with optional inline keyboard buttons
      */

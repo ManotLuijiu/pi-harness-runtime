@@ -17,6 +17,15 @@ import type {
 	TelegramCallbackQuery,
 	TelegramConfig,
 } from "../types.js";
+
+/**
+ * Telegram update object from getUpdates
+ */
+interface TelegramUpdate {
+	update_id: number;
+	callback_query?: TelegramCallbackQuery;
+	message?: unknown;
+}
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
 import { filterTelegramContent, getSafeNotificationLog } from "../telegram-content-filter.js";
@@ -27,6 +36,10 @@ readonly type = "telegram";
 private _botUsername: string | undefined;
 private _callbackHandler: TelegramCallbackHandler | undefined;
 private _webhookSecret: string | undefined;
+private _pollInterval: ReturnType<typeof setInterval> | undefined;
+private _lastUpdateId: number = -1;
+private _pollTimeoutMs = 30000; // Long polling timeout
+private _pollLimit = 10;
 
 constructor(config: TelegramConfig) {
 super({ id: "telegram", type: "telegram", enabled: true, config });
@@ -61,9 +74,126 @@ return this._botUsername;
 			if (data.ok && data.result?.username) {
 				this._botUsername = data.result.username;
 			}
+			// Start polling for callback queries if handler is registered
+			if (this._callbackHandler) {
+				this.startPolling();
+			}
 			return data.ok;
 		} catch {
 			return false;
+		}
+	}
+
+	/**
+	 * Start polling for Telegram updates (callback queries, etc.)
+	 */
+	startPolling(): void {
+		if (this._pollInterval) return; // Already polling
+
+		console.log("[TelegramAdapter] Starting polling for callback queries...");
+
+		// Poll immediately, then on interval
+		this.poll().catch((err) => console.error("[TelegramAdapter] Poll error:", err));
+
+		this._pollInterval = setInterval(() => {
+			this.poll().catch((err) => console.error("[TelegramAdapter] Poll error:", err));
+		}, 5000); // Poll every 5 seconds
+	}
+
+	/**
+	 * Stop polling
+	 */
+	stopPolling(): void {
+		if (this._pollInterval) {
+			clearInterval(this._pollInterval);
+			this._pollInterval = undefined;
+			console.log("[TelegramAdapter] Stopped polling");
+		}
+	}
+
+	/**
+	 * Poll for updates using getUpdates
+	 */
+	private async poll(): Promise<void> {
+		const cfg = this.config.config as TelegramConfig;
+		const token = cfg.botToken;
+
+		try {
+			const body: Record<string, unknown> = {
+				offset: this._lastUpdateId + 1,
+				limit: this._pollLimit,
+				timeout: Math.floor(this._pollTimeoutMs / 1000),
+				allowed_updates: ["callback_query"],
+			};
+
+			const response = await fetch(
+				`https://api.telegram.org/bot${token}/getUpdates`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+					signal: AbortSignal.timeout(this._pollTimeoutMs + 5000), // Extra 5s for network
+				},
+			);
+
+			if (!response.ok) {
+				const error = await response.text();
+				console.warn(`[TelegramAdapter] getUpdates failed: ${error}`);
+				return;
+			}
+
+			const data = (await response.json()) as {
+				ok: boolean;
+				result?: TelegramUpdate[];
+			};
+
+			if (!data.ok || !data.result?.length) return;
+
+			// Process updates
+			for (const update of data.result) {
+				await this.processUpdate(update);
+				this._lastUpdateId = update.update_id;
+			}
+		} catch (err) {
+			if (err instanceof Error && err.name === "TimeoutError") {
+				// Timeout is expected for long polling, not an error
+				return;
+			}
+			console.error("[TelegramAdapter] Poll error:", err);
+		}
+	}
+
+	/**
+	 * Process a single Telegram update
+	 */
+	private async processUpdate(update: TelegramUpdate): Promise<void> {
+		const cfg = this.config.config as TelegramConfig;
+
+		// Handle callback query
+		if (update.callback_query) {
+			const query = update.callback_query;
+			console.log(
+				`[TelegramAdapter] Callback query: ${query.data} from user ${query.from?.id}`,
+			);
+
+			// Answer the callback query (dismiss loading indicator)
+			try {
+				await fetch(
+					`https://api.telegram.org/bot${cfg.botToken}/answerCallbackQuery`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ callback_query_id: query.id }),
+					},
+				);
+			} catch (err) {
+				console.warn("[TelegramAdapter] Failed to answer callback query:", err);
+			}
+
+			// Call the registered handler
+			if (this._callbackHandler && query.data) {
+				await this._callbackHandler(query.data, query);
+			}
 		}
 	}
 

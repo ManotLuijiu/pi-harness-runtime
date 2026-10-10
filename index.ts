@@ -537,15 +537,17 @@ async function initTelegram(): Promise<void> {
 		const { parseCallbackData, CallbackActions } = await import(
 			"./packages/notification/dist/telegram-webhook-handler.js"
 		);
-		center.setCallbackHandler(async (data: string) => {
+		center.setCallbackHandler(async (data: string, _query: { id: string }) => {
 			const parsed = parseCallbackData(data);
 			console.log(`[TelegramCallback] action=${parsed.action} target=${parsed.targetId}`);
 
 			switch (parsed.action) {
 				case CallbackActions.APPROVE:
+					// TODO: Resume auto-continue waiting state
 					console.log("[TelegramCallback] Approved - user clicked Continue");
 					break;
 				case CallbackActions.REJECT:
+					// TODO: Dismiss notification, don't resume
 					console.log("[TelegramCallback] Rejected - user clicked Not yet");
 					break;
 				default:
