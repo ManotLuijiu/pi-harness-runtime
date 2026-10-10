@@ -487,9 +487,12 @@ async function initQdrant(): Promise<void> {
 
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
-async function initTelegram(): Promise<void> {
+async function initTelegram(pi: ExtensionAPI): Promise<void> {
 	try {
-		const { NotificationCenter } = await import("./packages/notification/dist/index.js");
+		const {
+			NotificationCenter,
+			createConversationBridge,
+		} = await import("./packages/notification/dist/index.js");
 		const { readFileSync, existsSync } = await import("node:fs");
 		const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 		const keysDir = `${home}/.pi-harness-runtime/keys`;
@@ -572,6 +575,9 @@ async function initTelegram(): Promise<void> {
 			const { getGLMQuotaCountdown } = await import("./harness/index.js");
 			getGLMQuotaCountdown().setNotificationCenter(center);
 		} catch { /* not critical */ }
+
+		// Register conversation bridge to send assistant responses to Telegram
+		createConversationBridge(pi, center);
 
 		// Log the actual bot username (fetched from Telegram API via getMe)
 		const botUsername = center.getTelegramBotUsername();
@@ -1545,7 +1551,7 @@ export default function (pi: ExtensionAPI) {
 
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	// Collect promise so we can wait for initialization before showing startup notification
-	asyncInitPromises.push(initTelegram());
+	asyncInitPromises.push(initTelegram(pi));
 
 	// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
 	// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
