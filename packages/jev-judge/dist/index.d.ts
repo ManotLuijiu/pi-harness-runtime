@@ -110,4 +110,8 @@ export { EnvironmentJudge } from "./environment-judge.js";
 export type { EnvironmentContext, EnvironmentDecision, SafetyCheck, EnvironmentConfig } from "./environment-judge.js";
 export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
 export type { TypeSafeConfig } from "./typesafe-provider.js";
+export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
+export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
+export { createTodoProvider, PiUnavailableTodoProvider } from "./todo-provider.js";
+export type { TodoProvider, TodoProviderAvailability } from "./todo-provider.js";
 //# sourceMappingURL=index.d.ts.map

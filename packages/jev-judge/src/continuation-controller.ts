@@ -1,27 +1,27 @@
-/**
- * Todo-Driven Continuation Controller
- *
- * Executes authorized todo items without repeated prompts.
- * Uses deterministic rules + optional Jev for ambiguous cases.
- *
- * Architecture:
- * A. Read real todo state (not bd)
- * B. Deterministic continuation on agent_settled
- * C. Jev for ambiguous classification only
- * D. Single continuation controller
- * E. Update prompts/Telegram/status together
- */
-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createTodoProvider, type TodoItem, type TodoSnapshot } from "./todo-provider.js";
+import type { TodoItem } from "./todo-provider.js";
+import { createTodoProvider } from "./todo-provider.js";
 
+/**
+ * Continuation configuration
+ */
+export interface ContinuationConfig {
+	/** Minimum wait before Jev fallback (ms) */
+	jevFallbackMinWaitMs?: number;
+	/** Threshold for routine continuation */
+	routineThreshold?: number;
+	/** Max steer attempts per session */
+	maxSteerAttempts?: number;
+	/** Enable Jev for ambiguous cases */
+	enableJev?: boolean;
+}
 
 /**
  * Continuation state
  */
-interface ContinuationState {
+export interface ContinuationState {
 	sessionId: string;
-	generation: number; // Incremented on edits/cancellation/switch
+	generation: number;
 	todoRevision: number;
 	currentItemId: number | null;
 	nextItemId: number | null;
@@ -30,31 +30,17 @@ interface ContinuationState {
 	userPaused: boolean;
 	lastSteerMessage: string | null;
 	steerAttempts: number;
-	lastEvaluationResult: ContinuationResult | null;
+	lastEvaluationResult: string | null;
 }
 
 /**
  * Continuation result
  */
-interface ContinuationResult {
-	action: "continue" | "stop" | "ask" | "blocked";
+export interface ContinuationResult {
+	action: "continue" | "stop" | "blocked" | "ask";
 	nextItemId?: number;
 	question?: string;
 	reason?: string;
-}
-
-/**
- * Continuation controller configuration
- */
-interface ContinuationConfig {
-	/** Minimum wait time before Jev fallback (ms) */
-jevFallbackMinWaitMs?: number;
-	/** Jev probability threshold for routine continuation */
-	routineThreshold?: number;
-	/** Max steer attempts before reporting blocker */
-	maxSteerAttempts?: number;
-	/** Enable Jev classification for ambiguous cases */
-	enableJev?: boolean;
 }
 
 /**
@@ -90,30 +76,22 @@ export class TodoContinuationController {
 			enableJev: true,
 			...config,
 		} as Required<ContinuationConfig>;
-
-		// Initialize Jev judge if enabled
-		if (this.config.enableJev) {
-			// Jev will be initialized with API key from environment
-		}
 	}
 
 	/**
 	 * Register lifecycle hooks
 	 */
 	register(): void {
-		console.log("[TodoContinuation] Registering lifecycle hooks...");
-
 		// Session start - reset state
 		this.pi.on("session_start", () => {
 			this.reset();
-			console.log("[TodoContinuation] Session started");
 		});
 
 		// Agent settled - evaluate continuation
 		this.pi.on("agent_settled", () => {
-			this.evaluateContinuation().catch((err) =>
-				console.error("[TodoContinuation] Evaluation failed:", err)
-			);
+			this.evaluateContinuation().catch(() => {
+				// Silently handle errors
+			});
 		});
 
 		// User input - reset pause state
@@ -138,8 +116,6 @@ export class TodoContinuationController {
 				this.state.continuationQueued = false;
 			}
 		});
-
-		console.log("[TodoContinuation] Lifecycle hooks registered");
 	}
 
 	/**
@@ -148,7 +124,6 @@ export class TodoContinuationController {
 	private async evaluateContinuation(): Promise<void> {
 		// 1. Check user pause
 		if (this.state.userPaused) {
-			console.log("[TodoContinuation] User paused, stopping");
 			return;
 		}
 
@@ -156,7 +131,6 @@ export class TodoContinuationController {
 		const availability = await this.todoProvider.availability();
 		if (!availability.available) {
 			// No todo provider - don't auto-continue
-			console.log("[TodoContinuation] Todo provider unavailable:", availability.error);
 			return;
 		}
 
@@ -172,7 +146,6 @@ export class TodoContinuationController {
 			// 4. If there's work in progress, continue it
 			if (inProgressItems.length > 0) {
 				const item = inProgressItems[0];
-				console.log(`[TodoContinuation] In-progress item: ${item.subject}`);
 				await this.continueItem(item);
 				return;
 			}
@@ -182,7 +155,7 @@ export class TodoContinuationController {
 			const hasWork = pendingItems.length > 0 || inProgressItems.length > 0;
 
 			if (!hasWork && totalItems === 0) {
-				console.log("[TodoContinuation] All items complete");
+				// All items complete
 				return;
 			}
 
@@ -190,10 +163,7 @@ export class TodoContinuationController {
 				// Check if items are blocked
 				const blockedItems = await this.todoProvider.getBlocked();
 				if (blockedItems.length === pendingItems.length) {
-					// All pending items are blocked
-					const blocker = blockedItems[0];
-					console.log("[TodoContinuation] Items blocked:", blocker?.subject);
-					// Don't auto-continue when blocked
+					// All pending items are blocked - don't auto-continue
 					return;
 				}
 
@@ -203,8 +173,8 @@ export class TodoContinuationController {
 					await this.continueItem(readyItems[0]);
 				}
 			}
-		} catch (err) {
-			console.error("[TodoContinuation] Evaluation error:", err);
+		} catch {
+			// Silently handle errors
 		}
 	}
 
@@ -213,7 +183,6 @@ export class TodoContinuationController {
 	 */
 	private async continueItem(item: TodoItem): Promise<void> {
 		if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
-			console.warn("[TodoContinuation] Max steer attempts reached");
 			return;
 		}
 
@@ -225,20 +194,15 @@ export class TodoContinuationController {
 			: `Continue task: ${item.subject}`;
 
 		this.state.lastSteerMessage = message;
-		console.log(`[TodoContinuation] Continuing: ${item.subject}`);
-		console.log(`[TodoContinuation] Message: ${message}`);
 		// Note: Pi does not expose sendUserMessage API.
 		// The Telegram notification system will prompt user for ambiguous cases.
 	}
-
-
 
 	/**
 	 * Steer to continue a todo item
 	 */
 	async steerToContinue(itemId: number): Promise<void> {
 		if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
-			console.warn("[TodoContinuation] Max steer attempts reached");
 			return;
 		}
 
@@ -254,15 +218,12 @@ export class TodoContinuationController {
 
 		this.state.lastSteerMessage = message;
 		this.state.todoRevision = snapshot.revision;
-
-		console.log(`[TodoContinuation] Steering to continue item ${itemId}`);
 	}
 
 	/**
 	 * Mark a todo item as complete
 	 */
-	async markComplete(itemId: number): Promise<void> {
-		console.log(`[TodoContinuation] Marking item ${itemId} complete`);
+	async markComplete(_itemId: number): Promise<void> {
 		this.state.currentItemId = null;
 		this.state.generation++;
 	}
@@ -273,7 +234,6 @@ export class TodoContinuationController {
 	pause(): void {
 		this.state.userPaused = true;
 		this.state.continuationQueued = false;
-		console.log("[TodoContinuation] User paused");
 	}
 
 	/**
@@ -299,7 +259,6 @@ export class TodoContinuationController {
 	 * Cleanup on shutdown
 	 */
 	private cleanup(): void {
-		console.log("[TodoContinuation] Cleaning up");
 		this.state.continuationQueued = false;
 		this.state.generation++;
 	}
@@ -309,7 +268,7 @@ export class TodoContinuationController {
 	 */
 	getState(): { current: TodoItem | null; next: TodoItem | null; ready: number } {
 		return {
-			current: null, // Would need to fetch
+			current: null,
 			next: null,
 			ready: 0,
 		};
