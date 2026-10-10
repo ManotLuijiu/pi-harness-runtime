@@ -2,16 +2,21 @@
 
 ## Version Management
 
-### NPM Publishing via GitHub Actions
+### NPM Publishing via GitHub Actions + OIDC
 
 **GitHub Actions automatically publishes to npm when you push to `develop` branch.**
 
+- Uses **OpenID Connect (OIDC)** for secure npm authentication
+- No npm token stored in GitHub secrets
+- Each package is configured at: npmjs.com → Package → Settings → Trusted Publisher
+
 After every `git push` to `develop`:
 1. GitHub Actions detects the push
-2. Runs build and tests
-3. Publishes to npm automatically
+2. Authenticates to npm via OIDC
+3. Runs build and tests
+4. Publishes to npm automatically
 
-You do NOT need to manually run `npm publish`.
+You do NOT need to manually run `npm publish` or manage tokens.
 
 ### Version Bump Process
 
