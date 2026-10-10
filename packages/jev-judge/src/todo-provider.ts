@@ -179,7 +179,49 @@ export class MockTodoProvider implements TodoProvider {
  * Create a todo provider based on available tools
  */
 export function createTodoProvider(pi?: ExtensionAPI): TodoProvider {
-	// For now, return mock provider
-	// TODO: Integrate with actual Pi todo extension when available
-	return new MockTodoProvider();
+	// Check if Pi exposes a todo API
+	// For now, Pi does not expose a todo extension API
+	// Return a provider that reports unavailability
+	return new PiUnavailableTodoProvider();
+}
+
+/**
+ * Provider that reports Pi todo extension is not available
+ */
+class PiUnavailableTodoProvider implements TodoProvider {
+	async availability(): Promise<TodoAvailability> {
+		return {
+			available: false,
+			error: "Pi does not expose a todo extension API. Todo state is not available.",
+			provider: "pi-todo",
+		};
+	}
+
+	async getSnapshot(): Promise<TodoSnapshot> {
+		throw new Error("Pi todo extension is not available");
+	}
+
+	async getByStatus(_status: TodoStatus): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getInProgress(): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getPending(): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getCompleted(): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getReady(): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getBlocked(): Promise<TodoItem[]> {
+		return [];
+	}
 }

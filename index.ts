@@ -78,6 +78,7 @@ import {
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
+import { createTodoContinuation } from "./packages/jev-judge/dist/continuation-controller.js";
 
 /**
  * Get tasks from bd (beads) for Jev decision context.
@@ -1544,6 +1545,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- jev-auto-continue: Agent autonomous decision when user unavailable -----
 	void initAutoContinue(pi);
+
+	// Register todo-driven continuation controller
+	createTodoContinuation(pi);
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
