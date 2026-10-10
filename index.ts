@@ -535,7 +535,7 @@ async function initTelegram(): Promise<void> {
 
 		// Register callback handler for inline keyboard button clicks (approve/reject)
 		const { parseCallbackData, CallbackActions } = await import(
-			"./packages/notification/dist/src/telegram-webhook-handler.js"
+			"./packages/notification/dist/telegram-webhook-handler.js"
 		);
 		center.setCallbackHandler(async (data: string) => {
 			const parsed = parseCallbackData(data);
@@ -1185,25 +1185,47 @@ let _nc: {
 } | null = null;
 
 /**
- * Fire a Telegram notification event. Silently skips if Telegram is not configured.
+ * Fire a Telegram notification event. Logs delivery outcomes.
+ * Silently skips if Telegram is not configured.
  */
 async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
 	if (!_nc) return;
 	try {
-		const nc = _nc as { center: { notifyWithApproval: Function; notify: Function } };
+		const nc = _nc as {
+			center: {
+				notifyWithApproval: Function;
+				notify: Function;
+			};
+		};
 
 		// Import policy engine dynamically to check if approval buttons needed
 		// This is a simple sync check - can be replaced with Jev-powered evaluation
-		const { requiresApproval } = await import("./packages/notification/dist/src/notification-policy.js");
+		const { requiresApproval } = await import("./packages/notification/dist/notification-policy.js");
 
-		// Use notifyWithApproval() for events that need user input
+		// Capture results for logging
+		let results: unknown;
 		if (requiresApproval(event)) {
-			await nc.center.notifyWithApproval(event as never, ctx as never);
+			results = await nc.center.notifyWithApproval(event as never, ctx as never);
 		} else {
-			await nc.center.notify(event as never, ctx as never);
+			results = await nc.center.notify(event as never, ctx as never);
 		}
-	} catch {
+
+		// Log delivery outcomes
+		if (Array.isArray(results)) {
+			for (const result of results) {
+				if (result && typeof result === "object" && "success" in result) {
+					const r = result as { success: boolean; channel: string; error?: string };
+					if (r.success) {
+						console.log(`[TelegramNotification] ${event} sent to ${r.channel}`);
+					} else {
+						console.warn(`[TelegramNotification] ${event} failed: ${r.error ?? "unknown"}`);
+					}
+				}
+			}
+		}
+	} catch (err) {
 		// Never crash runtime on notification failure
+		console.warn(`[TelegramNotification] ${event} threw: ${err instanceof Error ? err.message : String(err)}`);
 	}
 }
 
