@@ -23,6 +23,11 @@ export declare class NotificationCenter {
      */
     initialize(): Promise<void>;
     /**
+     * Set callback handler for Telegram adapters
+     * Enables handling of inline keyboard button clicks (approve/reject)
+     */
+    setCallbackHandler(handler: TelegramCallbackHandler): void;
+    /**
      * Send a notification to all configured channels
      */
     notify(event: NotificationEvent, context: NotificationContext): Promise<NotificationResult[]>;
