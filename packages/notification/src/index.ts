@@ -22,3 +22,7 @@ export {
 	filterTelegramContent,
 	getSafeNotificationLog,
 } from "./telegram-content-filter.js";
+export {
+	ConversationBridge,
+	createConversationBridge,
+} from "./conversation-bridge.js";
