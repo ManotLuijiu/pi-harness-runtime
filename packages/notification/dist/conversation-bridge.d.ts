@@ -39,7 +39,6 @@ export declare class ConversationBridge {
     private pendingMessages;
     private deliveredMessageIds;
     private sessionStartTime;
-    private lastMessageId;
     constructor(pi: ExtensionAPI, center: NotificationCenter, config?: Partial<ConversationBridgeConfig>);
     /**
      * Register all lifecycle hooks
@@ -49,14 +48,6 @@ export declare class ConversationBridge {
      * Extract text content from a message
      */
     private extractMessageContent;
-    /**
-     * Format a tool execution summary
-     */
-    private formatToolSummary;
-    /**
-     * Send a tool summary to Telegram
-     */
-    private sendToolSummary;
     /**
      * Finalize and send pending messages (called on agent_settled)
      */
@@ -73,10 +64,6 @@ export declare class ConversationBridge {
      * Chunk a message into smaller parts
      */
     private chunkMessage;
-    /**
-     * Truncate a string
-     */
-    private truncate;
     /**
      * Reset state for new session
      */
