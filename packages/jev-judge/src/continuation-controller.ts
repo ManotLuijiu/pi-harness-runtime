@@ -3,6 +3,22 @@ import type { TodoItem } from "./todo-provider.js";
 import { createTodoProvider } from "./todo-provider.js";
 
 /**
+ * Simple debug logger that writes to file, not stdout
+ */
+const DEBUG_LOG_FILE = "/tmp/pi-harness-debug.log";
+function debugLog(component: string, ...args: unknown[]): void {
+	try {
+		const timestamp = new Date().toISOString();
+		const msg = `[${timestamp}] [${component}] ${args.map(a => String(a)).join(" ")}\n`;
+		import("node:fs").then(({ appendFileSync }) => {
+			appendFileSync(DEBUG_LOG_FILE, msg);
+		}).catch(() => {});
+	} catch {
+		// Silently fail
+	}
+}
+
+/**
  * Continuation configuration
  */
 export interface ContinuationConfig {
@@ -82,9 +98,12 @@ export class TodoContinuationController {
 	 * Register lifecycle hooks
 	 */
 	register(): void {
+		debugLog("TodoContinuation", "Registering hooks");
+
 		// Session start - reset state
 		this.pi.on("session_start", () => {
 			this.reset();
+			debugLog("TodoContinuation", "Session started");
 		});
 
 		// Agent settled - evaluate continuation
@@ -116,6 +135,8 @@ export class TodoContinuationController {
 				this.state.continuationQueued = false;
 			}
 		});
+
+		debugLog("TodoContinuation", "Lifecycle hooks registered");
 	}
 
 	/**
@@ -124,6 +145,7 @@ export class TodoContinuationController {
 	private async evaluateContinuation(): Promise<void> {
 		// 1. Check user pause
 		if (this.state.userPaused) {
+			debugLog("TodoContinuation", "User paused, stopping");
 			return;
 		}
 
@@ -131,6 +153,7 @@ export class TodoContinuationController {
 		const availability = await this.todoProvider.availability();
 		if (!availability.available) {
 			// No todo provider - don't auto-continue
+			debugLog("TodoContinuation", "Provider unavailable:", availability.error);
 			return;
 		}
 
@@ -146,6 +169,7 @@ export class TodoContinuationController {
 			// 4. If there's work in progress, continue it
 			if (inProgressItems.length > 0) {
 				const item = inProgressItems[0];
+				debugLog("TodoContinuation", "In-progress item:", item.subject);
 				await this.continueItem(item);
 				return;
 			}
@@ -155,7 +179,7 @@ export class TodoContinuationController {
 			const hasWork = pendingItems.length > 0 || inProgressItems.length > 0;
 
 			if (!hasWork && totalItems === 0) {
-				// All items complete
+				debugLog("TodoContinuation", "All items complete");
 				return;
 			}
 
@@ -164,6 +188,8 @@ export class TodoContinuationController {
 				const blockedItems = await this.todoProvider.getBlocked();
 				if (blockedItems.length === pendingItems.length) {
 					// All pending items are blocked - don't auto-continue
+					const blocker = blockedItems[0];
+					debugLog("TodoContinuation", "Items blocked:", blocker?.subject);
 					return;
 				}
 
@@ -173,8 +199,8 @@ export class TodoContinuationController {
 					await this.continueItem(readyItems[0]);
 				}
 			}
-		} catch {
-			// Silently handle errors
+		} catch (err) {
+			debugLog("TodoContinuation", "Evaluation error:", err);
 		}
 	}
 
@@ -183,6 +209,7 @@ export class TodoContinuationController {
 	 */
 	private async continueItem(item: TodoItem): Promise<void> {
 		if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
+			debugLog("TodoContinuation", "Max steer attempts reached");
 			return;
 		}
 
@@ -194,6 +221,7 @@ export class TodoContinuationController {
 			: `Continue task: ${item.subject}`;
 
 		this.state.lastSteerMessage = message;
+		debugLog("TodoContinuation", "Continuing:", item.subject);
 		// Note: Pi does not expose sendUserMessage API.
 		// The Telegram notification system will prompt user for ambiguous cases.
 	}
@@ -203,6 +231,7 @@ export class TodoContinuationController {
 	 */
 	async steerToContinue(itemId: number): Promise<void> {
 		if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
+			debugLog("TodoContinuation", "Max steer attempts reached");
 			return;
 		}
 
@@ -218,12 +247,14 @@ export class TodoContinuationController {
 
 		this.state.lastSteerMessage = message;
 		this.state.todoRevision = snapshot.revision;
+		debugLog("TodoContinuation", "Steering to continue item", itemId);
 	}
 
 	/**
 	 * Mark a todo item as complete
 	 */
 	async markComplete(_itemId: number): Promise<void> {
+		debugLog("TodoContinuation", "Marking item complete");
 		this.state.currentItemId = null;
 		this.state.generation++;
 	}
@@ -232,6 +263,7 @@ export class TodoContinuationController {
 	 * User paused
 	 */
 	pause(): void {
+		debugLog("TodoContinuation", "User paused");
 		this.state.userPaused = true;
 		this.state.continuationQueued = false;
 	}
@@ -259,6 +291,7 @@ export class TodoContinuationController {
 	 * Cleanup on shutdown
 	 */
 	private cleanup(): void {
+		debugLog("TodoContinuation", "Cleaning up");
 		this.state.continuationQueued = false;
 		this.state.generation++;
 	}

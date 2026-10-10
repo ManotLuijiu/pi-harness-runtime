@@ -16,6 +16,22 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { NotificationCenter } from "./notification-center.js";
 
 /**
+ * Simple debug logger that writes to file, not stdout
+ */
+const DEBUG_LOG_FILE = "/tmp/pi-harness-debug.log";
+function debugLog(component: string, ...args: unknown[]): void {
+	try {
+		const timestamp = new Date().toISOString();
+		const msg = `[${timestamp}] [${component}] ${args.map(a => String(a)).join(" ")}\n`;
+		import("node:fs").then(({ appendFileSync }) => {
+			appendFileSync(DEBUG_LOG_FILE, msg);
+		}).catch(() => {});
+	} catch {
+		// Silently fail
+	}
+}
+
+/**
  * Configuration for the conversation bridge
  */
 export interface ConversationBridgeConfig {
@@ -66,9 +82,12 @@ export class ConversationBridge {
 	 * Register all lifecycle hooks
 	 */
 	register(): void {
+		debugLog("ConversationBridge", "Registering hooks");
+
 		// Session start - reset state
 		this.pi.on("session_start", () => {
 			this.reset();
+			debugLog("ConversationBridge", "Session started");
 		});
 
 		// Session compact - flush pending messages
@@ -115,6 +134,8 @@ export class ConversationBridge {
 		this.pi.on("agent_settled", () => {
 			this.finalizePendingMessages();
 		});
+
+		debugLog("ConversationBridge", "Lifecycle hooks registered");
 	}
 
 	/**

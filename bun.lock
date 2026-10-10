@@ -41,6 +41,16 @@
         "bun-types": "^1.0.0",
       },
     },
+    "packages/agent-policy": {
+      "name": "@pi/agent-policy",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^7.0.2",
+      },
+      "peerDependencies": {
+        "typescript": "^5.0.0",
+      },
+    },
     "packages/architecture-generator": {
       "name": "@pi-harness/architecture-generator",
       "version": "1.1.71-1",
@@ -206,6 +216,13 @@
         "bun-types": "^1.0.0",
       },
     },
+    "packages/e2e-tester": {
+      "name": "@pi-harness/e2e-tester",
+      "version": "1.1.0",
+      "peerDependencies": {
+        "typescript": "^5.0.0",
+      },
+    },
     "packages/evaluation-engine": {
       "name": "@pi-harness/evaluation-engine",
       "version": "1.1.71-1",
@@ -365,6 +382,9 @@
     "packages/notification": {
       "name": "@pi-harness/notification",
       "version": "1.1.71-1",
+      "dependencies": {
+        "@pi/observability": "workspace:*",
+      },
     },
     "packages/observability": {
       "name": "@pi/observability",
@@ -606,6 +626,10 @@
         "@types/node": "^20.14.0",
       },
     },
+    "packages/telegram": {
+      "name": "@pi-harness/telegram",
+      "version": "1.1.168",
+    },
     "packages/tencentdb-memory": {
       "name": "@moocoding/tencentdb-memory",
       "version": "1.1.71-1",
@@ -668,6 +692,13 @@
     "packages/types": {
       "name": "@pi-harness/types",
       "version": "1.1.71-1",
+    },
+    "packages/webmcp-tester": {
+      "name": "@pi-harness/webmcp-tester",
+      "version": "1.1.0",
+      "peerDependencies": {
+        "typescript": "^5.0.0",
+      },
     },
     "packages/workflow-events": {
       "name": "@pi/workflow-events",
@@ -923,6 +954,8 @@
 
     "@pi-harness/doc-generator": ["@pi-harness/doc-generator@workspace:packages/doc-generator"],
 
+    "@pi-harness/e2e-tester": ["@pi-harness/e2e-tester@workspace:packages/e2e-tester"],
+
     "@pi-harness/evaluation-engine": ["@pi-harness/evaluation-engine@workspace:packages/evaluation-engine"],
 
     "@pi-harness/experience-replay": ["@pi-harness/experience-replay@workspace:packages/experience-replay"],
@@ -977,6 +1010,8 @@
 
     "@pi-harness/task-compiler": ["@pi-harness/task-compiler@workspace:packages/task-compiler"],
 
+    "@pi-harness/telegram": ["@pi-harness/telegram@workspace:packages/telegram"],
+
     "@pi-harness/tencentdb-sync": ["@pi-harness/tencentdb-sync@workspace:packages/tencentdb-sync"],
 
     "@pi-harness/test-generator": ["@pi-harness/test-generator@workspace:packages/test-generator"],
@@ -991,9 +1026,13 @@
 
     "@pi-harness/types": ["@pi-harness/types@workspace:packages/types"],
 
+    "@pi-harness/webmcp-tester": ["@pi-harness/webmcp-tester@workspace:packages/webmcp-tester"],
+
     "@pi-harness/worktree": ["@pi-harness/worktree@workspace:packages/worktree"],
 
     "@pi/a2a-adapter": ["@pi/a2a-adapter@workspace:packages/a2a-adapter"],
+
+    "@pi/agent-policy": ["@pi/agent-policy@workspace:packages/agent-policy"],
 
     "@pi/autonomous-refactor": ["@pi/autonomous-refactor@workspace:packages/autonomous-refactor"],
 
