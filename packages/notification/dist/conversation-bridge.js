@@ -1,10 +1,9 @@
 /**
  * Telegram Conversation Bridge
  *
- * Sends assistant responses and tool activity to Telegram.
+ * Sends assistant responses to Telegram.
  * Hooks into Pi lifecycle events to capture:
  * - message_end: Final assistant responses
- * - agent_end: When agent finishes a turn
  * - agent_settled: When agent fully settles
  *
  * Features:
@@ -29,9 +28,7 @@ export class ConversationBridge {
         this.center = center;
         this.config = {
             sendAssistantResponses: true,
-            sendToolSummaries: true,
             maxMessageLength: 4000,
-            minConfidence: 0.5,
             ...config,
         };
     }
@@ -39,27 +36,18 @@ export class ConversationBridge {
      * Register all lifecycle hooks
      */
     register() {
-        console.log("[ConversationBridge] Registering lifecycle hooks...");
         // Session start - reset state
         this.pi.on("session_start", () => {
             this.reset();
-            console.log("[ConversationBridge] Session started");
         });
         // Session compact - flush pending messages
-        this.pi.on("session_compact", (event) => {
-            console.log(`[ConversationBridge] Compaction: ${event.reason} (willRetry=${event.willRetry})`);
+        this.pi.on("session_compact", (_event) => {
             this.flushPendingMessages();
         });
         // Session shutdown - cleanup
         this.pi.on("session_shutdown", () => {
-            console.log("[ConversationBridge] Session shutting down");
             this.flushPendingMessages();
             this.stop();
-        });
-        // Message start - track new message
-        // Track message start for assistant messages
-        this.pi.on("message_start", (_event) => {
-            // Message tracking is handled in message_end
         });
         // Message end - capture final assistant response
         this.pi.on("message_end", (event) => {
@@ -72,7 +60,6 @@ export class ConversationBridge {
             const messageId = msg.id ?? `msg-${this.sessionStartTime}`;
             // Deduplicate
             if (this.deliveredMessageIds.has(messageId)) {
-                console.log(`[ConversationBridge] Skipping duplicate: ${messageId}`);
                 return;
             }
             // Check if already pending
@@ -87,17 +74,11 @@ export class ConversationBridge {
                 this.pendingMessages.set(messageId, pending);
             }
             pending.events.add("message_end");
-            console.log(`[ConversationBridge] Assistant message captured: ${messageId.substring(0, 20)}...`);
         });
-        // Tool execution end - DISABLED by default (too noisy)
-        // Tool summaries spam Telegram with every tool call
-        // Enable only if explicitly configured and user wants verbose output
         // Agent settled - finalize and send pending messages
         this.pi.on("agent_settled", () => {
-            console.log("[ConversationBridge] Agent settled, finalizing messages...");
             this.finalizePendingMessages();
         });
-        console.log("[ConversationBridge] Lifecycle hooks registered");
     }
     /**
      * Extract text content from a message
@@ -138,16 +119,12 @@ export class ConversationBridge {
                 this.deliveredMessageIds.add(messageId);
                 this.pendingMessages.delete(messageId);
             }
-            else {
-                console.log(`[ConversationBridge] Failed to send ${messageId}, will retry`);
-            }
         }
     }
     /**
      * Flush pending messages (on compaction) - send before clearing
      */
     async flushPendingMessages() {
-        console.log(`[ConversationBridge] Flushing ${this.pendingMessages.size} pending messages`);
         // Send all pending messages before clearing
         await this.finalizePendingMessages();
     }
@@ -156,7 +133,6 @@ export class ConversationBridge {
      */
     async sendAssistantResponse(content, messageId) {
         if (!this.center.hasHealthyChannels()) {
-            console.log("[ConversationBridge] No healthy channels, skipping");
             return false;
         }
         // Chunk if too long
@@ -171,17 +147,12 @@ export class ConversationBridge {
                     requirement: chunk + chunkSuffix,
                 });
                 for (const result of results) {
-                    if (result.success) {
-                        console.log(`[ConversationBridge] Response chunk ${i + 1}/${chunks.length} sent`);
-                    }
-                    else {
-                        console.warn(`[ConversationBridge] Response chunk failed: ${result.error}`);
+                    if (!result.success) {
                         allSent = false;
                     }
                 }
             }
-            catch (err) {
-                console.error("[ConversationBridge] Failed to send response:", err);
+            catch {
                 allSent = false;
             }
         }
@@ -197,7 +168,6 @@ export class ConversationBridge {
         const chunks = [];
         const maxLen = this.config.maxMessageLength;
         // Split by sentence boundaries, keeping the punctuation
-        // Also split on newlines and other natural breaks
         const parts = message.split(/(?<=[.!?])\s+|(?<=\n)\s*|(?<=[,;:])\s+/);
         let currentChunk = "";
         for (const part of parts) {
@@ -259,8 +229,7 @@ export class ConversationBridge {
      * Stop the bridge (cleanup)
      */
     stop() {
-        console.log("[ConversationBridge] Stopped");
-        // Cleanup will happen on shutdown
+        // Cleanup happens on shutdown
     }
 }
 /**
