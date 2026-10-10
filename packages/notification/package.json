@@ -18,5 +18,7 @@
     "build": "tsc",
     "test": "bun test"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@pi/observability": "workspace:*"
+  }
 }
