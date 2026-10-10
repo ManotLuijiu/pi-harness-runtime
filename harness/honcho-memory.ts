@@ -82,9 +82,6 @@ function ensureMcpConfig(): void {
 // Auto-create MCP config on module load
 ensureMcpConfig();
 
-// Start periodic health checks
-startHonchoHealthCheck();
-
 // ---------------------------------------------------------------------------
 // Honcho Health Check - Detect suspended accounts
 // ----------------------------------------------------------------------------
@@ -98,6 +95,9 @@ interface HonchoHealthResponse {
 let _honchoHealthInterval: ReturnType<typeof setInterval> | null = null;
 const HONCHO_HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 const HONCHO_HEALTH_ENDPOINT = "https://api.honcho.dev/v1/health";
+
+// Start only after the timer state and health-check constants are initialized.
+startHonchoHealthCheck();
 
 async function checkHonchoHealth(): Promise<void> {
   const apiKey = existsSync(HONCHO_KEY_FILE)
