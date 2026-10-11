@@ -3017,15 +3017,7 @@ Run \`bd ready\` to see current bd issues.
 	});
 
 	// --- Footer status (persistent badge) --------------------------------
-	// Harness status keys for startup display (cleared on first user input)
-	const HARNESS_STATUS_KEYS = [
-		"harness-runtime",
-		"harness-qdrant",
-		"harness-honcho",
-		"harness-telegram",
-		"harness-skills",
-		"harness-commands",
-	];
+	const HARNESS_STATUS_KEY = "harness-startup";
 	let harnessStatusShown = false;
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -3041,12 +3033,9 @@ Run \`bd ready\` to see current bd issues.
 		);
 
 		// --- Harness startup status (appears BELOW footer) -----------
-		// Show harness status rows below footer, like [Prompts]/[Extensions]
-		// These will be cleared on first user input
+		// Use ONE status key with newlines to create multiple rows
 		harnessStatusShown = false;
-
-		// Set harness status rows using setStatus()
-		ctx.ui.setStatus("harness-runtime", "[Pi] Runtime: initializing...");
+		ctx.ui.setStatus(HARNESS_STATUS_KEY, "[Pi] Runtime: initializing...");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3056,30 +3045,29 @@ Run \`bd ready\` to see current bd issues.
 			Promise.allSettled(asyncInitPromises),
 			startupTimeout,
 		]).then(() => {
-			// Update with actual status from startup messages
-			ctx.ui.setStatus("harness-runtime", "[Pi] Runtime: ready");
+			// Build harness status with newlines for multiple rows
+			const lines: string[] = ["[Pi] Runtime: ready"];
 
 			for (const msg of startupMessages) {
-				if (msg.includes("Qdrant")) {
-					if (msg.includes("ready")) {
-						ctx.ui.setStatus("harness-qdrant", "[Pi] Qdrant: connected");
-					} else {
-						ctx.ui.setStatus("harness-qdrant", "[Pi] Qdrant: configured");
-					}
+				if (msg.includes("Qdrant") && msg.includes("ready")) {
+					lines.push("[Pi] Qdrant: connected");
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					ctx.ui.setStatus("harness-telegram", "[Pi] Telegram: verified");
+					lines.push("[Pi] Telegram: verified");
 				}
 				if (msg.includes("Honcho")) {
-					ctx.ui.setStatus("harness-honcho", "[Pi] Honcho: registered");
+					lines.push("[Pi] Honcho: registered");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
 						if (match) {
-							ctx.ui.setStatus("harness-skills", `[Pi] Skills: ${match[1]}`);
+							lines.push(`[Pi] Skills: ${match[1]}`);
 						}
 				}
 			}
+
+			// Set all harness info with newlines
+			ctx.ui.setStatus(HARNESS_STATUS_KEY, lines.join("\n"));
 		});
 	});
 
@@ -3088,10 +3076,7 @@ Run \`bd ready\` to see current bd issues.
 		const msg = event.message as { role?: string };
 		if (msg?.role === "user" && !harnessStatusShown) {
 			harnessStatusShown = true;
-			// Clear all harness status rows by setting to empty string
-			for (const key of HARNESS_STATUS_KEYS) {
-				footerSetStatus?.(key, "");
-			}
+			footerSetStatus?.(HARNESS_STATUS_KEY, "");
 		}
 	});
 
