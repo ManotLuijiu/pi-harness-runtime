@@ -3032,29 +3032,66 @@ Run \`bd ready\` to see current bd issues.
 		// --- Show harness startup block (pi header stays intact) -----------
 		// Do NOT call setHeader() — that replaces pi's ASCII header which shows
 		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
-		// harness info as a small separate notify line.
-		//
-		// Wait for all async init promises to complete so startupMessages includes
-		// messages from async initializations (Qdrant, Telegram, Honcho, HermesSkills).
-		// Use a timeout to avoid indefinite blocking if an init stalls.
+		// --- Harness Widget: Startup status display with overflow protection -----------
+		// Create widget for structured harness status display
 		if (ctx.hasUI) {
-			const notify = ctx.ui.notify.bind(ctx.ui);
+			// Import widget lazily
+			try {
+				const { createHarnessWidget } = await import("./packages/notification/dist/index.js");
+				const widget = createHarnessWidget(pi);
+				widget.initWithUI(ctx.ui);
+				widget.initialize(HARNESS_VERSION, "quota management, automation, memory, multi-agent");
+				widget.setRuntime("initializing...");
 
-			// Wait for async inits to complete, then emit notification
-			// Use Promise.race with a timeout to avoid indefinite blocking
-			const startupTimeout = new Promise<void>((resolve) => {
-				setTimeout(resolve, 5000); // 5 second timeout
-			});
-			Promise.race([
-				Promise.allSettled(asyncInitPromises),
-				startupTimeout,
-			]).then(() => {
-				const lines = [
-					`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
-					...startupMessages,
-				];
-				notify(lines.join("\n"), "info");
-			});
+				// Wait for async inits to complete, then render widget with status
+				const startupTimeout = new Promise<void>((resolve) => {
+					setTimeout(resolve, 5000); // 5 second timeout
+				});
+				Promise.race([
+					Promise.allSettled(asyncInitPromises),
+					startupTimeout,
+				]).then(() => {
+					widget.setRuntime("initialized ✓");
+					// Parse startup messages and update widget status
+					for (const msg of startupMessages) {
+						if (msg.includes("Qdrant")) {
+							if (msg.includes("ready")) {
+								widget.setQdrant("connected ✓");
+							} else {
+								widget.setQdrant("configured");
+							}
+						}
+						if (msg.includes("Telegram") && msg.includes("ready")) {
+							widget.setTelegram("verified ✓");
+						}
+						if (msg.includes("Honcho")) {
+							widget.setHoncho("registered");
+						}
+						if (msg.includes("Skills:") || msg.includes("discovered")) {
+							const match = msg.match(/(\d+)/);
+							if (match) {
+								widget.setSkills(parseInt(match[1], 10));
+							}
+						}
+					}
+				});
+			} catch {
+				// Fallback to notify if widget creation fails
+				const notify = ctx.ui.notify.bind(ctx.ui);
+				const startupTimeout = new Promise<void>((resolve) => {
+					setTimeout(resolve, 5000);
+				});
+				Promise.race([
+					Promise.allSettled(asyncInitPromises),
+					startupTimeout,
+				]).then(() => {
+					const lines = [
+						`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
+						...startupMessages,
+					];
+					notify(lines.join("\n"), "info");
+				});
+			}
 		}
 	});
 
