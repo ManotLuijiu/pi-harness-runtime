@@ -3016,8 +3016,15 @@ Run \`bd ready\` to see current bd issues.
 		},
 	});
 
-	// --- Harness footer state (separate from quota) -----------------------
-	// Store harness messages separately - NOT in status keys used by quota
+	// --- Harness widget state (like Todos extension) -----------------------
+	// Learn from Todos extension:
+	// - setWidget with placement: "aboveEditor" (fixed above input)
+	// - Capture tui.requestRender from factory
+	// - Return [] when hidden (removes widget height)
+	// - Call requestRender(true) on hide for forced redraw
+	// - Tree characters like Todos (├─ └─)
+	// - Trailing spacer line for breathing room
+	const HARNESS_WIDGET_KEY = "pi-harness-startup";
 	interface HarnessMessage {
 		id: string;
 		label: string;
@@ -3025,29 +3032,47 @@ Run \`bd ready\` to see current bd issues.
 		status: "wait" | "ok" | "err";
 	}
 	const harnessMessages: HarnessMessage[] = [];
+	let startupVisible = true;
+	let harnessTUI: { requestRender: (forced?: boolean) => void } | null = null;
+	let harnessWidgetRegistered = false;
+	let sessionGeneration = 0;
 
 	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait") {
 		const id = `${label}-${Date.now()}`;
 		harnessMessages.push({ id, label, text, status });
+		harnessTUI?.requestRender();
 	}
 
-	function clearHarnessMessages() {
-		harnessMessages.length = 0;
+	function hideHarnessBlock() {
+		startupVisible = false;
+		harnessTUI?.requestRender(true); // Force redraw like Todos
+	}
+
+	function truncateToWidth(text: string, width: number): string {
+		if (text.length <= width) return text;
+		return text.substring(0, width - 1) + "…";
 	}
 
 	function getHarnessLines(width: number): string[] {
-		const lines: string[] = [];
-		if (harnessMessages.length === 0) return lines;
+		if (!startupVisible || harnessMessages.length === 0) return [];
 
-		lines.push("[Pi-harness]");
-		for (const msg of harnessMessages) {
+		const lines: string[] = [];
+		const heading = truncateToWidth("[pi-harness]", width);
+		lines.push(heading);
+
+		for (let i = 0; i < harnessMessages.length; i++) {
+			const msg = harnessMessages[i];
 			const marker = msg.status === "ok" ? "[OK]" : msg.status === "err" ? "[ERR]" : "[WAIT]";
-			let text = `  ${marker} ${msg.label}: ${msg.text}`;
-			if (text.length > width) {
-				text = text.substring(0, width - 1) + "…";
-			}
+			const isLast = i === harnessMessages.length - 1;
+			const treeChar = isLast ? "└─" : "├─";
+			let text = `${treeChar} ${marker} ${msg.label}: ${msg.text}`;
+			text = truncateToWidth(text, width);
 			lines.push(text);
 		}
+
+		// Trailing spacer for breathing room (like Todos)
+		lines.push("");
+
 		return lines;
 	}
 
@@ -3064,14 +3089,30 @@ Run \`bd ready\` to see current bd issues.
 			() => lastActiveProvider,
 		);
 
-		// --- Install harness footer renderer (multi-row BELOW quota) ---------
-		// Use setFooter to create custom footer with harness messages on separate rows
-		ctx.ui.setFooter((_tui, _theme, _footerData) => ({
-			render(width: number): string[] {
-				return getHarnessLines(width);
-			},
-			invalidate: () => {},
-		}));
+		// Increment session generation to fence late callbacks
+		sessionGeneration++;
+		const mySession = sessionGeneration;
+		startupVisible = true;
+		harnessMessages.length = 0;
+
+		// --- Install harness widget (like Todos with placement: "aboveEditor") -------
+		// Use setWidget with placement: "aboveEditor" - fixed above input field
+		if (!harnessWidgetRegistered) {
+			ctx.ui.setWidget(
+				HARNESS_WIDGET_KEY,
+				(tui, _theme) => {
+					harnessTUI = tui;
+					return {
+						render: (width: number) => getHarnessLines(width),
+						invalidate: () => {},
+					};
+				},
+				{ placement: "aboveEditor" }, // Like Todos!
+			);
+			harnessWidgetRegistered = true;
+		} else {
+			harnessTUI?.requestRender();
+		}
 
 		// Add initial harness message
 		addHarnessMessage("Runtime", "initializing", "wait");
@@ -3084,6 +3125,9 @@ Run \`bd ready\` to see current bd issues.
 			Promise.allSettled(asyncInitPromises),
 			startupTimeout,
 		]).then(() => {
+			// Fence: ignore if session changed or already hidden
+			if (mySession !== sessionGeneration || !startupVisible) return;
+
 			// Update Runtime status
 			const runtimeMsg = harnessMessages.find((m) => m.label === "Runtime");
 			if (runtimeMsg) {
@@ -3112,11 +3156,11 @@ Run \`bd ready\` to see current bd issues.
 		});
 	});
 
-	// Clear harness messages on first user input (like [Prompts]/[Extensions] disappear)
+	// Hide harness block on first user input (like [Prompts]/[Extensions] disappear)
 	pi.on("message_start", (event) => {
 		const msg = event.message as { role?: string };
 		if (msg?.role === "user") {
-			clearHarnessMessages();
+			hideHarnessBlock();
 		}
 	});
 
