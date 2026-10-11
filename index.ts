@@ -3016,20 +3016,71 @@ Run \`bd ready\` to see current bd issues.
 		},
 	});
 
-	// --- Harness status (like context-mode) -----------------------
-	// Use setStatus like context-mode does - pi.dev already handles layout for these
-	// pi.dev doesn't know about our setWidget, so it doesn't auto-scroll
-	const HARNESS_STATUS_KEY = "pi-harness";
-	let harnessStatusSetStatus: ((key: string, value: string) => void) | null = null;
+	// --- Harness widget state (like Todos extension) -----------------------
+	// Learn from Todos extension:
+	// - setWidget with placement: "aboveEditor" (fixed above input)
+	// - Capture tui.requestRender from factory
+	// - Return [] when hidden (removes widget height)
+	// - Call requestRender(true) on hide for forced redraw
+	// - Tree characters like Todos (├─ └─)
+	// - Trailing spacer line for breathing room
+	const HARNESS_WIDGET_KEY = "pi-harness-startup";
+	interface HarnessMessage {
+		id: string;
+		label: string;
+		text: string;
+		status: "wait" | "ok" | "err";
+	}
+	const harnessMessages: HarnessMessage[] = [];
+	let startupVisible = true;
+	let harnessTUI: { requestRender: (forced?: boolean) => void } | null = null;
+	let harnessWidgetRegistered = false;
 	let sessionGeneration = 0;
-	let startupMessages_: string[] = [];
+
+	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait") {
+		const id = `${label}-${Date.now()}`;
+		harnessMessages.push({ id, label, text, status });
+		harnessTUI?.requestRender();
+	}
+
+	function hideHarnessBlock() {
+		startupVisible = false;
+		harnessTUI?.requestRender(true); // Force redraw like Todos
+	}
+
+	function truncateToWidth(text: string, width: number): string {
+		if (text.length <= width) return text;
+		return text.substring(0, width - 1) + "…";
+	}
+
+	function getHarnessLines(width: number): string[] {
+		if (!startupVisible || harnessMessages.length === 0) return [];
+
+		const lines: string[] = [];
+		const heading = truncateToWidth("[pi-harness]", width);
+		lines.push(heading);
+
+		for (let i = 0; i < harnessMessages.length; i++) {
+			const msg = harnessMessages[i];
+			const marker = msg.status === "ok" ? "[OK]" : msg.status === "err" ? "[ERR]" : "[WAIT]";
+			const isLast = i === harnessMessages.length - 1;
+			const treeChar = isLast ? "└─" : "├─";
+			let text = `${treeChar} ${marker} ${msg.label}: ${msg.text}`;
+			text = truncateToWidth(text, width);
+			lines.push(text);
+		}
+
+		// Trailing spacer for breathing room (like Todos)
+		lines.push("");
+
+		return lines;
+	}
 
 	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", async (_event, ctx) => {
 
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
-		harnessStatusSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
 			footerSetStatus,
 			tracker,
@@ -3041,10 +3092,30 @@ Run \`bd ready\` to see current bd issues.
 		// Increment session generation to fence late callbacks
 		sessionGeneration++;
 		const mySession = sessionGeneration;
-		startupMessages_ = [];
+		startupVisible = true;
+		harnessMessages.length = 0;
 
-		// Add initial status
-		harnessStatusSetStatus?.(HARNESS_STATUS_KEY, "[pi-harness] Runtime: initializing");
+		// --- Install harness widget (like Todos with placement: "aboveEditor") -------
+		// Use setWidget with placement: "aboveEditor" - fixed above input field
+		if (!harnessWidgetRegistered) {
+			ctx.ui.setWidget(
+				HARNESS_WIDGET_KEY,
+				(tui, _theme) => {
+					harnessTUI = tui;
+					return {
+						render: (width: number) => getHarnessLines(width),
+						invalidate: () => {},
+					};
+				},
+				{ placement: "aboveEditor" }, // Like Todos!
+			);
+			harnessWidgetRegistered = true;
+		} else {
+			harnessTUI?.requestRender();
+		}
+
+		// Add initial harness message
+		addHarnessMessage("Runtime", "initializing", "wait");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3054,41 +3125,42 @@ Run \`bd ready\` to see current bd issues.
 			Promise.allSettled(asyncInitPromises),
 			startupTimeout,
 		]).then(() => {
-			// Fence: ignore if session changed
-			if (mySession !== sessionGeneration) return;
+			// Fence: ignore if session changed or already hidden
+			if (mySession !== sessionGeneration || !startupVisible) return;
 
-			// Build startup messages
-			startupMessages_ = ["Runtime: initialized"];
+			// Update Runtime status
+			const runtimeMsg = harnessMessages.find((m) => m.label === "Runtime");
+			if (runtimeMsg) {
+				runtimeMsg.status = "ok";
+				runtimeMsg.text = "initialized";
+			}
 
+			// Add service messages from startup
 			for (const msg of startupMessages) {
 				if (msg.includes("Qdrant") && msg.includes("ready")) {
-					startupMessages_.push("Qdrant: connected");
+					addHarnessMessage("Qdrant", "connected", "ok");
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					startupMessages_.push("Telegram: verified");
+					addHarnessMessage("Telegram", "verified", "ok");
 				}
 				if (msg.includes("Honcho")) {
-					startupMessages_.push("Honcho: registered");
+					addHarnessMessage("Honcho", "registered", "ok");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
 					if (match) {
-						startupMessages_.push(`Skills: ${match[1]}`);
+						addHarnessMessage("Skills", `${match[1]} discovered`, "ok");
 					}
 				}
 			}
-
-			// Update status using setStatus
-			const statusText = "[pi-harness] " + startupMessages_.join(" | ");
-			harnessStatusSetStatus?.(HARNESS_STATUS_KEY, statusText);
 		});
 	});
 
-	// Clear harness status on first user input
+	// Hide harness block on first user input (like [Prompts]/[Extensions] disappear)
 	pi.on("message_start", (event) => {
 		const msg = event.message as { role?: string };
 		if (msg?.role === "user") {
-			harnessStatusSetStatus?.(HARNESS_STATUS_KEY, "");
+			hideHarnessBlock();
 		}
 	});
 
