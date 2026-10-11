@@ -912,13 +912,15 @@ async function initWriteReview(pi: ExtensionAPI): Promise<void> {
 
 // --- file-copy-helper: Inject cp rule when mimicking files --------------------
 // Lazy import - only loads when packages/file-copy-helper exists
-async function initFileCopyHelper(pi: ExtensionAPI): Promise<void> {
-	try {
-		const mod = await import("./packages/file-copy-helper/src/extension.js");
-		mod.registerFileCopyHelper(pi);
-	} catch {
+async function initFileCopyHelper(_pi: ExtensionAPI): Promise<void> {
+	// DISABLED: File copy helper appends large suffix to every prompt
+	// but agent doesn't read it properly. Re-enable when fixed.
+	// try {
+	// 	const mod = await import("./packages/file-copy-helper/src/extension.js");
+	// 	mod.registerFileCopyHelper(_pi);
+	// } catch {
 		// file-copy-helper not available
-	}
+	// }
 }
 
 // --- agent-policy: Mandatory rule delivery and mutation gating ------------------

@@ -53,13 +53,23 @@ const REA_KEYWORDS = [
 	"clone app",
 	"copy app",
 	"mimic app",
-	// Chinese
+	// Chinese (简体中文)
 	"逆向",
 	"逆向工程",
 	"反编译",
 	"分析二进制",
 	"克隆应用",
 	"复制应用",
+	"理解如何运作",
+	// Thai (ภาษาไทย)
+	"วิเคราะห์ย้อนกลับ",
+	"ย้อนวิศวกรรม",
+	"แกะโค้ด",
+	"ถอดรหัส",
+	"เข้าใจการทำงาน",
+	"คัดลอกแอป",
+	"โคลนแอป",
+	"ทำซ้ำแอป",
 	// Common patterns
 	"see a feature",
 	"understand.*binary",
@@ -81,6 +91,11 @@ const FILE_COPY_KEYWORDS = [
 	"克隆",
 	"复制",
 	"迁移",
+	// Thai
+	"คัดลอก",
+	"โคลน",
+	"ทำซ้ำ",
+	"ย้าย",
 	// Code patterns
 	"cp -r",
 	"sudo cp",
@@ -181,9 +196,6 @@ async function jevClassify(
 	}
 
 	// For ambiguous cases, use Jev judgment
-	// This would integrate with the JevJudge from jev-judge package
-	// For now, return based on single keyword presence
-	
 	if (baseIntent === "rea") {
 		return {
 			confirmed: keywords.length >= 1,
