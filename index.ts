@@ -3017,6 +3017,17 @@ Run \`bd ready\` to see current bd issues.
 	});
 
 	// --- Footer status (persistent badge) --------------------------------
+	// Harness status keys for startup display (cleared on first user input)
+	const HARNESS_STATUS_KEYS = [
+		"harness-runtime",
+		"harness-qdrant",
+		"harness-honcho",
+		"harness-telegram",
+		"harness-skills",
+		"harness-commands",
+	];
+	let harnessStatusShown = false;
+
 	pi.on("session_start", async (_event, ctx) => {
 
 		// Capture only the setStatus function, not the ctx
@@ -3029,72 +3040,57 @@ Run \`bd ready\` to see current bd issues.
 			() => lastActiveProvider,
 		);
 
-		// --- Show harness startup block (pi header stays intact) -----------
-		// Do NOT call setHeader() — that replaces pi's ASCII header which shows
-		// community shortcuts (ctrl+c/d, /, !, ctrl+o). Keep pi's header and add
-		// --- Harness Widget: Startup status display with overflow protection -----------
-		// Create widget for structured harness status display
-		if (ctx.hasUI) {
-			// Import widget lazily
-			try {
-				const { createHarnessWidget } = await import("./packages/notification/dist/index.js");
-				const widget = createHarnessWidget(pi);
-				widget.initWithUI(ctx.ui);
-				widget.initialize(HARNESS_VERSION, "quota management, automation, memory, multi-agent");
-				widget.setRuntime("initializing...");
+		// --- Harness startup status (appears BELOW footer) -----------
+		// Show harness status rows below footer, like [Prompts]/[Extensions]
+		// These will be cleared on first user input
+		harnessStatusShown = false;
 
-				// Wait for async inits to complete, then render widget with status
-				const startupTimeout = new Promise<void>((resolve) => {
-					setTimeout(resolve, 5000); // 5 second timeout
-				});
-				Promise.race([
-					Promise.allSettled(asyncInitPromises),
-					startupTimeout,
-				]).then(() => {
-					widget.setRuntime("initialized ✓");
-					// Parse startup messages and update widget status
-					for (const msg of startupMessages) {
-						if (msg.includes("Qdrant")) {
-							if (msg.includes("ready")) {
-								widget.setQdrant("connected ✓");
-							} else {
-								widget.setQdrant("configured");
-							}
+		// Set harness status rows using setStatus()
+		ctx.ui.setStatus("harness-runtime", `[Pi-harness] Runtime: initializing...`);
+
+		// Wait for async inits to complete, then update status
+		const startupTimeout = new Promise<void>((resolve) => {
+			setTimeout(resolve, 5000);
+		});
+		Promise.race([
+			Promise.allSettled(asyncInitPromises),
+			startupTimeout,
+		]).then(() => {
+			// Update with actual status from startup messages
+			ctx.ui.setStatus("harness-runtime", `[Pi-harness] Runtime: initialized ✓`);
+
+			for (const msg of startupMessages) {
+				if (msg.includes("Qdrant")) {
+					if (msg.includes("ready")) {
+						ctx.ui.setStatus("harness-qdrant", `[Pi-harness] Qdrant: connected ✓`);
+					} else {
+						ctx.ui.setStatus("harness-qdrant", `[Pi-harness] Qdrant: configured`);
+					}
+				}
+				if (msg.includes("Telegram") && msg.includes("ready")) {
+					ctx.ui.setStatus("harness-telegram", `[Pi-harness] Telegram: verified ✓`);
+				}
+				if (msg.includes("Honcho")) {
+					ctx.ui.setStatus("harness-honcho", `[Pi-harness] Honcho: registered`);
+				}
+				if (msg.includes("Scanned") && msg.includes("skills")) {
+					const match = msg.match(/Scanned (\d+)/);
+						if (match) {
+							ctx.ui.setStatus("harness-skills", `[Pi-harness] Skills: ${match[1]} discovered`);
 						}
-						if (msg.includes("Telegram") && msg.includes("ready")) {
-							widget.setTelegram("verified ✓");
-						}
-						if (msg.includes("Honcho")) {
-							widget.setHoncho("registered");
-						}
-						if (msg.includes("Scanned") && msg.includes("skills")) {
-							const match = msg.match(/Scanned (\d+)/);
-										if (match) {
-											widget.setSkills(parseInt(match[1], 10));
-										}
-									}
-								}
-								// Hide widget after startup completes - only show during init
-								setTimeout(() => {
-									widget.dispose();
-								}, 3000); // Hide after 3 seconds
-							});
-						} catch {
-				// Fallback to notify if widget creation fails
-				const notify = ctx.ui.notify.bind(ctx.ui);
-				const startupTimeout = new Promise<void>((resolve) => {
-					setTimeout(resolve, 5000);
-				});
-				Promise.race([
-					Promise.allSettled(asyncInitPromises),
-					startupTimeout,
-				]).then(() => {
-					const lines = [
-						`Harness v${HARNESS_VERSION} — quota management, automation, memory, multi-agent`,
-						...startupMessages,
-					];
-					notify(lines.join("\n"), "info");
-				});
+				}
+			}
+		});
+	});
+
+	// Clear harness status on first user input (like [Prompts]/[Extensions] disappear)
+	pi.on("message_start", (event) => {
+		const msg = event.message as { role?: string };
+		if (msg?.role === "user" && !harnessStatusShown) {
+			harnessStatusShown = true;
+			// Clear all harness status rows by setting to empty string
+			for (const key of HARNESS_STATUS_KEYS) {
+				footerSetStatus?.(key, "");
 			}
 		}
 	});
