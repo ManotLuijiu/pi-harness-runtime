@@ -41,12 +41,12 @@ function ensureLogDir(): void {
  * Sensitive fields (keys, tokens, full content) are never logged.
  */
 export function logServiceEvent(event: ServiceEvent): void {
-	ensureLogDir();
-
-	// Redact sensitive fields
-	const safeEvent = redactSensitive(event);
-
 	try {
+		ensureLogDir();
+
+		// Redact sensitive fields
+		const safeEvent = redactSensitive(event);
+
 		appendFileSync(LOG_FILE, JSON.stringify(safeEvent) + "\n");
 	} catch {
 		// Silently fail if logging fails - don't crash the service
