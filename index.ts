@@ -3017,13 +3017,21 @@ Run \`bd ready\` to see current bd issues.
 	});
 
 	// --- Footer status (persistent badge) --------------------------------
-	const HARNESS_STATUS_KEY = "harness-startup";
+	const HARNESS_STATUS_KEYS = [
+		"harness-runtime",
+		"harness-qdrant",
+		"harness-telegram",
+		"harness-honcho",
+		"harness-skills",
+	];
 	let harnessStatusShown = false;
+	let harnessSetStatus: ((key: string, value: string) => void) | null = null;
 
 	pi.on("session_start", async (_event, ctx) => {
 
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
+		harnessSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
 			footerSetStatus,
 			tracker,
@@ -3033,9 +3041,9 @@ Run \`bd ready\` to see current bd issues.
 		);
 
 		// --- Harness startup status (appears BELOW footer) -----------
-		// Use ONE status key with newlines to create multiple rows
+		// Each setStatus key = one row. Use multiple keys for multiple rows.
 		harnessStatusShown = false;
-		ctx.ui.setStatus(HARNESS_STATUS_KEY, "[pi-harness] Runtime: initializing...");
+		harnessSetStatus("harness-runtime", "[pi-harness] Runtime: initializing...");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3045,29 +3053,25 @@ Run \`bd ready\` to see current bd issues.
 			Promise.allSettled(asyncInitPromises),
 			startupTimeout,
 		]).then(() => {
-			// Build harness status with newlines for multiple rows
-			const lines: string[] = ["[pi-harness] Runtime: ready"];
+			harnessSetStatus?.("harness-runtime", "[pi-harness] Runtime: ready");
 
 			for (const msg of startupMessages) {
 				if (msg.includes("Qdrant") && msg.includes("ready")) {
-					lines.push("[pi-harness] Qdrant: connected");
+					harnessSetStatus?.("harness-qdrant", "[pi-harness] Qdrant: connected");
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					lines.push("[pi-harness] Telegram: verified");
+					harnessSetStatus?.("harness-telegram", "[pi-harness] Telegram: verified");
 				}
 				if (msg.includes("Honcho")) {
-					lines.push("[pi-harness] Honcho: registered");
+					harnessSetStatus?.("harness-honcho", "[pi-harness] Honcho: registered");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
-						if (match) {
-							lines.push(`[pi-harness] Skills: ${match[1]}`);
-						}
+					if (match) {
+						harnessSetStatus?.("harness-skills", `[pi-harness] Skills: ${match[1]}`);
+					}
 				}
 			}
-
-			// Set all harness info with newlines
-			ctx.ui.setStatus(HARNESS_STATUS_KEY, lines.join("\n"));
 		});
 	});
 
@@ -3076,7 +3080,9 @@ Run \`bd ready\` to see current bd issues.
 		const msg = event.message as { role?: string };
 		if (msg?.role === "user" && !harnessStatusShown) {
 			harnessStatusShown = true;
-			footerSetStatus?.(HARNESS_STATUS_KEY, "");
+			for (const key of HARNESS_STATUS_KEYS) {
+				harnessSetStatus?.(key, "");
+			}
 		}
 	});
 
