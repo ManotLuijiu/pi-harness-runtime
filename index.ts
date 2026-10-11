@@ -1527,7 +1527,7 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 
 	// Poll every 60 seconds for new commands (user approval doesn't need sub-second latency)
 	setInterval(startWatcher, 60_000);
-	console.error(`[JobPipe] Watching for Telegram approval commands via API (polling every 60s)`);
+	logToFile("[JobPipe]", "Watching for Telegram approval commands via API (polling every 60s)");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -3272,14 +3272,15 @@ Run \`bd ready\` to see current bd issues.
 		clearProviderOverloadResume();
 		const delayMs = getProviderOverloadResumeDelayMs();
 		const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
-		console.error(
-			`[pi-harness] Provider overloaded; scheduling resume in ${delayMinutes} min (${delayMs}ms) attempt=${providerOverloadResumeAttempts}`,
+		logToFile(
+			"[pi-harness]",
+			`Provider overloaded; scheduling resume in ${delayMinutes} min (${delayMs}ms) attempt=${providerOverloadResumeAttempts}`,
 		);
 		providerOverloadResumeTimer = setTimeout(() => {
 			providerOverloadResumeTimer = null;
-			console.error(`[pi-harness] Provider resume timer fired, sending "resume"`);
+			logToFile("[pi-harness]", 'Provider resume timer fired, sending "resume"');
 			if (hasPendingMessages()) {
-				console.error(`[pi-harness] Resume skipped: hasPendingMessages=true`);
+				logToFile("[pi-harness]", "Resume skipped: hasPendingMessages=true");
 				return;
 			}
 			void queueAutoResume(
