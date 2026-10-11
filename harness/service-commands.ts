@@ -89,22 +89,7 @@ async function handleTestJev(ctx: ExtensionContext, flags: Record<string, string
   ctx.ui.notify("[services] Testing Jev provider...", "info");
 
   try {
-    // Test with synthetic fixture
-    const testState = {
-      task_summary: {
-        completed: 2,
-        remaining: 3,
-        total: 5,
-        completion_percent: 40,
-      },
-      user_status: {
-        responded: false,
-        wait_time_minutes: 5,
-        last_activity: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-        session_duration_minutes: 10,
-      },
-    };
-
+    // Jev test in dry-run mode - just report status
     ctx.ui.notify("[services] Jev status: configured=true, initialized=true", "info");
     ctx.ui.notify("[services] Dry-run: would send task state with 2 completed, 3 remaining tasks", "info");
     ctx.ui.notify("[services] Jev test completed (dry-run mode)", "info");
@@ -134,7 +119,10 @@ async function handleTestHoncho(ctx: ExtensionContext, flags: Record<string, str
     ctx.ui.notify(`[services] Honcho feature enabled: ${honchoStatus.featureEnabled}`, "info");
 
     // Check if MCP adapter is available via globalThis
-    const piEvents = (globalThis as { pi?: { events?: { emit: (event: string, req: unknown) } } }).pi?.events;
+    // SAFETY: We're accessing pi.events which may not exist in all contexts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const globalAny = globalThis as any;
+    const piEvents = globalAny.pi?.events;
 
     if (!piEvents) {
       ctx.ui.notify("[services] Honcho test skipped: MCP adapter not available (pi.events)", "warning");
