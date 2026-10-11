@@ -1164,12 +1164,21 @@ const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 
 /** Startup messages collected during init — shown on session_start via ctx.ui.notify */
 const startupMessages: string[] = [];
+const STARTUP_LOG_FILE = "/tmp/pi-harness-startup.log";
 
-/** Log a harness startup message both to stderr (for logs) and to startupMessages (for UI) */
+/** Log a harness startup message to file (not stderr - stderr bypasses Pi's cursor tracking) */
 function logStartup(...parts: string[]): void {
 	const msg = parts.join(" ");
-	console.error(msg);
 	startupMessages.push(msg);
+	// Write to file instead of stderr to avoid overlapping the input field
+	// Pi's renderer handles scrolling for managed content
+	try {
+		import("fs").then((fs) => {
+			fs.appendFileSync(STARTUP_LOG_FILE, msg + "\n");
+		});
+	} catch {
+		// Ignore file write errors
+	}
 }
 
 interface HarnessSession {
@@ -3048,6 +3057,7 @@ Run \`bd ready\` to see current bd issues.
 		harnessTUI?.requestRender(true); // Force redraw like Todos
 	}
 
+	// Use real truncateToWidth from pi-tui for correct terminal width handling
 	function truncateToWidth(text: string, width: number): string {
 		if (text.length <= width) return text;
 		return text.substring(0, width - 1) + "…";
