@@ -380,29 +380,29 @@ export async function initHoncho(options?: {
   piEvents?: PiEvents;
 }): Promise<HonchoMemory | null> {
   if (_disposed) {
-    console.error("[honcho] Integration has been disposed, cannot reinitialize");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "dispose", phase: "failed", reason: "integration has been disposed, cannot reinitialize" });
     return null;
   }
 
   // Allow retry if previous init failed
   if (_initialized && _initSucceeded) {
-    console.debug("[honcho] Already initialized, returning existing instance");
+    logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "init", phase: "completed", reason: "already initialized, returning existing instance" });
     return _honchoMemory;
   }
 
   // Reset state if retrying
   if (_initialized && !_initSucceeded) {
-    console.info("[honcho] Retrying initialization...");
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "init", phase: "start", reason: "retrying initialization" });
   }
   _initialized = true;
   _initSucceeded = false;
 
-  console.info("[honcho] Initializing Honcho MCP integration...");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "init", phase: "start" });
 
   // Load API key
   const key = options?.apiKey ?? loadHonchoApiKey();
   if (!key) {
-    console.error("[honcho] No API key found. Run: echo \"YOUR_KEY\" > ~/.pi-harness-runtime/keys/honcho-api-key.txt");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "init", phase: "failed", reason: "No API key found", helpUrl: "https://app.honcho.dev" });
     honchoStatus.setConfigured(false);
     honchoStatus.recordFailure("init", "no_key", { error: "No API key" });
     return null;
@@ -421,9 +421,9 @@ export async function initHoncho(options?: {
   // Write MCP config for the adapter to pick up
   try {
     writeHonchoMcpConfig(key);
-    console.info("[honcho] MCP config written");
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_config", phase: "completed" });
   } catch (err) {
-    console.warn("[honcho] Failed to write MCP config:", err);
+    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_config", phase: "failed", reason: err instanceof Error ? err.message : String(err) });
     // Continue anyway - adapter may use its own config
   }
 
@@ -431,7 +431,7 @@ export async function initHoncho(options?: {
   const piEvents = options?.piEvents ?? (globalThis as { pi?: { events?: PiEvents } }).pi?.events;
 
   if (!piEvents) {
-    console.error("[honcho] pi.events not available - MCP adapter may not be installed");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "init", phase: "failed", reason: "pi.events not available" });
     honchoStatus.recordFailure("init", "adapter_missing", { error: "pi.events not available" });
     return null;
   }
@@ -453,8 +453,8 @@ export async function initHoncho(options?: {
 
   // Read result immediately after emit
   if (request.result === undefined) {
-    console.error("[honcho] MCP adapter not responding to registration");
-    console.error("[honcho] Install: pi install npm:pi-mcp-adapter");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_register", phase: "failed", reason: "MCP adapter not responding" });
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "failed", helpUrl: "pi install npm:pi-mcp-adapter" });
     honchoStatus.recordFailure("init", "no_listener", { error: "No adapter responded" });
     return null;
   }
@@ -464,17 +464,17 @@ export async function initHoncho(options?: {
     
     // Check for duplicate name - an existing server may already be registered
     if (errorMsg.includes("already") || errorMsg.includes("duplicate")) {
-      console.warn(`[honcho] Server already registered (duplicate name), continuing...`);
+      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_register", phase: "completed", reason: "server already registered (duplicate name)" });
       // Continue with memory initialization - the existing server should work
     } else {
-      console.error(`[honcho] Registration failed: ${errorMsg}`);
+      logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_register", phase: "failed", reason: errorMsg });
       honchoStatus.recordFailure("init", "registration_rejected", { error: errorMsg });
       return null;
     }
   } else {
     // Registration accepted - store handle for disposal
     _honchoRegistration = request.result.registration;
-    console.info("[honcho] MCP server registered");
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed" });
   }
 
   // Create memory instance
@@ -488,43 +488,43 @@ export async function initHoncho(options?: {
   const userName = options?.userName ?? "pi-user";
   const sessionId = options?.sessionId ?? `pi-session-${Date.now()}`;
 
-  console.info("[honcho] Establishing workspace/peer identity...");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "identity", phase: "start" });
 
   // Step 1: Create/get workspace
   const workspaceId = await ensureWorkspace(workspaceName);
   if (!workspaceId) {
-    console.error("[honcho] Failed to create workspace");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_workspace", phase: "failed" });
     honchoStatus.recordFailure("init", "workspace_failed", {});
     return _honchoMemory; // Return instance but mark as not ready
   }
-  console.info(`[honcho] Workspace: ${workspaceId}`);
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_workspace", phase: "completed", workspaceId });
 
   // Step 2: Create/get user peer
   const userPeerId = await ensureUserPeer(workspaceId, userName);
   if (!userPeerId) {
-    console.error("[honcho] Failed to create user peer");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_user_peer", phase: "failed" });
     honchoStatus.recordFailure("init", "user_peer_failed", {});
     return _honchoMemory;
   }
-  console.info(`[honcho] User peer: ${userPeerId}`);
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_user_peer", phase: "completed", userPeerId });
 
   // Step 3: Create/get assistant peer
   const assistantPeerId = await ensureAssistantPeer(workspaceId, assistantName);
   if (!assistantPeerId) {
-    console.error("[honcho] Failed to create assistant peer");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_assistant_peer", phase: "failed" });
     honchoStatus.recordFailure("init", "assistant_peer_failed", {});
     return _honchoMemory;
   }
-  console.info(`[honcho] Assistant peer: ${assistantPeerId}`);
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_assistant_peer", phase: "completed", assistantPeerId });
 
   // Step 4: Create/get session
   const honchoSessionId = await ensureSession(workspaceId, userPeerId, assistantPeerId, sessionId);
   if (!honchoSessionId) {
-    console.error("[honcho] Failed to create session");
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_session", phase: "failed" });
     honchoStatus.recordFailure("init", "session_failed", {});
     return _honchoMemory;
   }
-  console.info(`[honcho] Session: ${honchoSessionId}`);
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_session", phase: "completed", honchoSessionId });
 
   // Store identity
   _identity = {
@@ -540,7 +540,7 @@ export async function initHoncho(options?: {
   _honchoMemory.setWorkspace(workspaceId);
   _honchoMemory.setSession(honchoSessionId);
 
-  console.info("[honcho] Memory ready");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "memory_init", phase: "completed" });
   honchoStatus.recordSuccess("init", undefined, {
     workspaceId,
     userPeerId,
@@ -650,7 +650,7 @@ export async function shutdownHoncho(): Promise<void> {
   }
 
   _disposed = true;
-  console.info("[honcho] Shutting down...");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "shutdown", phase: "start" });
 
   // Dispose memory instance
   if (_honchoMemory) {
@@ -665,15 +665,15 @@ export async function shutdownHoncho(): Promise<void> {
   if (_honchoRegistration) {
     try {
       await _honchoRegistration.dispose();
-      console.info("[honcho] Registration disposed");
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "dispose_registration", phase: "completed" });
     } catch (err) {
-      console.warn("[honcho] Failed to dispose registration:", err);
+      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "dispose_registration", phase: "failed", reason: err instanceof Error ? err.message : String(err) });
     }
     _honchoRegistration = null;
   }
 
   _initialized = false;
-  console.info("[honcho] Shutdown complete");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "shutdown", phase: "completed" });
 }
 
 /**
@@ -704,7 +704,7 @@ export function registerHonchoLifecycle(
 ): void {
   // Initialize at session start
   pi.on("session_start", async () => {
-    console.info("[honcho] Session started, initializing...");
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "session_start", phase: "start" });
     await initHoncho();
   });
 
@@ -741,5 +741,5 @@ export function registerHonchoLifecycle(
     }
   });
 
-  console.info("[honcho] Lifecycle hooks registered");
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "lifecycle_hooks", phase: "completed" });
 }

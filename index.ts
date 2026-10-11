@@ -719,15 +719,15 @@ function initLangChain(pi: {
 		handler: async (_args: string, _ctx: unknown) => {
 			const allModels = listAllModels();
 			if (allModels.length === 0) {
-				console.error("[pi-harness] /langchain-config: no models found in ~/.pi/agent/models-store.json");
-				console.error("[pi-harness]   Configure models first via /model in pi");
+				logToFile("[pi-harness]", "/langchain-config: no models found in ~/.pi/agent/models-store.json");
+				logToFile("[pi-harness]", "  Configure models first via /model in pi");
 				return;
 			}
 
 			// Print available models
-			console.error("[pi-harness] Available models:");
+			logToFile("[pi-harness]", "Available models:");
 			for (const m of allModels) {
-				console.error(`  [${m.index}] ${m.provider}/${m.id}`);
+				logToFile("[pi-harness]", `  [${m.index}] ${m.provider}/${m.id}`);
 			}
 
 			const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -755,7 +755,7 @@ function initLangChain(pi: {
 			}
 
 			if (!plannerSpec || !coderSpec || !reviewerSpec) {
-				console.error("[pi-harness] /langchain-config: all three roles must be selected");
+				logToFile("[pi-harness]", "/langchain-config: all three roles must be selected");
 				return;
 			}
 
@@ -767,20 +767,20 @@ function initLangChain(pi: {
 			};
 			writeFileSync(roleConfigPath, JSON.stringify(config, null, 2), "utf8");
 
-			console.error("[pi-harness] LangChain role config saved:");
-			console.error(`[pi-harness]   planner:   ${plannerSpec}`);
-			console.error(`[pi-harness]   coder:     ${coderSpec}`);
-			console.error(`[pi-harness]   reviewer:  ${reviewerSpec}`);
+			logToFile("[pi-harness]", "LangChain role config saved:");
+			logToFile("[pi-harness]", `  planner:   ${plannerSpec}`);
+			logToFile("[pi-harness]", `  coder:     ${coderSpec}`);
+			logToFile("[pi-harness]", `  reviewer:  ${reviewerSpec}`);
 
 			// Also prompt for API keys if missing
 			if (!existsSync(`${keysDir}/planner-api-key.txt`)) {
-				console.error(`[pi-harness]   planner-api-key.txt missing. echo "{key}" > ${keysDir}/planner-api-key.txt`);
+				logToFile("[pi-harness]", `  planner-api-key.txt missing. echo "{key}" > ${keysDir}/planner-api-key.txt`);
 			}
 			if (!existsSync(`${keysDir}/reviewer-api-key.txt`)) {
-				console.error(`[pi-harness]   reviewer-api-key.txt missing. echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
+				logToFile("[pi-harness]", `  reviewer-api-key.txt missing. echo "{key}" > ${keysDir}/reviewer-api-key.txt`);
 			}
 			if (!existsSync(`${keysDir}/coder-api-key.txt`)) {
-				console.error(`[pi-harness]   coder-api-key.txt missing. echo "{key}" > ${keysDir}/coder-api-key.txt`);
+				logToFile("[pi-harness]", `  coder-api-key.txt missing. echo "{key}" > ${keysDir}/coder-api-key.txt`);
 			}
 		},
 	});
@@ -807,13 +807,13 @@ function initLangChain(pi: {
 	const coderKeyExists = existsSync(`${keysDir}/coder-api-key.txt`);
 
 	if (!activeConfig) {
-		console.error("[pi-harness] /langchain not configured — run /langchain-config");
+		logToFile("[pi-harness]", "/langchain not configured — run /langchain-config");
 	} else if (!plannerKeyExists || !reviewerKeyExists || !coderKeyExists) {
 		const missingKeys: string[] = [];
 		if (!plannerKeyExists) missingKeys.push("planner-api-key.txt");
 		if (!reviewerKeyExists) missingKeys.push("reviewer-api-key.txt");
 		if (!coderKeyExists) missingKeys.push("coder-api-key.txt");
-		console.error(`[pi-harness] /langchain missing API keys: ${missingKeys.join(", ")}`);
+		logToFile("[pi-harness]", `/langchain missing API keys: ${missingKeys.join(", ")}`);
 	} else {
 		logStartup(`[pi-harness] /langchain ready (${activeConfig.planner.id} + ${activeConfig.coder.id} + ${activeConfig.reviewer.id})`);
 	}
@@ -823,14 +823,14 @@ function initLangChain(pi: {
 		prompt: "Describe the feature or task for the LangChain loop to implement.",
 		handler: async (request: string) => {
 			if (!request.trim()) {
-				console.error("[pi-harness] /langchain requires a request.");
-				console.error("[pi-harness]   Example: /langchain implement user auth module");
+				logToFile("[pi-harness]", "/langchain requires a request.");
+				logToFile("[pi-harness]", "  Example: /langchain implement user auth module");
 				return;
 			}
 
 			const cfg = loadActiveConfig();
 			if (!cfg) {
-				console.error("[pi-harness] /langchain: not configured. Run /langchain-config first.");
+				logToFile("[pi-harness]", "/langchain: not configured. Run /langchain-config first.");
 				return;
 			}
 
@@ -857,7 +857,7 @@ function initLangChain(pi: {
 				stdio: "inherit",
 			});
 			proc.on("exit", (code: number | null) => {
-				if (code !== 0) console.error(`[pi-harness] /langchain exited with code ${code}`);
+				if (code !== 0) logToFile("[pi-harness]", `/langchain exited with code ${code}`);
 			});
 		},
 	});
@@ -1875,7 +1875,7 @@ Run \`bd ready\` to see current bd issues.
 			!content.includes("bd ready") &&
 			!content.includes("TODO UPDATE")
 		) {
-			console.log(TODO_BUILD_REMINDER.trim());
+			logToFile(TODO_BUILD_REMINDER.trim());
 		}
 	});
 
@@ -2447,7 +2447,7 @@ Run \`bd ready\` to see current bd issues.
 						mirrorStore,
 						currentSession.machine,
 					);
-					console.log(`[GLM countdown] Started - will auto-resume at ${resetAt}`);
+					logToFile("[GLM countdown]", `Started - will auto-resume at ${resetAt}`);
 				}
 
 				if (!suppressErrors) {
