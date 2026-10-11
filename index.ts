@@ -1156,7 +1156,8 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync } from "node:fs";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
 
 // --- Harness Runtime State --------------------------------------------
@@ -1170,12 +1171,10 @@ const STARTUP_LOG_FILE = "/tmp/pi-harness-startup.log";
 function logStartup(...parts: string[]): void {
 	const msg = parts.join(" ");
 	startupMessages.push(msg);
-	// Write to file instead of stderr to avoid overlapping the input field
+	// Write to file using synchronous appendFileSync to avoid overlapping input field
 	// Pi's renderer handles scrolling for managed content
 	try {
-		import("fs").then((fs) => {
-			fs.appendFileSync(STARTUP_LOG_FILE, msg + "\n");
-		});
+		appendFileSync(STARTUP_LOG_FILE, msg + "\n");
 	} catch {
 		// Ignore file write errors
 	}
@@ -3057,12 +3056,6 @@ Run \`bd ready\` to see current bd issues.
 		harnessTUI?.requestRender(true); // Force redraw like Todos
 	}
 
-	// Use real truncateToWidth from pi-tui for correct terminal width handling
-	function truncateToWidth(text: string, width: number): string {
-		if (text.length <= width) return text;
-		return text.substring(0, width - 1) + "…";
-	}
-
 	function getHarnessLines(width: number): string[] {
 		if (!startupVisible || harnessMessages.length === 0) return [];
 
@@ -3104,6 +3097,7 @@ Run \`bd ready\` to see current bd issues.
 		const mySession = sessionGeneration;
 		startupVisible = true;
 		harnessMessages.length = 0;
+		harnessWidgetRegistered = false; // Reset for new session
 
 		// --- Install harness widget (like Todos with placement: "aboveEditor") -------
 		// Use setWidget with placement: "aboveEditor" - fixed above input field
