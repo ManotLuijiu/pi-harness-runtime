@@ -140,9 +140,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 10;
 
 		if (!hasEnvKey && !hasFileKey) {
-			console.error(
-				"[auto-continue] No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt"
-			);
+			logToFile("[auto-continue]", "No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
 			return;
 		}
 
@@ -888,12 +886,8 @@ function initMoocodingSyncHint(): void {
 		if (benchEntries.length === 0) return;
 
 		const targetPath = join(homedir(), ".pi-harness-runtime", "skills");
-		console.error(
-			`[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
-		);
-		console.error(
-			`[pi-harness] Run /sync-skills --from ${benchPath} --to ${targetPath}`
-		);
+		logToFile("[pi-harness]", `${benchEntries.length} moocoding skill(s) found in frappe-bench`);
+		logToFile("[pi-harness]", `Run /sync-skills --from ${benchPath} --to ${targetPath}`);
 	} catch {
 		// Non-fatal — ignore errors
 	}
@@ -1582,7 +1576,7 @@ export default function (pi: ExtensionAPI) {
 			maxIdlePolls: Infinity,
 			onSessionChange: (session) => {
 				if (session) {
-					console.error(`[codex] Session started: ${session.threadName}`);
+					logToFile("[codex]", `Session started: ${session.threadName}`);
 					nc("CodexSessionStarted", {
 						requirement: session.threadName || "Codex session",
 						taskTitle: session.id,
@@ -1673,9 +1667,7 @@ ${planPreview}`,
 			// pi.on("session_end", () => watcher.stop()); // Removed - type error
 		}
 	} else {
-		console.error(
-			"[paperclip] Not configured. Set PAPERCLIP_API_KEY or write API key to ~/.pi-harness-runtime/keys/paperclip-api-key.txt",
-		);
+		logToFile("[paperclip]", "Not configured. Set PAPERCLIP_API_KEY or write API key to ~/.pi-harness-runtime/keys/paperclip-api-key.txt");
 	}
 
 	// --- loop-completions: Watch daemon completions → agent TUI todos --------
@@ -1935,13 +1927,13 @@ Run \`bd ready\` to see current bd issues.
 			)
 		) {
 			providerOverloadResumeAttempts += 1;
-			console.error(`[pi-harness] Scheduling provider overload resume #${providerOverloadResumeAttempts}`);
+			logToFile("[pi-harness]", `Scheduling provider overload resume #${providerOverloadResumeAttempts}`);
 			scheduleProviderOverloadResume(() => ctx.hasPendingMessages());
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
 			pendingOutputLimitResumeAfterSettled = false;
 			if (providerOverloadResumeAttempts > 0) {
-				console.error(`[pi-harness] Counter reset (stopReason=stop), was=${providerOverloadResumeAttempts}`);
+				logToFile("[pi-harness]", `Counter reset (stopReason=stop), was=${providerOverloadResumeAttempts}`);
 			}
 			providerOverloadResumeAttempts = 0;
 			clearProviderOverloadResume();
@@ -2055,8 +2047,7 @@ Run \`bd ready\` to see current bd issues.
 				resets_at: signal.resetsAt,
 			});
 		} catch (e) {
-			console.error(
-				"[pi-harness] tui-signal write failed:",
+			logToFile("[pi-harness] tui-signal write failed:",
 				e instanceof Error ? e.message : String(e),
 			);
 		}
@@ -2099,7 +2090,7 @@ Run \`bd ready\` to see current bd issues.
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		if (msg.includes("ENOSPC")) {
-			console.error(
+			logToFile(
 				"[pi-harness] cookie-sanitizer watcher: ENOSPC — " +
 					"inotify watcher limit reached.\n" +
 					"Fix (once, as root):\n" +
@@ -2108,7 +2099,7 @@ Run \`bd ready\` to see current bd issues.
 					"Drop folder sync still works — polling will resume automatically.",
 			);
 		} else {
-			console.error("[pi-harness] cookie-sanitizer watcher failed to start:", msg);
+			logToFile("[pi-harness] cookie-sanitizer watcher failed to start:", msg);
 		}
 	}
 
@@ -2287,8 +2278,9 @@ Run \`bd ready\` to see current bd issues.
 			};
 		} catch (error) {
 			if (!suppressErrors) {
-				console.error(
-					"[pi-harness] Browser-profile quota fetch skipped:",
+				logToFile(
+					"[pi-harness]",
+					"Browser-profile quota fetch skipped:",
 					error instanceof Error ? error.message : String(error),
 				);
 			}
@@ -2333,8 +2325,9 @@ Run \`bd ready\` to see current bd issues.
 			return true;
 		} catch (error) {
 			if (!suppressErrors) {
-				console.error(
-					"[pi-harness] Quota auto-fetch skipped:",
+				logToFile(
+					"[pi-harness]",
+					"Quota auto-fetch skipped:",
 					error instanceof Error ? error.message : String(error),
 				);
 			}
@@ -2381,8 +2374,9 @@ Run \`bd ready\` to see current bd issues.
 			return true;
 		} catch (error) {
 			if (!suppressErrors) {
-				console.error(
-					"[pi-harness] OpenAI quota auto-fetch skipped:",
+				logToFile(
+					"[pi-harness]",
+					"OpenAI quota auto-fetch skipped:",
 					error instanceof Error ? error.message : String(error),
 				);
 			}
@@ -2403,7 +2397,7 @@ Run \`bd ready\` to see current bd issues.
 			const data = await _glmQuotaScraper.fetchUsage();
 			if (!data) {
 				if (!suppressErrors) {
-					console.error("[pi-harness] GLM quota auto-fetch: no data returned");
+					logToFile("[pi-harness]", "GLM quota auto-fetch: no data returned");
 				}
 				return false;
 			}
@@ -2460,16 +2454,13 @@ Run \`bd ready\` to see current bd issues.
 					const resetTime = resetAt
 						? `resets at ${new Date(resetAt).toLocaleString()}`
 						: "resets soon";
-					console.error(`[pi-harness] GLM 5h quota exhausted! ${resetTime}`);
+					logToFile("[pi-harness]", `GLM 5h quota exhausted! ${resetTime}`);
 				}
 				return true;
 			}
 
 			if (!suppressErrors) {
-				console.error(
-					"[pi-harness] GLM quota auto-fetch skipped:",
-					errorMsg,
-				);
+				logToFile("[pi-harness]", "GLM quota auto-fetch skipped:", errorMsg);
 			}
 			return false;
 		}
@@ -3303,8 +3294,9 @@ Run \`bd ready\` to see current bd issues.
 				error: reason,
 			});
 		} catch (error) {
-			console.error(
-				`[pi-harness] Failed to queue ${reason} auto-resume:`,
+			logToFile(
+				"[pi-harness]",
+				`Failed to queue ${reason} auto-resume:`,
 				error instanceof Error ? error.message : String(error),
 			);
 		}
@@ -3317,9 +3309,7 @@ Run \`bd ready\` to see current bd issues.
 		if (consecutiveCompactFailures >= MAX_PROACTIVE_COMPACT_FAILURES) {
 			if (!proactiveCompactCircuitReported) {
 				proactiveCompactCircuitReported = true;
-				console.error(
-					`[pi-harness] Proactive compact disabled after ${consecutiveCompactFailures} consecutive failures`,
-				);
+				logToFile("[pi-harness]", `Proactive compact disabled after ${consecutiveCompactFailures} consecutive failures`);
 			}
 			return;
 		}
@@ -3354,7 +3344,7 @@ Run \`bd ready\` to see current bd issues.
 			onError: (error) => {
 				proactiveCompactInFlight = false;
 				consecutiveCompactFailures += 1;
-				console.error("[pi-harness] Proactive compact failed:", error.message);
+				logToFile("[pi-harness]", "Proactive compact failed:", error.message);
 			},
 		};
 		ctx.compact(compactOptions);
