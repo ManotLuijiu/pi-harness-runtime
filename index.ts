@@ -3046,7 +3046,7 @@ Run \`bd ready\` to see current bd issues.
 		harnessStatusShown = false;
 
 		// Set harness status rows using setStatus()
-		ctx.ui.setStatus("harness-runtime", `[Pi-harness] Runtime: initializing...`);
+		ctx.ui.setStatus("harness-runtime", "[Pi] Runtime: initializing...");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3057,26 +3057,26 @@ Run \`bd ready\` to see current bd issues.
 			startupTimeout,
 		]).then(() => {
 			// Update with actual status from startup messages
-			ctx.ui.setStatus("harness-runtime", `[Pi-harness] Runtime: initialized ✓`);
+			ctx.ui.setStatus("harness-runtime", "[Pi] Runtime: ready");
 
 			for (const msg of startupMessages) {
 				if (msg.includes("Qdrant")) {
 					if (msg.includes("ready")) {
-						ctx.ui.setStatus("harness-qdrant", `[Pi-harness] Qdrant: connected ✓`);
+						ctx.ui.setStatus("harness-qdrant", "[Pi] Qdrant: connected");
 					} else {
-						ctx.ui.setStatus("harness-qdrant", `[Pi-harness] Qdrant: configured`);
+						ctx.ui.setStatus("harness-qdrant", "[Pi] Qdrant: configured");
 					}
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					ctx.ui.setStatus("harness-telegram", `[Pi-harness] Telegram: verified ✓`);
+					ctx.ui.setStatus("harness-telegram", "[Pi] Telegram: verified");
 				}
 				if (msg.includes("Honcho")) {
-					ctx.ui.setStatus("harness-honcho", `[Pi-harness] Honcho: registered`);
+					ctx.ui.setStatus("harness-honcho", "[Pi] Honcho: registered");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
 						if (match) {
-							ctx.ui.setStatus("harness-skills", `[Pi-harness] Skills: ${match[1]} discovered`);
+							ctx.ui.setStatus("harness-skills", `[Pi] Skills: ${match[1]}`);
 						}
 				}
 			}
