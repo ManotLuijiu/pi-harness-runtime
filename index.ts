@@ -3069,13 +3069,17 @@ Run \`bd ready\` to see current bd issues.
 						}
 						if (msg.includes("Scanned") && msg.includes("skills")) {
 							const match = msg.match(/Scanned (\d+)/);
-							if (match) {
-								widget.setSkills(parseInt(match[1], 10));
-							}
-						}
-					}
-				});
-			} catch {
+										if (match) {
+											widget.setSkills(parseInt(match[1], 10));
+										}
+									}
+								}
+								// Hide widget after startup completes - only show during init
+								setTimeout(() => {
+									widget.dispose();
+								}, 3000); // Hide after 3 seconds
+							});
+						} catch {
 				// Fallback to notify if widget creation fails
 				const notify = ctx.ui.notify.bind(ctx.ui);
 				const startupTimeout = new Promise<void>((resolve) => {
