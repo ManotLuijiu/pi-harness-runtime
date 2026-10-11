@@ -185,8 +185,15 @@ async function checkHonchoHealth(): Promise<void> {
     });
 
     if (response.status === 401 || response.status === 403) {
-      console.warn("[honcho] WARNING: API key may be invalid or account suspended");
-      console.warn("[honcho] Please reactivate at: https://app.honcho.dev");
+      logServiceEvent({
+        ts: new Date().toISOString(),
+        level: "warn",
+        service: "honcho",
+        operation: "health_check",
+        phase: "failed",
+        reason: "API key invalid or account suspended",
+        helpUrl: "https://app.honcho.dev",
+      });
       return;
     }
 

@@ -543,19 +543,19 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		);
 		center.setCallbackHandler(async (data: string, _query: { id: string }) => {
 			const parsed = parseCallbackData(data);
-			console.log(`[TelegramCallback] action=${parsed.action} target=${parsed.targetId}`);
+			logToFile("[TelegramCallback]", `action=${parsed.action} target=${parsed.targetId}`);
 
 			switch (parsed.action) {
 				case CallbackActions.APPROVE:
 					// TODO: Resume auto-continue waiting state
-					console.log("[TelegramCallback] Approved - user clicked Continue");
+					logToFile("[TelegramCallback] Approved - user clicked Continue");
 					break;
 				case CallbackActions.REJECT:
 					// TODO: Dismiss notification, don't resume
-					console.log("[TelegramCallback] Rejected - user clicked Not yet");
+					logToFile("[TelegramCallback] Rejected - user clicked Not yet");
 					break;
 				default:
-					console.warn(`[TelegramCallback] Unknown action: ${parsed.action}`);
+					logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
 			}
 		});
 
@@ -1165,19 +1165,23 @@ const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 
 /** Startup messages collected during init — shown on session_start via ctx.ui.notify */
 const startupMessages: string[] = [];
-const STARTUP_LOG_FILE = "/tmp/pi-harness-startup.log";
+const HARNESS_LOG_FILE = "/tmp/pi-harness.log";
 
-/** Log a harness startup message to file (not stderr - stderr bypasses Pi's cursor tracking) */
-function logStartup(...parts: string[]): void {
+/** Log a harness message to file (not stderr - bypasses Pi's cursor tracking) */
+function logToFile(...parts: string[]): void {
 	const msg = parts.join(" ");
-	startupMessages.push(msg);
-	// Write to file using synchronous appendFileSync to avoid overlapping input field
-	// Pi's renderer handles scrolling for managed content
 	try {
-		appendFileSync(STARTUP_LOG_FILE, msg + "\n");
+		appendFileSync(HARNESS_LOG_FILE, msg + "\n");
 	} catch {
 		// Ignore file write errors
 	}
+}
+
+/** Log a harness startup message to file and track for UI */
+function logStartup(...parts: string[]): void {
+	const msg = parts.join(" ");
+	startupMessages.push(msg);
+	logToFile("[pi-harness]", ...parts);
 }
 
 interface HarnessSession {
@@ -1229,22 +1233,22 @@ async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
 			results = await nc.center.notify(event as never, ctx as never);
 		}
 
-		// Log delivery outcomes
+		// Log delivery outcomes to file
 		if (Array.isArray(results)) {
 			for (const result of results) {
 				if (result && typeof result === "object" && "success" in result) {
 					const r = result as { success: boolean; channel: string; error?: string };
 					if (r.success) {
-						console.log(`[TelegramNotification] ${event} sent to ${r.channel}`);
+						logToFile("[TelegramNotification]", `${event} sent to ${r.channel}`);
 					} else {
-						console.warn(`[TelegramNotification] ${event} failed: ${r.error ?? "unknown"}`);
+						logToFile("[TelegramNotification]", `${event} failed: ${r.error ?? "unknown"}`);
 					}
 				}
 			}
 		}
 	} catch (err) {
-		// Never crash runtime on notification failure
-		console.warn(`[TelegramNotification] ${event} threw: ${err instanceof Error ? err.message : String(err)}`);
+		// Never crash runtime on notification failure - log to file
+		logToFile("[TelegramNotification]", `${event} threw: ${err instanceof Error ? err.message : String(err)}`);
 	}
 }
 
