@@ -3016,22 +3016,46 @@ Run \`bd ready\` to see current bd issues.
 		},
 	});
 
-	// --- Footer status (persistent badge) --------------------------------
-	const HARNESS_STATUS_KEYS = [
-		"harness-runtime",
-		"harness-qdrant",
-		"harness-telegram",
-		"harness-honcho",
-		"harness-skills",
-	];
-	let harnessStatusShown = false;
-	let harnessSetStatus: ((key: string, value: string) => void) | null = null;
+	// --- Harness footer state (separate from quota) -----------------------
+	// Store harness messages separately - NOT in status keys used by quota
+	interface HarnessMessage {
+		id: string;
+		label: string;
+		text: string;
+		status: "wait" | "ok" | "err";
+	}
+	const harnessMessages: HarnessMessage[] = [];
 
+	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait") {
+		const id = `${label}-${Date.now()}`;
+		harnessMessages.push({ id, label, text, status });
+	}
+
+	function clearHarnessMessages() {
+		harnessMessages.length = 0;
+	}
+
+	function getHarnessLines(width: number): string[] {
+		const lines: string[] = [];
+		if (harnessMessages.length === 0) return lines;
+
+		lines.push("[Pi-harness]");
+		for (const msg of harnessMessages) {
+			const marker = msg.status === "ok" ? "[OK]" : msg.status === "err" ? "[ERR]" : "[WAIT]";
+			let text = `  ${marker} ${msg.label}: ${msg.text}`;
+			if (text.length > width) {
+				text = text.substring(0, width - 1) + "…";
+			}
+			lines.push(text);
+		}
+		return lines;
+	}
+
+	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", async (_event, ctx) => {
 
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
-		harnessSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		refreshFooterStatus(
 			footerSetStatus,
 			tracker,
@@ -3040,10 +3064,17 @@ Run \`bd ready\` to see current bd issues.
 			() => lastActiveProvider,
 		);
 
-		// --- Harness startup status (appears BELOW footer) -----------
-		// Each setStatus key = one row. Use multiple keys for multiple rows.
-		harnessStatusShown = false;
-		harnessSetStatus("harness-runtime", "[pi-harness] Runtime: initializing...");
+		// --- Install harness footer renderer (multi-row BELOW quota) ---------
+		// Use setFooter to create custom footer with harness messages on separate rows
+		ctx.ui.setFooter((_tui, _theme, _footerData) => ({
+			render(width: number): string[] {
+				return getHarnessLines(width);
+			},
+			invalidate: () => {},
+		}));
+
+		// Add initial harness message
+		addHarnessMessage("Runtime", "initializing", "wait");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3053,36 +3084,39 @@ Run \`bd ready\` to see current bd issues.
 			Promise.allSettled(asyncInitPromises),
 			startupTimeout,
 		]).then(() => {
-			harnessSetStatus?.("harness-runtime", "[pi-harness] Runtime: ready");
+			// Update Runtime status
+			const runtimeMsg = harnessMessages.find((m) => m.label === "Runtime");
+			if (runtimeMsg) {
+				runtimeMsg.status = "ok";
+				runtimeMsg.text = "initialized";
+			}
 
+			// Add service messages from startup
 			for (const msg of startupMessages) {
 				if (msg.includes("Qdrant") && msg.includes("ready")) {
-					harnessSetStatus?.("harness-qdrant", "[pi-harness] Qdrant: connected");
+					addHarnessMessage("Qdrant", "connected", "ok");
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					harnessSetStatus?.("harness-telegram", "[pi-harness] Telegram: verified");
+					addHarnessMessage("Telegram", "verified", "ok");
 				}
 				if (msg.includes("Honcho")) {
-					harnessSetStatus?.("harness-honcho", "[pi-harness] Honcho: registered");
+					addHarnessMessage("Honcho", "registered", "ok");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
 					if (match) {
-						harnessSetStatus?.("harness-skills", `[pi-harness] Skills: ${match[1]}`);
+						addHarnessMessage("Skills", `${match[1]} discovered`, "ok");
 					}
 				}
 			}
 		});
 	});
 
-	// Clear harness status on first user input (like [Prompts]/[Extensions] disappear)
+	// Clear harness messages on first user input (like [Prompts]/[Extensions] disappear)
 	pi.on("message_start", (event) => {
 		const msg = event.message as { role?: string };
-		if (msg?.role === "user" && !harnessStatusShown) {
-			harnessStatusShown = true;
-			for (const key of HARNESS_STATUS_KEYS) {
-				harnessSetStatus?.(key, "");
-			}
+		if (msg?.role === "user") {
+			clearHarnessMessages();
 		}
 	});
 
