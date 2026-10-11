@@ -3035,7 +3035,7 @@ Run \`bd ready\` to see current bd issues.
 		// --- Harness startup status (appears BELOW footer) -----------
 		// Use ONE status key with newlines to create multiple rows
 		harnessStatusShown = false;
-		ctx.ui.setStatus(HARNESS_STATUS_KEY, "[Pi] Runtime: initializing...");
+		ctx.ui.setStatus(HARNESS_STATUS_KEY, "[pi-harness] Runtime: initializing...");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3046,22 +3046,22 @@ Run \`bd ready\` to see current bd issues.
 			startupTimeout,
 		]).then(() => {
 			// Build harness status with newlines for multiple rows
-			const lines: string[] = ["[Pi] Runtime: ready"];
+			const lines: string[] = ["[pi-harness] Runtime: ready"];
 
 			for (const msg of startupMessages) {
 				if (msg.includes("Qdrant") && msg.includes("ready")) {
-					lines.push("[Pi] Qdrant: connected");
+					lines.push("[pi-harness] Qdrant: connected");
 				}
 				if (msg.includes("Telegram") && msg.includes("ready")) {
-					lines.push("[Pi] Telegram: verified");
+					lines.push("[pi-harness] Telegram: verified");
 				}
 				if (msg.includes("Honcho")) {
-					lines.push("[Pi] Honcho: registered");
+					lines.push("[pi-harness] Honcho: registered");
 				}
 				if (msg.includes("Scanned") && msg.includes("skills")) {
 					const match = msg.match(/Scanned (\d+)/);
 						if (match) {
-							lines.push(`[Pi] Skills: ${match[1]}`);
+							lines.push(`[pi-harness] Skills: ${match[1]}`);
 						}
 				}
 			}
