@@ -3067,8 +3067,8 @@ Run \`bd ready\` to see current bd issues.
 						if (msg.includes("Honcho")) {
 							widget.setHoncho("registered");
 						}
-						if (msg.includes("Skills:") || msg.includes("discovered")) {
-							const match = msg.match(/(\d+)/);
+						if (msg.includes("Scanned") && msg.includes("skills")) {
+							const match = msg.match(/Scanned (\d+)/);
 							if (match) {
 								widget.setSkills(parseInt(match[1], 10));
 							}
