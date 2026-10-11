@@ -200,13 +200,26 @@ async function checkHonchoHealth(): Promise<void> {
     const data = await response.json().catch(() => ({})) as HonchoHealthResponse;
 
     if (data.suspended || data.status === "suspended") {
-      console.warn("[honcho] WARNING: Honcho account is suspended due to inactivity");
-      console.warn("[honcho] Reactivate at: https://app.honcho.dev");
-      console.warn("[honcho] Memory features will be unavailable until reactivated");
+      logServiceEvent({
+        ts: new Date().toISOString(),
+        level: "warn",
+        service: "honcho",
+        operation: "health_check",
+        phase: "failed",
+        reason: "account suspended due to inactivity",
+        helpUrl: "https://app.honcho.dev",
+      });
     }
   } catch (err) {
-    // Network errors are not critical, just log
-    console.debug("[honcho] Health check failed:", err instanceof Error ? err.message : String(err));
+    // Network errors are not critical - log to file
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "debug",
+      service: "honcho",
+      operation: "health_check",
+      phase: "failed",
+      reason: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -226,7 +239,14 @@ export function startHonchoHealthCheck(): void {
     void checkHonchoHealth();
   }, HONCHO_HEALTH_CHECK_INTERVAL);
 
-  console.log("[honcho] Health check started (every 5 minutes)");
+  logServiceEvent({
+    ts: new Date().toISOString(),
+    level: "info",
+    service: "honcho",
+    operation: "health_check_start",
+    phase: "completed",
+    intervalMs: HONCHO_HEALTH_CHECK_INTERVAL,
+  });
 }
 
 /**
@@ -236,7 +256,13 @@ export function stopHonchoHealthCheck(): void {
   if (_honchoHealthInterval) {
     clearInterval(_honchoHealthInterval);
     _honchoHealthInterval = null;
-    console.log("[honcho] Health check stopped");
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "health_check_stop",
+      phase: "completed",
+    });
   }
 }
 

@@ -1309,7 +1309,7 @@ const HARNESS_VERSION = (() => {
 })();
 
 function printBanner(): void {
-	console.error(`[Harness] v${HARNESS_VERSION}`);
+	logToFile(`[Harness] v${HARNESS_VERSION}`);
 }
 
 function ensureHarnessDir() {
@@ -1451,23 +1451,23 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 	};
 
 	const processCommand = (cmd: { command: string; jobId: string; userId: number }) => {
-		console.error(`[JobPipe] Received: ${cmd.command} ${cmd.jobId} from user ${cmd.userId}`);
+		logToFile("[JobPipe]", `Received: ${cmd.command} ${cmd.jobId} from user ${cmd.userId}`);
 
 		switch (cmd.command) {
 			case "resume": {
 				// Inject "resume" into agent conversation (same as auto-resume)
 				pi.sendUserMessage("resume", { deliverAs: "steer" });
-				console.error(`[JobPipe] Injected resume via steer`);
+				logToFile("[JobPipe]", "Injected resume via steer");
 				break;
 			}
 			case "cancel": {
 				// Cancel the current job
 				pi.sendUserMessage("/harness-cancel", { deliverAs: "steer" });
-				console.error(`[JobPipe] Injected /harness-cancel via steer`);
+				logToFile("[JobPipe]", "Injected /harness-cancel via steer");
 				break;
 			}
 			default:
-				console.error(`[JobPipe] Unknown command: ${cmd.command}`);
+				logToFile("[JobPipe]", `Unknown command: ${cmd.command}`);
 		}
 	};
 
