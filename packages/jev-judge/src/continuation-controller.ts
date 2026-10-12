@@ -21,6 +21,8 @@ function debugLog(component: string, ...args: unknown[]): void {
  * Continuation configuration
  */
 export interface ContinuationConfig {
+	/** Dispatch function to send messages to the agent (required) */
+	dispatch: (content: string) => Promise<void>;
 	/** Minimum wait before Jev fallback (ms) */
 	jevFallbackMinWaitMs?: number;
 	/** Threshold for routine continuation */
@@ -135,11 +137,11 @@ export class TodoContinuationController {
 
 		// 3. Get todo state (throws on branch read failure)
 		let inProgress: TodoItem[];
-		let pending: TodoItem[];
+		let ready: TodoItem[];
 		let blocked: TodoItem[];
 		try {
 			inProgress = await this.todoProvider.getInProgress();
-			pending = await this.todoProvider.getPending();
+			ready = await this.todoProvider.getReady();
 			blocked = await this.todoProvider.getBlocked();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -147,13 +149,7 @@ export class TodoContinuationController {
 			return { action: "stop", reason: `todo read failed: ${msg}` };
 		}
 
-		// 4. Check for blocked items FIRST (before selecting any task)
-		if (blocked.length > 0) {
-			debugLog("TodoContinuation", "Tasks blocked:", blocked.length);
-			return { action: "blocked", question: `${blocked.length} task(s) blocked` };
-		}
-
-		// 5. Continue in-progress work if any
+		// 4. Continue in-progress work first
 		if (inProgress.length > 0) {
 			const item = inProgress[0];
 			
@@ -171,9 +167,9 @@ export class TodoContinuationController {
 			return { action: "continue", nextItemId: item.id };
 		}
 
-		// 6. Continue pending work if any
-		if (pending.length > 0) {
-			const item = pending[0];
+		// 5. Continue ready pending work (not blocked)
+		if (ready.length > 0) {
+			const item = ready[0];
 			
 			// Reset counter if switching to a different task
 			if (this.state.lastItemContinued !== item.id) {
@@ -189,73 +185,14 @@ export class TodoContinuationController {
 			return { action: "continue", nextItemId: item.id };
 		}
 
+		// 6. Only report blocked when nothing can proceed
+		if (blocked.length > 0) {
+			debugLog("TodoContinuation", "Tasks blocked:", blocked.length);
+			return { action: "blocked", question: `${blocked.length} task(s) blocked` };
+		}
+
 		// 7. No work remaining
 		return { action: "stop", reason: "No pending tasks" };
-	}
-
-	/**
-	 * Evaluate continuation decision and execute it
-	 */
-	private async evaluateContinuation(): Promise<void> {
-		// 1. Check user pause
-		if (this.state.userPaused) {
-			debugLog("TodoContinuation", "User paused, stopping");
-			return;
-		}
-
-		// 2. Get current todo snapshot
-		const availability = await this.todoProvider.availability();
-		if (!availability.available) {
-			// No todo provider - don't auto-continue
-			debugLog("TodoContinuation", "Provider unavailable:", availability.error);
-			return;
-		}
-
-		try {
-			// Get snapshot for state tracking
-			await this.todoProvider.getSnapshot();
-
-			// 3. Get in-progress and pending items
-			const inProgressItems = await this.todoProvider.getByStatus("in_progress");
-			const pendingItems = await this.todoProvider.getPending();
-			const completedItems = await this.todoProvider.getCompleted();
-
-			// 4. If there's work in progress, continue it
-			if (inProgressItems.length > 0) {
-				const item = inProgressItems[0];
-				debugLog("TodoContinuation", "In-progress item:", item.subject);
-				await this.continueItem(item);
-				return;
-			}
-
-			// 5. Determine action based on state
-			const totalItems = completedItems.length + pendingItems.length + inProgressItems.length;
-			const hasWork = pendingItems.length > 0 || inProgressItems.length > 0;
-
-			if (!hasWork && totalItems === 0) {
-				debugLog("TodoContinuation", "All items complete");
-				return;
-			}
-
-			if (pendingItems.length > 0) {
-				// Check if items are blocked
-				const blockedItems = await this.todoProvider.getBlocked();
-				if (blockedItems.length === pendingItems.length) {
-					// All pending items are blocked - don't auto-continue
-					const blocker = blockedItems[0];
-					debugLog("TodoContinuation", "Items blocked:", blocker?.subject);
-					return;
-				}
-
-				// Continue the first non-blocked pending item
-				const readyItems = await this.todoProvider.getReady();
-				if (readyItems.length > 0) {
-					await this.continueItem(readyItems[0]);
-				}
-			}
-		} catch (err) {
-			debugLog("TodoContinuation", "Evaluation error:", err);
-		}
 	}
 
 	/**
@@ -284,9 +221,9 @@ export class TodoContinuationController {
 		this.state.lastSteerMessage = message;
 		debugLog("TodoContinuation", "Sending continuation:", item.subject);
 
-		// Send continuation message via Pi API
+		// Send continuation message via dispatch callback
 		try {
-			await this.ctx.sendUserMessage?.(message, { deliverAs: "steer" });
+			await this.config.dispatch(message);
 		} catch (err) {
 			debugLog("TodoContinuation", "Failed to send continuation:", String(err));
 			this.state.continuationQueued = false;
@@ -322,9 +259,9 @@ export class TodoContinuationController {
 		this.state.todoRevision = snapshot.revision;
 		debugLog("TodoContinuation", "Steering to continue item", itemId);
 
-		// Send continuation message via Pi API
+		// Send continuation message via dispatch callback
 		try {
-			await this.ctx.sendUserMessage?.(message, { deliverAs: "steer" });
+			await this.config.dispatch(message);
 		} catch (err) {
 			debugLog("TodoContinuation", "Failed to send steer:", String(err));
 			this.state.continuationQueued = false;

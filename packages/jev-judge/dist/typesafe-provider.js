@@ -79,9 +79,9 @@ export class TypeSafeJudge {
         for (const [questionId, question] of Object.entries(questions)) {
             const questionData = question;
             const answer = data.answers?.[questionId];
+            // Reject missing required answers
             if (!answer) {
-                // Skip missing answers
-                continue;
+                throw new Error(`TypeSafe API: missing answer for required question "${questionId}"`);
             }
             const decision = this.buildDecision(questionId, questionData, answer);
             decisions[questionId] = decision;

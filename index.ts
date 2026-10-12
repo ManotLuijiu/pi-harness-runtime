@@ -439,6 +439,34 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		};
 
+		// --- todo continuation: Retain one controller per session ----------
+		let todoContinuationController: import("./packages/jev-judge/dist/continuation-controller.js").TodoContinuationController | null = null;
+
+		// Create controller on session_start with proper dispatch callback
+		pi.on("session_start", async (_event, ctx) => {
+			try {
+				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
+				// SAFETY: ctx is ExtensionContext with sessionManager, isIdle, hasPendingMessages
+				// dispatch uses pi.sendUserMessage for actual message delivery
+				todoContinuationController = new TodoContinuationController(
+					ctx as unknown as import("./packages/jev-judge/dist/todo-provider.js").TodoContext,
+					{
+						dispatch: async (content: string) => {
+							await pi.sendUserMessage(content, { deliverAs: "steer" });
+						},
+					}
+				);
+				logToFile("[auto-continue]", "Todo continuation controller initialized");
+			} catch (err) {
+				logToFile("[auto-continue]", "Failed to create todo continuation controller:", String(err));
+			}
+		});
+
+		// Clean up controller on session shutdown
+		pi.on("session_shutdown", () => {
+			todoContinuationController = null;
+		});
+
 		// --- agent_settled: Check todos and continue work ---------------
 		pi.on("agent_settled", async (_event, ctx) => {
 			// Don't continue if user is waiting for response
@@ -450,17 +478,18 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// Don't continue if session is not idle or has pending messages
 			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) return;
 
-			// Import and use the continuation controller with proper context
+			// Use the retained controller (not a new one per event)
 			try {
-				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
-				// SAFETY: ctx is ExtensionContext which has all TodoContext properties (sessionManager, isIdle, hasPendingMessages, sendUserMessage)
-				// TodoContinuationController only needs the subset defined in TodoContext
-				const controller = new TodoContinuationController(ctx as unknown as import("./packages/jev-judge/dist/todo-provider.js").TodoContext);
-				const result = await controller.decide();
+				if (!todoContinuationController) {
+					logToFile("[auto-continue]", "No todo continuation controller available");
+					return;
+				}
+
+				const result = await todoContinuationController.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
 					updateAutoContinueStatus("CONTINUING");
-					await controller.steerToContinue(result.nextItemId);
+					await todoContinuationController.steerToContinue(result.nextItemId);
 					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
 				} else if (result.action === "blocked") {
 					updateAutoContinueStatus("ERROR", "blocked");
