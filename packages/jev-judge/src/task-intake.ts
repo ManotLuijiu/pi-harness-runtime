@@ -127,11 +127,16 @@ export class TaskIntakeController {
 	}
 
 	/**
-	 * Hash a message for deduplication
+	 * Hash a message for deduplication using full content
 	 */
 	private hashMessage(msg: string): string {
-		// Simple hash - just use first 100 chars
-		return msg.slice(0, 100).trim();
+		// Use a simple hash of the full content to avoid collisions
+		// Simple DJB2-style hash for strings of any length
+		let hash = 5381;
+		for (let i = 0; i < msg.length; i++) {
+			hash = ((hash << 5) + hash) ^ msg.charCodeAt(i);
+		}
+		return String(hash >>> 0);  // Convert to positive integer string
 	}
 
 	/**

@@ -579,12 +579,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Detect explicit stop/pause requests (must be a directive TO the harness, not mentions)
 		function detectExplicitPause(text: string): boolean {
-			const lower = text.toLowerCase().trim();
+			const lower = text.toLowerCase().trim().replace(/[.!?,;]+$/, '');  // Strip trailing punctuation
 			// Must be an explicit directive to STOP/PAUSE the harness
 			const explicitPatterns = [
-				/^(stop|pause|wait|hold|wait a moment)\s*$/i,
+				/^(stop|pause|wait|hold|wait a moment)$/i,
+				/^(please\s+)?(stop|pause)$/i,
 				/^(please\s+)?(stop|pause)\s+(the\s+)?agent/i,
-				/^(please\s+)?(stop|pause)\s+(and|for|until|with)\b/i,
+				/^(please\s+)?(stop|pause)\s+(and|for|until|with)/i,
 				/^(please\s+)?stop\s+working/i,
 				/^(please\s+)?pause\s+(the\s+)?work/i,
 				/^(please\s+)?do\s+not\s+(continue|proceed|go|start)/i,
@@ -600,16 +601,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			return false;
 		}
 
-		// Detect resume requests
+		// Detect resume requests - ONLY explicit resume directives, not acknowledgments
+		// Acknowledgments like "okay" or "yes" should NOT clear an explicit pause
 		function detectResume(text: string): boolean {
-			const lower = text.toLowerCase().trim();
-			// Must be an explicit directive to RESUME
+			const lower = text.toLowerCase().trim().replace(/[.!?,;]+$/, '');  // Strip trailing punctuation
+			// Only explicit resume/continue directives clear the pause
 			const resumePatterns = [
-				/^(resume|continue|go\s+ahead|carry\s+on|proceed)\s*$/i,
+				/^(resume|continue|go\s+ahead|carry\s+on|proceed)$/i,
+				/^(please\s+)?(resume|continue)$/i,
 				/^(please\s+)?(resume|continue)\s+(the\s+)?(work|agent|task)/i,
 				/^(please\s+)?go\s+ahead/i,
 				/^(please\s+)?carry\s+on/i,
-				/^(yes|yeah|yep|ok|okay|yes\s+please)\s*$/i,
 			];
 			for (const pattern of resumePatterns) {
 				if (pattern.test(lower)) {

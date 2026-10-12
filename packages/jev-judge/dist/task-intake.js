@@ -82,11 +82,16 @@ export class TaskIntakeController {
         return this._evaluate(userMessage, existingTodos);
     }
     /**
-     * Hash a message for deduplication
+     * Hash a message for deduplication using full content
      */
     hashMessage(msg) {
-        // Simple hash - just use first 100 chars
-        return msg.slice(0, 100).trim();
+        // Use a simple hash of the full content to avoid collisions
+        // Simple DJB2-style hash for strings of any length
+        let hash = 5381;
+        for (let i = 0; i < msg.length; i++) {
+            hash = ((hash << 5) + hash) ^ msg.charCodeAt(i);
+        }
+        return String(hash >>> 0); // Convert to positive integer string
     }
     /**
      * Record a capture request to prevent re-triggering

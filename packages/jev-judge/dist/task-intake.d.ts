@@ -68,7 +68,7 @@ export declare class TaskIntakeController {
         }>;
     }): Promise<TaskIntakeResult>;
     /**
-     * Hash a message for deduplication
+     * Hash a message for deduplication using full content
      */
     private hashMessage;
     /**
