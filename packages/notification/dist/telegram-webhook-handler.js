@@ -4,6 +4,7 @@
  * Handles incoming webhook updates from Telegram (callback queries, messages).
  * This enables 2-way communication with inline keyboard buttons.
  */
+import { logError, logInfo, logWarn } from "./file-logger.js";
 /**
  * Predefined action prefixes for callback data
  */
@@ -59,7 +60,7 @@ export function createYesNoHandler(options) {
     return async (data, query) => {
         const parsed = parseCallbackData(data);
         const { action, targetId } = parsed;
-        console.log(`[TelegramWebhook] Callback: action=${action}, target=${targetId}, from=${query.from.username || query.from.first_name}`);
+        logInfo("[TelegramWebhook]", `Callback: action=${action}, target=${targetId}, from=${query.from.username || query.from.first_name}`);
         switch (action) {
             case CallbackActions.APPROVE:
                 if (options.onApprove) {
@@ -67,7 +68,7 @@ export function createYesNoHandler(options) {
                 }
                 else if (options.jobManager) {
                     await options.jobManager.resume(targetId);
-                    console.log(`[TelegramWebhook] Job resumed: ${targetId}`);
+                    logInfo("[TelegramWebhook]", `Job resumed: ${targetId}`);
                 }
                 break;
             case CallbackActions.REJECT:
@@ -76,7 +77,7 @@ export function createYesNoHandler(options) {
                 }
                 else if (options.jobManager) {
                     await options.jobManager.cancel(targetId);
-                    console.log(`[TelegramWebhook] Job cancelled: ${targetId}`);
+                    logInfo("[TelegramWebhook]", `Job cancelled: ${targetId}`);
                 }
                 break;
             case CallbackActions.VIEW:
@@ -89,7 +90,7 @@ export function createYesNoHandler(options) {
                     await options.onCustom(action, targetId, query);
                 }
                 else {
-                    console.warn(`[TelegramWebhook] Unknown action: ${action}`);
+                    logWarn("[TelegramWebhook]", `Unknown action: ${action}`);
                 }
         }
     };
@@ -103,7 +104,7 @@ export function createTelegramWebhookHandler(adapter, secretToken) {
         if (secretToken) {
             const receivedToken = req.headers["x-telegram-bot-api-secret-token"];
             if (receivedToken !== secretToken) {
-                console.error("[TelegramWebhook] Unauthorized webhook request");
+                logError("[TelegramWebhook]", "Unauthorized webhook request");
                 res.sendStatus(403);
                 return;
             }
@@ -113,7 +114,7 @@ export function createTelegramWebhookHandler(adapter, secretToken) {
             res.sendStatus(200);
         }
         catch (error) {
-            console.error("[TelegramWebhook] Error processing update:", error);
+            logError("[TelegramWebhook]", `Error processing update: ${error}`);
             res.sendStatus(500);
         }
     };

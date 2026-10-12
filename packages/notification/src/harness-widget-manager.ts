@@ -7,6 +7,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { HarnessStatus } from "./harness-types.js";
+import { logError } from "./file-logger.js";
 import {
 	renderWidgetBody,
 	createInitialStatus,
@@ -99,7 +100,7 @@ export class HarnessWidget {
 			this.ui.setWidget(HARNESS_WIDGET_KEY, content);
 		} catch (err) {
 			// Fallback: log to stderr if widget fails
-			console.error("[pi-harness] Widget render failed:", err);
+			logError("[pi-harness]", `Widget render failed: ${err}`);
 		}
 	}
 

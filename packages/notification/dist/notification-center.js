@@ -8,6 +8,7 @@
  * - Redact sensitive data before sending
  * - Notification failure does not crash runtime
  */
+import { logError, logWarn } from "./file-logger.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
 import { buildCallbackData, CallbackActions } from "./telegram-webhook-handler.js";
 import { LineAdapter } from "./adapters/line-adapter.js";
@@ -92,7 +93,7 @@ export class NotificationCenter {
             }
         }
         catch (error) {
-            console.error(`[NotificationCenter] Failed to register adapter: ${error}`);
+            logError("[NotificationCenter]", `Failed to register adapter: ${error}`);
         }
         return false;
     }
@@ -105,11 +106,11 @@ export class NotificationCenter {
             try {
                 const ok = await adapter.initialize();
                 if (!ok) {
-                    console.warn(`[NotificationCenter] Adapter ${id} initialization failed`);
+                    logWarn("[NotificationCenter]", `Adapter ${id} initialization failed`);
                 }
             }
             catch (error) {
-                console.warn(`[NotificationCenter] Adapter ${id} initialization error: ${error}`);
+                logWarn("[NotificationCenter]", `Adapter ${id} initialization error: ${error}`);
             }
         }
     }

@@ -7,6 +7,7 @@
 
 import type { TelegramAdapter } from "./adapters/telegram-adapter.js";
 import type { TelegramCallbackHandler, TelegramCallbackQuery } from "./types.js";
+import { logError, logInfo, logWarn } from "./file-logger.js";
 
 /**
  * Predefined action prefixes for callback data
@@ -94,8 +95,9 @@ export function createYesNoHandler(options: {
 		const parsed = parseCallbackData(data);
 		const { action, targetId } = parsed;
 
-		console.log(
-			`[TelegramWebhook] Callback: action=${action}, target=${targetId}, from=${query.from.username || query.from.first_name}`,
+		logInfo(
+			"[TelegramWebhook]",
+			`Callback: action=${action}, target=${targetId}, from=${query.from.username || query.from.first_name}`,
 		);
 
 		switch (action) {
@@ -104,7 +106,7 @@ export function createYesNoHandler(options: {
 					await options.onApprove(targetId, query);
 				} else if (options.jobManager) {
 					await options.jobManager.resume(targetId);
-					console.log(`[TelegramWebhook] Job resumed: ${targetId}`);
+					logInfo("[TelegramWebhook]", `Job resumed: ${targetId}`);
 				}
 				break;
 
@@ -113,7 +115,7 @@ export function createYesNoHandler(options: {
 					await options.onReject(targetId, query);
 				} else if (options.jobManager) {
 					await options.jobManager.cancel(targetId);
-					console.log(`[TelegramWebhook] Job cancelled: ${targetId}`);
+					logInfo("[TelegramWebhook]", `Job cancelled: ${targetId}`);
 				}
 				break;
 
@@ -127,7 +129,7 @@ export function createYesNoHandler(options: {
 				if (options.onCustom) {
 					await options.onCustom(action, targetId, query);
 				} else {
-					console.warn(`[TelegramWebhook] Unknown action: ${action}`);
+					logWarn("[TelegramWebhook]", `Unknown action: ${action}`);
 				}
 		}
 	};
@@ -145,7 +147,7 @@ export function createTelegramWebhookHandler(
 		if (secretToken) {
 			const receivedToken = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
 			if (receivedToken !== secretToken) {
-				console.error("[TelegramWebhook] Unauthorized webhook request");
+				logError("[TelegramWebhook]", "Unauthorized webhook request");
 				res.sendStatus(403);
 				return;
 			}
@@ -155,7 +157,7 @@ export function createTelegramWebhookHandler(
 			await adapter.handleWebhookUpdate(req.body);
 			res.sendStatus(200);
 		} catch (error) {
-			console.error("[TelegramWebhook] Error processing update:", error);
+			logError("[TelegramWebhook]", `Error processing update: ${error}`);
 			res.sendStatus(500);
 		}
 	};

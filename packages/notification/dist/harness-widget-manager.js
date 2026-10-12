@@ -4,6 +4,7 @@
  * Manages the Pi-harness startup widget with proper styling
  * and overflow protection.
  */
+import { logError } from "./file-logger.js";
 import { renderWidgetBody, createInitialStatus, } from "./harness-widget.js";
 // Widget key constant
 const HARNESS_WIDGET_KEY = "pi-harness-startup";
@@ -76,7 +77,7 @@ export class HarnessWidget {
         }
         catch (err) {
             // Fallback: log to stderr if widget fails
-            console.error("[pi-harness] Widget render failed:", err);
+            logError("[pi-harness]", `Widget render failed: ${err}`);
         }
     }
     /**
