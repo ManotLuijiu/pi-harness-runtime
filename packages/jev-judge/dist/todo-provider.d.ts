@@ -97,7 +97,10 @@ export declare class MockTodoProvider implements TodoProvider {
     clear(): void;
 }
 /**
- * Create a todo provider based on available tools
+ * Create a todo provider that reads from rpiv-todo state via session branch
  */
 export declare function createTodoProvider(pi?: ExtensionAPI): TodoProvider;
+/**
+ * Provider that reports Pi todo extension is not available
+ */
 //# sourceMappingURL=todo-provider.d.ts.map

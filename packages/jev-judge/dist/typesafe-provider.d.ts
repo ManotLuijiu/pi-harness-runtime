@@ -13,6 +13,7 @@ import type { JevQuestions, JevEvaluationResult } from "./types.js";
  */
 export interface TypeSafeConfig {
     apiKey: string;
+    model?: string;
     baseUrl?: string;
     timeoutMs?: number;
 }

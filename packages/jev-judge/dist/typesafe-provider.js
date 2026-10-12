@@ -11,6 +11,7 @@
  * Default configuration
  */
 const DEFAULT_CONFIG = {
+    model: "jev-latest",
     baseUrl: "https://api.typesafe.ai",
     timeoutMs: 30000,
 };
@@ -35,25 +36,24 @@ export class TypeSafeJudge {
         const startTime = Date.now();
         // Convert state to string if object
         const stateStr = typeof state === "string" ? state : JSON.stringify(state);
-        // Build TypeSafe question format
-        const questionsArray = Object.entries(questions).map(([id, q]) => {
+        // Build TypeSafe question format as a map (not array)
+        const questionsMap = {};
+        for (const [id, q] of Object.entries(questions)) {
             const questionObj = q;
-            const question = {
-                id,
+            questionsMap[id] = {
                 type: questionObj.type,
                 instructions: questionObj.instructions,
             };
             if (questionObj.type === "choice") {
-                question.options = questionObj.options;
+                questionsMap[id].options = questionObj.options;
                 // For choice questions, criteria defines ordered preference levels
-                question.criteria = questionObj.options;
+                questionsMap[id].criteria = questionObj.options;
             }
             else if (questionObj.type === "score") {
-                question.min = questionObj.min ?? 0;
-                question.max = questionObj.max ?? 100;
+                questionsMap[id].min = questionObj.min ?? 0;
+                questionsMap[id].max = questionObj.max ?? 100;
             }
-            return question;
-        });
+        }
         // Call TypeSafe API directly
         const response = await fetch(`${this.config.baseUrl}/v1/systemone`, {
             method: "POST",
@@ -62,7 +62,8 @@ export class TypeSafeJudge {
                 Authorization: `Bearer ${this.config.apiKey}`,
             },
             body: JSON.stringify({
-                questions: questionsArray,
+                model: this.config.model,
+                questions: questionsMap,
                 state: stateStr,
             }),
             signal: AbortSignal.timeout(this.config.timeoutMs),
@@ -142,11 +143,12 @@ export class TypeSafeJudge {
         let probability;
         switch (answer.type) {
             case "noul":
+                // FIX: Use answer.noul (not probability) per TypeSafe API spec
                 response = {
                     type: "noul",
-                    noul: answer.probability ?? 0.5,
+                    noul: answer.noul ?? 0.5,
                 };
-                probability = answer.probability ?? 0.5;
+                probability = answer.noul ?? 0.5;
                 break;
             case "choice":
                 response = {
