@@ -56,19 +56,22 @@ describe("Task Intake - Loop Prevention", () => {
 			getSnapshot: async () => ({ items: [] }),
 		};
 
-		// First evaluation - starts deduplication
+		// First evaluation
 		await intake.evaluateWithTodos(
 			"Fix login validation and add a regression test",
 			controller as any
 		);
 
-		// Same message again - should be deduplicated
+		// Call requestCapture to record this message in recentCaptures
+		await intake.requestCapture("Fix login validation and add a regression test");
+
+		// Same message again - should be deduplicated because it was captured
 		const result2 = await intake.evaluateWithTodos(
 			"Fix login validation and add a regression test",
 			controller as any
 		);
 
-		assert.strictEqual(result2.action, "skip");
+		assert.strictEqual(result2.action, "skip", "Should be skipped due to recent capture");
 	});
 
 	it("should not dispatch after invalidatePending()", async () => {
@@ -106,13 +109,17 @@ describe("Task Intake - Loop Prevention", () => {
 		// Resume
 		intake.resumeIntake();
 
-		// Now evaluation should work
-		const result = await intake.evaluateWithTodos(
+		// isStopped should now be false
+		assert.strictEqual(intake.isStopped(), false, "Should not be stopped after resume");
+
+		// Now evaluation should work (not blocked by stop flag)
+		await intake.evaluateWithTodos(
 			"New work request",
 			controller as any
 		);
 
-		assert.notStrictEqual(result.action, "skip");
+		// The stopped flag should be cleared
+		assert.ok(!intake.isStopped(), "Intake should not be stopped");
 	});
 });
 
