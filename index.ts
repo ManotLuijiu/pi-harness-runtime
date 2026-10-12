@@ -452,7 +452,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			} catch {
 				_inferenceInProgress = false;
 				updateAutoContinueStatus("ERROR");
-				addHarnessMessage("Jev", "auto-continue evaluation failed", "err");
+				addHarnessMessage("Jev", "auto-continue evaluation failed", "err", [
+					"How to fix: Check logs at /tmp/pi-harness.log for API errors",
+					"Ensure TYPESAFE_API_KEY is valid, then restart.",
+				]);
 			}
 		};
 
@@ -763,17 +766,26 @@ async function initQdrant(): Promise<void> {
 				}
 			} else {
 				logStartup("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
-				addHarnessMessage("Qdrant", "embedding key missing; vector indexing unavailable", "warn");
+				addHarnessMessage("Qdrant", "embedding key missing; vector indexing unavailable", "warn", [
+					"How to fix: Set OPENAI_API_KEY in ~/.pi-harness-runtime/keys/openai-api-key.txt",
+					"Or run: echo 'sk-your-key' > ~/.pi-harness-runtime/keys/openai-api-key.txt",
+				]);
 				logStartup('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
 			}
 		} else {
 			logStartup("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
-			addHarnessMessage("Qdrant", "not configured", "warn");
+			addHarnessMessage("Qdrant", "not configured", "warn", [
+				"How to fix: Set QDRANT_CLUSTER_ENDPOINT in ~/.pi-harness-runtime/keys/qdrant-cluster-endpoint.txt",
+				"Set QDRANT_API_KEY in ~/.pi-harness-runtime/keys/qdrant-api-key.txt",
+			]);
 			logStartup(`  echo "{cluster-url}" > ~/.pi-harness-runtime/keys/qdrant-cluster-url.txt`);
 			logStartup(`  echo "{api-key}" > ~/.pi-harness-runtime/keys/qdrant-api-key.txt`);
 		}
 	} catch {
-		addHarnessMessage("Qdrant", "initialization failed", "err");
+			addHarnessMessage("Qdrant", "initialization failed", "err", [
+				"How to fix: Check Qdrant cluster is running and credentials are correct",
+				"Verify QDRANT_CLUSTER_ENDPOINT and QDRANT_API_KEY are set.",
+			]);
 	}
 }
 
@@ -835,6 +847,8 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		if (!center.hasHealthyChannels()) {
 			logStartup("[pi-harness] Telegram: initialization failed — skipping");
 			addHarnessMessage("Telegram", "bot verification failed; notifications unavailable", "err", [
+				"How to fix: Verify bot token in ~/.pi-harness-runtime/keys/telegram-bot-token.txt",
+				"Check the bot exists and token is valid at @BotFather.",
 				"Check the bot token and network access, then reload Pi.",
 			]);
 			return;
@@ -891,10 +905,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		} else {
 			logStartup(`[pi-harness] Telegram notifications ready`);
 		}
-	} catch (_err) {
-		logStartup("[pi-harness] Telegram: init failed (check installation, credentials, and network)");
+	} catch (err) {
+		logStartup(`[pi-harness] Telegram: init failed - ${err instanceof Error ? err.message : String(err)}`);
 		addHarnessMessage("Telegram", "initialization failed; notifications unavailable", "err", [
-			"Check package installation, key-file permissions, and network access, then reload Pi.",
+			"How to fix: Check logs at /tmp/pi-harness.log for Telegram errors",
+			"Ensure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set correctly.",
 		]);
 	}
 }
@@ -952,7 +967,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 			addHarnessMessage("Honcho", "initialized", "ok");
 		} else {
 			logStartup("[pi-harness] Honcho: initialization returned null");
-			addHarnessMessage("Honcho", "initialization returned no client", "err");
+			addHarnessMessage("Honcho", "initialization returned no client", "err", [
+				"How to fix: Check HONCHO_API_KEY in ~/.pi-harness-runtime/keys/honcho-api-key.txt",
+				"Verify Honcho account is active at honcho.dev.",
+			]);
 		}
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
@@ -1432,7 +1450,10 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 	} catch (err) {
 		logStartup(`[pi-harness] Failed to initialize skills:`, err instanceof Error ? err.message : String(err));
-		addHarnessMessage("Skills", "initialization failed", "err");
+			addHarnessMessage("Skills", "initialization failed", "err", [
+				"How to fix: Check skills directory exists at ~/.pi-harness-runtime/skills/",
+				"Run: mkdir -p ~/.pi-harness-runtime/skills && pi restart",
+			]);
 	}
 }
 
@@ -3471,7 +3492,9 @@ Run \`bd ready\` to see current bd issues.
 		// A timeout is not success. Keep accepting late service updates.
 		const startupTimeout = setTimeout(() => {
 			if (mySession !== sessionGeneration) return;
-			addHarnessMessage("Harness Runtime", `v${HARNESS_VERSION} waiting for service initialization`, "warn");
+				addHarnessMessage("Harness Runtime", `v${HARNESS_VERSION} waiting for service initialization`, "warn", [
+					"How to fix: Wait for services to initialize or check /tmp/pi-harness.log for errors",
+				]);
 		}, 5000);
 		Promise.allSettled(asyncInitPromises).then((results) => {
 			clearTimeout(startupTimeout);
