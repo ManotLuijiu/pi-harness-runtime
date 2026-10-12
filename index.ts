@@ -1344,6 +1344,16 @@ const HARNESS_VERSION = (() => {
 	return "?.?.?";
 })();
 
+// Harness logo - three-row Unicode block wordmark
+const HARNESS_LOGO = [
+	"▄ ▄  ▄  ▄▄  ▄  ▄ ▄▄ ▄▄▄ ▄▄▄",
+	"█▀█ █■█ █■▄ █▀■█ █■ ▀■▄ ▀■▄",
+	"▀ ▀ ▀ ▀ ▀ ▀ ▀  ▀ ▀▀ ▀▀▀ ▀▀▀",
+] as const;
+
+// Logo colors: bright cyan, cyan, dark gray (bright black)
+const HARNESS_LOGO_COLORS = [96, 36, 90] as const;
+
 function printBanner(): void {
 	logToFile(`[Harness] v${HARNESS_VERSION}`);
 }
@@ -3098,8 +3108,26 @@ Run \`bd ready\` to see current bd issues.
 		if (!startupVisible || harnessMessages.length === 0) return [];
 
 		const lines: string[] = [];
-		const heading = truncateToWidth("[pi-harness]", width);
-		lines.push(heading);
+
+		// Calculate required width for logo + version
+		const versionText = `v${HARNESS_VERSION}`;
+		const logoRow2WithVersion = `${HARNESS_LOGO[1]}  ${versionText}`;
+		const requiredWidth = Math.max(
+			HARNESS_LOGO[0].length, // Top row
+			logoRow2WithVersion.length, // Middle row + version
+			HARNESS_LOGO[2].length // Bottom row
+		);
+
+		// Render logo for wide terminals, fallback for small
+		if (width >= requiredWidth) {
+			// Wide terminal: render colored logo
+			lines.push(`\x1b[0;${HARNESS_LOGO_COLORS[0]}m${HARNESS_LOGO[0]}\x1b[0m`);
+			lines.push(`\x1b[0;${HARNESS_LOGO_COLORS[1]}m${HARNESS_LOGO[1]}\x1b[0m  \x1b[2m${versionText}\x1b[0m`);
+			lines.push(`\x1b[0;${HARNESS_LOGO_COLORS[2]}m${HARNESS_LOGO[2]}\x1b[0m`);
+		} else {
+			// Small terminal: use simple heading
+			lines.push(truncateToWidth("[pi-harness]", width));
+		}
 
 		for (let i = 0; i < harnessMessages.length; i++) {
 			const msg = harnessMessages[i];
