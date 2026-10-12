@@ -105,13 +105,15 @@ export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
 export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto-continue.js";
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
-export type { TodoItem, WrapUpResult } from "./wrap-up-judge.js";
+export type { WrapUpResult } from "./wrap-up-judge.js";
 export { EnvironmentJudge } from "./environment-judge.js";
 export type { EnvironmentContext, EnvironmentDecision, SafetyCheck, EnvironmentConfig } from "./environment-judge.js";
 export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
 export type { TypeSafeConfig } from "./typesafe-provider.js";
 export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
-export { createTodoProvider, PiUnavailableTodoProvider } from "./todo-provider.js";
-export type { TodoProvider, TodoProviderAvailability } from "./todo-provider.js";
+export { createTodoProvider } from "./todo-provider.js";
+export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
+export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
+export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";
 //# sourceMappingURL=index.d.ts.map

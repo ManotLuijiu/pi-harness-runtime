@@ -349,5 +349,7 @@ export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
 // Export TodoContinuation
 export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
 // Export TodoProvider
-export { createTodoProvider, PiUnavailableTodoProvider } from "./todo-provider.js";
+export { createTodoProvider } from "./todo-provider.js";
+// Export Task Intake
+export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 //# sourceMappingURL=index.js.map
