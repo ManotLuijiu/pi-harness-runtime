@@ -665,9 +665,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const result = await todoContinuationController.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
+					_steerSentThisTurn = true;
 					updateAutoContinueStatus("CONTINUING");
 					await todoContinuationController.steerToContinue(result.nextItemId);
-					// Queue remains set while agent processes, cleared on next settled if no dispatch
+					// Queue remains set while agent processes, cleared on agent_end
 				} else {
 					// Not continuing - clear queue to allow future decisions
 					todoContinuationController.clearQueue();
@@ -2476,6 +2477,9 @@ Run \`bd ready\` to see current bd issues.
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
+
+	// Track if we sent a steer message - cleared when agent completes
+	let _steerSentThisTurn = false;
 	let providerOverloadResumeAttempts = 0;
 	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -3539,6 +3543,13 @@ Run \`bd ready\` to see current bd issues.
 
 	pi.on("agent_end", () => {
 		setTimeout(() => {
+			// Clear steer queue when agent completes processing our steer message
+			if (_steerSentThisTurn) {
+				_steerSentThisTurn = false;
+				todoContinuationController?.clearQueue();
+				logToFile("[auto-continue]", "Agent turn complete, queue cleared");
+			}
+
 			if (!pendingOutputLimitResumeAfterSettled) {
 				return;
 			}
