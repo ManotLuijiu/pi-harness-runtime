@@ -52,7 +52,7 @@ export class TaskIntakeController {
 	// Track recent capture request hashes to prevent self-triggering
 	private recentCaptures = new Set<string>();
 	private readonly CAPTURE_COOLDOWN_MS = 30000;  // Don't re-trigger for same content within 30s
-	// Track pending evaluation to invalidate on stop
+	// Track stopped state to invalidate pending evaluations on stop
 	private _pendingEvaluationHash: string | null = null;
 	private _stopped = false;
 
@@ -92,6 +92,17 @@ export class TaskIntakeController {
 		userMessage: string,
 		controller: { getSnapshot: () => Promise<{ items: Array<{ id: number; subject: string; status: string }> }> }
 	): Promise<TaskIntakeResult> {
+		// Check if stopped - invalidatePending() was called
+		if (this._stopped) {
+			return {
+				actionable: false,
+				probability: 0,
+				isDuplicate: false,
+				modifiesExisting: false,
+				action: "skip",
+			};
+		}
+
 		// Check for harness-internal messages (prevent self-triggering)
 		if (userMessage.includes("[harness:task-capture]")) {
 			return {
@@ -163,10 +174,10 @@ export class TaskIntakeController {
 	}
 
 	/**
-	 * Check if pending evaluation is still valid for this message
+	 * Check if stopped
 	 */
-	private _isPendingValid(hash: string): boolean {
-		return !this._stopped && this._pendingEvaluationHash === hash;
+isStopped(): boolean {
+		return this._stopped;
 	}
 
 	/**

@@ -21,7 +21,7 @@ export class TaskIntakeController {
     // Track recent capture request hashes to prevent self-triggering
     recentCaptures = new Set();
     CAPTURE_COOLDOWN_MS = 30000; // Don't re-trigger for same content within 30s
-    // Track pending evaluation to invalidate on stop
+    // Track stopped state to invalidate pending evaluations on stop
     _pendingEvaluationHash = null;
     _stopped = false;
     constructor(config) {
@@ -50,6 +50,16 @@ export class TaskIntakeController {
      * Evaluate with actual todo items from continuation controller
      */
     async evaluateWithTodos(userMessage, controller) {
+        // Check if stopped - invalidatePending() was called
+        if (this._stopped) {
+            return {
+                actionable: false,
+                probability: 0,
+                isDuplicate: false,
+                modifiesExisting: false,
+                action: "skip",
+            };
+        }
         // Check for harness-internal messages (prevent self-triggering)
         if (userMessage.includes("[harness:task-capture]")) {
             return {
@@ -115,10 +125,10 @@ export class TaskIntakeController {
         this._stopped = true;
     }
     /**
-     * Check if pending evaluation is still valid for this message
+     * Check if stopped
      */
-    _isPendingValid(hash) {
-        return !this._stopped && this._pendingEvaluationHash === hash;
+    isStopped() {
+        return this._stopped;
     }
     /**
      * Internal evaluation logic
