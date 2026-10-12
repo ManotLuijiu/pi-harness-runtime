@@ -439,6 +439,37 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		};
 
+		// --- agent_settled: Check todos and continue work ---------------
+		pi.on("agent_settled", async () => {
+			// Don't continue if user is waiting for response
+			if (waitingForUserSince) return;
+
+			// Don't continue if inference is already in progress
+			if (_inferenceInProgress) return;
+
+			// Check if session is idle and has pending messages
+			const piExt = pi as ExtensionAPI & { isIdle?: () => boolean; hasPendingMessages?: () => boolean };
+			if (!piExt.isIdle?.() || piExt.hasPendingMessages?.()) return;
+
+			// Import and use the continuation controller
+			try {
+				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
+				const controller = new TodoContinuationController(pi);
+				const result = await controller.decide();
+
+				if (result.action === "continue" && result.nextItemId) {
+					updateAutoContinueStatus("CONTINUING");
+					await controller.steerToContinue(result.nextItemId);
+					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
+				} else if (result.action === "blocked") {
+					updateAutoContinueStatus("ERROR", "blocked");
+					logToFile("[auto-continue]", "Tasks blocked:", result.question);
+				}
+			} catch (err) {
+				logToFile("[auto-continue]", "agent_settled handler error:", String(err));
+			}
+		});
+
 		// Start periodic check
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
 		addHarnessMessage("Jev", "auto-continue configured (verifying API...)", "ok");

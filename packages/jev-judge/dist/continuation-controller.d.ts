@@ -54,6 +54,11 @@ export declare class TodoContinuationController {
      */
     register(): void;
     /**
+     * Public method to evaluate and execute continuation
+     * Called by external handlers (e.g., agent_settled)
+     */
+    decide(): Promise<ContinuationResult>;
+    /**
      * Evaluate continuation decision and execute it
      */
     private evaluateContinuation;

@@ -141,6 +141,37 @@ export class TodoContinuationController {
 	}
 
 	/**
+	 * Public method to evaluate and execute continuation
+	 * Called by external handlers (e.g., agent_settled)
+	 */
+	async decide(): Promise<ContinuationResult> {
+		const availability = await this.todoProvider.availability();
+		if (!availability.available) {
+			debugLog("TodoContinuation", "Provider unavailable:", availability.error);
+			return { action: "stop", reason: availability.error };
+		}
+
+		const inProgress = await this.todoProvider.getInProgress();
+		const pending = await this.todoProvider.getPending();
+
+		if (inProgress.length > 0) {
+			return { action: "continue", nextItemId: inProgress[0].id };
+		}
+
+		if (pending.length > 0) {
+			return { action: "continue", nextItemId: pending[0].id };
+		}
+
+		// No work remaining - but check for blocked items
+		const blocked = await this.todoProvider.getBlocked();
+		if (blocked.length > 0) {
+			return { action: "blocked", question: `${blocked.length} task(s) blocked` };
+		}
+
+		return { action: "stop", reason: "No pending tasks" };
+	}
+
+	/**
 	 * Evaluate continuation decision and execute it
 	 */
 	private async evaluateContinuation(): Promise<void> {
