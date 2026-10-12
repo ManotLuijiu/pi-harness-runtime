@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { PolicyManifest, PolicySource } from "./types.js";
+import { logError, logInfo, logWarn } from "./file-logger.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -191,7 +192,7 @@ export class PolicyLoader {
             harnessOwned: true,
           });
         } catch (err) {
-          console.error(`Failed to load additional rules from ${rulesPath}: ${err}`);
+          logError("[agent-policy]", `Failed to load additional rules from ${rulesPath}: ${err}`);
         }
       }
     }
@@ -233,7 +234,7 @@ export class PolicyLoader {
               harnessOwned: false,
             });
           } catch (err) {
-            console.error(`Failed to load project rule ${filePath}: ${err}`);
+            logError("[agent-policy]", `Failed to load project rule ${filePath}: ${err}`);
           }
         }
       }
@@ -387,9 +388,9 @@ export function createPolicyLoader(): PolicyLoader {
   // Log which file we're using (for debugging)
   const usingFile = harnessRulesPath.toString().includes("AGENTS") ? "AGENTS.md" : "RULES.md";
   if (existsSync(harnessRulesPath)) {
-    console.log(`[agent-policy] Using harness rules: ${usingFile}`);
+    logInfo("[agent-policy]", `Using harness rules: ${usingFile}`);
   } else {
-    console.warn(`[agent-policy] WARNING: Neither AGENTS.md nor RULES.md found in package root`);
+    logWarn("[agent-policy]", `WARNING: Neither AGENTS.md nor RULES.md found in package root`);
   }
 
   return new PolicyLoader({
