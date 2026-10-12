@@ -90,6 +90,12 @@ export class TodoContinuationController {
         }
     }
     /**
+     * Get current todo snapshot (exposed for task intake)
+     */
+    async getSnapshot() {
+        return this.todoProvider.getSnapshot();
+    }
+    /**
      * Temporary pause for user input processing
      * Does not require explicit resume
      */
