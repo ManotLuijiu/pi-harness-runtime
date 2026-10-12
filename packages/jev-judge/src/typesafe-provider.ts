@@ -23,15 +23,18 @@ import type {
  * TypeSafe API request format
  */
 interface TypeSafeRequest {
-  questions: TypeSafeQuestion[];
-  state: string;
+  /** The model that handles the request. Required. */
+  model: string;
+  /** The content to evaluate. */
+  state: string | object | unknown[];
+  /** A map of typed questions. Keys are question IDs. */
+  questions: Record<string, TypeSafeQuestion>;
 }
 
 /**
- * TypeSafe question format
+ * TypeSafe question format (per API spec, id not needed in question object - it's the map key)
  */
 interface TypeSafeQuestion {
-  id: string;
   type: "noul" | "choice" | "score";
   instructions: string;
   options?: string[];           // For choice type
@@ -54,10 +57,14 @@ interface TypeSafeResponse {
  */
 interface TypeSafeAnswer {
   type: "noul" | "choice" | "score";
-  probability?: number;         // For noul type (0-1)
-  choice?: string;              // For choice type
-  score?: number;               // For score type
-  confidence?: number;           // 0-1 for all types
+  /** For noul type: probability of yes (0-1). */
+  noul?: number;
+  /** For choice type: the selected option. */
+  choice?: string;
+  /** For score type: the probability-weighted score. */
+  score?: number;
+  /** For choice/score: confidence 0-1. */
+  confidence?: number;
 }
 
 /**
@@ -65,14 +72,16 @@ interface TypeSafeAnswer {
  */
 export interface TypeSafeConfig {
   apiKey: string;
+  model?: string;              // Defaults to jev-latest
   baseUrl?: string;            // Defaults to https://api.typesafe.ai
-  timeoutMs?: number;           // Defaults to 30000
+  timeoutMs?: number;          // Defaults to 30000
 }
 
 /**
  * Default configuration
  */
 const DEFAULT_CONFIG = {
+  model: "jev-latest",
   baseUrl: "https://api.typesafe.ai",
   timeoutMs: 30000,
 };
@@ -105,26 +114,24 @@ export class TypeSafeJudge {
     // Convert state to string if object
     const stateStr = typeof state === "string" ? state : JSON.stringify(state);
 
-    // Build TypeSafe question format
-    const questionsArray = Object.entries(questions).map(([id, q]) => {
+    // Build TypeSafe question format as a map (not array)
+    const questionsMap: Record<string, TypeSafeQuestion> = {};
+    for (const [id, q] of Object.entries(questions)) {
       const questionObj = q as JevQuestion;
-      const question: TypeSafeQuestion = {
-        id,
+      questionsMap[id] = {
         type: questionObj.type,
         instructions: questionObj.instructions,
       };
 
       if (questionObj.type === "choice") {
-        question.options = questionObj.options;
+        questionsMap[id].options = questionObj.options;
         // For choice questions, criteria defines ordered preference levels
-        question.criteria = questionObj.options;
+        questionsMap[id].criteria = questionObj.options;
       } else if (questionObj.type === "score") {
-        question.min = questionObj.min ?? 0;
-        question.max = questionObj.max ?? 100;
+        questionsMap[id].min = questionObj.min ?? 0;
+        questionsMap[id].max = questionObj.max ?? 100;
       }
-
-      return question;
-    });
+    }
 
     // Call TypeSafe API directly
     const response = await fetch(`${this.config.baseUrl}/v1/systemone`, {
@@ -134,7 +141,8 @@ export class TypeSafeJudge {
         Authorization: `Bearer ${this.config.apiKey}`,
       },
       body: JSON.stringify({
-        questions: questionsArray,
+        model: this.config.model,
+        questions: questionsMap,
         state: stateStr,
       } satisfies TypeSafeRequest),
       signal: AbortSignal.timeout(this.config.timeoutMs),
@@ -250,11 +258,12 @@ export class TypeSafeJudge {
 
     switch (answer.type) {
       case "noul":
+        // FIX: Use answer.noul (not probability) per TypeSafe API spec
         response = {
           type: "noul",
-          noul: answer.probability ?? 0.5,
+          noul: answer.noul ?? 0.5,
         };
-        probability = answer.probability ?? 0.5;
+        probability = answer.noul ?? 0.5;
         break;
 
       case "choice":

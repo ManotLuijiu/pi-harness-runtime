@@ -176,13 +176,143 @@ export class MockTodoProvider implements TodoProvider {
 }
 
 /**
- * Create a todo provider based on available tools
+ * Extended ExtensionAPI type with sessionManager (not in base type but available at runtime)
+ */
+interface PiExtensionAPI extends ExtensionAPI {
+	sessionManager: {
+		getSessionId(): string;
+		getBranch(): Iterable<unknown>;
+	};
+}
+
+/**
+ * Create a todo provider that reads from rpiv-todo state via session branch
  */
 export function createTodoProvider(pi?: ExtensionAPI): TodoProvider {
-	// Check if Pi exposes a todo API
-	// For now, Pi does not expose a todo extension API
-	// Return a provider that reports unavailability
+	if (pi && "sessionManager" in pi) {
+		return new PiTodoProvider(pi as PiExtensionAPI);
+	}
 	return new PiUnavailableTodoProvider();
+}
+
+/**
+ * Provider that reads rpiv-todo state from session branch
+ * Replicates rpiv-todo's replayFromBranch logic to access todo state
+ */
+class PiTodoProvider implements TodoProvider {
+	private pi: PiExtensionAPI;
+	private _revision = 0;
+
+	constructor(pi: PiExtensionAPI) {
+		this.pi = pi;
+	}
+
+	async availability(): Promise<TodoAvailability> {
+		if (!this.pi.sessionManager) {
+			return {
+				available: false,
+				error: "Session manager not available",
+				provider: "pi-todo",
+			};
+		}
+		return { available: true, provider: "pi-todo" };
+	}
+
+	/**
+	 * Check if a value is a TaskDetails shape (defensive validation)
+	 */
+	private isTaskDetails(value: unknown): value is { tasks: TodoItem[]; nextId: number } {
+		if (!value || typeof value !== "object") return false;
+		const v = value as Record<string, unknown>;
+		return Array.isArray(v.tasks) && typeof v.nextId === "number";
+	}
+
+	/**
+	 * Get todo state from session branch (replicates rpiv-todo's replayFromBranch)
+	 */
+	private getTodoState(): { tasks: TodoItem[]; nextId: number } {
+		let fromEntries: { tasks: TodoItem[]; nextId: number } | undefined;
+		let fromToolResults: { tasks: TodoItem[]; nextId: number } | undefined;
+
+		try {
+			for (const entry of this.pi.sessionManager.getBranch()) {
+				const e = entry as {
+					type?: string;
+					customType?: string;
+					data?: unknown;
+					message?: { role?: string; toolName?: string; details?: unknown };
+				};
+
+				// Priority 1: rpiv-todo-state custom entries
+				if (e.type === "custom") {
+					if (e.customType === "rpiv-todo-state" && this.isTaskDetails(e.data)) {
+						fromEntries = { tasks: (e.data as { tasks: TodoItem[] }).tasks.map(t => ({ ...t })), nextId: (e.data as { nextId: number }).nextId };
+					}
+					continue;
+				}
+
+				// Priority 2: toolResult entries with toolName === "todo"
+				if (e.type !== "message") continue;
+				const msg = e.message;
+				if (msg?.role !== "toolResult" || msg.toolName !== "todo") continue;
+				if (!this.isTaskDetails(msg.details)) continue;
+				fromToolResults = { tasks: (msg.details as { tasks: TodoItem[] }).tasks.map(t => ({ ...t })), nextId: (msg.details as { nextId: number }).nextId };
+			}
+		} catch (err) {
+			// Fall through to EMPTY_STATE on error
+		}
+
+		// Prefer custom entries (more authoritative), fall back to tool results
+		return fromEntries ?? fromToolResults ?? { tasks: [], nextId: 1 };
+	}
+
+	async getSnapshot(): Promise<TodoSnapshot> {
+		this._revision++;
+		const state = this.getTodoState();
+		return {
+			items: state.tasks,
+			sessionId: this.pi.sessionManager.getSessionId() ?? "unknown",
+			revision: this._revision,
+			createdAt: new Date(),
+		};
+	}
+
+	async getByStatus(status: TodoStatus): Promise<TodoItem[]> {
+		const { items } = await this.getSnapshot();
+		return items.filter((item) => item.status === status);
+	}
+
+	async getInProgress(): Promise<TodoItem[]> {
+		return this.getByStatus("in_progress");
+	}
+
+	async getPending(): Promise<TodoItem[]> {
+		return this.getByStatus("pending");
+	}
+
+	async getCompleted(): Promise<TodoItem[]> {
+		return this.getByStatus("completed");
+	}
+
+	async getReady(): Promise<TodoItem[]> {
+		const pending = await this.getPending();
+		const all = (await this.getSnapshot()).items;
+		return pending.filter((item) => {
+			if (!item.blockedBy?.length) return true;
+			const blockedIds = new Set(item.blockedBy);
+			return !all.some((i) => blockedIds.has(i.id) && i.status !== "completed");
+		});
+	}
+
+	async getBlocked(): Promise<TodoItem[]> {
+		const pending = await this.getPending();
+		const all = (await this.getSnapshot()).items;
+		return pending.filter((item) => {
+			if (!item.blockedBy?.length) return false;
+			const blockedIds = new Set(item.blockedBy);
+			return all.some((i) => blockedIds.has(i.id) && i.status !== "completed");
+		});
+	}
 }
 
 /**
@@ -192,7 +322,7 @@ class PiUnavailableTodoProvider implements TodoProvider {
 	async availability(): Promise<TodoAvailability> {
 		return {
 			available: false,
-			error: "Pi does not expose a todo extension API. Todo state is not available.",
+			error: "Pi session manager not available. Todo state is not accessible.",
 			provider: "pi-todo",
 		};
 	}
@@ -225,3 +355,8 @@ class PiUnavailableTodoProvider implements TodoProvider {
 		return [];
 	}
 }
+
+/**
+ * Provider that reports Pi todo extension is not available
+ */
+

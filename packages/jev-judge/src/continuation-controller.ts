@@ -67,7 +67,7 @@ export interface ContinuationResult {
 export class TodoContinuationController {
 	private pi: ExtensionAPI;
 	private config: Required<ContinuationConfig>;
-	private todoProvider = createTodoProvider();
+	private todoProvider: ReturnType<typeof createTodoProvider>;
 
 	private state: ContinuationState = {
 		sessionId: "",
@@ -85,6 +85,7 @@ export class TodoContinuationController {
 
 	constructor(pi: ExtensionAPI, config?: ContinuationConfig) {
 		this.pi = pi;
+		this.todoProvider = createTodoProvider(pi);
 		this.config = {
 			jevFallbackMinWaitMs: 5 * 60 * 1000, // 5 minutes
 			routineThreshold: 0.7,
