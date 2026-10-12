@@ -65,14 +65,23 @@ export declare class SurgeScheduler {
 }
 export interface SurgeRetryOptions {
     policy?: Partial<SurgePolicy>;
+    /**
+     * Pre-existing scheduler to use. When provided, the attempt counter persists
+     * across calls — enabling true exponential escalation across multiple surges
+     * within the same task (e.g. surge on 2nd loop.invoke, surge on 3rd loop.invoke).
+     * If omitted, a fresh scheduler is created (attempt counter resets per call).
+     */
+    scheduler?: SurgeScheduler;
     /** Called before each surge pause (logging / notifications) */
     onSurge?: (info: {
         attempt: number;
         delayMs: number;
         signal: SurgeSignal;
     }) => void;
-    /** Called once when attempts are exhausted (before rethrow) */
-    onExhausted?: (signal: SurgeSignal) => void;
+    /** Called once when attempts are exhausted (no more retries in this scheduler).
+     * Can be async to allow sleeping. Return true to retry, false/undefined to throw.
+     */
+    onExhausted?: (signal: SurgeSignal) => boolean | void | Promise<boolean | void>;
     /** Injectable sleep for tests. Default: real setTimeout */
     sleep?: (ms: number) => Promise<void>;
 }
@@ -100,4 +109,3 @@ export interface GLMRetryOptions {
  * Non-GLM-quota errors rethrow immediately.
  */
 export declare function invokeWithGLMRetry<T>(fn: () => Promise<T>, opts?: GLMRetryOptions): Promise<T>;
-//# sourceMappingURL=surge.d.ts.map

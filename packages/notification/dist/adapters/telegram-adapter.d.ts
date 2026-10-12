@@ -43,6 +43,10 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      */
     private processUpdate;
     /**
+     * Verify outbound delivery with a fixed startup greeting. No user content is sent.
+     */
+    sendStartupGreeting(): Promise<NotificationResult>;
+    /**
      * Send a message with optional inline keyboard buttons
      */
     send(payload: NotificationPayload): Promise<NotificationResult>;

@@ -906,7 +906,16 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Log the actual bot username (fetched from Telegram API via getMe)
 		const botUsername = center.getTelegramBotUsername();
-		addHarnessMessage("Telegram", "bot verified (chat delivery not tested)", "ok");
+		const greeting = await center.getTelegramAdapter()?.sendStartupGreeting();
+		if (!greeting?.success) {
+			logStartup("[pi-harness] Telegram: startup greeting delivery failed");
+			addHarnessMessage("Telegram", "bot verified; Hi delivery failed", "err", [
+				"Open your bot in Telegram and press Start; unblock it if necessary.",
+				"Verify telegram-chat-id.txt in ~/.pi-harness-runtime/keys/ and network access, then reload Pi.",
+			]);
+			return;
+		}
+		addHarnessMessage("Telegram", "ready (Hi sent to your chat)", "ok");
 		if (botUsername) {
 			logStartup(`[pi-harness] Telegram (@${botUsername}) ready — DM the bot to receive alerts`);
 		} else {

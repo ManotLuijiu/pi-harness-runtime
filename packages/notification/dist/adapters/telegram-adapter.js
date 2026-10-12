@@ -156,6 +156,29 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
     }
     /**
+     * Verify outbound delivery with a fixed startup greeting. No user content is sent.
+     */
+    async sendStartupGreeting() {
+        const cfg = this.config.config;
+        try {
+            const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: cfg.chatId, text: "Hi" }),
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            if (!response.ok || data.ok !== true || typeof data.result?.message_id !== "number") {
+                return { success: false, channel: this.id, error: `Telegram greeting rejected (HTTP ${response.status})` };
+            }
+            return { success: true, channel: this.id };
+        }
+        catch {
+            // Network errors can contain the token-bearing URL. Never expose them.
+            return { success: false, channel: this.id, error: "Telegram greeting failed or timed out" };
+        }
+    }
+    /**
      * Send a message with optional inline keyboard buttons
      */
     async send(payload) {
