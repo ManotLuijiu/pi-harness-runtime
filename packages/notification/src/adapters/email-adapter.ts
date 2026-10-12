@@ -10,6 +10,7 @@ import type {
 	EmailConfig,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
+import { logInfo } from "../file-logger.js";
 
 // Simple SMTP client using built-in net module
 async function sendSmtpEmail(
@@ -25,9 +26,9 @@ async function sendSmtpEmail(
 ): Promise<void> {
 	// For a production implementation, you'd use a proper SMTP library
 	// This is a placeholder that logs the email
-	console.log(`[Email] Would send to ${to.join(", ")}`);
-	console.log(`[Email] Subject: ${subject}`);
-	console.log(`[Email] Body: ${body}`);
+	logInfo("[Email]", `Would send to ${to.join(", ")}`);
+	logInfo("[Email]", `Subject: ${subject}`);
+	logInfo("[Email]", `Body: ${body}`);
 
 	// In practice, you'd use something like:
 	// import { createClient } from "nodemailer";

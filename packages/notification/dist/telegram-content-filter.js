@@ -5,6 +5,7 @@
  * credentials that should NOT be transmitted.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { logWarn } from "./file-logger.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
 /**
@@ -154,7 +155,7 @@ export async function filterTelegramContent(payload) {
  * Log filter decision securely (no content, just metadata)
  */
 function logFilterDecision(decision, reason, jobId) {
-    console.warn(`[TelegramFilter] ${decision} job=${jobId} reason=${reason} channel=telegram`);
+    logWarn("[TelegramFilter]", `${decision} job=${jobId} reason=${reason} channel=telegram`);
 }
 /**
  * Mask a value safely for logging

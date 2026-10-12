@@ -6,6 +6,7 @@
 /// <reference types="node" />
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { logError, logInfo, logWarn } from "../file-logger.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
 import { filterTelegramContent, getSafeNotificationLog } from "../telegram-content-filter.js";
@@ -42,17 +43,17 @@ export class TelegramAdapter extends BaseChannelAdapter {
             const cfg = this.config.config;
             const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getMe`);
             if (!response.ok) {
-                console.warn(`[TelegramAdapter] getMe failed: HTTP ${response.status}`);
+                logWarn("[TelegramAdapter]", `getMe failed: HTTP ${response.status}`);
                 return false;
             }
             const data = (await response.json());
             if (!data.ok || !data.result?.username) {
-                console.warn(`[TelegramAdapter] getMe returned ok=false`);
+                logWarn("[TelegramAdapter]", "getMe returned ok=false");
                 return false;
             }
             this._botUsername = data.result.username;
             this.markHealthy(); // Mark as healthy after successful getMe
-            console.log(`[TelegramAdapter] Bot @${this._botUsername} verified successfully`);
+            logInfo("[TelegramAdapter]", `Bot @${this._botUsername} verified successfully`);
             // Start polling for callback queries if handler is registered
             if (this._callbackHandler) {
                 this.startPolling();
@@ -60,7 +61,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             return true;
         }
         catch (err) {
-            console.error(`[TelegramAdapter] Initialize failed:`, err);
+            logError("[TelegramAdapter] Initialize failed", err);
             return false;
         }
     }
@@ -70,11 +71,11 @@ export class TelegramAdapter extends BaseChannelAdapter {
     startPolling() {
         if (this._pollInterval)
             return; // Already polling
-        console.log("[TelegramAdapter] Starting polling for callback queries...");
+        logInfo("[TelegramAdapter]", "Starting polling for callback queries...");
         // Poll immediately, then on interval
-        this.poll().catch((err) => console.error("[TelegramAdapter] Poll error:", err));
+        this.poll().catch((err) => logError("[TelegramAdapter] Poll error", err));
         this._pollInterval = setInterval(() => {
-            this.poll().catch((err) => console.error("[TelegramAdapter] Poll error:", err));
+            this.poll().catch((err) => logError("[TelegramAdapter] Poll error", err));
         }, 5000); // Poll every 5 seconds
     }
     /**
@@ -84,7 +85,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         if (this._pollInterval) {
             clearInterval(this._pollInterval);
             this._pollInterval = undefined;
-            console.log("[TelegramAdapter] Stopped polling");
+            logInfo("[TelegramAdapter]", "Stopped polling");
         }
     }
     /**
@@ -108,7 +109,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             });
             if (!response.ok) {
                 const error = await response.text();
-                console.warn(`[TelegramAdapter] getUpdates failed: ${error}`);
+                logWarn("[TelegramAdapter]", `getUpdates failed: ${error}`);
                 return;
             }
             const data = (await response.json());
@@ -125,7 +126,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 // Timeout is expected for long polling, not an error
                 return;
             }
-            console.error("[TelegramAdapter] Poll error:", err);
+            logError("[TelegramAdapter] Poll error", err);
         }
     }
     /**
@@ -136,7 +137,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Handle callback query
         if (update.callback_query) {
             const query = update.callback_query;
-            console.log(`[TelegramAdapter] Callback query: ${query.data} from user ${query.from?.id}`);
+            logInfo("[TelegramAdapter]", `Callback query: ${query.data} from user ${query.from?.id}`);
             // Answer the callback query (dismiss loading indicator)
             try {
                 await fetch(`https://api.telegram.org/bot${cfg.botToken}/answerCallbackQuery`, {
@@ -146,7 +147,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 });
             }
             catch (err) {
-                console.warn("[TelegramAdapter] Failed to answer callback query:", err);
+                logWarn("[TelegramAdapter]", "Failed to answer callback query:", err);
             }
             // Call the registered handler
             if (this._callbackHandler && query.data) {
@@ -162,9 +163,9 @@ export class TelegramAdapter extends BaseChannelAdapter {
             // SECURITY: Jev-powered content filter - block if contains sensitive credentials
             const filterResult = await filterTelegramContent(payload);
             if (!filterResult.shouldSend) {
-                console.warn(`[TelegramAdapter] BLOCKED by Jev judgment=${filterResult.judgment} reason=${filterResult.reason} job=${payload.jobId}`);
+                logWarn("[TelegramAdapter]", `BLOCKED by Jev judgment=${filterResult.judgment} reason=${filterResult.reason} job=${payload.jobId}`);
                 // Log safe notification metadata (no secrets)
-                console.log(`[TelegramAdapter] ${getSafeNotificationLog(payload)}`);
+                logInfo("[TelegramAdapter]", getSafeNotificationLog(payload));
                 return {
                     success: false,
                     channel: this.id,
@@ -292,7 +293,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         if (this._webhookSecret) {
             const secretToken = update.secret_token;
             if (secretToken !== this._webhookSecret) {
-                console.error("[TelegramAdapter] Invalid webhook secret");
+                logError("[TelegramAdapter]", "Invalid webhook secret");
                 return;
             }
         }
@@ -308,7 +309,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Handle regular messages (future: user can type commands)
         const message = update.message;
         if (message) {
-            console.log("[TelegramAdapter] Received message:", message.text);
+            logInfo("[TelegramAdapter]", `Received message: ${message.text}`);
         }
     }
     /**
@@ -338,7 +339,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             };
         }
         catch {
-            console.error("[TelegramAdapter] Failed to parse callback query");
+            logError("[TelegramAdapter]", "Failed to parse callback query");
             return null;
         }
     }
@@ -355,7 +356,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             });
         }
         catch (error) {
-            console.error("[TelegramAdapter] Failed to answer callback query:", error);
+            logError("[TelegramAdapter]", `Failed to answer callback query: ${error}`);
         }
     }
     /**
@@ -373,14 +374,14 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 }),
             });
             if (!response.ok) {
-                console.error("[TelegramAdapter] Webhook setup failed:", await response.text());
+                logError("[TelegramAdapter]", `Webhook setup failed: ${await response.text()}`);
                 return false;
             }
-            console.log(`[TelegramAdapter] Webhook set to: ${webhookUrl}`);
+            logInfo("[TelegramAdapter]", `Webhook set to: ${webhookUrl}`);
             return true;
         }
         catch (error) {
-            console.error("[TelegramAdapter] Webhook setup error:", error);
+            logError("[TelegramAdapter]", `Webhook setup error: ${error}`);
             return false;
         }
     }

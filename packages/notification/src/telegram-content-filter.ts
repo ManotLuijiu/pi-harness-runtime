@@ -7,6 +7,7 @@
 
 import type { NotificationPayload } from "./types.js";
 import { existsSync, readFileSync } from "node:fs";
+import { logWarn } from "./file-logger.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -200,8 +201,9 @@ function logFilterDecision(
 	reason: string,
 	jobId: string,
 ): void {
-	console.warn(
-		`[TelegramFilter] ${decision} job=${jobId} reason=${reason} channel=telegram`,
+	logWarn(
+		"[TelegramFilter]",
+		`${decision} job=${jobId} reason=${reason} channel=telegram`,
 	);
 }
 
