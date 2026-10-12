@@ -484,13 +484,65 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			todoContinuationController = null;
 		});
 
-		// Wire user input to pause the continuation controller
+		// --- task-intake: Automatic todo capture from user requests -----------
+		let taskIntakeController: import("./packages/jev-judge/dist/task-intake.js").TaskIntakeController | null = null;
+
+		// Create task intake controller if Jev API key is available
+		if (resolvedApiKey) {
+			try {
+				const { TaskIntakeController } = await import("./packages/jev-judge/dist/task-intake.js");
+				taskIntakeController = new TaskIntakeController({
+					apiKey: resolvedApiKey,
+					dispatch: async (content: string) => {
+						await pi.sendUserMessage(content, { deliverAs: "steer" });
+					},
+				});
+				logToFile("[auto-continue]", "Task intake controller initialized");
+			} catch (err) {
+				logToFile("[auto-continue]", "Failed to create task intake controller:", String(err));
+			}
+		}
+
+		// Clean up task intake on session shutdown
+		pi.on("session_shutdown", () => {
+			taskIntakeController = null;
+		});
+
+		// Wire user messages to task intake
 		pi.on("message_start", (event) => {
-			const msg = (event as { message?: { role?: string } }).message;
-			if (msg?.role === "user") {
+			const msg = (event as { message?: { role?: string; content?: string } }).message;
+			if (msg?.role === "user" && taskIntakeController) {
+				// Pause continuation when user sends message
 				if (todoContinuationController) {
 					todoContinuationController.pause();
 					logToFile("[auto-continue]", "User input received, pausing continuation");
+				}
+
+				// Extract user message content
+				const content = msg.content;
+				let userMessage = "";
+				if (typeof content === "string") {
+					userMessage = content;
+				} else if (Array.isArray(content)) {
+					const textBlocks = (content as Array<{ type?: string; text?: string }>)
+						.filter((c): c is { type: "text"; text: string } =>
+							c.type === "text" && typeof c.text === "string"
+						);
+					userMessage = textBlocks.map((c) => c.text).join("\n");
+				}
+
+				// Evaluate with task intake controller (non-blocking)
+				if (userMessage.trim().length > 10 && taskIntakeController) {
+					const intake = taskIntakeController;
+					intake.evaluate(userMessage).then(async (result) => {
+						if (result.actionable && result.action !== "skip") {
+							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
+							// Request capture if actionable
+							await intake.requestCapture(userMessage);
+						}
+					}).catch((err) => {
+						logToFile("[auto-continue]", "Task intake error:", String(err));
+					});
 				}
 			}
 		});

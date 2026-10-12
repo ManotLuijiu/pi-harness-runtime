@@ -39,7 +39,6 @@ import type {
   JevEvaluationResult,
   JevNoulResponse,
   JevChoiceResponse,
-  JevScoreResponse,
   ThresholdDecision,
 } from "./types.js";
 
@@ -427,7 +426,7 @@ export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto
 
 // Export WrapUpJudge
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
-export type { TodoItem, WrapUpResult } from "./wrap-up-judge.js";
+export type { WrapUpResult } from "./wrap-up-judge.js";
 
 // Export EnvironmentJudge
 export { EnvironmentJudge } from "./environment-judge.js";
@@ -442,5 +441,9 @@ export { TodoContinuationController, createTodoContinuation } from "./continuati
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
 
 // Export TodoProvider
-export { createTodoProvider, PiUnavailableTodoProvider } from "./todo-provider.js";
-export type { TodoProvider, TodoProviderAvailability } from "./todo-provider.js";
+export { createTodoProvider } from "./todo-provider.js";
+export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
+
+// Export Task Intake
+export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
+export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";
