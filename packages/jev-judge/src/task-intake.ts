@@ -176,8 +176,15 @@ export class TaskIntakeController {
 	/**
 	 * Check if stopped
 	 */
-isStopped(): boolean {
+	isStopped(): boolean {
 		return this._stopped;
+	}
+
+	/**
+	 * Resume intake - clear stopped flag to re-enable processing
+	 */
+	resumeIntake(): void {
+		this._stopped = false;
 	}
 
 	/**

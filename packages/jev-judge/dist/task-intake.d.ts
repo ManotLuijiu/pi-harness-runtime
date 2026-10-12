@@ -86,6 +86,10 @@ export declare class TaskIntakeController {
      */
     isStopped(): boolean;
     /**
+     * Resume intake - clear stopped flag to re-enable processing
+     */
+    resumeIntake(): void;
+    /**
      * Internal evaluation logic
      */
     private _evaluate;

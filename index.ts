@@ -542,6 +542,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						todoContinuationController.resume();
 						logToFile("[auto-continue]", "Resume detected, continuing work");
 					}
+					// Resume task intake to re-enable processing
+					if (taskIntakeController) {
+						taskIntakeController.resumeIntake();
+					}
 					// Allow normal processing after resume
 				}
 
@@ -572,6 +576,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 					// Get current todos for duplicate detection
 					intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
+						// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
+						if (intake.isStopped()) {
+							logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
+							return;
+						}
 						if (result.actionable && result.action !== "skip") {
 							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
 							// Request capture if actionable using harness custom message
