@@ -520,13 +520,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 
 			if (msg.role === "user" && taskIntakeController) {
-				// Temporary pause for user input processing (auto-clears on next decision)
-				if (todoContinuationController) {
-					todoContinuationController.tempPause();
-					logToFile("[auto-continue]", "User input received, temp pausing");
-				}
-
-				// Extract user message content
+				// Extract user message content FIRST (needed for both pause and intake)
 				const content = msg.content;
 				let userMessage = "";
 				if (typeof content === "string") {
@@ -537,6 +531,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							c.type === "text" && typeof c.text === "string"
 						);
 					userMessage = textBlocks.map((c) => c.text).join("\n");
+				}
+
+				// Check for explicit stop/pause request
+				if (detectExplicitPause(userMessage)) {
+					if (todoContinuationController) {
+						todoContinuationController.explicitPause();
+						logToFile("[auto-continue]", "Explicit pause/stop detected");
+					}
+					// Don't process intake for explicit stop
+					return;
+				}
+
+				// Temporary pause for user input processing (auto-clears on next decision)
+				if (todoContinuationController) {
+					todoContinuationController.tempPause();
+					logToFile("[auto-continue]", "User input received, temp pausing");
 				}
 
 				// Evaluate with task intake controller (non-blocking)
