@@ -46,6 +46,8 @@ export declare class TaskIntakeController {
     private lastResult;
     private recentCaptures;
     private readonly CAPTURE_COOLDOWN_MS;
+    private _pendingEvaluationHash;
+    private _stopped;
     constructor(config: TaskIntakeConfig);
     /**
      * Check if Jev is available
@@ -75,6 +77,14 @@ export declare class TaskIntakeController {
      * Record a capture request to prevent re-triggering
      */
     private _recordCapture;
+    /**
+     * Invalidate any pending evaluations (call when paused/stopped)
+     */
+    invalidatePending(): void;
+    /**
+     * Check if pending evaluation is still valid for this message
+     */
+    private _isPendingValid;
     /**
      * Internal evaluation logic
      */

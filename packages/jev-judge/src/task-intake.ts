@@ -52,6 +52,9 @@ export class TaskIntakeController {
 	// Track recent capture request hashes to prevent self-triggering
 	private recentCaptures = new Set<string>();
 	private readonly CAPTURE_COOLDOWN_MS = 30000;  // Don't re-trigger for same content within 30s
+	// Track pending evaluation to invalidate on stop
+	private _pendingEvaluationHash: string | null = null;
+	private _stopped = false;
 
 	constructor(config: TaskIntakeConfig) {
 		this.config = {
@@ -149,6 +152,21 @@ export class TaskIntakeController {
 		setTimeout(() => {
 			this.recentCaptures.delete(hash);
 		}, this.CAPTURE_COOLDOWN_MS);
+	}
+
+	/**
+	 * Invalidate any pending evaluations (call when paused/stopped)
+	 */
+	invalidatePending(): void {
+		this._pendingEvaluationHash = null;
+		this._stopped = true;
+	}
+
+	/**
+	 * Check if pending evaluation is still valid for this message
+	 */
+	private _isPendingValid(hash: string): boolean {
+		return !this._stopped && this._pendingEvaluationHash === hash;
 	}
 
 	/**
