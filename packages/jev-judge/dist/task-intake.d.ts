@@ -44,6 +44,8 @@ export declare class TaskIntakeController {
     private config;
     private lastRequest;
     private lastResult;
+    private recentCaptures;
+    private readonly CAPTURE_COOLDOWN_MS;
     constructor(config: TaskIntakeConfig);
     /**
      * Check if Jev is available
@@ -65,6 +67,14 @@ export declare class TaskIntakeController {
             }>;
         }>;
     }): Promise<TaskIntakeResult>;
+    /**
+     * Hash a message for deduplication
+     */
+    private hashMessage;
+    /**
+     * Record a capture request to prevent re-triggering
+     */
+    private _recordCapture;
     /**
      * Internal evaluation logic
      */

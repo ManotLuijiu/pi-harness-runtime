@@ -18,6 +18,9 @@ export class TaskIntakeController {
     config;
     lastRequest = null;
     lastResult = null;
+    // Track recent capture request hashes to prevent self-triggering
+    recentCaptures = new Set();
+    CAPTURE_COOLDOWN_MS = 30000; // Don't re-trigger for same content within 30s
     constructor(config) {
         this.config = {
             actionableThreshold: 0.7,
@@ -44,6 +47,27 @@ export class TaskIntakeController {
      * Evaluate with actual todo items from continuation controller
      */
     async evaluateWithTodos(userMessage, controller) {
+        // Check for harness-internal messages (prevent self-triggering)
+        if (userMessage.includes("[harness:task-capture]")) {
+            return {
+                actionable: false,
+                probability: 0,
+                isDuplicate: false,
+                modifiesExisting: false,
+                action: "skip",
+            };
+        }
+        // Check recent captures to prevent rapid re-triggering
+        const hash = this.hashMessage(userMessage);
+        if (this.recentCaptures.has(hash)) {
+            return {
+                actionable: false,
+                probability: 0,
+                isDuplicate: false,
+                modifiesExisting: false,
+                action: "skip",
+            };
+        }
         // Get actual todos from the continuation controller
         let existingTodos = [];
         try {
@@ -56,6 +80,24 @@ export class TaskIntakeController {
             // Ignore errors, use empty list
         }
         return this._evaluate(userMessage, existingTodos);
+    }
+    /**
+     * Hash a message for deduplication
+     */
+    hashMessage(msg) {
+        // Simple hash - just use first 100 chars
+        return msg.slice(0, 100).trim();
+    }
+    /**
+     * Record a capture request to prevent re-triggering
+     */
+    _recordCapture(userMessage) {
+        const hash = this.hashMessage(userMessage);
+        this.recentCaptures.add(hash);
+        // Clean up old entries after cooldown
+        setTimeout(() => {
+            this.recentCaptures.delete(hash);
+        }, this.CAPTURE_COOLDOWN_MS);
     }
     /**
      * Internal evaluation logic

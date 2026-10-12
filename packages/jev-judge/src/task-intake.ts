@@ -49,6 +49,9 @@ export class TaskIntakeController {
 	private config: Required<TaskIntakeConfig>;
 	private lastRequest: string | null = null;
 	private lastResult: TaskIntakeResult | null = null;
+	// Track recent capture request hashes to prevent self-triggering
+	private recentCaptures = new Set<string>();
+	private readonly CAPTURE_COOLDOWN_MS = 30000;  // Don't re-trigger for same content within 30s
 
 	constructor(config: TaskIntakeConfig) {
 		this.config = {
@@ -86,6 +89,29 @@ export class TaskIntakeController {
 		userMessage: string,
 		controller: { getSnapshot: () => Promise<{ items: Array<{ id: number; subject: string; status: string }> }> }
 	): Promise<TaskIntakeResult> {
+		// Check for harness-internal messages (prevent self-triggering)
+		if (userMessage.includes("[harness:task-capture]")) {
+			return {
+				actionable: false,
+				probability: 0,
+				isDuplicate: false,
+				modifiesExisting: false,
+				action: "skip",
+			};
+		}
+
+		// Check recent captures to prevent rapid re-triggering
+		const hash = this.hashMessage(userMessage);
+		if (this.recentCaptures.has(hash)) {
+			return {
+				actionable: false,
+				probability: 0,
+				isDuplicate: false,
+				modifiesExisting: false,
+				action: "skip",
+			};
+		}
+
 		// Get actual todos from the continuation controller
 		let existingTodos: string[] = [];
 		try {
@@ -98,6 +124,26 @@ export class TaskIntakeController {
 		}
 
 		return this._evaluate(userMessage, existingTodos);
+	}
+
+	/**
+	 * Hash a message for deduplication
+	 */
+	private hashMessage(msg: string): string {
+		// Simple hash - just use first 100 chars
+		return msg.slice(0, 100).trim();
+	}
+
+	/**
+	 * Record a capture request to prevent re-triggering
+	 */
+	private _recordCapture(userMessage: string): void {
+		const hash = this.hashMessage(userMessage);
+		this.recentCaptures.add(hash);
+		// Clean up old entries after cooldown
+		setTimeout(() => {
+			this.recentCaptures.delete(hash);
+		}, this.CAPTURE_COOLDOWN_MS);
 	}
 
 	/**

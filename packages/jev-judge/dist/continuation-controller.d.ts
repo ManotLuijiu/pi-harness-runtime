@@ -66,6 +66,10 @@ export declare class TodoContinuationController {
      */
     resume(): void;
     /**
+     * Get current todo snapshot (exposed for task intake)
+     */
+    getSnapshot(): Promise<import("./todo-provider.js").TodoSnapshot>;
+    /**
      * Temporary pause for user input processing
      * Does not require explicit resume
      */

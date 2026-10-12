@@ -558,16 +558,43 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
+		// Detect explicit stop/pause requests in user messages
+		function detectExplicitPause(text: string): boolean {
+			const lower = text.toLowerCase();
+			const stopPatterns = [
+				/\bstop\b/,
+				/\bpause\b/,
+				/\bwait\b/,
+				/\bhold on\b/,
+				/\bnot now\b/,
+				/\bplease stop\b/,
+				/\bplease pause\b/,
+			];
+			for (const pattern of stopPatterns) {
+				if (pattern.test(lower)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		// --- agent_settled: Check todos and continue work ---------------
 		pi.on("agent_settled", async (_event, ctx) => {
 			// Don't continue if user is waiting for response
-			if (waitingForUserSince) return;
+			if (waitingForUserSince) {
+				todoContinuationController?.clearQueue();
+				return;
+			}
 
 			// Don't continue if inference is already in progress
-			if (_inferenceInProgress) return;
+			if (_inferenceInProgress) {
+				return;
+			}
 
 			// Don't continue if session is not idle or has pending messages
-			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) return;
+			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) {
+				return;
+			}
 
 			// Use the retained controller (not a new one per event)
 			try {
@@ -581,15 +608,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (result.action === "continue" && result.nextItemId) {
 					updateAutoContinueStatus("CONTINUING");
 					await todoContinuationController.steerToContinue(result.nextItemId);
-					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
-				} else if (result.action === "blocked") {
-					updateAutoContinueStatus("ERROR", "blocked");
-					logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
-				} else if (result.action === "stop") {
-					logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
+					// Queue remains set while agent processes, cleared on next settled if no dispatch
+				} else {
+					// Not continuing - clear queue to allow future decisions
+					todoContinuationController.clearQueue();
+					updateAutoContinueStatus("IDLE");
+
+					if (result.action === "blocked") {
+						updateAutoContinueStatus("ERROR", "blocked");
+						logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
+					} else if (result.action === "stop") {
+						logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
+					}
 				}
 			} catch (err) {
 				logToFile("[auto-continue]", "agent_settled handler error:", String(err));
+				todoContinuationController?.clearQueue();
 			}
 		});
 
