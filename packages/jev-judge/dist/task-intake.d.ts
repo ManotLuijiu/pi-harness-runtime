@@ -82,9 +82,9 @@ export declare class TaskIntakeController {
      */
     invalidatePending(): void;
     /**
-     * Check if pending evaluation is still valid for this message
+     * Check if stopped
      */
-    private _isPendingValid;
+    isStopped(): boolean;
     /**
      * Internal evaluation logic
      */

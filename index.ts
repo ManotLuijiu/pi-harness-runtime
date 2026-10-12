@@ -656,9 +656,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const result = await todoContinuationController.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
-					// Clear queue state from previous task BEFORE dispatching new continuation
-					// This ensures _inFlight and continuationQueued flags are reset
-					todoContinuationController.clearQueue();
 					updateAutoContinueStatus("CONTINUING");
 					await todoContinuationController.steerToContinue(result.nextItemId);
 					// Queue remains set while agent processes, cleared on next settled if no dispatch
