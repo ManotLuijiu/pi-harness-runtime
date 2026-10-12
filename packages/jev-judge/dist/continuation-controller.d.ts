@@ -66,6 +66,10 @@ export declare class TodoContinuationController {
      */
     continueItem(item: TodoItem): Promise<void>;
     /**
+     * Guarded dispatch - checks all conditions before sending
+     */
+    private guardedDispatch;
+    /**
      * Steer to continue a todo item
      */
     steerToContinue(itemId: number): Promise<void>;

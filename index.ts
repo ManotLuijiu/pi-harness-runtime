@@ -282,6 +282,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			return null;
 		}
 
+		// Detect routine continuation questions ("Should I continue?")
+		// These should NOT block immediate continuation - let Jev/todo controller decide
+		// Detect routine continuation questions ("Should I continue?")
+		// These should NOT block immediate continuation - let Jev/todo controller decide
+		function isRoutineContinuation(question: string): boolean {
+			const lower = question.toLowerCase();
+			// Match patterns like "should i continue?", "should we continue?", etc.
+			return (/\b(should i|should we|should the|can i continue|can we continue)\b/.test(lower)
+				&& /\b(continue|proceed|with the next|to the next|move on)\b/.test(lower));
+		}
+
 		// Detect when agent asks for continuation
 		pi.on("message_end", async (event) => {
 			const msg = event.message as { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined;
@@ -291,7 +302,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			const detectedQuestion = detectConfirmationRequest(content);
 
 			// Only trigger if: we found a question AND it's different from last notification
+			// Skip routine continuation questions - let Jev/todo controller decide
 			if (detectedQuestion && detectedQuestion !== _lastNotifiedQuestion && !waitingForUserSince) {
+				// Skip routine continuation - don't block automatic continuation
+				if (isRoutineContinuation(detectedQuestion)) {
+						logToFile("[auto-continue]", "Routine continuation detected, not blocking");
+						return;
+				}
 				_lastNotifiedQuestion = detectedQuestion;
 				waitingForUserSince = new Date();
 
@@ -465,6 +482,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Clean up controller on session shutdown
 		pi.on("session_shutdown", () => {
 			todoContinuationController = null;
+		});
+
+		// Wire user input to pause the continuation controller
+		pi.on("message_start", (event) => {
+			const msg = (event as { message?: { role?: string } }).message;
+			if (msg?.role === "user") {
+				if (todoContinuationController) {
+					todoContinuationController.pause();
+					logToFile("[auto-continue]", "User input received, pausing continuation");
+				}
+			}
 		});
 
 		// --- agent_settled: Check todos and continue work ---------------
