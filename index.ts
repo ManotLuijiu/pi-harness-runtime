@@ -3173,7 +3173,7 @@ Run \`bd ready\` to see current bd issues.
 		}
 
 		// Add initial harness message
-		addHarnessMessage("Harness", `v${HARNESS_VERSION} initializing`, "wait");
+		addHarnessMessage("Harness Runtime", `v${HARNESS_VERSION} initializing`, "wait");
 
 		// Wait for async inits to complete, then update status
 		const startupTimeout = new Promise<void>((resolve) => {
@@ -3187,7 +3187,7 @@ Run \`bd ready\` to see current bd issues.
 			if (mySession !== sessionGeneration || !startupVisible) return;
 
 			// Update Runtime status
-			const runtimeMsg = harnessMessages.find((m) => m.label === "Harness");
+			const runtimeMsg = harnessMessages.find((m) => m.label === "Harness Runtime");
 			if (runtimeMsg) {
 				runtimeMsg.status = "ok";
 				runtimeMsg.text = `v${HARNESS_VERSION} initialized`;
