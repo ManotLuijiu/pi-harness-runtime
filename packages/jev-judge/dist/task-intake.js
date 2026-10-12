@@ -131,6 +131,12 @@ export class TaskIntakeController {
         return this._stopped;
     }
     /**
+     * Resume intake - clear stopped flag to re-enable processing
+     */
+    resumeIntake() {
+        this._stopped = false;
+    }
+    /**
      * Internal evaluation logic
      */
     async _evaluate(userMessage, existingTodos) {
