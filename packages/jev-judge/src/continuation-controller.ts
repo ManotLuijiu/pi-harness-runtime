@@ -139,26 +139,38 @@ export class TodoContinuationController {
 		let inProgress: TodoItem[];
 		let ready: TodoItem[];
 		let blocked: TodoItem[];
+		let allItems: TodoItem[];
 		try {
 			inProgress = await this.todoProvider.getInProgress();
 			ready = await this.todoProvider.getReady();
 			blocked = await this.todoProvider.getBlocked();
+			const snapshot = await this.todoProvider.getSnapshot();
+			allItems = snapshot.items;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			debugLog("TodoContinuation", "Failed to read todos:", msg);
 			return { action: "stop", reason: `todo read failed: ${msg}` };
 		}
 
-		// 4. Continue in-progress work first
-		if (inProgress.length > 0) {
-			const item = inProgress[0];
-			
+		// 4. Filter in-progress for items without unfinished blockers
+		const unblockedInProgress = inProgress.filter((item) => {
+			if (!item.blockedBy?.length) return true;
+			const blockerIds = new Set(item.blockedBy);
+			return !allItems.some(
+				(i) => blockerIds.has(i.id) && i.status !== "completed" && i.id !== item.id
+			);
+		});
+
+		// 5. Continue unblocked in-progress work first
+		if (unblockedInProgress.length > 0) {
+			const item = unblockedInProgress[0];
+
 			// Reset counter if switching to a different task
 			if (this.state.lastItemContinued !== item.id) {
 				this.state.steerAttemptsForCurrentItem = 0;
 				this.state.lastItemContinued = item.id;
 			}
-			
+
 			// Check per-task attempt limit
 			if (this.state.steerAttemptsForCurrentItem >= this.config.maxSteerAttempts) {
 				return { action: "stop", reason: `max attempts (${this.config.maxSteerAttempts}) reached for task ${item.id}` };
@@ -231,6 +243,56 @@ export class TodoContinuationController {
 	}
 
 	/**
+	 * Guarded dispatch - checks all conditions before sending
+	 */
+	private async guardedDispatch(itemId: number, message: string): Promise<boolean> {
+		// 1. Check if paused by user
+		if (this.state.userPaused) {
+			debugLog("TodoContinuation", "Guarded dispatch: user paused, skipping");
+			return false;
+		}
+
+		// 2. Check if session is still idle
+		if (this.ctx.isIdle?.() === false) {
+			debugLog("TodoContinuation", "Guarded dispatch: session not idle, skipping");
+			return false;
+		}
+
+		// 3. Check if continuation already queued (prevent duplicates)
+		if (this.state.continuationQueued) {
+			debugLog("TodoContinuation", "Guarded dispatch: already queued, skipping");
+			return false;
+		}
+
+		// 4. Verify item still needs work (not completed)
+		try {
+			const snapshot = await this.todoProvider.getSnapshot();
+			const item = snapshot.items.find((i) => i.id === itemId);
+			if (item?.status === "completed") {
+				debugLog("TodoContinuation", "Guarded dispatch: item completed, skipping");
+				return false;
+			}
+		} catch {
+			// If we can't read todos, skip dispatch
+			debugLog("TodoContinuation", "Guarded dispatch: failed to read todos, skipping");
+			return false;
+		}
+
+		// All checks passed - dispatch
+		this.state.continuationQueued = true;
+		this.state.lastSteerMessage = message;
+
+		try {
+			await this.config.dispatch(message);
+			return true;
+		} catch (err) {
+			debugLog("TodoContinuation", "Guarded dispatch failed:", String(err));
+			this.state.continuationQueued = false;
+			return false;
+		}
+	}
+
+	/**
 	 * Steer to continue a todo item
 	 */
 	async steerToContinue(itemId: number): Promise<void> {
@@ -246,25 +308,14 @@ export class TodoContinuationController {
 		}
 
 		this.state.steerAttemptsForCurrentItem++;
-		this.state.continuationQueued = true;
 
-		const snapshot = await this.todoProvider.getSnapshot();
-		const item = snapshot.items.find((i) => i.id === itemId);
+		const message = `Continue todo item ID ${itemId}.`;
+		debugLog("TodoContinuation", "Attempting steer to continue item", itemId);
 
-		const message = item
-			? `Continue todo item: "${item.subject}". ${item.description ?? ""}`
-			: `Continue work on the next ready task.`;
-
-		this.state.lastSteerMessage = message;
-		this.state.todoRevision = snapshot.revision;
-		debugLog("TodoContinuation", "Steering to continue item", itemId);
-
-		// Send continuation message via dispatch callback
-		try {
-			await this.config.dispatch(message);
-		} catch (err) {
-			debugLog("TodoContinuation", "Failed to send steer:", String(err));
-			this.state.continuationQueued = false;
+		// Use guarded dispatch to verify all conditions
+		const sent = await this.guardedDispatch(itemId, message);
+		if (!sent) {
+			debugLog("TodoContinuation", "Steer blocked by guard conditions");
 		}
 	}
 
