@@ -8,6 +8,7 @@
  * Jev decides: proceed, wait, or proceed with caution.
  */
 import { JevJudge } from "./index.js";
+import { logError } from "./file-logger.js";
 /**
  * Default configuration
  */
@@ -74,7 +75,7 @@ export class AutoContinueJudge {
             return this.buildDecision(result, taskState);
         }
         catch (error) {
-            console.error("[AutoContinueJudge] Jev call failed:", error);
+            logError("[AutoContinueJudge]", `Jev call failed: ${error}`);
             return this.fallbackDecision(taskState);
         }
     }
