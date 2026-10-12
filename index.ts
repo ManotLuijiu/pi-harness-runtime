@@ -533,6 +533,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					userMessage = textBlocks.map((c) => c.text).join("\n");
 				}
 
+				// Check for explicit resume request
+				if (detectResume(userMessage)) {
+					if (todoContinuationController) {
+						todoContinuationController.resume();
+						logToFile("[auto-continue]", "Resume detected, continuing work");
+					}
+					// Allow normal processing after resume
+				}
+
 				// Check for explicit stop/pause request
 				if (detectExplicitPause(userMessage)) {
 					if (todoContinuationController) {
@@ -568,19 +577,41 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
-		// Detect explicit stop/pause requests in user messages
+		// Detect explicit stop/pause requests (must be a directive TO the harness, not mentions)
 		function detectExplicitPause(text: string): boolean {
-			const lower = text.toLowerCase();
-			const stopPatterns = [
-				/\bstop\b/,
-				/\bpause\b/,
-				/\bwait\b/,
-				/\bhold on\b/,
-				/\bnot now\b/,
-				/\bplease stop\b/,
-				/\bplease pause\b/,
+			const lower = text.toLowerCase().trim();
+			// Must be an explicit directive to STOP/PAUSE the harness
+			const explicitPatterns = [
+				/^(stop|pause|wait|hold|wait a moment)\s*$/i,
+				/^(please\s+)?(stop|pause)\s+(the\s+)?agent/i,
+				/^(please\s+)?(stop|pause)\s+(and|for|until|with)\b/i,
+				/^(please\s+)?stop\s+working/i,
+				/^(please\s+)?pause\s+(the\s+)?work/i,
+				/^(please\s+)?do\s+not\s+(continue|proceed|go|start)/i,
+				/^wait\s+(for\s+me|one|two|three|minute|moment|second)/i,
+				/^hold\s+(on|up|there)/i,
+				/^not\s+(yet|now|ready)/i,
 			];
-			for (const pattern of stopPatterns) {
+			for (const pattern of explicitPatterns) {
+				if (pattern.test(lower)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// Detect resume requests
+		function detectResume(text: string): boolean {
+			const lower = text.toLowerCase().trim();
+			// Must be an explicit directive to RESUME
+			const resumePatterns = [
+				/^(resume|continue|go\s+ahead|carry\s+on|proceed)\s*$/i,
+				/^(please\s+)?(resume|continue)\s+(the\s+)?(work|agent|task)/i,
+				/^(please\s+)?go\s+ahead/i,
+				/^(please\s+)?carry\s+on/i,
+				/^(yes|yeah|yep|ok|okay|yes\s+please)\s*$/i,
+			];
+			for (const pattern of resumePatterns) {
 				if (pattern.test(lower)) {
 					return true;
 				}

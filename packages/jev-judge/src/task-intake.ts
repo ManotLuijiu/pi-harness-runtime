@@ -323,6 +323,9 @@ export class TaskIntakeController {
 		userMessage: string,
 		customType: string = "task-capture"
 	): Promise<void> {
+		// Record this capture to prevent re-triggering on the same input
+		this._recordCapture(userMessage);
+
 		// Build a message to prompt the agent to create todos
 		let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
 

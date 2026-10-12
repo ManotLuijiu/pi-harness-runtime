@@ -252,6 +252,8 @@ export class TaskIntakeController {
      * @param customType - Optional custom type for the message (default: "task-capture")
      */
     async requestCapture(userMessage, customType = "task-capture") {
+        // Record this capture to prevent re-triggering on the same input
+        this._recordCapture(userMessage);
         // Build a message to prompt the agent to create todos
         let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
         message += "\n\nPlease capture this work in the todo list if not already tracked.";
