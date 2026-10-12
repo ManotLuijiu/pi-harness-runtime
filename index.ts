@@ -79,7 +79,7 @@ import {
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
-import { createTodoContinuation } from "./packages/jev-judge/dist/continuation-controller.js";
+
 
 /**
  * Get tasks from bd (beads) for Jev decision context.
@@ -538,7 +538,8 @@ async function initQdrant(): Promise<void> {
 
 				// Verify Qdrant connection with health check
 				try {
-					const healthUrl = `${cfg.url}/health`;
+					// Use /healthz endpoint (not /health) for Qdrant
+					const healthUrl = `${cfg.url}/healthz`;
 					const healthResponse = await fetch(healthUrl, {
 						headers: cfg.apiKey ? { "api-key": cfg.apiKey } : {},
 					});
@@ -1686,9 +1687,6 @@ export default function (pi: ExtensionAPI) {
 
 	// --- jev-auto-continue: Agent autonomous decision when user unavailable -----
 	asyncInitPromises.push(initAutoContinue(pi));
-
-	// Register todo-driven continuation controller
-	createTodoContinuation(pi);
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
