@@ -441,8 +441,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Start periodic check
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
-		addHarnessMessage("Jev", "auto-continue configured (API not yet verified)", "ok");
-	} catch {
+		addHarnessMessage("Jev", "auto-continue configured (verifying API...)", "ok");
+
+		// Verify API key works with a lightweight health check
+		try {
+			const { JevJudge } = await import("./packages/jev-judge/dist/index.js");
+			const judge = new JevJudge({ apiKey: resolvedApiKey });
+			// Lightweight verification - ask a simple question
+			await judge.evaluate("health check", {
+				test: { type: "noul" as const, instructions: "Is this a test?" }
+			});
+			addHarnessMessage("Jev", "auto-continue ready (API verified)", "ok");
+		} catch (verifyErr) {
+			addHarnessMessage("Jev", "auto-continue ready (API verification failed)", "warn", [
+				`Error: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`,
+				"Check API key and network access, then reload Pi.",
+			]);
+		}
+	} catch (_err) {
 		addHarnessMessage("Jev", "auto-continue initialization failed", "err", [
 			"Check Jev package installation and key-file permissions, then reload Pi.",
 		]);
@@ -484,7 +500,28 @@ async function initQdrant(): Promise<void> {
 			const embeddingKey = getOpenAIApiKey();
 			if (embeddingKey) {
 				logStartup("[pi-harness] Qdrant vector search ready");
-				addHarnessMessage("Qdrant", "configured (connection not yet verified)", "ok");
+				addHarnessMessage("Qdrant", "verifying connection...", "ok");
+
+				// Verify Qdrant connection with health check
+				try {
+					const healthUrl = `${cfg.url}/health`;
+					const healthResponse = await fetch(healthUrl, {
+						headers: cfg.apiKey ? { "api-key": cfg.apiKey } : {},
+					});
+					if (healthResponse.ok) {
+						addHarnessMessage("Qdrant", "ready (connection verified)", "ok");
+					} else {
+						addHarnessMessage("Qdrant", "ready (connection failed)", "warn", [
+							`Health check returned: ${healthResponse.status} ${healthResponse.statusText}`,
+							"Check cluster URL and network access, then reload Pi.",
+						]);
+					}
+				} catch (healthErr) {
+					addHarnessMessage("Qdrant", "ready (connection failed)", "warn", [
+							`Error: ${healthErr instanceof Error ? healthErr.message : String(healthErr)}`,
+							"Check cluster URL and network access, then reload Pi.",
+						]);
+				}
 			} else {
 				logStartup("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
 				addHarnessMessage("Qdrant", "embedding key missing; vector indexing unavailable", "warn");
@@ -615,7 +652,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		} else {
 			logStartup(`[pi-harness] Telegram notifications ready`);
 		}
-	} catch (err) {
+	} catch (_err) {
 		logStartup("[pi-harness] Telegram: init failed (check installation, credentials, and network)");
 		addHarnessMessage("Telegram", "initialization failed; notifications unavailable", "err", [
 			"Check package installation, key-file permissions, and network access, then reload Pi.",
