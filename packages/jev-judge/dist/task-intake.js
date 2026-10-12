@@ -289,6 +289,10 @@ export class TaskIntakeController {
      * @param customType - Optional custom type for the message (default: "task-capture")
      */
     async requestCapture(userMessage, customType = "task-capture") {
+        // Check if stopped - don't dispatch after stop
+        if (this._stopped) {
+            return;
+        }
         // Record this capture to prevent re-triggering on the same input
         this._recordCapture(userMessage);
         // Build a message to prompt the agent to create todos

@@ -364,6 +364,11 @@ export class TaskIntakeController {
 		userMessage: string,
 		customType: string = "task-capture"
 	): Promise<void> {
+		// Check if stopped - don't dispatch after stop
+		if (this._stopped) {
+			return;
+		}
+
 		// Record this capture to prevent re-triggering on the same input
 		this._recordCapture(userMessage);
 
