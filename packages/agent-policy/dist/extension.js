@@ -7,6 +7,7 @@
  * - harness_rules tool: retrieve and acknowledge rules
  */
 import { PolicyLoader } from "./policy-loader.js";
+import { logError, logInfo } from "./file-logger.js";
 import { getPolicyStore } from "./policy-store.js";
 import { renderSystemContract, renderFullRules, } from "./policy-renderer.js";
 import { classifyToolCall } from "./types.js";
@@ -48,12 +49,12 @@ export function registerAgentPolicy(pi, config) {
             // Build augmented system prompt
             const augmentedPrompt = event.systemPrompt + "\n\n" + contract;
             // Log for debugging
-            console.log(`[agent-policy] Delivered policy ${manifest.revision} to session ${receipt.sessionId}`);
+            logInfo("[agent-policy]", `Delivered policy ${manifest.revision} to session ${receipt.sessionId}`);
             return { systemPrompt: augmentedPrompt };
         }
         catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
-            console.error(`[agent-policy] Failed to load policy: ${errorMessage}`);
+            logError("[agent-policy]", `Failed to load policy: ${errorMessage}`);
             // Return minimal contract on failure - don't block startup
             const fallbackContract = `
 PI-HARNESS POLICY coverage=degraded
@@ -86,7 +87,7 @@ Use harness_rules to check policy status.
                 const blockReason = receipt
                     ? `Policy revision changed (expected ${manifest.revision}, received ${receipt.revision})`
                     : `Policy revision ${manifest.revision} not yet delivered`;
-                console.log(`[agent-policy] Blocked ${toolName}: ${blockReason}`);
+                logInfo("[agent-policy]", `Blocked ${toolName}: ${blockReason}`);
                 const reason = `[POLICY REQUIRED] ${blockReason}\n\n` +
                     `To proceed, you must acknowledge the harness rules:\n` +
                     `1. Run: harness_rules({ action: "manifest" })\n` +
@@ -110,7 +111,7 @@ Use harness_rules to check policy status.
         }
         catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
-            console.error(`[agent-policy] Policy check failed: ${errorMessage}`);
+            logError("[agent-policy]", `Policy check failed: ${errorMessage}`);
             // On error, fail open for the command but log the issue
             // This matches pi-lens's total handler guard behavior
             return {};
@@ -239,7 +240,7 @@ Use harness_rules to check policy status.
             }
             catch (err) {
                 const errorMessage = err instanceof Error ? err.message : String(err);
-                console.error(`[agent-policy] harness_rules failed: ${errorMessage}`);
+                logError("[agent-policy]", `harness_rules failed: ${errorMessage}`);
                 return {
                     content: [{
                             type: "text",
@@ -257,7 +258,7 @@ Use harness_rules to check policy status.
     pi.on("session_start", (_event, ctx) => {
         const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
         const cwd = getCwdFromContext(ctx);
-        console.log(`[agent-policy] Session started: ${sessionId} in ${cwd}`);
+        logInfo("[agent-policy]", `Session started: ${sessionId} in ${cwd}`);
     });
     // ---------------------------------------------------------------------------
     // agent_end: Cleanup
@@ -265,7 +266,7 @@ Use harness_rules to check policy status.
     pi.on("agent_end", () => {
         // Cleanup is silent - verbose logging is noisy in TUI
     });
-    console.log("[agent-policy] Registered agent policy runtime");
+    logInfo("[agent-policy]", "Registered agent policy runtime");
 }
 // ---------------------------------------------------------------------------
 // Helpers
