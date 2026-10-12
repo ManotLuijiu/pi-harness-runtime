@@ -30,6 +30,8 @@ export interface TaskIntakeResult {
     modifiesExisting: boolean;
     /** Recommended action */
     action: "create" | "skip" | "amend" | "investigate";
+    /** Existing todo ID if duplicate/modifies */
+    existingTodoId?: number;
 }
 /**
  * Task Intake Controller
@@ -52,13 +54,31 @@ export declare class TaskIntakeController {
      */
     evaluate(userMessage: string, existingTodos?: string[]): Promise<TaskIntakeResult>;
     /**
+     * Evaluate with actual todo items from continuation controller
+     */
+    evaluateWithTodos(userMessage: string, controller: {
+        getSnapshot: () => Promise<{
+            items: Array<{
+                id: number;
+                subject: string;
+                status: string;
+            }>;
+        }>;
+    }): Promise<TaskIntakeResult>;
+    /**
+     * Internal evaluation logic
+     */
+    private _evaluate;
+    /**
      * Simple heuristic when Jev is not available
      */
     private simpleHeuristic;
     /**
      * Dispatch a capture request to the agent
+     * @param userMessage - The original user message to capture
+     * @param customType - Optional custom type for the message (default: "task-capture")
      */
-    requestCapture(userMessage: string, existingTodos?: string[]): Promise<void>;
+    requestCapture(userMessage: string, customType?: string): Promise<void>;
     /**
      * Reset state
      */

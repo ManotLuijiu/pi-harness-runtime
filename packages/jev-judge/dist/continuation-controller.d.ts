@@ -26,6 +26,7 @@ export interface ContinuationState {
     lastMessageId: string | null;
     continuationQueued: boolean;
     userPaused: boolean;
+    explicitPause: boolean;
     lastSteerMessage: string | null;
     steerAttemptsForCurrentItem: number;
     lastItemContinued: number | null;
@@ -50,11 +51,29 @@ export declare class TodoContinuationController {
     private config;
     private todoProvider;
     private state;
+    private _inFlight;
     constructor(ctx: TodoContext, config?: ContinuationConfig);
     /**
      * Check if continuation is allowed (not paused, session idle)
      */
     private canContinue;
+    /**
+     * User explicitly paused - only this clears on explicit resume
+     */
+    explicitPause(): void;
+    /**
+     * Resume from explicit pause
+     */
+    resume(): void;
+    /**
+     * Temporary pause for user input processing
+     * Does not require explicit resume
+     */
+    tempPause(): void;
+    /**
+     * Clear continuation queue (called when work completes or starts)
+     */
+    clearQueue(): void;
     /**
      * Public method to evaluate and execute continuation
      * Called by external handlers (e.g., agent_settled)
@@ -67,6 +86,7 @@ export declare class TodoContinuationController {
     continueItem(item: TodoItem): Promise<void>;
     /**
      * Guarded dispatch - checks all conditions before sending
+     * Uses in-flight guard to prevent race conditions
      */
     private guardedDispatch;
     /**

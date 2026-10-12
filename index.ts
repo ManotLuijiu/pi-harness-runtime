@@ -510,12 +510,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Wire user messages to task intake
 		pi.on("message_start", (event) => {
-			const msg = (event as { message?: { role?: string; content?: string } }).message;
-			if (msg?.role === "user" && taskIntakeController) {
-				// Pause continuation when user sends message
+			const msgEvent = event as { message?: { role?: string; content?: string | Array<{ type?: string; text?: string }>; customType?: string } };
+			const msg = msgEvent.message;
+			if (!msg) return;
+
+			// Skip harness-generated messages (internal use)
+			if (msg.customType?.startsWith("harness:")) {
+				return;
+			}
+
+			if (msg.role === "user" && taskIntakeController) {
+				// Temporary pause for user input processing (auto-clears on next decision)
 				if (todoContinuationController) {
-					todoContinuationController.pause();
-					logToFile("[auto-continue]", "User input received, pausing continuation");
+					todoContinuationController.tempPause();
+					logToFile("[auto-continue]", "User input received, temp pausing");
 				}
 
 				// Extract user message content
@@ -532,13 +540,16 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}
 
 				// Evaluate with task intake controller (non-blocking)
-				if (userMessage.trim().length > 10 && taskIntakeController) {
+				if (userMessage.trim().length > 10 && taskIntakeController && todoContinuationController) {
 					const intake = taskIntakeController;
-					intake.evaluate(userMessage).then(async (result) => {
+					const controller = todoContinuationController;
+
+					// Get current todos for duplicate detection
+					intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
 						if (result.actionable && result.action !== "skip") {
 							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
-							// Request capture if actionable
-							await intake.requestCapture(userMessage);
+							// Request capture if actionable using harness custom message
+							await intake.requestCapture(userMessage, "harness:task-capture");
 						}
 					}).catch((err) => {
 						logToFile("[auto-continue]", "Task intake error:", String(err));
