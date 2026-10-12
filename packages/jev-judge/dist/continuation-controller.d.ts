@@ -3,6 +3,8 @@ import type { TodoItem, TodoContext } from "./todo-provider.js";
  * Continuation configuration
  */
 export interface ContinuationConfig {
+    /** Dispatch function to send messages to the agent (required) */
+    dispatch: (content: string) => Promise<void>;
     /** Minimum wait before Jev fallback (ms) */
     jevFallbackMinWaitMs?: number;
     /** Threshold for routine continuation */
@@ -59,10 +61,6 @@ export declare class TodoContinuationController {
      * Checks blockers and pause BEFORE selecting a task
      */
     decide(): Promise<ContinuationResult>;
-    /**
-     * Evaluate continuation decision and execute it
-     */
-    private evaluateContinuation;
     /**
      * Continue a specific todo item
      */

@@ -164,9 +164,9 @@ export class TypeSafeJudge {
       const questionData = question as JevQuestion;
       const answer = data.answers?.[questionId] as TypeSafeAnswer | undefined;
 
+      // Reject missing required answers
       if (!answer) {
-        // Skip missing answers
-        continue;
+        throw new Error(`TypeSafe API: missing answer for required question "${questionId}"`);
       }
 
       const decision = this.buildDecision(
