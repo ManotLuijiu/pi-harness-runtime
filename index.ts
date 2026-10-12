@@ -121,6 +121,30 @@ async function getTaskContext(): Promise<{
 	}
 }
 
+// --- Harness Startup Widget Messages (used by init functions) -----------------
+interface HarnessMessage {
+	id: string;
+	label: string;
+	text: string;
+	status: "wait" | "ok" | "err";
+	details?: string[]; // Multi-line fix instructions for errors
+}
+const harnessMessages: HarnessMessage[] = [];
+const preSessionErrors: HarnessMessage[] = []; // Errors from init functions (before session_start)
+
+function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait", details?: string[]) {
+	const id = `${label}-${Date.now()}`;
+	const msg: HarnessMessage = { id, label, text, status, details };
+	
+	// If session hasn't started yet, store in preSessionErrors
+	// The session_start handler will merge these into harnessMessages
+	if (harnessMessages.length === 0) {
+		preSessionErrors.push(msg);
+	} else {
+		harnessMessages.push(msg);
+	}
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	try {
 		// Check if Jev API key is available (env var or keys file)
@@ -506,6 +530,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			logStartup("[pi-harness]   3. echo \"{token}\" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt");
 			logStartup("[pi-harness]   4. echo \"{chat-id}\" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt");
 			logStartup("[pi-harness]   5. Reload pi — then DM @PiHarnessRuntimeBot to verify");
+			addHarnessMessage("Telegram", "not configured", "err", [
+				"echo \"<TOKEN>\" > keys/telegram-bot-token.txt",
+				"echo \"<CHAT_ID>\" > keys/telegram-chat-id.txt",
+				"Then: pi restart",
+			]);
 			return;
 		}
 
@@ -610,12 +639,21 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		logStartup("[pi-harness] Honcho not configured:");
 		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
 		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
+		addHarnessMessage("Honcho", "API key missing", "err", [
+			"Get key: https://app.honcho.dev/api-keys",
+			"echo \"<KEY>\" > keys/honcho-api-key.txt",
+			"Then: pi restart",
+		]);
 		return;
 	}
 
 	const apiKey = readFileSync(keyPath, "utf8").trim();
 	if (!apiKey) {
 		logStartup("[pi-harness] Honcho: API key is empty — skipping");
+		addHarnessMessage("Honcho", "API key empty", "err", [
+			"echo \"<KEY>\" > keys/honcho-api-key.txt",
+			"Then: pi restart",
+		]);
 		return;
 	}
 
@@ -635,6 +673,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		}
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
+		addHarnessMessage("Honcho", "init failed", "err", [
+			err instanceof Error ? err.message : String(err),
+			"Check keys/honcho-api-key.txt",
+		]);
 	}
 }
 
@@ -3033,6 +3075,7 @@ Run \`bd ready\` to see current bd issues.
 		label: string;
 		text: string;
 		status: "wait" | "ok" | "err";
+		details?: string[]; // Multi-line fix instructions for errors
 	}
 	const harnessMessages: HarnessMessage[] = [];
 	let startupVisible = true;
@@ -3040,9 +3083,9 @@ Run \`bd ready\` to see current bd issues.
 	let harnessWidgetRegistered = false;
 	let sessionGeneration = 0;
 
-	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait") {
+	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait", details?: string[]) {
 		const id = `${label}-${Date.now()}`;
-		harnessMessages.push({ id, label, text, status });
+		harnessMessages.push({ id, label, text, status, details });
 		harnessTUI?.requestRender();
 	}
 
@@ -3066,6 +3109,14 @@ Run \`bd ready\` to see current bd issues.
 			let text = `${treeChar} ${marker} ${msg.label}: ${msg.text}`;
 			text = truncateToWidth(text, width);
 			lines.push(text);
+
+			// Add fix instructions for errors (indented)
+			if (msg.status === "err" && msg.details && msg.details.length > 0) {
+				for (const detail of msg.details) {
+					const detailLine = `${isLast ? "   " : "│  "} Fix: ${detail}`;
+					lines.push(truncateToWidth(detailLine, width));
+				}
+			}
 		}
 
 		// Trailing spacer for breathing room (like Todos)
@@ -3109,6 +3160,14 @@ Run \`bd ready\` to see current bd issues.
 				{ placement: "aboveEditor" }, // Like Todos!
 			);
 			harnessWidgetRegistered = true;
+				
+			// Merge pre-session errors into harnessMessages
+			for (const err of preSessionErrors) {
+				harnessMessages.push(err);
+			}
+			preSessionErrors.length = 0; // Clear pre-session errors
+				
+			harnessTUI?.requestRender(); // Show widget with error messages
 		} else {
 			harnessTUI?.requestRender();
 		}
