@@ -440,21 +440,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		};
 
 		// --- agent_settled: Check todos and continue work ---------------
-		pi.on("agent_settled", async () => {
+		pi.on("agent_settled", async (_event, ctx) => {
 			// Don't continue if user is waiting for response
 			if (waitingForUserSince) return;
 
 			// Don't continue if inference is already in progress
 			if (_inferenceInProgress) return;
 
-			// Check if session is idle and has pending messages
-			const piExt = pi as ExtensionAPI & { isIdle?: () => boolean; hasPendingMessages?: () => boolean };
-			if (!piExt.isIdle?.() || piExt.hasPendingMessages?.()) return;
+			// Don't continue if session is not idle or has pending messages
+			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) return;
 
-			// Import and use the continuation controller
+			// Import and use the continuation controller with proper context
 			try {
 				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
-				const controller = new TodoContinuationController(pi);
+				// SAFETY: ctx is ExtensionContext which has all TodoContext properties (sessionManager, isIdle, hasPendingMessages, sendUserMessage)
+				// TodoContinuationController only needs the subset defined in TodoContext
+				const controller = new TodoContinuationController(ctx as unknown as import("./packages/jev-judge/dist/todo-provider.js").TodoContext);
 				const result = await controller.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
@@ -463,7 +464,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
 				} else if (result.action === "blocked") {
 					updateAutoContinueStatus("ERROR", "blocked");
-					logToFile("[auto-continue]", "Tasks blocked:", result.question);
+					logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
+				} else if (result.action === "stop") {
+					logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
 				}
 			} catch (err) {
 				logToFile("[auto-continue]", "agent_settled handler error:", String(err));

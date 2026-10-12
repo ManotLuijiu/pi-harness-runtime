@@ -77,9 +77,10 @@ export class MockTodoProvider {
 /**
  * Create a todo provider that reads from rpiv-todo state via session branch
  */
-export function createTodoProvider(pi) {
-    if (pi && "sessionManager" in pi) {
-        return new PiTodoProvider(pi);
+export function createTodoProvider(ctx) {
+    // Accept either TodoContext or ExtensionAPI with sessionManager
+    if (ctx && "sessionManager" in ctx) {
+        return new PiTodoProvider(ctx);
     }
     return new PiUnavailableTodoProvider();
 }
@@ -88,13 +89,14 @@ export function createTodoProvider(pi) {
  * Replicates rpiv-todo's replayFromBranch logic to access todo state
  */
 class PiTodoProvider {
-    pi;
+    ctx;
     _revision = 0;
-    constructor(pi) {
-        this.pi = pi;
+    _lastError = null;
+    constructor(ctx) {
+        this.ctx = ctx;
     }
     async availability() {
-        if (!this.pi.sessionManager) {
+        if (!this.ctx.sessionManager) {
             return {
                 available: false,
                 error: "Session manager not available",
@@ -114,12 +116,14 @@ class PiTodoProvider {
     }
     /**
      * Get todo state from session branch (replicates rpiv-todo's replayFromBranch)
+     * Returns null if branch read fails (don't silently return empty state)
      */
     getTodoState() {
         let fromEntries;
         let fromToolResults;
         try {
-            for (const entry of this.pi.sessionManager.getBranch()) {
+            const branch = this.ctx.sessionManager.getBranch();
+            for (const entry of branch) {
                 const e = entry;
                 // Priority 1: rpiv-todo-state custom entries
                 if (e.type === "custom") {
@@ -140,17 +144,24 @@ class PiTodoProvider {
             }
         }
         catch (err) {
-            // Fall through to EMPTY_STATE on error
+            // Return null on error - don't silently return empty state
+            this._lastError = err instanceof Error ? err.message : String(err);
+            return null;
         }
         // Prefer custom entries (more authoritative), fall back to tool results
-        return fromEntries ?? fromToolResults ?? { tasks: [], nextId: 1 };
+        this._lastError = null;
+        return fromEntries ?? fromToolResults ?? null;
     }
     async getSnapshot() {
         this._revision++;
         const state = this.getTodoState();
+        // If branch read failed, throw to indicate unavailable state
+        if (state === null) {
+            throw new Error(`Todo state unavailable: ${this._lastError ?? "branch read failed"}`);
+        }
         return {
             items: state.tasks,
-            sessionId: this.pi.sessionManager.getSessionId() ?? "unknown",
+            sessionId: this.ctx.sessionManager.getSessionId() ?? "unknown",
             revision: this._revision,
             createdAt: new Date(),
         };

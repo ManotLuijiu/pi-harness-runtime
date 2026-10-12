@@ -1,5 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { TodoItem } from "./todo-provider.js";
+import type { TodoItem, TodoContext } from "./todo-provider.js";
 /**
  * Continuation configuration
  */
@@ -26,7 +25,8 @@ export interface ContinuationState {
     continuationQueued: boolean;
     userPaused: boolean;
     lastSteerMessage: string | null;
-    steerAttempts: number;
+    steerAttemptsForCurrentItem: number;
+    lastItemContinued: number | null;
     lastEvaluationResult: string | null;
 }
 /**
@@ -44,18 +44,19 @@ export interface ContinuationResult {
  * Evaluates todo state on agent_settled and determines next action.
  */
 export declare class TodoContinuationController {
-    private pi;
+    private ctx;
     private config;
     private todoProvider;
     private state;
-    constructor(pi: ExtensionAPI, config?: ContinuationConfig);
+    constructor(ctx: TodoContext, config?: ContinuationConfig);
     /**
-     * Register lifecycle hooks
+     * Check if continuation is allowed (not paused, session idle)
      */
-    register(): void;
+    private canContinue;
     /**
      * Public method to evaluate and execute continuation
      * Called by external handlers (e.g., agent_settled)
+     * Checks blockers and pause BEFORE selecting a task
      */
     decide(): Promise<ContinuationResult>;
     /**
@@ -65,7 +66,7 @@ export declare class TodoContinuationController {
     /**
      * Continue a specific todo item
      */
-    private continueItem;
+    continueItem(item: TodoItem): Promise<void>;
     /**
      * Steer to continue a todo item
      */
@@ -81,11 +82,11 @@ export declare class TodoContinuationController {
     /**
      * Reset state for new session
      */
-    private reset;
+    _reset(): void;
     /**
      * Cleanup on shutdown
      */
-    private cleanup;
+    _cleanup(): void;
     /**
      * Get current state summary
      */
@@ -96,7 +97,8 @@ export declare class TodoContinuationController {
     };
 }
 /**
- * Create and register a todo continuation controller
+ * Create a todo continuation controller
+ * Note: Caller is responsible for registering event handlers with the proper context
  */
-export declare function createTodoContinuation(pi: ExtensionAPI, config?: ContinuationConfig): TodoContinuationController;
+export declare function createTodoContinuation(ctx: TodoContext, config?: ContinuationConfig): TodoContinuationController;
 //# sourceMappingURL=continuation-controller.d.ts.map

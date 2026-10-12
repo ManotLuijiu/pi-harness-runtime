@@ -21,7 +21,7 @@ function debugLog(component, ...args) {
  * Evaluates todo state on agent_settled and determines next action.
  */
 export class TodoContinuationController {
-    pi;
+    ctx;
     config;
     todoProvider;
     state = {
@@ -34,12 +34,13 @@ export class TodoContinuationController {
         continuationQueued: false,
         userPaused: false,
         lastSteerMessage: null,
-        steerAttempts: 0,
+        steerAttemptsForCurrentItem: 0,
+        lastItemContinued: null,
         lastEvaluationResult: null,
     };
-    constructor(pi, config) {
-        this.pi = pi;
-        this.todoProvider = createTodoProvider(pi);
+    constructor(ctx, config) {
+        this.ctx = ctx;
+        this.todoProvider = createTodoProvider(ctx);
         this.config = {
             jevFallbackMinWaitMs: 5 * 60 * 1000, // 5 minutes
             routineThreshold: 0.7,
@@ -49,66 +50,87 @@ export class TodoContinuationController {
         };
     }
     /**
-     * Register lifecycle hooks
+     * Check if continuation is allowed (not paused, session idle)
      */
-    register() {
-        debugLog("TodoContinuation", "Registering hooks");
-        // Session start - reset state
-        this.pi.on("session_start", () => {
-            this.reset();
-            debugLog("TodoContinuation", "Session started");
-        });
-        // Agent settled - evaluate continuation
-        this.pi.on("agent_settled", () => {
-            this.evaluateContinuation().catch(() => {
-                // Silently handle errors
-            });
-        });
-        // User input - reset pause state
-        this.pi.on("message_start", (event) => {
-            const msg = event.message;
-            if (msg?.role === "user") {
-                this.state.userPaused = false;
-                this.state.lastSteerMessage = null;
-            }
-        });
-        // Session shutdown - cleanup
-        this.pi.on("session_shutdown", () => {
-            this.cleanup();
-        });
-        // Tool call - track mutations that might invalidate state
-        this.pi.on("tool_call", (event) => {
-            // Increment generation on edits
-            if (["write", "edit", "bash"].includes(event.toolName)) {
-                this.state.generation++;
-                this.state.continuationQueued = false;
-            }
-        });
-        debugLog("TodoContinuation", "Lifecycle hooks registered");
+    canContinue() {
+        if (this.state.userPaused) {
+            debugLog("TodoContinuation", "User paused, not continuing");
+            return false;
+        }
+        if (this.ctx.isIdle?.() === false) {
+            debugLog("TodoContinuation", "Session not idle, not continuing");
+            return false;
+        }
+        if (this.ctx.hasPendingMessages?.()) {
+            debugLog("TodoContinuation", "Pending messages, not continuing");
+            return false;
+        }
+        return true;
     }
     /**
      * Public method to evaluate and execute continuation
      * Called by external handlers (e.g., agent_settled)
+     * Checks blockers and pause BEFORE selecting a task
      */
     async decide() {
+        // 1. Check if continuation is allowed
+        if (!this.canContinue()) {
+            return { action: "stop", reason: "paused or session not idle" };
+        }
+        // 2. Check provider availability
         const availability = await this.todoProvider.availability();
         if (!availability.available) {
             debugLog("TodoContinuation", "Provider unavailable:", availability.error);
-            return { action: "stop", reason: availability.error };
+            return { action: "stop", reason: availability.error ?? "provider unavailable" };
         }
-        const inProgress = await this.todoProvider.getInProgress();
-        const pending = await this.todoProvider.getPending();
-        if (inProgress.length > 0) {
-            return { action: "continue", nextItemId: inProgress[0].id };
+        // 3. Get todo state (throws on branch read failure)
+        let inProgress;
+        let pending;
+        let blocked;
+        try {
+            inProgress = await this.todoProvider.getInProgress();
+            pending = await this.todoProvider.getPending();
+            blocked = await this.todoProvider.getBlocked();
         }
-        if (pending.length > 0) {
-            return { action: "continue", nextItemId: pending[0].id };
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            debugLog("TodoContinuation", "Failed to read todos:", msg);
+            return { action: "stop", reason: `todo read failed: ${msg}` };
         }
-        // No work remaining - but check for blocked items
-        const blocked = await this.todoProvider.getBlocked();
+        // 4. Check for blocked items FIRST (before selecting any task)
         if (blocked.length > 0) {
+            debugLog("TodoContinuation", "Tasks blocked:", blocked.length);
             return { action: "blocked", question: `${blocked.length} task(s) blocked` };
         }
+        // 5. Continue in-progress work if any
+        if (inProgress.length > 0) {
+            const item = inProgress[0];
+            // Reset counter if switching to a different task
+            if (this.state.lastItemContinued !== item.id) {
+                this.state.steerAttemptsForCurrentItem = 0;
+                this.state.lastItemContinued = item.id;
+            }
+            // Check per-task attempt limit
+            if (this.state.steerAttemptsForCurrentItem >= this.config.maxSteerAttempts) {
+                return { action: "stop", reason: `max attempts (${this.config.maxSteerAttempts}) reached for task ${item.id}` };
+            }
+            return { action: "continue", nextItemId: item.id };
+        }
+        // 6. Continue pending work if any
+        if (pending.length > 0) {
+            const item = pending[0];
+            // Reset counter if switching to a different task
+            if (this.state.lastItemContinued !== item.id) {
+                this.state.steerAttemptsForCurrentItem = 0;
+                this.state.lastItemContinued = item.id;
+            }
+            // Check per-task attempt limit
+            if (this.state.steerAttemptsForCurrentItem >= this.config.maxSteerAttempts) {
+                return { action: "stop", reason: `max attempts (${this.config.maxSteerAttempts}) reached for task ${item.id}` };
+            }
+            return { action: "continue", nextItemId: item.id };
+        }
+        // 7. No work remaining
         return { action: "stop", reason: "No pending tasks" };
     }
     /**
@@ -172,11 +194,16 @@ export class TodoContinuationController {
      * Continue a specific todo item
      */
     async continueItem(item) {
-        if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
-            debugLog("TodoContinuation", "Max steer attempts reached");
+        // Increment attempts for this specific item
+        if (this.state.lastItemContinued !== item.id) {
+            this.state.steerAttemptsForCurrentItem = 0;
+            this.state.lastItemContinued = item.id;
+        }
+        if (this.state.steerAttemptsForCurrentItem >= this.config.maxSteerAttempts) {
+            debugLog("TodoContinuation", "Max steer attempts reached for item", item.id);
             return;
         }
-        this.state.steerAttempts++;
+        this.state.steerAttemptsForCurrentItem++;
         this.state.continuationQueued = true;
         // Build continuation message
         const message = item.description
@@ -186,7 +213,7 @@ export class TodoContinuationController {
         debugLog("TodoContinuation", "Sending continuation:", item.subject);
         // Send continuation message via Pi API
         try {
-            await this.pi.sendUserMessage(message, { deliverAs: "steer" });
+            await this.ctx.sendUserMessage?.(message, { deliverAs: "steer" });
         }
         catch (err) {
             debugLog("TodoContinuation", "Failed to send continuation:", String(err));
@@ -197,11 +224,16 @@ export class TodoContinuationController {
      * Steer to continue a todo item
      */
     async steerToContinue(itemId) {
-        if (this.state.steerAttempts >= this.config.maxSteerAttempts) {
-            debugLog("TodoContinuation", "Max steer attempts reached");
+        // Increment attempts for this specific item
+        if (this.state.lastItemContinued !== itemId) {
+            this.state.steerAttemptsForCurrentItem = 0;
+            this.state.lastItemContinued = itemId;
+        }
+        if (this.state.steerAttemptsForCurrentItem >= this.config.maxSteerAttempts) {
+            debugLog("TodoContinuation", "Max steer attempts reached for item", itemId);
             return;
         }
-        this.state.steerAttempts++;
+        this.state.steerAttemptsForCurrentItem++;
         this.state.continuationQueued = true;
         const snapshot = await this.todoProvider.getSnapshot();
         const item = snapshot.items.find((i) => i.id === itemId);
@@ -213,7 +245,7 @@ export class TodoContinuationController {
         debugLog("TodoContinuation", "Steering to continue item", itemId);
         // Send continuation message via Pi API
         try {
-            await this.pi.sendUserMessage(message, { deliverAs: "steer" });
+            await this.ctx.sendUserMessage?.(message, { deliverAs: "steer" });
         }
         catch (err) {
             debugLog("TodoContinuation", "Failed to send steer:", String(err));
@@ -239,7 +271,7 @@ export class TodoContinuationController {
     /**
      * Reset state for new session
      */
-    reset() {
+    _reset() {
         this.state = {
             sessionId: `session-${Date.now()}`,
             generation: 0,
@@ -250,14 +282,15 @@ export class TodoContinuationController {
             continuationQueued: false,
             userPaused: false,
             lastSteerMessage: null,
-            steerAttempts: 0,
+            steerAttemptsForCurrentItem: 0,
+            lastItemContinued: null,
             lastEvaluationResult: null,
         };
     }
     /**
      * Cleanup on shutdown
      */
-    cleanup() {
+    _cleanup() {
         debugLog("TodoContinuation", "Cleaning up");
         this.state.continuationQueued = false;
         this.state.generation++;
@@ -274,11 +307,10 @@ export class TodoContinuationController {
     }
 }
 /**
- * Create and register a todo continuation controller
+ * Create a todo continuation controller
+ * Note: Caller is responsible for registering event handlers with the proper context
  */
-export function createTodoContinuation(pi, config) {
-    const controller = new TodoContinuationController(pi, config);
-    controller.register();
-    return controller;
+export function createTodoContinuation(ctx, config) {
+    return new TodoContinuationController(ctx, config);
 }
 //# sourceMappingURL=continuation-controller.js.map

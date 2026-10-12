@@ -258,12 +258,21 @@ export class TypeSafeJudge {
 
     switch (answer.type) {
       case "noul":
-        // FIX: Use answer.noul (not probability) per TypeSafe API spec
+        // FIX: Validate noul value is present and in range [0, 1]
+        if (answer.noul === undefined || answer.noul === null) {
+          throw new Error(`TypeSafe API: missing noul value for question "${questionId}"`);
+        }
+        if (typeof answer.noul !== "number" || isNaN(answer.noul)) {
+          throw new Error(`TypeSafe API: invalid noul value for question "${questionId}": ${JSON.stringify(answer.noul)}`);
+        }
+        if (answer.noul < 0 || answer.noul > 1) {
+          throw new Error(`TypeSafe API: noul value out of range [0,1] for question "${questionId}": ${answer.noul}`);
+        }
         response = {
           type: "noul",
-          noul: answer.noul ?? 0.5,
+          noul: answer.noul,
         };
-        probability = answer.noul ?? 0.5;
+        probability = answer.noul;
         break;
 
       case "choice":

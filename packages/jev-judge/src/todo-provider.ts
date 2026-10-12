@@ -8,6 +8,20 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
+ * Minimal context interface for todo provider
+ * Contains only the properties needed to read session branch and send messages
+ */
+export interface TodoContext {
+	sessionManager: {
+		getSessionId(): string;
+		getBranch(): Iterable<unknown>;
+	};
+	isIdle?: () => boolean;
+	hasPendingMessages?: () => boolean;
+	sendUserMessage?: (content: string, opts?: { deliverAs?: string }) => Promise<void>;
+}
+
+/**
  * Todo item status
  */
 export type TodoStatus = "pending" | "in_progress" | "completed" | "deleted";
@@ -175,22 +189,15 @@ export class MockTodoProvider implements TodoProvider {
 	}
 }
 
-/**
- * Extended ExtensionAPI type with sessionManager (not in base type but available at runtime)
- */
-interface PiExtensionAPI extends ExtensionAPI {
-	sessionManager: {
-		getSessionId(): string;
-		getBranch(): Iterable<unknown>;
-	};
-}
+
 
 /**
  * Create a todo provider that reads from rpiv-todo state via session branch
  */
-export function createTodoProvider(pi?: ExtensionAPI): TodoProvider {
-	if (pi && "sessionManager" in pi) {
-		return new PiTodoProvider(pi as PiExtensionAPI);
+export function createTodoProvider(ctx?: TodoContext | ExtensionAPI): TodoProvider {
+	// Accept either TodoContext or ExtensionAPI with sessionManager
+	if (ctx && "sessionManager" in ctx) {
+		return new PiTodoProvider(ctx as TodoContext);
 	}
 	return new PiUnavailableTodoProvider();
 }
@@ -200,15 +207,16 @@ export function createTodoProvider(pi?: ExtensionAPI): TodoProvider {
  * Replicates rpiv-todo's replayFromBranch logic to access todo state
  */
 class PiTodoProvider implements TodoProvider {
-	private pi: PiExtensionAPI;
+	private ctx: TodoContext;
 	private _revision = 0;
+	private _lastError: string | null = null;
 
-	constructor(pi: PiExtensionAPI) {
-		this.pi = pi;
+	constructor(ctx: TodoContext) {
+		this.ctx = ctx;
 	}
 
 	async availability(): Promise<TodoAvailability> {
-		if (!this.pi.sessionManager) {
+		if (!this.ctx.sessionManager) {
 			return {
 				available: false,
 				error: "Session manager not available",
@@ -229,13 +237,15 @@ class PiTodoProvider implements TodoProvider {
 
 	/**
 	 * Get todo state from session branch (replicates rpiv-todo's replayFromBranch)
+	 * Returns null if branch read fails (don't silently return empty state)
 	 */
-	private getTodoState(): { tasks: TodoItem[]; nextId: number } {
+	private getTodoState(): { tasks: TodoItem[]; nextId: number } | null {
 		let fromEntries: { tasks: TodoItem[]; nextId: number } | undefined;
 		let fromToolResults: { tasks: TodoItem[]; nextId: number } | undefined;
 
 		try {
-			for (const entry of this.pi.sessionManager.getBranch()) {
+			const branch = this.ctx.sessionManager.getBranch();
+			for (const entry of branch) {
 				const e = entry as {
 					type?: string;
 					customType?: string;
@@ -259,19 +269,28 @@ class PiTodoProvider implements TodoProvider {
 				fromToolResults = { tasks: (msg.details as { tasks: TodoItem[] }).tasks.map(t => ({ ...t })), nextId: (msg.details as { nextId: number }).nextId };
 			}
 		} catch (err) {
-			// Fall through to EMPTY_STATE on error
+			// Return null on error - don't silently return empty state
+			this._lastError = err instanceof Error ? err.message : String(err);
+			return null;
 		}
 
 		// Prefer custom entries (more authoritative), fall back to tool results
-		return fromEntries ?? fromToolResults ?? { tasks: [], nextId: 1 };
+		this._lastError = null;
+		return fromEntries ?? fromToolResults ?? null;
 	}
 
 	async getSnapshot(): Promise<TodoSnapshot> {
 		this._revision++;
 		const state = this.getTodoState();
+		
+		// If branch read failed, throw to indicate unavailable state
+		if (state === null) {
+			throw new Error(`Todo state unavailable: ${this._lastError ?? "branch read failed"}`);
+		}
+		
 		return {
 			items: state.tasks,
-			sessionId: this.pi.sessionManager.getSessionId() ?? "unknown",
+			sessionId: this.ctx.sessionManager.getSessionId() ?? "unknown",
 			revision: this._revision,
 			createdAt: new Date(),
 		};
