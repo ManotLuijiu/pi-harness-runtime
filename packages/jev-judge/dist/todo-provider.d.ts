@@ -6,6 +6,21 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /**
+ * Minimal context interface for todo provider
+ * Contains only the properties needed to read session branch and send messages
+ */
+export interface TodoContext {
+    sessionManager: {
+        getSessionId(): string;
+        getBranch(): Iterable<unknown>;
+    };
+    isIdle?: () => boolean;
+    hasPendingMessages?: () => boolean;
+    sendUserMessage?: (content: string, opts?: {
+        deliverAs?: string;
+    }) => Promise<void>;
+}
+/**
  * Todo item status
  */
 export type TodoStatus = "pending" | "in_progress" | "completed" | "deleted";
@@ -99,7 +114,7 @@ export declare class MockTodoProvider implements TodoProvider {
 /**
  * Create a todo provider that reads from rpiv-todo state via session branch
  */
-export declare function createTodoProvider(pi?: ExtensionAPI): TodoProvider;
+export declare function createTodoProvider(ctx?: TodoContext | ExtensionAPI): TodoProvider;
 /**
  * Provider that reports Pi todo extension is not available
  */
