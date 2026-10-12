@@ -9,6 +9,7 @@
  */
 
 import { JevJudge, getApiKeyFromEnv } from "./index.js";
+import { logError } from "./file-logger.js";
 
 /**
  * Environment context
@@ -235,7 +236,7 @@ export class EnvironmentJudge {
         recommendedActions,
       };
     } catch (error) {
-      console.error("[EnvironmentJudge] Jev call failed:", error);
+      logError("[EnvironmentJudge]", `Jev call failed: ${error}`);
       return this.fallbackDecision(ctx);
     }
   }

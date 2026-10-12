@@ -8,6 +8,7 @@
  * Solution: Jev analyzes environment context to guide safe operations.
  */
 import { JevJudge, getApiKeyFromEnv } from "./index.js";
+import { logError } from "./file-logger.js";
 const DEFAULT_CONFIG = {
     devPatterns: ["dev", "staging", "test", "local"],
     prodPatterns: ["prod", "production", "live", "主站"],
@@ -166,7 +167,7 @@ export class EnvironmentJudge {
             };
         }
         catch (error) {
-            console.error("[EnvironmentJudge] Jev call failed:", error);
+            logError("[EnvironmentJudge]", `Jev call failed: ${error}`);
             return this.fallbackDecision(ctx);
         }
     }

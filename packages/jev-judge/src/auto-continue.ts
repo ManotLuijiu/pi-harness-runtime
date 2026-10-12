@@ -10,6 +10,7 @@
 
 import { JevJudge } from "./index.js";
 import type { JevJudgeConfig, JevEvaluationResult } from "./types.js";
+import { logError } from "./file-logger.js";
 
 /**
  * Task tracking state
@@ -128,7 +129,7 @@ export class AutoContinueJudge {
 
       return this.buildDecision(result, taskState);
     } catch (error) {
-      console.error("[AutoContinueJudge] Jev call failed:", error);
+      logError("[AutoContinueJudge]", `Jev call failed: ${error}`);
       return this.fallbackDecision(taskState);
     }
   }
