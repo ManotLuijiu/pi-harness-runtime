@@ -216,15 +216,22 @@ export class TodoContinuationController {
 
 		this.state.steerAttempts++;
 		this.state.continuationQueued = true;
+
 		// Build continuation message
 		const message = item.description
 			? `Continue task: ${item.subject}\n\n${item.description}`
 			: `Continue task: ${item.subject}`;
 
 		this.state.lastSteerMessage = message;
-		debugLog("TodoContinuation", "Continuing:", item.subject);
-		// Note: Pi does not expose sendUserMessage API.
-		// The Telegram notification system will prompt user for ambiguous cases.
+		debugLog("TodoContinuation", "Sending continuation:", item.subject);
+
+		// Send continuation message via Pi API
+		try {
+			await (this.pi as ExtensionAPI & { sendUserMessage: (content: string, opts?: { deliverAs?: string }) => Promise<void> }).sendUserMessage(message, { deliverAs: "steer" });
+		} catch (err) {
+			debugLog("TodoContinuation", "Failed to send continuation:", String(err));
+			this.state.continuationQueued = false;
+		}
 	}
 
 	/**
@@ -249,6 +256,14 @@ export class TodoContinuationController {
 		this.state.lastSteerMessage = message;
 		this.state.todoRevision = snapshot.revision;
 		debugLog("TodoContinuation", "Steering to continue item", itemId);
+
+		// Send continuation message via Pi API
+		try {
+			await (this.pi as ExtensionAPI & { sendUserMessage: (content: string, opts?: { deliverAs?: string }) => Promise<void> }).sendUserMessage(message, { deliverAs: "steer" });
+		} catch (err) {
+			debugLog("TodoContinuation", "Failed to send steer:", String(err));
+			this.state.continuationQueued = false;
+		}
 	}
 
 	/**
