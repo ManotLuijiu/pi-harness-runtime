@@ -33,11 +33,13 @@ export class TodoContinuationController {
         lastMessageId: null,
         continuationQueued: false,
         userPaused: false,
+        explicitPause: false,
         lastSteerMessage: null,
         steerAttemptsForCurrentItem: 0,
         lastItemContinued: null,
         lastEvaluationResult: null,
     };
+    _inFlight = false; // Guard against concurrent dispatches
     constructor(ctx, config) {
         this.ctx = ctx;
         this.todoProvider = createTodoProvider(ctx);
@@ -53,8 +55,9 @@ export class TodoContinuationController {
      * Check if continuation is allowed (not paused, session idle)
      */
     canContinue() {
-        if (this.state.userPaused) {
-            debugLog("TodoContinuation", "User paused, not continuing");
+        // Only blocked by explicit pause, not by temporary user input pause
+        if (this.state.explicitPause) {
+            debugLog("TodoContinuation", "Explicitly paused, not continuing");
             return false;
         }
         if (this.ctx.isIdle?.() === false) {
@@ -66,6 +69,41 @@ export class TodoContinuationController {
             return false;
         }
         return true;
+    }
+    /**
+     * User explicitly paused - only this clears on explicit resume
+     */
+    explicitPause() {
+        debugLog("TodoContinuation", "Explicit pause requested");
+        this.state.explicitPause = true;
+        this.state.userPaused = true;
+    }
+    /**
+     * Resume from explicit pause
+     */
+    resume() {
+        if (this.state.explicitPause) {
+            debugLog("TodoContinuation", "Resuming from explicit pause");
+            this.state.explicitPause = false;
+            this.state.userPaused = false;
+            this.clearQueue();
+        }
+    }
+    /**
+     * Temporary pause for user input processing
+     * Does not require explicit resume
+     */
+    tempPause() {
+        debugLog("TodoContinuation", "Temporary pause for user input");
+        this.state.userPaused = true;
+    }
+    /**
+     * Clear continuation queue (called when work completes or starts)
+     */
+    clearQueue() {
+        this.state.continuationQueued = false;
+        this._inFlight = false;
+        debugLog("TodoContinuation", "Continuation queue cleared");
     }
     /**
      * Public method to evaluate and execute continuation
@@ -175,11 +213,17 @@ export class TodoContinuationController {
     }
     /**
      * Guarded dispatch - checks all conditions before sending
+     * Uses in-flight guard to prevent race conditions
      */
     async guardedDispatch(itemId, message) {
-        // 1. Check if paused by user
-        if (this.state.userPaused) {
-            debugLog("TodoContinuation", "Guarded dispatch: user paused, skipping");
+        // 0. Acquire in-flight guard to prevent concurrent dispatches
+        if (this._inFlight) {
+            debugLog("TodoContinuation", "Guarded dispatch: already in-flight, skipping");
+            return false;
+        }
+        // 1. Check if paused by explicit user pause
+        if (this.state.explicitPause) {
+            debugLog("TodoContinuation", "Guarded dispatch: explicitly paused, skipping");
             return false;
         }
         // 2. Check if session is still idle
@@ -192,18 +236,21 @@ export class TodoContinuationController {
             debugLog("TodoContinuation", "Guarded dispatch: already queued, skipping");
             return false;
         }
-        // 4. Verify item still needs work (not completed)
+        // 4. Verify item still needs work (not completed) - acquire guard BEFORE await
+        this._inFlight = true;
         try {
             const snapshot = await this.todoProvider.getSnapshot();
             const item = snapshot.items.find((i) => i.id === itemId);
             if (item?.status === "completed") {
                 debugLog("TodoContinuation", "Guarded dispatch: item completed, skipping");
+                this._inFlight = false;
                 return false;
             }
         }
         catch {
             // If we can't read todos, skip dispatch
             debugLog("TodoContinuation", "Guarded dispatch: failed to read todos, skipping");
+            this._inFlight = false;
             return false;
         }
         // All checks passed - dispatch
@@ -211,11 +258,13 @@ export class TodoContinuationController {
         this.state.lastSteerMessage = message;
         try {
             await this.config.dispatch(message);
+            // Queue stays set while agent processes - cleared on agent_settled
             return true;
         }
         catch (err) {
             debugLog("TodoContinuation", "Guarded dispatch failed:", String(err));
             this.state.continuationQueued = false;
+            this._inFlight = false;
             return false;
         }
     }
@@ -270,11 +319,13 @@ export class TodoContinuationController {
             lastMessageId: null,
             continuationQueued: false,
             userPaused: false,
+            explicitPause: false,
             lastSteerMessage: null,
             steerAttemptsForCurrentItem: 0,
             lastItemContinued: null,
             lastEvaluationResult: null,
         };
+        this._inFlight = false;
     }
     /**
      * Cleanup on shutdown

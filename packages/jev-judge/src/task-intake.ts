@@ -34,6 +34,8 @@ export interface TaskIntakeResult {
 	modifiesExisting: boolean;
 	/** Recommended action */
 	action: "create" | "skip" | "amend" | "investigate";
+	/** Existing todo ID if duplicate/modifies */
+	existingTodoId?: number;
 }
 
 /**
@@ -73,6 +75,37 @@ export class TaskIntakeController {
 	async evaluate(
 		userMessage: string,
 		existingTodos: string[] = []
+	): Promise<TaskIntakeResult> {
+		return this._evaluate(userMessage, existingTodos);
+	}
+
+	/**
+	 * Evaluate with actual todo items from continuation controller
+	 */
+	async evaluateWithTodos(
+		userMessage: string,
+		controller: { getSnapshot: () => Promise<{ items: Array<{ id: number; subject: string; status: string }> }> }
+	): Promise<TaskIntakeResult> {
+		// Get actual todos from the continuation controller
+		let existingTodos: string[] = [];
+		try {
+			const snapshot = await controller.getSnapshot();
+			existingTodos = snapshot.items
+				.filter((i) => i.status !== "completed" && i.status !== "deleted")
+				.map((i) => i.subject);
+		} catch {
+			// Ignore errors, use empty list
+		}
+
+		return this._evaluate(userMessage, existingTodos);
+	}
+
+	/**
+	 * Internal evaluation logic
+	 */
+	private async _evaluate(
+		userMessage: string,
+		existingTodos: string[]
 	): Promise<TaskIntakeResult> {
 		// Deduplicate identical requests
 		if (userMessage === this.lastRequest && this.lastResult) {
@@ -237,29 +270,17 @@ export class TaskIntakeController {
 
 	/**
 	 * Dispatch a capture request to the agent
+	 * @param userMessage - The original user message to capture
+	 * @param customType - Optional custom type for the message (default: "task-capture")
 	 */
 	async requestCapture(
 		userMessage: string,
-		existingTodos: string[] = []
+		customType: string = "task-capture"
 	): Promise<void> {
-		const result = await this.evaluate(userMessage, existingTodos);
-
-		if (result.action === "skip") {
-			return;
-		}
-
 		// Build a message to prompt the agent to create todos
-		let message = "Work detected in user request. ";
+		let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
 
-		if (result.isDuplicate) {
-			message += "Potential duplicate detected. ";
-		}
-
-		if (result.modifiesExisting) {
-			message += "Existing task modification detected. ";
-		}
-
-		message += `Please capture this work in the todo list if not already tracked.`;
+		message += "\n\nPlease capture this work in the todo list if not already tracked.";
 
 		await this.config.dispatch(message);
 	}
