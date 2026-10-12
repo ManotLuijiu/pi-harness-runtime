@@ -548,6 +548,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						todoContinuationController.explicitPause();
 						logToFile("[auto-continue]", "Explicit pause/stop detected");
 					}
+					// Invalidate any pending Jev evaluations to prevent late dispatch
+					if (taskIntakeController) {
+						taskIntakeController.invalidatePending();
+					}
 					// Don't process intake for explicit stop
 					return;
 				}
@@ -649,6 +653,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const result = await todoContinuationController.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
+					// Clear queue state from previous task BEFORE dispatching new continuation
+					// This ensures _inFlight and continuationQueued flags are reset
+					todoContinuationController.clearQueue();
 					updateAutoContinueStatus("CONTINUING");
 					await todoContinuationController.steerToContinue(result.nextItemId);
 					// Queue remains set while agent processes, cleared on next settled if no dispatch
