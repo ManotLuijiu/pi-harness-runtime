@@ -23,7 +23,7 @@ function debugLog(component, ...args) {
 export class TodoContinuationController {
     pi;
     config;
-    todoProvider = createTodoProvider();
+    todoProvider;
     state = {
         sessionId: "",
         generation: 0,
@@ -39,6 +39,7 @@ export class TodoContinuationController {
     };
     constructor(pi, config) {
         this.pi = pi;
+        this.todoProvider = createTodoProvider(pi);
         this.config = {
             jevFallbackMinWaitMs: 5 * 60 * 1000, // 5 minutes
             routineThreshold: 0.7,
@@ -157,9 +158,15 @@ export class TodoContinuationController {
             ? `Continue task: ${item.subject}\n\n${item.description}`
             : `Continue task: ${item.subject}`;
         this.state.lastSteerMessage = message;
-        debugLog("TodoContinuation", "Continuing:", item.subject);
-        // Note: Pi does not expose sendUserMessage API.
-        // The Telegram notification system will prompt user for ambiguous cases.
+        debugLog("TodoContinuation", "Sending continuation:", item.subject);
+        // Send continuation message via Pi API
+        try {
+            await this.pi.sendUserMessage(message, { deliverAs: "steer" });
+        }
+        catch (err) {
+            debugLog("TodoContinuation", "Failed to send continuation:", String(err));
+            this.state.continuationQueued = false;
+        }
     }
     /**
      * Steer to continue a todo item
@@ -179,6 +186,14 @@ export class TodoContinuationController {
         this.state.lastSteerMessage = message;
         this.state.todoRevision = snapshot.revision;
         debugLog("TodoContinuation", "Steering to continue item", itemId);
+        // Send continuation message via Pi API
+        try {
+            await this.pi.sendUserMessage(message, { deliverAs: "steer" });
+        }
+        catch (err) {
+            debugLog("TodoContinuation", "Failed to send steer:", String(err));
+            this.state.continuationQueued = false;
+        }
     }
     /**
      * Mark a todo item as complete
