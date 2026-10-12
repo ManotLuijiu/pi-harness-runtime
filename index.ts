@@ -19,6 +19,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { HarnessStartupStatus, harnessStatusMarker } from "./harness-startup-status.ts";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
@@ -122,30 +123,12 @@ async function getTaskContext(): Promise<{
 }
 
 // --- Harness Startup Widget Messages (used by init functions) -----------------
-interface HarnessMessage {
-	id: string;
-	label: string;
-	text: string;
-	status: "wait" | "ok" | "err";
-	details?: string[]; // Multi-line fix instructions for errors
-}
-const harnessMessages: HarnessMessage[] = [];
-const preSessionErrors: HarnessMessage[] = []; // Errors from init functions (before session_start)
-
-function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait", details?: string[]) {
-	const id = `${label}-${Date.now()}`;
-	const msg: HarnessMessage = { id, label, text, status, details };
-	
-	// If session hasn't started yet, store in preSessionErrors
-	// The session_start handler will merge these into harnessMessages
-	if (harnessMessages.length === 0) {
-		preSessionErrors.push(msg);
-	} else {
-		harnessMessages.push(msg);
-	}
-}
+const startupStatus = new HarnessStartupStatus();
+const harnessMessages = startupStatus.messages;
+const addHarnessMessage = startupStatus.update.bind(startupStatus);
 
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
+	addHarnessMessage("Jev", "initializing", "wait");
 	try {
 		// Check if Jev API key is available (env var or keys file)
 		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
@@ -158,19 +141,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		}
 
 		const hasEnvKey =
-			process.env.TYPESAFE_API_KEY || process.env.OPENROUTER_API_KEY;
+			process.env.TYPESAFE_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
 		const hasFileKey =
 			existsSync(`${keysDir}/jev-api-key.txt`) &&
-			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 10;
+			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 0;
 
 		if (!hasEnvKey && !hasFileKey) {
+			addHarnessMessage("Jev", "API key missing or empty; auto-continue unavailable", "warn", [
+				"Set TYPESAFE_API_KEY or ~/.pi-harness-runtime/keys/jev-api-key.txt, then reload Pi.",
+			]);
 			logToFile("[auto-continue]", "No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
 			return;
 		}
 
 		// Resolve the actual API key: env takes priority, file is fallback
-		const resolvedApiKey = process.env.TYPESAFE_API_KEY ||
-			process.env.OPENROUTER_API_KEY ||
+		const resolvedApiKey = hasEnvKey ||
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim();
 
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
@@ -450,13 +435,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			} catch {
 				_inferenceInProgress = false;
 				updateAutoContinueStatus("ERROR");
+				addHarnessMessage("Jev", "auto-continue evaluation failed", "err");
 			}
 		};
 
 		// Start periodic check
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
+		addHarnessMessage("Jev", "auto-continue configured (API not yet verified)", "ok");
 	} catch {
-		// auto-continue not available
+		addHarnessMessage("Jev", "auto-continue initialization failed", "err", [
+			"Check Jev package installation and key-file permissions, then reload Pi.",
+		]);
 	}
 }
 
@@ -485,6 +474,7 @@ async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
 // --- qdrant-vector-search: Semantic skill search via Qdrant -------------------
 // Check config and report status — right after Jev for discoverability
 async function initQdrant(): Promise<void> {
+	addHarnessMessage("Qdrant", "checking configuration", "wait");
 	try {
 		const { getQdrantConfig } = await import("./packages/skills/src/loader.js");
 		const cfg = getQdrantConfig();
@@ -494,23 +484,27 @@ async function initQdrant(): Promise<void> {
 			const embeddingKey = getOpenAIApiKey();
 			if (embeddingKey) {
 				logStartup("[pi-harness] Qdrant vector search ready");
+				addHarnessMessage("Qdrant", "configured (connection not yet verified)", "ok");
 			} else {
 				logStartup("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
+				addHarnessMessage("Qdrant", "embedding key missing; vector indexing unavailable", "warn");
 				logStartup('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
 			}
 		} else {
 			logStartup("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
+			addHarnessMessage("Qdrant", "not configured", "warn");
 			logStartup(`  echo "{cluster-url}" > ~/.pi-harness-runtime/keys/qdrant-cluster-url.txt`);
 			logStartup(`  echo "{api-key}" > ~/.pi-harness-runtime/keys/qdrant-api-key.txt`);
 		}
 	} catch {
-		// qdrant-skills not available
+		addHarnessMessage("Qdrant", "initialization failed", "err");
 	}
 }
 
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
 async function initTelegram(pi: ExtensionAPI): Promise<void> {
+	addHarnessMessage("Telegram", "initializing", "wait");
 	try {
 		const {
 			NotificationCenter,
@@ -530,10 +524,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			logStartup("[pi-harness]   3. echo \"{token}\" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt");
 			logStartup("[pi-harness]   4. echo \"{chat-id}\" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt");
 			logStartup("[pi-harness]   5. Reload pi — then DM @PiHarnessRuntimeBot to verify");
-			addHarnessMessage("Telegram", "not configured", "err", [
+			addHarnessMessage("Telegram", "credentials missing; notifications unavailable", "warn", [
 				"echo \"<TOKEN>\" > keys/telegram-bot-token.txt",
 				"echo \"<CHAT_ID>\" > keys/telegram-chat-id.txt",
-				"Then: pi restart",
+				"Then reload Pi.",
 			]);
 			return;
 		}
@@ -543,6 +537,9 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		if (!botToken || !chatId) {
 			logStartup("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
+			addHarnessMessage("Telegram", "bot token or chat ID is empty; notifications unavailable", "warn", [
+				"Fill telegram-bot-token.txt and telegram-chat-id.txt in ~/.pi-harness-runtime/keys/, then reload Pi.",
+			]);
 			return;
 		}
 
@@ -559,8 +556,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		});
 
 		await center.initialize();
-		if (!center.hasChannels()) {
+		if (!center.hasHealthyChannels()) {
 			logStartup("[pi-harness] Telegram: initialization failed — skipping");
+			addHarnessMessage("Telegram", "bot verification failed; notifications unavailable", "err", [
+				"Check the bot token and network access, then reload Pi.",
+			]);
 			return;
 		}
 
@@ -609,13 +609,17 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Log the actual bot username (fetched from Telegram API via getMe)
 		const botUsername = center.getTelegramBotUsername();
+		addHarnessMessage("Telegram", "bot verified (chat delivery not tested)", "ok");
 		if (botUsername) {
 			logStartup(`[pi-harness] Telegram (@${botUsername}) ready — DM the bot to receive alerts`);
 		} else {
 			logStartup(`[pi-harness] Telegram notifications ready`);
 		}
 	} catch (err) {
-		logStartup("[pi-harness] Telegram: init failed:", err instanceof Error ? err.message : String(err));
+		logStartup("[pi-harness] Telegram: init failed (check installation, credentials, and network)");
+		addHarnessMessage("Telegram", "initialization failed; notifications unavailable", "err", [
+			"Check package installation, key-file permissions, and network access, then reload Pi.",
+		]);
 	}
 }
 
@@ -627,6 +631,8 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 // - Bounded context injection with provenance
 
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
+	addHarnessMessage("Honcho", "initializing", "wait");
+	try {
 	// Import new Honcho integration module
 	const { initHoncho: honchoInit, registerHonchoLifecycle } = await import("./harness/honcho-init.js");
 
@@ -639,10 +645,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		logStartup("[pi-harness] Honcho not configured:");
 		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
 		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
-		addHarnessMessage("Honcho", "API key missing", "err", [
+		addHarnessMessage("Honcho", "API key missing", "warn", [
 			"Get key: https://app.honcho.dev/api-keys",
 			"echo \"<KEY>\" > keys/honcho-api-key.txt",
-			"Then: pi restart",
+			"Then reload Pi.",
 		]);
 		return;
 	}
@@ -650,14 +656,13 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 	const apiKey = readFileSync(keyPath, "utf8").trim();
 	if (!apiKey) {
 		logStartup("[pi-harness] Honcho: API key is empty — skipping");
-		addHarnessMessage("Honcho", "API key empty", "err", [
+		addHarnessMessage("Honcho", "API key empty", "warn", [
 			"echo \"<KEY>\" > keys/honcho-api-key.txt",
-			"Then: pi restart",
+			"Then reload Pi.",
 		]);
 		return;
 	}
 
-	try {
 		// Register lifecycle hooks using the new integration
 		// SAFETY: pi.on accepts these event names at runtime
 		registerHonchoLifecycle(pi as unknown as { on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void });
@@ -668,8 +673,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 
 		if (result) {
 			logStartup("[pi-harness] Honcho integration ready");
+			addHarnessMessage("Honcho", "initialized", "ok");
 		} else {
 			logStartup("[pi-harness] Honcho: initialization returned null");
+			addHarnessMessage("Honcho", "initialization returned no client", "err");
 		}
 	} catch (err) {
 		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
@@ -1100,6 +1107,7 @@ async function initLoopCompletions(pi: ExtensionAPI): Promise<void> {
  * - Scan skills from ~/.pi-harness-runtime/skills/
  */
 async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
+	addHarnessMessage("Skills", "initializing", "wait");
 	try {
 		// Dynamically import to avoid circular deps
 		const { initSkills } =
@@ -1108,6 +1116,7 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 		// Scan skills from default locations
 		const result = initSkills();
 		logStartup(`[pi-harness] Scanned ${result.skills.length} skills`);
+		addHarnessMessage("Skills", `${result.skills.length} discovered`, "ok");
 
 		// Register /skill commands
 		try {
@@ -1147,6 +1156,7 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 	} catch (err) {
 		logStartup(`[pi-harness] Failed to initialize skills:`, err instanceof Error ? err.message : String(err));
+		addHarnessMessage("Skills", "initialization failed", "err");
 	}
 }
 
@@ -1604,7 +1614,7 @@ export default function (pi: ExtensionAPI) {
 	void initSshDetachInterceptor(pi);
 
 	// --- jev-auto-continue: Agent autonomous decision when user unavailable -----
-	void initAutoContinue(pi);
+	asyncInitPromises.push(initAutoContinue(pi));
 
 	// Register todo-driven continuation controller
 	createTodoContinuation(pi);
@@ -3080,24 +3090,12 @@ Run \`bd ready\` to see current bd issues.
 	// - Tree characters like Todos (├─ └─)
 	// - Trailing spacer line for breathing room
 	const HARNESS_WIDGET_KEY = "pi-harness-startup";
-	interface HarnessMessage {
-		id: string;
-		label: string;
-		text: string;
-		status: "wait" | "ok" | "err";
-		details?: string[]; // Multi-line fix instructions for errors
-	}
-	const harnessMessages: HarnessMessage[] = [];
 	let startupVisible = true;
 	let harnessTUI: { requestRender: (forced?: boolean) => void } | null = null;
 	let harnessWidgetRegistered = false;
 	let sessionGeneration = 0;
 
-	function addHarnessMessage(label: string, text: string, status: "wait" | "ok" | "err" = "wait", details?: string[]) {
-		const id = `${label}-${Date.now()}`;
-		harnessMessages.push({ id, label, text, status, details });
-		harnessTUI?.requestRender();
-	}
+	startupStatus.onChange = () => harnessTUI?.requestRender();
 
 	function hideHarnessBlock() {
 		startupVisible = false;
@@ -3131,7 +3129,7 @@ Run \`bd ready\` to see current bd issues.
 
 		for (let i = 0; i < harnessMessages.length; i++) {
 			const msg = harnessMessages[i];
-			const marker = msg.status === "ok" ? "[OK]" : msg.status === "err" ? "[ERR]" : "[WAIT]";
+			const marker = harnessStatusMarker(msg.status);
 			const isLast = i === harnessMessages.length - 1;
 			const treeChar = isLast ? "└─" : "├─";
 			let text = `${treeChar} ${marker} ${msg.label}: ${msg.text}`;
@@ -3139,7 +3137,7 @@ Run \`bd ready\` to see current bd issues.
 			lines.push(text);
 
 			// Add fix instructions for errors (indented)
-			if (msg.status === "err" && msg.details && msg.details.length > 0) {
+			if ((msg.status === "err" || msg.status === "warn") && msg.details && msg.details.length > 0) {
 				for (const detail of msg.details) {
 					const detailLine = `${isLast ? "   " : "│  "} Fix: ${detail}`;
 					lines.push(truncateToWidth(detailLine, width));
@@ -3170,7 +3168,7 @@ Run \`bd ready\` to see current bd issues.
 		sessionGeneration++;
 		const mySession = sessionGeneration;
 		startupVisible = true;
-		harnessMessages.length = 0;
+		// Service states survive session changes; initialization runs once per extension load.
 		harnessWidgetRegistered = false; // Reset for new session
 
 		// --- Install harness widget (like Todos with placement: "aboveEditor") -------
@@ -3189,13 +3187,7 @@ Run \`bd ready\` to see current bd issues.
 			);
 			harnessWidgetRegistered = true;
 				
-			// Merge pre-session errors into harnessMessages
-			for (const err of preSessionErrors) {
-				harnessMessages.push(err);
-			}
-			preSessionErrors.length = 0; // Clear pre-session errors
-				
-			harnessTUI?.requestRender(); // Show widget with error messages
+			harnessTUI?.requestRender();
 		} else {
 			harnessTUI?.requestRender();
 		}
@@ -3203,42 +3195,19 @@ Run \`bd ready\` to see current bd issues.
 		// Add initial harness message
 		addHarnessMessage("Harness Runtime", `v${HARNESS_VERSION} initializing`, "wait");
 
-		// Wait for async inits to complete, then update status
-		const startupTimeout = new Promise<void>((resolve) => {
-			setTimeout(resolve, 5000);
-		});
-		Promise.race([
-			Promise.allSettled(asyncInitPromises),
-			startupTimeout,
-		]).then(() => {
-			// Fence: ignore if session changed or already hidden
-			if (mySession !== sessionGeneration || !startupVisible) return;
-
-			// Update Runtime status
-			const runtimeMsg = harnessMessages.find((m) => m.label === "Harness Runtime");
-			if (runtimeMsg) {
-				runtimeMsg.status = "ok";
-				runtimeMsg.text = `v${HARNESS_VERSION} initialized`;
-			}
-
-			// Add service messages from startup
-			for (const msg of startupMessages) {
-				if (msg.includes("Qdrant") && msg.includes("ready")) {
-					addHarnessMessage("Qdrant", "connected", "ok");
-				}
-				if (msg.includes("Telegram") && msg.includes("ready")) {
-					addHarnessMessage("Telegram", "verified", "ok");
-				}
-				if (msg.includes("Honcho")) {
-					addHarnessMessage("Honcho", "registered", "ok");
-				}
-				if (msg.includes("Scanned") && msg.includes("skills")) {
-					const match = msg.match(/Scanned (\d+)/);
-					if (match) {
-						addHarnessMessage("Skills", `${match[1]} discovered`, "ok");
-					}
-				}
-			}
+		// A timeout is not success. Keep accepting late service updates.
+		const startupTimeout = setTimeout(() => {
+			if (mySession !== sessionGeneration) return;
+			addHarnessMessage("Harness Runtime", `v${HARNESS_VERSION} waiting for service initialization`, "warn");
+		}, 5000);
+		Promise.allSettled(asyncInitPromises).then((results) => {
+			clearTimeout(startupTimeout);
+			if (mySession !== sessionGeneration) return;
+			const degraded = results.some((result) => result.status === "rejected") ||
+				harnessMessages.some((msg) => msg.label !== "Harness Runtime" && msg.status !== "ok");
+			addHarnessMessage("Harness Runtime",
+				`v${HARNESS_VERSION} ${degraded ? "initialized with unavailable services" : "initialized"}`,
+				degraded ? "warn" : "ok");
 		});
 	});
 
