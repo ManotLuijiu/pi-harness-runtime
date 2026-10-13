@@ -572,7 +572,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             Info: "[INFO]",
             CodexSessionStarted: "[CODEX]",
             CodexPlanDetected: "[PLAN]",
-            AssistantResponse: "[MSG]",
+            AssistantResponse: "[TODO]",
             ToolSummary: "[TOOL]",
         };
         return labels[event] ?? "[MSG]";

@@ -216,7 +216,7 @@ export class ConversationBridge {
 
 			try {
 				const results = await this.center.notify("AssistantResponse", {
-					jobId: `msg-${messageId}`,
+					jobId: messageId,
 					requirement: chunk + chunkSuffix,
 				});
 

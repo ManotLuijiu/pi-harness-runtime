@@ -428,7 +428,7 @@ export class NotificationCenter {
             },
             ReadyForClient: {
                 title: "Ready for Review",
-                message: `Job completed successfully and ready for your review: "${requirement}"`,
+                message: `${requirement}\n\nStatus: Completed ✓`,
             },
             JobCancelled: {
                 title: "Job Cancelled",
