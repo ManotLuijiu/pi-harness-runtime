@@ -357,11 +357,11 @@ export class TaskIntakeController {
 	/**
 	 * Dispatch a capture request to the agent
 	 * @param userMessage - The original user message to capture
-	 * @param customType - Optional custom type for the message (default: "task-capture")
+	 * @param _customType - Optional custom type for the message (default: "task-capture") - unused, kept for API compatibility
 	 */
 	async requestCapture(
 		userMessage: string,
-		customType: string = "task-capture"
+		_customType: string = "task-capture"
 	): Promise<void> {
 		// Check if stopped - don't dispatch after stop
 		if (this._stopped) {
@@ -371,10 +371,8 @@ export class TaskIntakeController {
 		// Record this capture to prevent re-triggering on the same input
 		this._recordCapture(userMessage);
 
-		// Build a message to prompt the agent to create todos
-		let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
-
-		message += "\n\nPlease add all Tasks to task list todo";
+		// Simple prompt to create todos
+		const message = "Please add all tasks to task list todo";
 
 		await this.config.dispatch(message);
 	}
