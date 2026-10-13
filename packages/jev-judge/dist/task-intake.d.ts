@@ -99,9 +99,9 @@ export declare class TaskIntakeController {
     /**
      * Dispatch a capture request to the agent
      * @param userMessage - The original user message to capture
-     * @param customType - Optional custom type for the message (default: "task-capture")
+     * @param _customType - Optional custom type for the message (default: "task-capture") - unused, kept for API compatibility
      */
-    requestCapture(userMessage: string, customType?: string): Promise<void>;
+    requestCapture(userMessage: string, _customType?: string): Promise<void>;
     /**
      * Reset state
      */
