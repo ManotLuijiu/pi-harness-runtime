@@ -179,6 +179,17 @@ export class NotificationCenter {
 	}
 
 	/**
+	 * Set message handler for inbound Telegram messages (forwarded to Pi)
+	 */
+	setMessageHandler(handler: (text: string, chatId: string) => Promise<void>): void {
+		for (const [, adapter] of this.adapters) {
+			if (adapter instanceof TelegramAdapter) {
+				adapter.setMessageHandler(handler);
+			}
+		}
+	}
+
+	/**
 	 * Send a notification to all configured channels
 	 */
 	async notify(

@@ -15,6 +15,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
     type = "telegram";
     _botUsername;
     _callbackHandler;
+    _messageHandler;
     _webhookSecret;
     _pollInterval;
     _lastUpdateId = -1;
@@ -28,6 +29,12 @@ export class TelegramAdapter extends BaseChannelAdapter {
      */
     setCallbackHandler(handler) {
         this._callbackHandler = handler;
+    }
+    /**
+     * Register a message handler for inbound Telegram messages
+     */
+    setMessageHandler(handler) {
+        this._messageHandler = handler;
     }
     /**
      * Set webhook secret for verification
@@ -99,7 +106,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 offset: this._lastUpdateId + 1,
                 limit: this._pollLimit,
                 timeout: Math.floor(this._pollTimeoutMs / 1000),
-                allowed_updates: ["callback_query"],
+                allowed_updates: ["callback_query", "message"], // Poll for both callbacks AND messages
             };
             const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
                 method: "POST",
@@ -152,6 +159,16 @@ export class TelegramAdapter extends BaseChannelAdapter {
             // Call the registered handler
             if (this._callbackHandler && query.data) {
                 await this._callbackHandler(query.data, query);
+            }
+        }
+        // Handle regular message
+        if (update.message && this._messageHandler) {
+            const msg = update.message;
+            // Only forward text messages from non-bot users
+            if (msg.text && (!msg.from || !msg.from.is_bot)) {
+                const chatId = msg.chat?.id?.toString() || "";
+                logInfo("[TelegramAdapter]", `Inbound message: "${msg.text.slice(0, 50)}..." from chat ${chatId}`);
+                await this._messageHandler(msg.text, chatId);
             }
         }
     }

@@ -62,6 +62,10 @@ export declare class NotificationCenter {
      */
     setCallbackHandler(handler: TelegramCallbackHandler): void;
     /**
+     * Set message handler for inbound Telegram messages (forwarded to Pi)
+     */
+    setMessageHandler(handler: (text: string, chatId: string) => Promise<void>): void;
+    /**
      * Send a notification to all configured channels
      */
     notify(event: NotificationEvent, context: NotificationContext): Promise<NotificationResult[]>;

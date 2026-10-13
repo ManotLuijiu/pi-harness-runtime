@@ -22,10 +22,18 @@ import type {
 /**
  * Telegram update object from getUpdates
  */
+// Handler for inbound Telegram messages (forwarded to Pi)
+type TelegramMessageHandler = (text: string, chatId: string) => Promise<void>;
+
 interface TelegramUpdate {
 	update_id: number;
 	callback_query?: TelegramCallbackQuery;
-	message?: unknown;
+	message?: {
+		message_id?: number;
+		chat?: { id?: number; type?: string };
+		text?: string;
+		from?: { id?: number; is_bot?: boolean };
+	};
 }
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
@@ -36,6 +44,7 @@ readonly id = "telegram";
 readonly type = "telegram";
 private _botUsername: string | undefined;
 private _callbackHandler: TelegramCallbackHandler | undefined;
+private _messageHandler: TelegramMessageHandler | undefined;
 private _webhookSecret: string | undefined;
 private _pollInterval: ReturnType<typeof setInterval> | undefined;
 private _lastUpdateId: number = -1;
@@ -51,6 +60,13 @@ super({ id: "telegram", type: "telegram", enabled: true, config });
  */
 setCallbackHandler(handler: TelegramCallbackHandler): void {
 	this._callbackHandler = handler;
+}
+
+/**
+ * Register a message handler for inbound Telegram messages
+ */
+setMessageHandler(handler: TelegramMessageHandler): void {
+	this._messageHandler = handler;
 }
 
 /**
@@ -135,7 +151,7 @@ return this._botUsername;
 				offset: this._lastUpdateId + 1,
 				limit: this._pollLimit,
 				timeout: Math.floor(this._pollTimeoutMs / 1000),
-				allowed_updates: ["callback_query"],
+				allowed_updates: ["callback_query", "message"],  // Poll for both callbacks AND messages
 			};
 
 			const response = await fetch(
@@ -206,6 +222,17 @@ return this._botUsername;
 			// Call the registered handler
 			if (this._callbackHandler && query.data) {
 				await this._callbackHandler(query.data, query);
+			}
+		}
+
+		// Handle regular message
+		if (update.message && this._messageHandler) {
+			const msg = update.message;
+			// Only forward text messages from non-bot users
+			if (msg.text && (!msg.from || !msg.from.is_bot)) {
+				const chatId = msg.chat?.id?.toString() || "";
+				logInfo("[TelegramAdapter]", `Inbound message: "${msg.text.slice(0, 50)}..." from chat ${chatId}`);
+				await this._messageHandler(msg.text, chatId);
 			}
 		}
 	}
