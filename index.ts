@@ -2024,13 +2024,6 @@ export default function (pi: ExtensionAPI) {
 					const deliveredOrdinal = sessionDeliveredOrdinals.get(sessionId) ?? 0;
 					if (msg.ordinal <= deliveredOrdinal) continue;
 
-					// Check if we're already trying to deliver this ordinal
-					const acceptedOrdinal = sessionAcceptedOrdinals.get(sessionId) ?? 0;
-					if (msg.ordinal === acceptedOrdinal) continue;  // Already processing this one
-
-					// Mark as accepted (we're trying to deliver)
-					sessionAcceptedOrdinals.set(sessionId, msg.ordinal);
-
 					// Emit Telegram alert with preview (include more of the plan)
 					const planPreview = msg.text.slice(0, 800) + (msg.text.length > 800 ? "\n... (full plan forwarded to Pi)" : "");
 					nc("CodexPlanDetected", {
@@ -2044,11 +2037,10 @@ export default function (pi: ExtensionAPI) {
 						pi.sendUserMessage(planContent, { deliverAs: "steer" });
 						// Mark as delivered only if Pi send succeeds
 						sessionDeliveredOrdinals.set(sessionId, msg.ordinal);
-						// Reset accepted so next ordinal can be processed
-						sessionAcceptedOrdinals.set(sessionId, 0);
+						logToFile("[codex]", `Delivered ordinal ${msg.ordinal} to Pi`);
 					} catch {
-						// pi.dev may not be ready - ordinal stays accepted for retry
-						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, will retry`);
+					// pi.dev may not be ready - log failure, will retry on next poll
+						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, will retry on next poll`);
 					}
 				}
 			},

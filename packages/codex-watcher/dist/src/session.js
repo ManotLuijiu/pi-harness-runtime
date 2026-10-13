@@ -1,7 +1,7 @@
 /**
  * Session discovery — reads ~/.codex/session_index.jsonl to find active sessions.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 /** Find the most recently active Codex session. */
@@ -60,45 +60,39 @@ function findRolloutPath(sessionId, codexDir) {
     // The rollout path follows: sessions/YYYY/MM/DD/rollout-YYYY-MM-DDTHH-MM-SS-<sessionId>.jsonl
     // We need to find the file whose name ends with <sessionId>.jsonl
     // Since there can be multiple sessions per day, iterate all files.
+    const found = walkForSession(sessionsDir, sessionId);
+    if (found)
+        return found;
+    return join(sessionsDir, "unknown", `${sessionId}.jsonl`);
+}
+/** Recursively walk all subdirectories, yielding each directory path. */
+function* walkDirs(dir) {
     try {
-        const { readdirSync } = require("node:fs");
-        for (const dirPath of walkDirs(sessionsDir)) {
-            for (const file of readdirSync(dirPath)) {
-                if (file.endsWith(`${sessionId}.jsonl`)) {
-                    return join(dirPath, file);
-                }
+        for (const entry of readdirSync(dir)) {
+            const full = join(dir, entry);
+            const stat = statSync(full);
+            if (stat.isDirectory()) {
+                yield full;
+                yield* walkDirs(full);
             }
         }
     }
     catch {
-        // walkSync may not be available on all Node versions; fall back to find
-    }
-    return findRolloutPathFallback(sessionId, sessionsDir);
-}
-function findRolloutPathFallback(sessionId, sessionsDir) {
-    const found = walkForSession(sessionsDir, sessionId);
-    return found ?? join(sessionsDir, "unknown", `${sessionId}.jsonl`);
-}
-/** Recursively walk all subdirectories, yielding each directory path. */
-function* walkDirs(dir) {
-    const { readdirSync, statSync } = require("node:fs");
-    for (const entry of readdirSync(dir)) {
-        const full = join(dir, entry);
-        const stat = statSync(full);
-        if (stat.isDirectory()) {
-            yield full;
-            yield* walkDirs(full);
-        }
+        // Directory may not exist or be readable
     }
 }
 /** Find the rollout file for a given session ID by walking directories. */
 function walkForSession(sessionsDir, sessionId) {
-    const { readdirSync } = require("node:fs");
     for (const dirPath of walkDirs(sessionsDir)) {
-        for (const file of readdirSync(dirPath)) {
-            if (file.startsWith("rollout-") && file.endsWith(`${sessionId}.jsonl`)) {
-                return join(dirPath, file);
+        try {
+            for (const file of readdirSync(dirPath)) {
+                if (file.startsWith("rollout-") && file.endsWith(`${sessionId}.jsonl`)) {
+                    return join(dirPath, file);
+                }
             }
+        }
+        catch {
+            // Skip unreadable directories
         }
     }
     return null;

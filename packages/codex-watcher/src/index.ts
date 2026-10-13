@@ -18,7 +18,7 @@
  *   // later: handle.stop();
  */
 
-import { existsSync, openSync, readFileSync, statSync } from "node:fs";
+import { existsSync, openSync, readFileSync, readSync, fstatSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { classifyMessage, parseNewMessages } from "./parser.js";
@@ -75,6 +75,7 @@ export async function getVisibleMessages(
  * 1. Polls session_index.jsonl to detect active session changes
  * 2. Tracks file position so it only reads new lines (no re-read of full file)
  * 3. Calls onMessages with incremental messages each poll cycle
+ * 4. Preserves incomplete JSON lines until a complete newline-delimited record arrives
  */
 export function startWatcher(options: WatcherOptions = {}): WatcherHandle {
 	const {
@@ -90,6 +91,7 @@ export function startWatcher(options: WatcherOptions = {}): WatcherHandle {
 	let currentPath: string | null = null;
 	let currentOrdinal = 0;
 	let currentBytePos = 0;  // Track byte position we're at in the file
+	let pendingText = "";  // Preserve incomplete lines across reads
 	let pollCount = 0;
 	const maxIdlePolls = options.maxIdlePolls ?? Infinity;
 
@@ -100,11 +102,11 @@ export function startWatcher(options: WatcherOptions = {}): WatcherHandle {
 		stopped = true;
 		if (currentFd !== null) {
 			try {
-				const { closeSync } = require("node:fs") as typeof import("node:fs");
 				closeSync(currentFd);
 			} catch {
 				// ignore
 			}
+			currentFd = null;
 		}
 	}
 
@@ -123,30 +125,32 @@ export function startWatcher(options: WatcherOptions = {}): WatcherHandle {
 	function openRollout(path: string) {
 		if (currentFd !== null && currentPath !== path) {
 			try {
-				const { closeSync } = require("node:fs") as typeof import("node:fs");
 				closeSync(currentFd);
 			} catch {
 				// ignore
 			}
+			currentFd = null;
 		}
 
-		// stat to get current size
-		const stat = statSync(path);
+		// Open the file for reading
 		currentFd = openSync(path, "r");
 		currentPath = path;
 		currentOrdinal = 0;
-		currentBytePos = 0;  // Reset byte position for new file
-		return { fd: currentFd, size: stat.size };
+		currentBytePos = 0;
+		pendingText = "";  // Reset pending text for new file
+		return currentFd;
 	}
 
+	/**
+	 * Read new lines from the file, preserving incomplete records.
+	 * Returns complete lines only; incomplete trailing data is kept for next read.
+	 */
 	function readNewLines(
 		fd: number,
 	): {
 		lines: string[];
 		newBytePos: number;
 	} {
-		const { readSync, fstatSync } =
-			require("node:fs") as typeof import("node:fs");
 		const stat = fstatSync(fd);
 		const fileSize = stat.size;
 
@@ -159,12 +163,27 @@ export function startWatcher(options: WatcherOptions = {}): WatcherHandle {
 		const buf = Buffer.alloc(bytesToRead);
 		const bytesRead = readSync(fd, buf, 0, buf.length, currentBytePos);
 		const text = buf.subarray(0, bytesRead).toString("utf8");
-		const lines = text.split("\n").filter((l) => l.trim());
+
+		// Prepend any pending text from previous incomplete read
+		const fullText = pendingText + text;
+
+		// Split by newline, keeping track of whether we ended with a complete line
+		const lines = fullText.split("\n");
+
+		// If text doesn't end with newline, last element is incomplete - save it
+		if (!text.endsWith("\n")) {
+			pendingText = lines.pop() ?? "";
+		} else {
+			pendingText = "";
+		}
+
+		// Filter out empty lines
+		const completeLines = lines.filter((l) => l.trim());
 
 		// Update our tracked position by bytes actually read
 		const newBytePos = currentBytePos + bytesRead;
 
-		return { lines, newBytePos };
+		return { lines: completeLines, newBytePos };
 	}
 
 	async function poll() {
