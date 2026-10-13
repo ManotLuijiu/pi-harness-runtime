@@ -387,9 +387,8 @@ export class NotificationCenter {
         };
     }
     getEventContent(event, context) {
-        const requirement = context.requirement.length > 50
-            ? context.requirement.slice(0, 50) + "..."
-            : context.requirement;
+        const req = context.requirement ?? "";
+        const requirement = req.length > 50 ? req.slice(0, 50) + "..." : req;
         const map = {
             JobStarted: {
                 title: "Job Started",
