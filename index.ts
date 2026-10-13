@@ -363,13 +363,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
-				});
+				}).catch((e) => logToFile("[Notification]", "notifyWithApproval failed:", String(e)));
 
 				// Also send context info as a follow-up message (not in error field)
 				_nc?.notify("Info", {
 					jobId: `info-${questionHash}`,
-					message: contextInfo,
-				});
+					requirement: contextInfo,
+				}).catch((e) => logToFile("[Notification]", "Info notification failed:", String(e)));
 			}
 		});
 
