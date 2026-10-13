@@ -1977,22 +1977,35 @@ export default function (pi: ExtensionAPI) {
 	// Collect promise so we can wait for initialization before showing startup notification
 	asyncInitPromises.push(initTelegram(pi));
 
-	// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
-	// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
-	// On plan detected: sends Telegram alert + steer message to pi.dev.
-	try {
-		let latestPlanOrdinal = 0;
+		// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
+		// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
+		// On plan detected: sends Telegram alert + steer message to pi.dev.
+		try {
+			// Track accepted and delivered ordinals per session
+			// Accepted: we've seen this ordinal and are trying to deliver
+			// Delivered: successfully sent to destination
+			const sessionAcceptedOrdinals = new Map<string, number>();
+			const sessionDeliveredOrdinals = new Map<string, number>();
+			let currentSessionId: string | null = null;
 
-		const codexHandle = startWatcher({
-			pollIntervalMs: 5000,
-			maxIdlePolls: Infinity,
-			onSessionChange: (session) => {
+			const codexHandle = startWatcher({
+				pollIntervalMs: 5000,
+				maxIdlePolls: Infinity,
+				onSessionChange: (session) => {
 				if (session) {
 					logToFile("[codex]", `Session started: ${session.threadName}`);
+					currentSessionId = session.id;
+					// Initialize ordinal tracking for new session if not tracked yet
+					if (!sessionAcceptedOrdinals.has(session.id)) {
+						sessionAcceptedOrdinals.set(session.id, 0);
+						sessionDeliveredOrdinals.set(session.id, 0);
+					}
 					nc("CodexSessionStarted", {
 						requirement: session.threadName || "Codex session",
 						taskTitle: session.id,
 					});
+				} else {
+					currentSessionId = null;
 				}
 			},
 			onMessages: (msgs) => {
@@ -2002,27 +2015,40 @@ export default function (pi: ExtensionAPI) {
 
 					const classification = classifyMessage(msg.text);
 					if (classification !== "plan" && classification !== "mixed") continue;
-					if (msg.ordinal <= latestPlanOrdinal) continue;
 
-					latestPlanOrdinal = msg.ordinal;
+					// Get session-specific ordinal tracking (use currentSessionId from watcher)
+					const sessionId = currentSessionId;
+					if (!sessionId) continue;
 
-					// Emit Telegram alert
+					// Check if we've already delivered this ordinal to this session
+					const deliveredOrdinal = sessionDeliveredOrdinals.get(sessionId) ?? 0;
+					if (msg.ordinal <= deliveredOrdinal) continue;
+
+					// Check if we're already trying to deliver this ordinal
+					const acceptedOrdinal = sessionAcceptedOrdinals.get(sessionId) ?? 0;
+					if (msg.ordinal === acceptedOrdinal) continue;  // Already processing this one
+
+					// Mark as accepted (we're trying to deliver)
+					sessionAcceptedOrdinals.set(sessionId, msg.ordinal);
+
+					// Emit Telegram alert with preview (include more of the plan)
+					const planPreview = msg.text.slice(0, 800) + (msg.text.length > 800 ? "\n... (full plan forwarded to Pi)" : "");
 					nc("CodexPlanDetected", {
-						requirement: "Codex plan ready",
+						requirement: planPreview,
 						taskTitle: `Ordinal ${msg.ordinal}`,
 					});
 
-					// Inject plan into pi.dev as a steer message
-					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "\n..." : "");
+					// Inject full plan into pi.dev as a steer message
+					const planContent = `[Codex plan detected — ordinal ${msg.ordinal}]\n\n${msg.text}`;
 					try {
-						pi.sendUserMessage(
-							`[Codex plan detected — ordinal ${msg.ordinal}]
-
-${planPreview}`,
-							{ deliverAs: "steer" },
-						);
+						pi.sendUserMessage(planContent, { deliverAs: "steer" });
+						// Mark as delivered only if Pi send succeeds
+						sessionDeliveredOrdinals.set(sessionId, msg.ordinal);
+						// Reset accepted so next ordinal can be processed
+						sessionAcceptedOrdinals.set(sessionId, 0);
 					} catch {
-						// pi.dev may not be ready
+						// pi.dev may not be ready - ordinal stays accepted for retry
+						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, will retry`);
 					}
 				}
 			},
