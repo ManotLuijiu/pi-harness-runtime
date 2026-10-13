@@ -6,18 +6,14 @@
  */
 import type { HarnessStatus } from "./harness-types.js";
 /**
- * Widget configuration
+ * Default config
  */
-export interface WidgetConfig {
-    /** Heading style (matching Pi's mdHeading) */
-    headingStyle?: string;
-    /** Body text style */
-    bodyStyle?: string;
-    /** Left indent for body lines */
-    indent?: string;
-    /** Max terminal width fallback */
-    defaultWidth?: number;
-}
+declare const DEFAULT_CONFIG: {
+    headingStyle: string;
+    bodyStyle: string;
+    indent: string;
+    defaultWidth: number;
+};
 /**
  * Get terminal width
  */
@@ -33,7 +29,7 @@ export declare function truncateMiddle(text: string, maxWidth: number): string;
 /**
  * Render harness status as widget body (string array for setWidget)
  */
-export declare function renderWidgetBody(status: HarnessStatus, config?: Partial<WidgetConfig>): string[];
+export declare function renderWidgetBody(status: HarnessStatus, config?: Partial<typeof DEFAULT_CONFIG>): string[];
 /**
  * Create initial pending status
  */
@@ -45,4 +41,5 @@ export declare function formatStatusWithIcon(status: string): {
     status: string;
     icon?: string;
 };
+export {};
 //# sourceMappingURL=harness-widget.d.ts.map
