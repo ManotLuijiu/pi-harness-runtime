@@ -946,7 +946,12 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Log the actual bot username (fetched from Telegram API via getMe)
 		const botUsername = center.getTelegramBotUsername();
-		const greeting = await center.getTelegramAdapter()?.sendStartupGreeting();
+		const telegram = center.getTelegramAdapter();
+		telegram?.setGreetingVerifiedHandler(() => {
+			addHarnessMessage("Telegram", "ready (Hi reply received; two-way verified)", "ok");
+		});
+		pi.on("session_shutdown", () => telegram?.stopPolling());
+		const greeting = await telegram?.sendStartupGreeting();
 		if (!greeting?.success) {
 			logStartup("[pi-harness] Telegram: startup greeting delivery failed");
 			addHarnessMessage("Telegram", "bot verified; Hi delivery failed", "err", [
@@ -955,7 +960,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			]);
 			return;
 		}
-		addHarnessMessage("Telegram", "ready (Hi sent to your chat)", "ok");
+		telegram?.startPolling();
+		if (!telegram?.isGreetingVerified()) {
+			addHarnessMessage("Telegram", "Hi sent; tap Say Hi back to verify inbound", "wait");
+		}
 		if (botUsername) {
 			logStartup(`[pi-harness] Telegram (@${botUsername}) ready — DM the bot to receive alerts`);
 		} else {

@@ -20,6 +20,15 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     private _lastUpdateId;
     private _pollTimeoutMs;
     private _pollLimit;
+    private _pollInFlight;
+    private _pollAbort;
+    private _greetingToken;
+    private _greetingMessageId;
+    private _greetingVerified;
+    private _greetingReplyInFlight;
+    private _greetingHandler;
+    setGreetingVerifiedHandler(handler: () => void): void;
+    isGreetingVerified(): boolean;
     constructor(config: TelegramConfig);
     /**
      * Register a callback handler for inline keyboard button clicks
@@ -55,6 +64,8 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      * Verify outbound delivery with a fixed startup greeting. No user content is sent.
      */
     sendStartupGreeting(): Promise<NotificationResult>;
+    /** A greeting callback is a transport check, not new agent work or approval. */
+    private handleGreetingReply;
     /**
      * Send a message with optional inline keyboard buttons
      */

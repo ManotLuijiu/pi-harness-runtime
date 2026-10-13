@@ -6,6 +6,7 @@
 /// <reference types="node" />
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { logError, logInfo, logWarn } from "../file-logger.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
@@ -21,6 +22,19 @@ export class TelegramAdapter extends BaseChannelAdapter {
     _lastUpdateId = -1;
     _pollTimeoutMs = 30000; // Long polling timeout
     _pollLimit = 10;
+    _pollInFlight = false;
+    _pollAbort;
+    _greetingToken;
+    _greetingMessageId;
+    _greetingVerified = false;
+    _greetingReplyInFlight = false;
+    _greetingHandler;
+    setGreetingVerifiedHandler(handler) {
+        this._greetingHandler = handler;
+    }
+    isGreetingVerified() {
+        return this._greetingVerified;
+    }
     constructor(config) {
         super({ id: "telegram", type: "telegram", enabled: true, config });
     }
@@ -89,6 +103,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
      * Stop polling
      */
     stopPolling() {
+        this._pollAbort?.abort();
         if (this._pollInterval) {
             clearInterval(this._pollInterval);
             this._pollInterval = undefined;
@@ -99,6 +114,11 @@ export class TelegramAdapter extends BaseChannelAdapter {
      * Poll for updates using getUpdates
      */
     async poll() {
+        if (this._pollInFlight)
+            return;
+        this._pollInFlight = true;
+        const abort = new AbortController();
+        this._pollAbort = abort;
         const cfg = this.config.config;
         const token = cfg.botToken;
         try {
@@ -112,7 +132,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
-                signal: AbortSignal.timeout(this._pollTimeoutMs + 5000), // Extra 5s for network
+                signal: AbortSignal.any([abort.signal, AbortSignal.timeout(this._pollTimeoutMs + 5000)]),
             });
             if (!response.ok) {
                 const error = await response.text();
@@ -124,16 +144,25 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 return;
             // Process updates
             for (const update of data.result) {
+                if (abort.signal.aborted)
+                    break;
                 await this.processUpdate(update);
                 this._lastUpdateId = update.update_id;
             }
         }
         catch (err) {
+            if (abort.signal.aborted)
+                return;
             if (err instanceof Error && err.name === "TimeoutError") {
                 // Timeout is expected for long polling, not an error
                 return;
             }
             logError("[TelegramAdapter] Poll error", err);
+        }
+        finally {
+            this._pollInFlight = false;
+            if (this._pollAbort === abort)
+                this._pollAbort = undefined;
         }
     }
     /**
@@ -144,6 +173,8 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Handle callback query
         if (update.callback_query) {
             const query = update.callback_query;
+            if (String(query.message?.chat.id) !== String(cfg.chatId) || query.from?.is_bot)
+                return;
             logInfo("[TelegramAdapter]", `Callback query: ${query.data} from user ${query.from?.id}`);
             // Answer the callback query (dismiss loading indicator)
             try {
@@ -156,6 +187,8 @@ export class TelegramAdapter extends BaseChannelAdapter {
             catch (err) {
                 logWarn("[TelegramAdapter]", "Failed to answer callback query:", err);
             }
+            if (await this.handleGreetingReply(query))
+                return;
             // Call the registered handler
             if (this._callbackHandler && query.data) {
                 await this._callbackHandler(query.data, query);
@@ -167,7 +200,8 @@ export class TelegramAdapter extends BaseChannelAdapter {
             // Only forward text messages from non-bot users
             if (msg.text && (!msg.from || !msg.from.is_bot)) {
                 const chatId = msg.chat?.id?.toString() || "";
-                logInfo("[TelegramAdapter]", `Inbound message: "${msg.text.slice(0, 50)}..." from chat ${chatId}`);
+                if (chatId !== String(cfg.chatId))
+                    return;
                 await this._messageHandler(msg.text, chatId);
             }
         }
@@ -177,23 +211,69 @@ export class TelegramAdapter extends BaseChannelAdapter {
      */
     async sendStartupGreeting() {
         const cfg = this.config.config;
+        this._greetingToken = `hi:${randomUUID()}`;
+        this._greetingMessageId = undefined;
+        this._greetingVerified = false;
         try {
             const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ chat_id: cfg.chatId, text: "Hi" }),
+                body: JSON.stringify({
+                    chat_id: cfg.chatId,
+                    text: "Hi! Tap Say Hi back to test two-way communication.",
+                    reply_markup: { inline_keyboard: [[{ text: "Say Hi back", callback_data: this._greetingToken }]] },
+                }),
                 signal: AbortSignal.timeout(10000),
             });
             const data = await response.json();
             if (!response.ok || data.ok !== true || typeof data.result?.message_id !== "number") {
                 return { success: false, channel: this.id, error: `Telegram greeting rejected (HTTP ${response.status})` };
             }
+            this._greetingMessageId = data.result.message_id;
             return { success: true, channel: this.id };
         }
         catch {
             // Network errors can contain the token-bearing URL. Never expose them.
             return { success: false, channel: this.id, error: "Telegram greeting failed or timed out" };
         }
+    }
+    /** A greeting callback is a transport check, not new agent work or approval. */
+    async handleGreetingReply(query) {
+        if (!query.data?.startsWith("hi:"))
+            return false;
+        const cfg = this.config.config;
+        if (query.data !== this._greetingToken || this._greetingMessageId === undefined ||
+            query.message?.message_id !== this._greetingMessageId ||
+            String(query.message?.chat.id) !== String(cfg.chatId) || query.from?.is_bot ||
+            (Number(cfg.chatId) > 0 && String(query.from?.id) !== String(cfg.chatId)) ||
+            this._greetingVerified || this._greetingReplyInFlight)
+            return true;
+        this._greetingReplyInFlight = true;
+        const token = this._greetingToken;
+        try {
+            const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/editMessageText`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: cfg.chatId, message_id: this._greetingMessageId,
+                    text: "Hi back received! Two-way communication with pi-harness-runtime is verified.",
+                    reply_markup: { inline_keyboard: [] },
+                }),
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            if (response.ok && data.ok === true && token === this._greetingToken) {
+                this._greetingVerified = true;
+                this._greetingHandler?.();
+            }
+        }
+        catch {
+            logWarn("[TelegramAdapter]", "Hi reply acknowledgment failed; tap again to retry");
+        }
+        finally {
+            this._greetingReplyInFlight = false;
+        }
+        return true;
     }
     /**
      * Send a message with optional inline keyboard buttons
@@ -339,10 +419,14 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
         // Handle callback query (button click)
         const callbackQuery = update.callback_query;
-        if (callbackQuery && this._callbackHandler) {
+        if (callbackQuery) {
             const query = this.parseCallbackQuery(callbackQuery);
             if (query) {
-                await this._callbackHandler(query.data, query);
+                if (await this.handleGreetingReply(query)) {
+                    await this.answerCallbackQuery(query.id);
+                    return;
+                }
+                await this._callbackHandler?.(query.data, query);
                 await this.answerCallbackQuery(query.id);
             }
         }
