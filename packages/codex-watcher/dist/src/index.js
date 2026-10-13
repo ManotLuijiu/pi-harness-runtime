@@ -17,7 +17,7 @@
  *   });
  *   // later: handle.stop();
  */
-import { existsSync, openSync, readFileSync, statSync } from "node:fs";
+import { existsSync, openSync, readFileSync, readSync, fstatSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { classifyMessage, parseNewMessages } from "./parser.js";
@@ -57,6 +57,7 @@ export async function getVisibleMessages(rolloutPath, options = {}) {
  * 1. Polls session_index.jsonl to detect active session changes
  * 2. Tracks file position so it only reads new lines (no re-read of full file)
  * 3. Calls onMessages with incremental messages each poll cycle
+ * 4. Preserves incomplete JSON lines until a complete newline-delimited record arrives
  */
 export function startWatcher(options = {}) {
     const { pollIntervalMs = 2000, codexDir, onMessages, onSessionChange, } = options;
@@ -66,6 +67,7 @@ export function startWatcher(options = {}) {
     let currentPath = null;
     let currentOrdinal = 0;
     let currentBytePos = 0; // Track byte position we're at in the file
+    let pendingText = ""; // Preserve incomplete lines across reads
     let pollCount = 0;
     const maxIdlePolls = options.maxIdlePolls ?? Infinity;
     // Track last known session to detect changes
@@ -74,12 +76,12 @@ export function startWatcher(options = {}) {
         stopped = true;
         if (currentFd !== null) {
             try {
-                const { closeSync } = require("node:fs");
                 closeSync(currentFd);
             }
             catch {
                 // ignore
             }
+            currentFd = null;
         }
     }
     function isRunning() {
@@ -94,23 +96,26 @@ export function startWatcher(options = {}) {
     function openRollout(path) {
         if (currentFd !== null && currentPath !== path) {
             try {
-                const { closeSync } = require("node:fs");
                 closeSync(currentFd);
             }
             catch {
                 // ignore
             }
+            currentFd = null;
         }
-        // stat to get current size
-        const stat = statSync(path);
+        // Open the file for reading
         currentFd = openSync(path, "r");
         currentPath = path;
         currentOrdinal = 0;
-        currentBytePos = 0; // Reset byte position for new file
-        return { fd: currentFd, size: stat.size };
+        currentBytePos = 0;
+        pendingText = ""; // Reset pending text for new file
+        return currentFd;
     }
+    /**
+     * Read new lines from the file, preserving incomplete records.
+     * Returns complete lines only; incomplete trailing data is kept for next read.
+     */
     function readNewLines(fd) {
-        const { readSync, fstatSync } = require("node:fs");
         const stat = fstatSync(fd);
         const fileSize = stat.size;
         // Read from our tracked position to current end of file
@@ -121,10 +126,22 @@ export function startWatcher(options = {}) {
         const buf = Buffer.alloc(bytesToRead);
         const bytesRead = readSync(fd, buf, 0, buf.length, currentBytePos);
         const text = buf.subarray(0, bytesRead).toString("utf8");
-        const lines = text.split("\n").filter((l) => l.trim());
+        // Prepend any pending text from previous incomplete read
+        const fullText = pendingText + text;
+        // Split by newline, keeping track of whether we ended with a complete line
+        const lines = fullText.split("\n");
+        // If text doesn't end with newline, last element is incomplete - save it
+        if (!text.endsWith("\n")) {
+            pendingText = lines.pop() ?? "";
+        }
+        else {
+            pendingText = "";
+        }
+        // Filter out empty lines
+        const completeLines = lines.filter((l) => l.trim());
         // Update our tracked position by bytes actually read
         const newBytePos = currentBytePos + bytesRead;
-        return { lines, newBytePos };
+        return { lines: completeLines, newBytePos };
     }
     async function poll() {
         if (stopped)

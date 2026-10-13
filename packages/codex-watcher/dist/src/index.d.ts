@@ -37,6 +37,7 @@ export declare function getVisibleMessages(rolloutPath: string, options?: {
  * 1. Polls session_index.jsonl to detect active session changes
  * 2. Tracks file position so it only reads new lines (no re-read of full file)
  * 3. Calls onMessages with incremental messages each poll cycle
+ * 4. Preserves incomplete JSON lines until a complete newline-delimited record arrives
  */
 export declare function startWatcher(options?: WatcherOptions): WatcherHandle;
 //# sourceMappingURL=index.d.ts.map
