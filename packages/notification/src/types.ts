@@ -21,7 +21,8 @@ export type NotificationEvent =
 	| "CodexPlanDetected"
 	| "AssistantResponse"
 	| "ToolSummary"
-	| "Error";
+	| "Error"
+	| "Info";
 
 export interface NotificationPayload {
 	event: NotificationEvent;
