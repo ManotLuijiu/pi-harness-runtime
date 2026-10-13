@@ -525,7 +525,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				taskIntakeController = new TaskIntakeController({
 					apiKey: resolvedApiKey,
 					dispatch: async (content: string) => {
-						await pi.sendUserMessage(content, { deliverAs: "steer" });
+						// Queue for next turn so agent processes after current work completes
+						await pi.sendUserMessage(content, { deliverAs: "followUp" });
 					},
 				});
 				logToFile("[auto-continue]", "Task intake controller initialized");
