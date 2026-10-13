@@ -684,6 +684,12 @@ return this._botUsername;
 			ReadyForClient: "[DONE]",
 			JobCancelled: "[CANCEL]",
 			Error: "[ERROR]",
+			WaitingForUserInput: "[INPUT]",
+			Info: "[INFO]",
+			CodexSessionStarted: "[CODEX]",
+			CodexPlanDetected: "[PLAN]",
+			AssistantResponse: "[MSG]",
+			ToolSummary: "[TOOL]",
 		};
 		return labels[event] ?? "[MSG]";
 	}

@@ -714,6 +714,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
 					} else if (result.action === "stop") {
 						logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
+						// Notify user that all work is complete
+						_nc?.notify("ReadyForClient", {
+							jobId: `done-${Date.now()}`,
+							requirement: result.reason ?? "All tasks completed",
+						}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
 					}
 				}
 			} catch (err) {
