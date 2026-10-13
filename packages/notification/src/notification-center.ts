@@ -530,10 +530,9 @@ export class NotificationCenter {
 		event: NotificationEvent,
 		context: NotificationContext,
 	): { title: string; message: string } {
+		const req = context.requirement ?? "";
 		const requirement =
-			context.requirement.length > 50
-				? context.requirement.slice(0, 50) + "..."
-				: context.requirement;
+			req.length > 50 ? req.slice(0, 50) + "..." : req;
 
 		const map: Record<NotificationEvent, { title: string; message: string }> = {
 			JobStarted: {
