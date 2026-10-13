@@ -46,7 +46,6 @@ export declare class TaskIntakeController {
     private lastResult;
     private recentCaptures;
     private readonly CAPTURE_COOLDOWN_MS;
-    private _pendingEvaluationHash;
     private _stopped;
     constructor(config: TaskIntakeConfig);
     /**
