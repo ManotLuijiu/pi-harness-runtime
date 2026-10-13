@@ -73,13 +73,36 @@ function heuristicCheck(content: string): FilterResult {
 	const sensitivePatterns = [
 		/\d+:[-A-Za-z0-9_]{35,}/, // Telegram bot token
 		/sk-[a-zA-Z0-9]{20,}/,    // OpenAI-style keys
-		/[a-zA-Z0-9_-]{32,}/,     // Long API keys
+		/(?:api[_-]?key|bearer|access[_-]?token|auth[_-]?token)[=:\s]+[A-Za-z0-9_-]{20,}/i,
 		/Bearer\s+[a-zA-Z0-9_-]{20,}/i, // Bearer tokens
-		/(api[_-]?key|secret|token|password|credential)[=:\s]+[^\s]{16,}/i,
-		/-----BEGIN\s+(RSA|EC|OPENSSH|DSA)\s+PRIVATE\s+KEY-----/,
-		/infisical[_-]?(client[_-])?(secret|id)/i,
+		/(?:secret|password|passwd|pwd|credential)[=:\s]+[^\s]{16,}/i,
+		/-----BEGIN\s+(?:RSA|EC|OPENSSH|DSA)\s+PRIVATE\s+KEY-----/,
+		/infisical[_-]?(?:client[_-])?(?:secret|id)/i,
 	];
 
+	// More specific patterns that are less likely to have false positives
+	// Only match if the string looks like a key (has specific prefix patterns)
+	const keyLikePatterns = [
+		/(?:xox[pborsa]-[\d-]+(?:,[\d-]+)*)/, // Slack tokens
+		/(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}/, // GitHub tokens
+		/(?:AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16,}/, // AWS access keys
+		/(?:sq0csp| sq0t[a-z0-9-]{22,43})/, // Square keys
+		/(?:sk_live_|pk_live_)[A-Za-z0-9]{24,}/, // Stripe keys
+	];
+
+	// Check specific key-like patterns first (low false positive)
+	for (const pattern of keyLikePatterns) {
+		if (pattern.test(content)) {
+			return {
+				shouldSend: false,
+				judgment: "BLOCK",
+				reason: "Sensitive credential pattern detected",
+				confidence: 0.95,
+			};
+		}
+	}
+
+	// Then check general patterns (higher false positive risk)
 	for (const pattern of sensitivePatterns) {
 		if (pattern.test(content)) {
 			let matchType = "api_key_or_secret";
