@@ -603,21 +603,28 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					const intake = taskIntakeController;
 					const controller = todoContinuationController;
 
-					// Get current todos for duplicate detection
-					intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
-						// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
-						if (intake.isStopped()) {
-							logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
-							return;
-						}
-						if (result.actionable && result.action !== "skip") {
-							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
-							// Request capture if actionable using harness custom message
-							await intake.requestCapture(userMessage, "harness:task-capture");
-						}
-					}).catch((err) => {
-						logToFile("[auto-continue]", "Task intake error:", String(err));
-					});
+					// Quick multi-task pattern check before Jev (saves latency, reduces noise)
+					// Only proceed with Jev if multiple tasks detected
+					const hasMultipleTasks = /and\s|also\s|\+\s|, .*, also|^\d+\.|\n\d+\./i.test(userMessage);
+					if (!hasMultipleTasks) {
+						logToFile("[auto-continue]", "Single task detected, skipping task capture:", userMessage.slice(0, 50));
+					} else {
+						// Get current todos for duplicate detection
+						intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
+							// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
+							if (intake.isStopped()) {
+								logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
+								return;
+							}
+							if (result.actionable && result.action !== "skip") {
+								logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
+								// Request capture if actionable using harness custom message
+								await intake.requestCapture(userMessage, "harness:task-capture");
+							}
+						}).catch((err) => {
+							logToFile("[auto-continue]", "Task intake error:", String(err));
+						});
+					}
 				}
 			}
 		});
