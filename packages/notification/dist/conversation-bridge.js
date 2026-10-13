@@ -162,7 +162,7 @@ export class ConversationBridge {
             const chunkSuffix = chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : "";
             try {
                 const results = await this.center.notify("AssistantResponse", {
-                    jobId: `msg-${messageId}`,
+                    jobId: messageId,
                     requirement: chunk + chunkSuffix,
                 });
                 for (const result of results) {

@@ -688,7 +688,7 @@ return this._botUsername;
 			Info: "[INFO]",
 			CodexSessionStarted: "[CODEX]",
 			CodexPlanDetected: "[PLAN]",
-			AssistantResponse: "[MSG]",
+			AssistantResponse: "[TODO]",
 			ToolSummary: "[TOOL]",
 		};
 		return labels[event] ?? "[MSG]";
