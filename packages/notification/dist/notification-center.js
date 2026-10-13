@@ -458,6 +458,10 @@ export class NotificationCenter {
                 title: "Runtime Error",
                 message: `An error occurred${context.error ? `: ${context.error}` : ""}`,
             },
+            Info: {
+                title: "Info",
+                message: context.requirement ?? "",
+            },
         };
         return map[event] ?? { title: event, message: `Event: ${event}` };
     }
