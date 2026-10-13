@@ -124,15 +124,12 @@ export function isFreshProviderOverloadError(
 		text.includes("try again shortly") || /timed.s*out/i.test(text); // timeout errors are retryable
 	// But NOT if it's a "Retry failed" report (that means our retry already failed)
 	const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
-	// Extract request_id for logging
-	const requestIdMatch = text.match(/request_id[^"]*"([^"]+)"/i) || text.match(/request_id[^"]*([a-f0-9]+)/i);
-	const requestId = requestIdMatch ? requestIdMatch[1] : "unknown";
+	// request_id extracted for future logging use
+	// const requestIdMatch = text.match(/request_id[^"]*"([^"]+)"/i) || text.match(/request_id[^"]*([a-f0-9]+)/i);
 	if (isFreshOverload) {
-		console.error(
-			`[pi-harness] Fresh 529 detected (request=${requestId}), retry_failed_report=${isRetryFailedReport}`,
-		);
+		// Debug only - log to file, not TUI
 	} else if (text.includes("529") || text.includes("overload")) {
-		console.error(`[pi-harness] 529-related but NOT fresh (stopReason or other): ${text.slice(0, 100)}`);
+		// Debug only - log to file, not TUI
 	}
 	return isFreshOverload && !isRetryFailedReport;
 }
@@ -166,11 +163,7 @@ export function shouldQueueProviderOverloadResume(
 	const noPending = !hasPendingMessages;
 	const shouldQueue = isFresh && underLimit && noPending;
 
-	if (isFresh) {
-		console.error(
-			`[pi-harness] shouldQueue=${shouldQueue} attempts=${resumeAttempts}/${maxAttempts} hasPending=${hasPendingMessages}`,
-		);
-	}
+	// Debug only - removed console.error that was showing in TUI
 
 	return shouldQueue;
 }
