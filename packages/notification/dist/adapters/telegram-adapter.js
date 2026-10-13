@@ -6,6 +6,7 @@
 /// <reference types="node" />
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { logError, logInfo, logWarn } from "../file-logger.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
@@ -220,7 +221,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     chat_id: cfg.chatId,
-                    text: "Hi! Tap Say Hi back to test two-way communication.",
+                    text: `[${hostname()}] Hi! Tap Say Hi back to test two-way communication.`,
                     reply_markup: { inline_keyboard: [[{ text: "Say Hi back", callback_data: this._greetingToken }]] },
                 }),
                 signal: AbortSignal.timeout(10000),
@@ -534,8 +535,10 @@ export class TelegramAdapter extends BaseChannelAdapter {
         const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
         const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
         const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
+        // Get hostname for multi-machine identification
+        const hostTag = `[${hostname()}]`;
         const label = this.getStatusLabel(payload.event);
-        const title = `${label} ${maskedTitle}`;
+        const title = `${label} ${maskedTitle} ${hostTag}`;
         const lines = [title, "", maskedMessage];
         if (maskedTaskTitle) {
             lines.push("", `Task: ${maskedTaskTitle}`);
