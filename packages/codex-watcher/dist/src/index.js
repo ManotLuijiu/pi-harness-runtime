@@ -67,7 +67,7 @@ export function startWatcher(options = {}) {
     let currentPath = null;
     let currentOrdinal = 0;
     let currentBytePos = 0; // Track byte position we're at in the file
-    let pendingText = ""; // Preserve incomplete lines across reads
+    let pendingBytes = null; // Raw bytes buffer for UTF-8 safety
     let pollCount = 0;
     const maxIdlePolls = options.maxIdlePolls ?? Infinity;
     // Track last known session to detect changes
@@ -108,11 +108,12 @@ export function startWatcher(options = {}) {
         currentPath = path;
         currentOrdinal = 0;
         currentBytePos = 0;
-        pendingText = ""; // Reset pending text for new file
+        pendingBytes = null; // Reset pending buffer for new file
         return currentFd;
     }
     /**
      * Read new lines from the file, preserving incomplete records.
+     * Uses raw byte buffering to safely handle UTF-8 split across reads.
      * Returns complete lines only; incomplete trailing data is kept for next read.
      */
     function readNewLines(fd) {
@@ -125,18 +126,26 @@ export function startWatcher(options = {}) {
         }
         const buf = Buffer.alloc(bytesToRead);
         const bytesRead = readSync(fd, buf, 0, buf.length, currentBytePos);
-        const text = buf.subarray(0, bytesRead).toString("utf8");
-        // Prepend any pending text from previous incomplete read
-        const fullText = pendingText + text;
-        // Split by newline, keeping track of whether we ended with a complete line
-        const lines = fullText.split("\n");
-        // If text doesn't end with newline, last element is incomplete - save it
-        if (!text.endsWith("\n")) {
-            pendingText = lines.pop() ?? "";
+        // Buffer raw bytes for UTF-8 safety
+        if (pendingBytes) {
+            // Combine with previous incomplete buffer
+            const combined = Buffer.concat([pendingBytes, buf.subarray(0, bytesRead)]);
+            pendingBytes = combined;
         }
         else {
-            pendingText = "";
+            pendingBytes = buf.subarray(0, bytesRead);
         }
+        // Decode the complete buffer
+        const text = pendingBytes.toString("utf8");
+        // Split by newline to find complete records
+        const lines = text.split("\n");
+        // If buffer doesn't end with newline, last element is incomplete
+        if (!pendingBytes.toString("utf8").endsWith("\n")) {
+            // Keep the incomplete line for next read (already in pendingBytes)
+            return { lines: [], newBytePos: currentBytePos };
+        }
+        // All lines are complete - emit them and clear buffer
+        pendingBytes = null;
         // Filter out empty lines
         const completeLines = lines.filter((l) => l.trim());
         // Update our tracked position by bytes actually read
