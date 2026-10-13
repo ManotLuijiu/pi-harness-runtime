@@ -65,6 +65,7 @@ export function startWatcher(options = {}) {
     let currentFd = null;
     let currentPath = null;
     let currentOrdinal = 0;
+    let currentBytePos = 0; // Track byte position we're at in the file
     let pollCount = 0;
     const maxIdlePolls = options.maxIdlePolls ?? Infinity;
     // Track last known session to detect changes
@@ -105,20 +106,25 @@ export function startWatcher(options = {}) {
         currentFd = openSync(path, "r");
         currentPath = path;
         currentOrdinal = 0;
+        currentBytePos = 0; // Reset byte position for new file
         return { fd: currentFd, size: stat.size };
     }
-    function readNewLines(fd, knownSize) {
+    function readNewLines(fd) {
         const { readSync, fstatSync } = require("node:fs");
         const stat = fstatSync(fd);
-        const newSize = stat.size;
-        if (newSize <= knownSize) {
-            return { lines: [], newSize: knownSize };
+        const fileSize = stat.size;
+        // Read from our tracked position to current end of file
+        const bytesToRead = fileSize - currentBytePos;
+        if (bytesToRead <= 0) {
+            return { lines: [], newBytePos: currentBytePos };
         }
-        const buf = Buffer.alloc(newSize - knownSize);
-        const bytesRead = readSync(fd, buf, 0, buf.length, knownSize);
+        const buf = Buffer.alloc(bytesToRead);
+        const bytesRead = readSync(fd, buf, 0, buf.length, currentBytePos);
         const text = buf.subarray(0, bytesRead).toString("utf8");
         const lines = text.split("\n").filter((l) => l.trim());
-        return { lines, newSize };
+        // Update our tracked position by bytes actually read
+        const newBytePos = currentBytePos + bytesRead;
+        return { lines, newBytePos };
     }
     async function poll() {
         if (stopped)
@@ -155,8 +161,9 @@ export function startWatcher(options = {}) {
                 }
                 return;
             }
-            const stat = statSync(session.rolloutPath);
-            const { lines } = readNewLines(currentFd, stat.size);
+            // Read new lines from our tracked byte position
+            const { lines, newBytePos } = readNewLines(currentFd);
+            currentBytePos = newBytePos; // Update tracked position
             if (lines.length > 0) {
                 pollCount = 0;
                 const messages = parseNewMessages(lines, currentOrdinal);
