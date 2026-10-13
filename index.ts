@@ -3603,10 +3603,11 @@ Run \`bd ready\` to see current bd issues.
 		Promise.allSettled(asyncInitPromises).then((results) => {
 			clearTimeout(startupTimeout);
 			if (mySession !== sessionGeneration) return;
+			// Only mark as degraded for actual ERRORS, not WARNINGS (warns are expected for unconfigured optional services)
 			const degraded = results.some((result) => result.status === "rejected") ||
-				harnessMessages.some((msg) => msg.label !== "Harness Runtime" && msg.status !== "ok");
+				harnessMessages.some((msg) => msg.label !== "Harness Runtime" && msg.status === "err");
 			addHarnessMessage("Harness Runtime",
-				`v${HARNESS_VERSION} ${degraded ? "initialized with unavailable services" : "initialized"}`,
+				`v${HARNESS_VERSION} ${degraded ? "initialized with errors" : "initialized"}`,
 				degraded ? "warn" : "ok");
 		});
 	});
