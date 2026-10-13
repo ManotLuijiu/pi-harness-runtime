@@ -1981,12 +1981,36 @@ export default function (pi: ExtensionAPI) {
 		// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
 		// On plan detected: sends Telegram alert + steer message to pi.dev.
 		try {
-			// Track accepted and delivered ordinals per session
-			// Accepted: we've seen this ordinal and are trying to deliver
-			// Delivered: successfully sent to destination
-			const sessionAcceptedOrdinals = new Map<string, number>();
-			const sessionDeliveredOrdinals = new Map<string, number>();
+			// Pending delivery queue: messages waiting to be delivered to Pi
+			// Keyed by sessionId, value is array of {ordinal, text, delivered}
+			const pendingDelivery = new Map<string, Array<{ordinal: number; text: string; delivered: boolean}>>();
 			let currentSessionId: string | null = null;
+
+			// Process pending delivery queue - try to deliver queued messages
+			function processDeliveryQueue(sessionId: string) {
+				const queue = pendingDelivery.get(sessionId);
+				if (!queue || queue.length === 0) return;
+
+				// Try to deliver pending messages
+				for (const item of queue) {
+					if (item.delivered) continue;
+
+					try {
+						const planContent = `[Codex plan detected — ordinal ${item.ordinal}]\n\n${item.text}`;
+						pi.sendUserMessage(planContent, { deliverAs: "steer" });
+						item.delivered = true;
+						logToFile("[codex]", `Delivered queued ordinal ${item.ordinal} to Pi`);
+					} catch {
+						// Still failing, will retry on next poll
+						logToFile("[codex]", `Retry failed for ordinal ${item.ordinal}`);
+					}
+				}
+
+				// Clean up delivered messages from the front of the queue
+				while (queue.length > 0 && queue[0].delivered) {
+					queue.shift();
+				}
+			}
 
 			const codexHandle = startWatcher({
 				pollIntervalMs: 5000,
@@ -1995,10 +2019,9 @@ export default function (pi: ExtensionAPI) {
 				if (session) {
 					logToFile("[codex]", `Session started: ${session.threadName}`);
 					currentSessionId = session.id;
-					// Initialize ordinal tracking for new session if not tracked yet
-					if (!sessionAcceptedOrdinals.has(session.id)) {
-						sessionAcceptedOrdinals.set(session.id, 0);
-						sessionDeliveredOrdinals.set(session.id, 0);
+					// Initialize queue for new session
+					if (!pendingDelivery.has(session.id)) {
+						pendingDelivery.set(session.id, []);
 					}
 					nc("CodexSessionStarted", {
 						requirement: session.threadName || "Codex session",
@@ -2009,20 +2032,18 @@ export default function (pi: ExtensionAPI) {
 				}
 			},
 			onMessages: (msgs) => {
+				const sessionId = currentSessionId;
+				if (!sessionId) return;
+
+				// First, try to deliver any pending messages
+				processDeliveryQueue(sessionId);
+
 				for (const msg of msgs) {
 					// Skip user messages — only track assistant plans
 					if (msg.role !== "assistant") continue;
 
 					const classification = classifyMessage(msg.text);
 					if (classification !== "plan" && classification !== "mixed") continue;
-
-					// Get session-specific ordinal tracking (use currentSessionId from watcher)
-					const sessionId = currentSessionId;
-					if (!sessionId) continue;
-
-					// Check if we've already delivered this ordinal to this session
-					const deliveredOrdinal = sessionDeliveredOrdinals.get(sessionId) ?? 0;
-					if (msg.ordinal <= deliveredOrdinal) continue;
 
 					// Emit Telegram alert with preview (include more of the plan)
 					const planPreview = msg.text.slice(0, 800) + (msg.text.length > 800 ? "\n... (full plan forwarded to Pi)" : "");
@@ -2035,12 +2056,13 @@ export default function (pi: ExtensionAPI) {
 					const planContent = `[Codex plan detected — ordinal ${msg.ordinal}]\n\n${msg.text}`;
 					try {
 						pi.sendUserMessage(planContent, { deliverAs: "steer" });
-						// Mark as delivered only if Pi send succeeds
-						sessionDeliveredOrdinals.set(sessionId, msg.ordinal);
 						logToFile("[codex]", `Delivered ordinal ${msg.ordinal} to Pi`);
 					} catch {
-					// pi.dev may not be ready - log failure, will retry on next poll
-						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, will retry on next poll`);
+						// Add to pending queue for retry
+						const queue = pendingDelivery.get(sessionId) ?? [];
+						queue.push({ ordinal: msg.ordinal, text: msg.text, delivered: false });
+						pendingDelivery.set(sessionId, queue);
+						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, queued for retry`);
 					}
 				}
 			},
