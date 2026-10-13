@@ -4,12 +4,17 @@
  * Sends notifications via Telegram Bot API.
  */
 import type { NotificationPayload, NotificationResult, TelegramCallbackHandler, TelegramConfig } from "../types.js";
+/**
+ * Telegram update object from getUpdates
+ */
+type TelegramMessageHandler = (text: string, chatId: string) => Promise<void>;
 import { BaseChannelAdapter } from "../base-adapter.js";
 export declare class TelegramAdapter extends BaseChannelAdapter {
     readonly id = "telegram";
     readonly type = "telegram";
     private _botUsername;
     private _callbackHandler;
+    private _messageHandler;
     private _webhookSecret;
     private _pollInterval;
     private _lastUpdateId;
@@ -20,6 +25,10 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      * Register a callback handler for inline keyboard button clicks
      */
     setCallbackHandler(handler: TelegramCallbackHandler): void;
+    /**
+     * Register a message handler for inbound Telegram messages
+     */
+    setMessageHandler(handler: TelegramMessageHandler): void;
     /**
      * Set webhook secret for verification
      */
@@ -82,4 +91,5 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     private formatMessage;
     private getStatusLabel;
 }
+export {};
 //# sourceMappingURL=telegram-adapter.d.ts.map

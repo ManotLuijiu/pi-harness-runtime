@@ -890,7 +890,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Register callback handler for inline keyboard button clicks (approve/reject)
 		const { parseCallbackData, CallbackActions } = await import(
-			"./packages/notification/dist/telegram-webhook-handler.js"
+				"./packages/notification/dist/telegram-webhook-handler.js"
 		);
 		center.setCallbackHandler(async (data: string, _query: { id: string }) => {
 			const parsed = parseCallbackData(data);
@@ -914,6 +914,13 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				default:
 					logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
 			}
+		});
+
+		// Register message handler to forward Telegram messages to Pi
+		center.setMessageHandler(async (text: string, _chatId: string) => {
+			logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
+			// Forward the message to Pi as a user message
+			await pi.sendUserMessage(text, { deliverAs: "steer" });
 		});
 
 		// Wire to singleton nc() helper so all event emitters can reach Telegram
