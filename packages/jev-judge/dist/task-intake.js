@@ -295,7 +295,7 @@ export class TaskIntakeController {
         this._recordCapture(userMessage);
         // Build a message to prompt the agent to create todos
         let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
-        message += "\n\nPlease capture this work into task list todo if not already tracked.";
+        message += "\n\nPlease add all Tasks to task list todo";
         await this.config.dispatch(message);
     }
     /**
