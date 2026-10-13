@@ -53,7 +53,7 @@ export class TaskIntakeController {
 	private recentCaptures = new Set<string>();
 	private readonly CAPTURE_COOLDOWN_MS = 30000;  // Don't re-trigger for same content within 30s
 	// Track stopped state to invalidate pending evaluations on stop
-	private _pendingEvaluationHash: string | null = null;
+
 	private _stopped = false;
 
 	constructor(config: TaskIntakeConfig) {
@@ -169,7 +169,6 @@ export class TaskIntakeController {
 	 * Invalidate any pending evaluations (call when paused/stopped)
 	 */
 	invalidatePending(): void {
-		this._pendingEvaluationHash = null;
 		this._stopped = true;
 	}
 
@@ -375,7 +374,7 @@ export class TaskIntakeController {
 		// Build a message to prompt the agent to create todos
 		let message = `[${customType}] Work detected in user request: "${userMessage.slice(0, 200)}"`;
 
-		message += "\n\nPlease capture this work in the todo list if not already tracked.";
+		message += "\n\nPlease capture this work into task list todo if not already tracked.";
 
 		await this.config.dispatch(message);
 	}
