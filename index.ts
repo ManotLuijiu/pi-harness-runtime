@@ -127,6 +127,14 @@ const startupStatus = new HarnessStartupStatus();
 const harnessMessages = startupStatus.messages;
 const addHarnessMessage = startupStatus.update.bind(startupStatus);
 
+// Shared state for callback handlers (accessible across init functions)
+const sharedState = {
+	waitingForUserSince: null as Date | null,
+	todoContinuationController: null as unknown,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	updateAutoContinueStatus: null as any,
+};
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
@@ -189,6 +197,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			CONTINUING: "Continuing autonomously",
 			ERROR: "Auto-continue unavailable",
 		} as const;
+
+		// Wire shared state for callback handlers
+		sharedState.waitingForUserSince = waitingForUserSince;
+		sharedState.updateAutoContinueStatus = updateAutoContinueStatus;
 
 		// Update auto-continue status in TUI footer
 		function updateAutoContinueStatus(state: keyof typeof AC_STATE_MESSAGES, requestId?: string): void {
@@ -284,13 +296,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Detect routine continuation questions ("Should I continue?")
 		// These should NOT block immediate continuation - let Jev/todo controller decide
-		// Detect routine continuation questions ("Should I continue?")
-		// These should NOT block immediate continuation - let Jev/todo controller decide
 		function isRoutineContinuation(question: string): boolean {
 			const lower = question.toLowerCase();
-			// Match patterns like "should i continue?", "should we continue?", etc.
-			return (/\b(should i|should we|should the|can i continue|can we continue)\b/.test(lower)
-				&& /\b(continue|proceed|with the next|to the next|move on)\b/.test(lower));
+			// Match ALL routine continuation patterns
+			const routinePatterns = [
+				/\b(should i|should we|should the|can i continue|can we continue)\b/,
+				/\b(would you like me to continue|shall i proceed)\b/,
+				/\b(can i proceed|may i continue)\b/,
+				/\b(continue|proceed)\s*(with|to|on|with the next|to the next)\b/,
+				/\bshall\s+(i|we)\s+(proceed|continue)\b/,
+				/\bshould\s+(i|we)\s+(continue|proceed|move on)\b/,
+				/\b(continue|proceed)\s+\?/,
+			];
+			for (const pattern of routinePatterns) {
+				if (pattern.test(lower)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		// Detect when agent asks for continuation
@@ -329,18 +352,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Build rich context message
 				const waitMinutes = Math.round((Date.now() - waitingForUserSince!.getTime()) / 60000);
 				const taskInfo = taskContext.total > 0
-					? ` | Tasks: ${taskContext.completed}/${taskContext.total} done`
-					: "";
-				const contextInfo = `Waiting: ${waitMinutes}m${taskInfo}`;
+					? `Tasks: ${taskContext.completed}/${taskContext.total} done`
+					: "No active tasks";
+				const contextInfo = `Waiting: ${waitMinutes}m | ${taskInfo}`;
 
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: `waiting-user-${questionHash}`,
 					requirement: detectedQuestion,
-					error: contextInfo,
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
+				});
+
+				// Also send context info as a follow-up message (not in error field)
+				_nc?.notify("Info", {
+					jobId: `info-${questionHash}`,
+					message: contextInfo,
 				});
 			}
 		});
@@ -665,7 +693,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const result = await todoContinuationController.decide();
 
 				if (result.action === "continue" && result.nextItemId) {
-					_steerSentThisTurn = true;
 					updateAutoContinueStatus("CONTINUING");
 					await todoContinuationController.steerToContinue(result.nextItemId);
 					// Queue remains set while agent processes, cleared on agent_end
@@ -871,12 +898,18 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 			switch (parsed.action) {
 				case CallbackActions.APPROVE:
-					// TODO: Resume auto-continue waiting state
-					logToFile("[TelegramCallback] Approved - user clicked Continue");
+					// User clicked Continue - clear waiting state and resume continuation
+					logToFile("[TelegramCallback] Approved - user clicked Continue, resuming work");
+					sharedState.waitingForUserSince = null;
+					sharedState.updateAutoContinueStatus?.("IDLE");
+					// Also resume continuation controller
+					(sharedState.todoContinuationController as any)?.resume?.();
 					break;
 				case CallbackActions.REJECT:
-					// TODO: Dismiss notification, don't resume
-					logToFile("[TelegramCallback] Rejected - user clicked Not yet");
+					// User clicked Not yet - just dismiss, don't resume
+					logToFile("[TelegramCallback] Rejected - user clicked Not yet, pausing");
+					// Explicitly pause the continuation
+					(sharedState.todoContinuationController as any)?.explicitPause?.();
 					break;
 				default:
 					logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
@@ -2486,9 +2519,6 @@ Run \`bd ready\` to see current bd issues.
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
-
-	// Track if we sent a steer message - cleared when agent completes
-	let _steerSentThisTurn = false;
 	let providerOverloadResumeAttempts = 0;
 	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -3552,13 +3582,6 @@ Run \`bd ready\` to see current bd issues.
 
 	pi.on("agent_end", () => {
 		setTimeout(() => {
-			// Clear steer queue when agent completes processing our steer message
-			if (_steerSentThisTurn) {
-				_steerSentThisTurn = false;
-				todoContinuationController?.clearQueue();
-				logToFile("[auto-continue]", "Agent turn complete, queue cleared");
-			}
-
 			if (!pendingOutputLimitResumeAfterSettled) {
 				return;
 			}

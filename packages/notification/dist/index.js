@@ -15,5 +15,5 @@ export { filterTelegramContent, getSafeNotificationLog, } from "./telegram-conte
 export { ConversationBridge, createConversationBridge, } from "./conversation-bridge.js";
 // Harness widget exports
 export { HarnessWidget, createHarnessWidget } from "./harness-widget-manager.js";
-export { renderWidgetBody, createInitialStatus, getTerminalWidth, truncate, truncateMiddle, } from "./harness-widget-manager.js";
+export { renderWidgetBody, createInitialStatus, getTerminalWidth, truncate, truncateMiddle, } from "./harness-widget.js";
 //# sourceMappingURL=index.js.map

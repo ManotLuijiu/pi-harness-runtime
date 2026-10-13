@@ -36,4 +36,4 @@ export {
 	getTerminalWidth,
 	truncate,
 	truncateMiddle,
-} from "./harness-widget-manager.js";
+} from "./harness-widget.js";
