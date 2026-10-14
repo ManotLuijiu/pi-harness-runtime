@@ -646,35 +646,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					logToFile("[auto-continue]", "User input received, temp pausing");
 				}
 
-				// Evaluate with task intake controller (non-blocking)
-				// Only trigger if multiple user prompts are pending in queue
-				if (userMessage.trim().length > 10 && taskIntakeController && todoContinuationController && pendingUserPromptCount > 1) {
-					const intake = taskIntakeController;
-					const controller = todoContinuationController;
-
-					// Reset count before processing
-					pendingUserPromptCount = 0;
-					logToFile("[auto-continue]", "Multiple prompts pending, evaluating for task capture");
-
-					// Get current todos for duplicate detection
-					intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
-						// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
-						if (intake.isStopped()) {
-							logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
-							return;
-						}
-						if (result.actionable && result.action !== "skip") {
-							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
-							// Request capture if actionable using harness custom message
-							await intake.requestCapture(userMessage, "harness:task-capture");
-						}
-					}).catch((err) => {
-						logToFile("[auto-continue]", "Task intake error:", String(err));
-					});
-				} else {
-					// Short prompt or single prompt - reset counter to prevent accumulation
-					pendingUserPromptCount = 0;
-				}
+					// Task intake is now handled by debounce timer in message_start handler
+					// This ensures single trigger path for multi-prompt detection
 			}
 		});
 
