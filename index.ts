@@ -712,14 +712,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					if (result.action === "blocked") {
 						updateAutoContinueStatus("ERROR", "blocked");
 						logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
-					} else if (result.action === "stop") {
-						logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
-						// Notify user that all work is complete
+				} else if (result.action === "stop") {
+					logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
+					// Get full todo list for notification
+					const snapshot = await todoContinuationController.getSnapshot();
+					const todoList = snapshot.items
+						.map((item) => {
+							const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
+						const subject = item.subject.length > 50 ? item.subject.slice(0, 47) + "..." : item.subject;
+							return `${status} ${subject}`;
+						})
+						.join("\n");
+						const message = todoList || "All tasks completed";
+						// Notify user that all work is complete with todo list
 						_nc?.notify("ReadyForClient", {
 							jobId: `done-${Date.now()}`,
-							requirement: result.reason ?? "All tasks completed",
+							requirement: message,
 						}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
-					}
+						}
 				}
 			} catch (err) {
 				logToFile("[auto-continue]", "agent_settled handler error:", String(err));
