@@ -373,12 +373,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
-		// Track pending user prompts with time window for queue-based task capture
+	// Track pending user prompts with debounce for queue-based task capture
 	let pendingUserPromptCount = 0;
 	let lastPromptTime = 0;
-	const PROMPT_WINDOW_MS = 30000; // 30 second window
+	let intakeTimer: ReturnType<typeof setTimeout> | null = null;
+	let _pendingUserMessage = ""; // Store message for delayed evaluation (unused but reserved)
+	const PROMPT_WINDOW_MS = 2000; // 2 second debounce window
 
-	// Detect user responses
+	// Detect user responses - track prompts for debounced task capture
 		pi.on("message_start", async (event) => {
 			const msg = event.message as { role?: string } | undefined;
 			if (msg?.role === "user") {
@@ -393,6 +395,35 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						pendingUserPromptCount++;
 						lastPromptTime = now;
 						logToFile("[auto-continue]", "User prompt arrived, pending count:", String(pendingUserPromptCount));
+
+						// Clear any pending timer
+						if (intakeTimer) {
+							clearTimeout(intakeTimer);
+							intakeTimer = null;
+						}
+
+						// Set debounce timer - evaluate after window expires
+						if (taskIntakeController && todoContinuationController) {
+							const intake = taskIntakeController;
+							const controller = todoContinuationController;
+							const capturedCount = pendingUserPromptCount;
+
+							intakeTimer = setTimeout(async () => {
+								// Only trigger if multiple prompts arrived
+								if (capturedCount > 1) {
+									pendingUserPromptCount = 0;
+									logToFile("[auto-continue]", "Multiple prompts in queue, evaluating for task capture");
+									try {
+										const result = await intake.evaluateWithTodos(content, controller);
+										if (result.actionable && result.action !== "skip") {
+											await intake.requestCapture(content, "harness:task-capture");
+										}
+									} catch (err) {
+										logToFile("[auto-continue]", "Task intake error:", String(err));
+									}
+								}
+							}, PROMPT_WINDOW_MS);
+						}
 					}
 				lastUserMessage = new Date();
 				if (waitingForUserSince) {
