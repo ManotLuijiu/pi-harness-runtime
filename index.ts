@@ -373,10 +373,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
-		// Detect user responses
+		// Track pending user prompts for queue-based task capture
+	let pendingUserPromptCount = 0;
+
+	// Detect user responses
 		pi.on("message_start", async (event) => {
 			const msg = event.message as { role?: string } | undefined;
 			if (msg?.role === "user") {
+				// Skip harness-generated follow-ups (not real user prompts)
+					const content = (msg as { content?: string } | undefined)?.content ?? "";
+					if (!content.includes("Please add all tasks to task list todo")) {
+						pendingUserPromptCount++;
+						logToFile("[auto-continue]", "User prompt arrived, pending count:", String(pendingUserPromptCount));
+					}
 				lastUserMessage = new Date();
 				if (waitingForUserSince) {
 					waitingForUserSince = null;
@@ -599,32 +608,32 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}
 
 				// Evaluate with task intake controller (non-blocking)
-				if (userMessage.trim().length > 10 && taskIntakeController && todoContinuationController) {
+				// Only trigger if multiple user prompts are pending in queue
+				if (userMessage.trim().length > 10 && taskIntakeController && todoContinuationController && pendingUserPromptCount > 1) {
 					const intake = taskIntakeController;
 					const controller = todoContinuationController;
 
-					// Quick multi-task pattern check before Jev (saves latency, reduces noise)
-					// Only proceed with Jev if multiple tasks detected
-					const hasMultipleTasks = /and\s|also\s|\+\s|, .*, also|^\d+\.|\n\d+\./i.test(userMessage);
-					if (!hasMultipleTasks) {
-						logToFile("[auto-continue]", "Single task detected, skipping task capture:", userMessage.slice(0, 50));
-					} else {
-						// Get current todos for duplicate detection
-						intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
-							// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
-							if (intake.isStopped()) {
-								logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
-								return;
-							}
-							if (result.actionable && result.action !== "skip") {
-								logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
-								// Request capture if actionable using harness custom message
-								await intake.requestCapture(userMessage, "harness:task-capture");
-							}
-						}).catch((err) => {
-							logToFile("[auto-continue]", "Task intake error:", String(err));
-						});
-					}
+					// Decrement count - we're processing this batch
+					pendingUserPromptCount = 0;
+					logToFile("[auto-continue]", "Multiple prompts pending, evaluating for task capture");
+
+					// Get current todos for duplicate detection
+					intake.evaluateWithTodos(userMessage, controller).then(async (result) => {
+						// Recheck stopped flag AFTER await - user may have paused while Jev was evaluating
+						if (intake.isStopped()) {
+							logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
+							return;
+						}
+						if (result.actionable && result.action !== "skip") {
+							logToFile("[auto-continue]", "Task intake result:", JSON.stringify(result));
+							// Request capture if actionable using harness custom message
+							await intake.requestCapture(userMessage, "harness:task-capture");
+						}
+					}).catch((err) => {
+						logToFile("[auto-continue]", "Task intake error:", String(err));
+					});
+				} else if (pendingUserPromptCount <= 1) {
+					logToFile("[auto-continue]", "Single prompt, skipping task capture");
 				}
 			}
 		});
