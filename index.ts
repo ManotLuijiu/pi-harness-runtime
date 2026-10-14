@@ -377,47 +377,66 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	let pendingUserPromptCount = 0;
 	let lastPromptTime = 0;
 	let intakeTimer: ReturnType<typeof setTimeout> | null = null;
-	let _pendingUserMessage = ""; // Store message for delayed evaluation (unused but reserved)
+	let pendingPromptContents: string[] = []; // Accumulate batch prompt contents
 	const PROMPT_WINDOW_MS = 2000; // 2 second debounce window
 
 	// Detect user responses - track prompts for debounced task capture
 		pi.on("message_start", async (event) => {
 			const msg = event.message as { role?: string } | undefined;
 			if (msg?.role === "user") {
+				// Normalize content to string (handle array of text blocks)
+				let content = "";
+				const rawContent = (msg as { content?: string | Array<{ text?: string }> } | undefined)?.content;
+				if (Array.isArray(rawContent)) {
+					content = rawContent.map((c) => c.text ?? "").join("\n");
+				} else if (typeof rawContent === "string") {
+					content = rawContent;
+				}
+
 				// Skip harness-generated follow-ups (not real user prompts)
-					const content = (msg as { content?: string } | undefined)?.content ?? "";
-					if (!content.includes("Please add all tasks to task list todo")) {
-						const now = Date.now();
-						// Reset count if window expired
-						if (now - lastPromptTime > PROMPT_WINDOW_MS) {
-							pendingUserPromptCount = 0;
-						}
-						pendingUserPromptCount++;
-						lastPromptTime = now;
-						logToFile("[auto-continue]", "User prompt arrived, pending count:", String(pendingUserPromptCount));
+				if (!content.includes("Please add all tasks to task list todo")) {
+					const now = Date.now();
+					// Reset batch if window expired
+					if (now - lastPromptTime > PROMPT_WINDOW_MS) {
+						pendingUserPromptCount = 0;
+						pendingPromptContents = [];
+					}
+					pendingUserPromptCount++;
+					pendingPromptContents.push(content);
+					lastPromptTime = now;
+					logToFile("[auto-continue]", "User prompt arrived, pending count:", String(pendingUserPromptCount));
 
-						// Clear any pending timer
-						if (intakeTimer) {
-							clearTimeout(intakeTimer);
-							intakeTimer = null;
-						}
+					// Clear any pending timer
+					if (intakeTimer) {
+						clearTimeout(intakeTimer);
+						intakeTimer = null;
+					}
 
-						// Set debounce timer - evaluate after window expires
-						if (taskIntakeController && todoContinuationController) {
-							const intake = taskIntakeController;
-							const controller = todoContinuationController;
-							const capturedCount = pendingUserPromptCount;
+					// Set debounce timer - evaluate after window expires
+					if (taskIntakeController && todoContinuationController) {
+						const intake = taskIntakeController;
+						const controller = todoContinuationController;
+						const capturedCount = pendingUserPromptCount;
+						const capturedContents = [...pendingPromptContents];
 
-							intakeTimer = setTimeout(async () => {
-								// Only trigger if multiple prompts arrived
-								if (capturedCount > 1) {
-									pendingUserPromptCount = 0;
-									logToFile("[auto-continue]", "Multiple prompts in queue, evaluating for task capture");
-									try {
-										const result = await intake.evaluateWithTodos(content, controller);
-										if (result.actionable && result.action !== "skip") {
-											await intake.requestCapture(content, "harness:task-capture");
-										}
+						intakeTimer = setTimeout(async () => {
+							// Only trigger if multiple prompts arrived
+							if (capturedCount > 1) {
+								pendingUserPromptCount = 0;
+								pendingPromptContents = [];
+								logToFile("[auto-continue]", "Multiple prompts in queue, evaluating for task capture");
+								try {
+									// Check if stopped before dispatching
+									if (intake.isStopped()) {
+										logToFile("[auto-continue]", "Task intake skipped - stopped after evaluation");
+										return;
+									}
+									// Evaluate all prompts in batch
+									const combinedContent = capturedContents.join("\n---\n");
+									const result = await intake.evaluateWithTodos(combinedContent, controller);
+									if (result.actionable && result.action !== "skip") {
+										await intake.requestCapture(combinedContent, "harness:task-capture");
+									}
 									} catch (err) {
 										logToFile("[auto-continue]", "Task intake error:", String(err));
 									}
