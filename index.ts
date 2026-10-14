@@ -373,8 +373,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
-		// Track pending user prompts for queue-based task capture
+		// Track pending user prompts with time window for queue-based task capture
 	let pendingUserPromptCount = 0;
+	let lastPromptTime = 0;
+	const PROMPT_WINDOW_MS = 30000; // 30 second window
 
 	// Detect user responses
 		pi.on("message_start", async (event) => {
@@ -383,7 +385,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Skip harness-generated follow-ups (not real user prompts)
 					const content = (msg as { content?: string } | undefined)?.content ?? "";
 					if (!content.includes("Please add all tasks to task list todo")) {
+						const now = Date.now();
+						// Reset count if window expired
+						if (now - lastPromptTime > PROMPT_WINDOW_MS) {
+							pendingUserPromptCount = 0;
+						}
 						pendingUserPromptCount++;
+						lastPromptTime = now;
 						logToFile("[auto-continue]", "User prompt arrived, pending count:", String(pendingUserPromptCount));
 					}
 				lastUserMessage = new Date();
@@ -613,7 +621,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					const intake = taskIntakeController;
 					const controller = todoContinuationController;
 
-					// Decrement count - we're processing this batch
+					// Reset count before processing
 					pendingUserPromptCount = 0;
 					logToFile("[auto-continue]", "Multiple prompts pending, evaluating for task capture");
 
@@ -632,8 +640,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					}).catch((err) => {
 						logToFile("[auto-continue]", "Task intake error:", String(err));
 					});
-				} else if (pendingUserPromptCount <= 1) {
-					logToFile("[auto-continue]", "Single prompt, skipping task capture");
+				} else {
+					// Short prompt or single prompt - reset counter to prevent accumulation
+					pendingUserPromptCount = 0;
 				}
 			}
 		});
