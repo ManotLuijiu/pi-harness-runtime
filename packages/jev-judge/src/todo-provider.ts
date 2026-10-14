@@ -283,9 +283,14 @@ class PiTodoProvider implements TodoProvider {
 		this._revision++;
 		const state = this.getTodoState();
 		
-		// If branch read failed, throw to indicate unavailable state
+		// Return empty state if no todos yet (not an error - just empty)
 		if (state === null) {
-			throw new Error(`Todo state unavailable: ${this._lastError ?? "branch read failed"}`);
+			return {
+				items: [],
+				sessionId: this.ctx.sessionManager.getSessionId() ?? "unknown",
+				revision: this._revision,
+				createdAt: new Date(),
+			};
 		}
 		
 		return {
