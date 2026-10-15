@@ -1436,6 +1436,108 @@ async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
+// --- memory: Inject MEMORY.md and USER.md into system prompt ---
+// Loads curated notes at session start for Hermes-style memory
+async function initMemory(pi: ExtensionAPI): Promise<void> {
+	try {
+		const { getGlobalMemoryStore } = await import("./packages/trajectory/src/memory-store.js");
+		const { HonchoMemory } = await import("./harness/honcho-memory.js");
+		const memoryStore = getGlobalMemoryStore();
+
+		// Initialize Honcho memory (will be connected after initHoncho)
+		let honchoMemory: HonchoMemory | null = null;
+		let honchoReady = false;
+
+		// Connect Honcho memory after Honcho is initialized
+		pi.on("session_start", async () => {
+			if (honchoMemory) return; // Already initialized
+
+			try {
+				const honchoConfig = await import("./harness/honcho-init.js");
+				if (honchoConfig.isHonchoReady && honchoConfig.isHonchoReady()) {
+					honchoMemory = new HonchoMemory({});
+					honchoReady = true;
+					logToFile("[memory]", "Honcho memory connected");
+				}
+			} catch {
+				// Honcho not ready yet
+			}
+		});
+
+		logToFile("[memory]", "Memory store initialized");
+
+		// Track initialization for truthful status
+		let memoryLoaded = false;
+		let memoryTokenCount = 0;
+		let lastUserMessage = "";
+
+		// Capture last user message for Honcho retrieval
+		pi.on("message_end", (event) => {
+			const msg = event.message as { role?: string; content?: string } | undefined;
+			if (msg?.role === "user" && typeof msg.content === "string") {
+				lastUserMessage = msg.content;
+			}
+		});
+
+		// Inject memory on first agent start
+		let firstAgentStart = true;
+		pi.on("before_agent_start", async (event) => {
+			const parts: string[] = [];
+
+			// 1. Load local memory files
+			const memorySection = memoryStore.getMemorySection();
+			const userSection = memoryStore.getUserSection();
+
+			if (memorySection) parts.push(memorySection);
+			if (userSection) parts.push(userSection);
+
+			if (parts.length > 0) {
+				memoryLoaded = true;
+				memoryTokenCount = Math.round(parts.join("\n").length / 4);
+				logToFile("[memory]", `Local notes: ${memoryStore.getMemory().length} entries, ~${memoryTokenCount} tokens`);
+			}
+
+			// 2. Retrieve Honcho context if available and we have a query
+			let honchoContext = "";
+			if (honchoReady && honchoMemory && lastUserMessage.trim().length > 0) {
+				try {
+					const result = await honchoMemory.retrieveContext(lastUserMessage);
+					if (result.success && !result.empty && result.context) {
+						honchoContext = `\n## Relevant Context\n${result.context}\n`;
+						logToFile("[memory]", `Honcho: retrieved ~${result.context.length} chars`);
+					} else if (result.error) {
+						logToFile("[memory]", `Honcho retrieval: ${result.error}`);
+					}
+				} catch (err) {
+					logToFile("[memory]", `Honcho retrieval failed:`, String(err));
+				}
+			}
+
+			// Combine all memory
+			const allMemory = parts.join("\n") + honchoContext;
+
+			if (!allMemory.trim()) {
+				logToFile("[memory]", "No memory to inject");
+				return;
+			}
+
+			// Status on first injection
+			if (firstAgentStart) {
+				firstAgentStart = false;
+				const status: string[] = [];
+				if (memoryLoaded) status.push(`local notes`);
+				if (honchoContext) status.push(`honcho context`);
+				logToFile("[memory]", `Injected: ${status.join(" + ")}`);
+			}
+
+			// Return augmented system prompt
+			return { systemPrompt: event.systemPrompt + "\n\n" + allMemory };
+		});
+	} catch (err) {
+		logToFile("[memory]", "Init failed:", String(err));
+	}
+}
+
 // --- SSH detach interceptor: Auto-transform bare ssh ... & to detached pattern ---
 // Prevents 2000+ second hangs when SSH background commands aren't detached.
 // Intercepts every bash tool call before execution and rewrites risky SSH commands.
@@ -2048,6 +2150,9 @@ export default function (pi: ExtensionAPI) {
 
 	// --- agent-policy: Mandatory rule delivery and mutation gating -------------
 	void initAgentPolicy(pi);
+
+	// --- memory: Inject MEMORY.md and USER.md into system prompt -------------
+	void initMemory(pi);
 
 	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
 	void initSshDetachInterceptor(pi);
