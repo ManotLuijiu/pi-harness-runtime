@@ -1472,10 +1472,34 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 		let lastUserMessage = "";
 
 		// Capture last user message for Honcho retrieval
-		pi.on("message_end", (event) => {
-			const msg = event.message as { role?: string; content?: string } | undefined;
-			if (msg?.role === "user" && typeof msg.content === "string") {
+		// Also ingest messages to Honcho for conversational memory
+		pi.on("message_end", async (event) => {
+			const msg = event.message as { role?: string; content?: string | Array<{type?: string; text?: string}> } | undefined;
+			if (!msg?.role || !msg.content) return;
+
+			// Store for retrieval
+			if (msg.role === "user" && typeof msg.content === "string") {
 				lastUserMessage = msg.content;
+			}
+
+			// Ingest to Honcho for conversational memory
+			if (honchoReady && honchoMemory) {
+				try {
+					// Skip harness-generated prompts
+					const content = typeof msg.content === "string" ? msg.content : "";
+					if (content.includes("[harness:") || content.includes("Please add all tasks")) {
+						return;
+					}
+
+					await honchoMemory.ingestMessage(
+						msg.role as "user" | "assistant",
+						msg.content,
+						new Date(),
+						`turn-${Date.now()}`
+					);
+				} catch (err) {
+					logToFile("[memory]", `Ingest failed:`, String(err));
+				}
 			}
 		});
 
