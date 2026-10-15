@@ -2080,7 +2080,7 @@ export default function (pi: ExtensionAPI) {
 			const deliveredEvents = new Map<string, PlanEvent>();
 			let currentCodexSessionId: string | null = null;
 			let currentProjectRoot = "";
-			let currentPlanCandidate: { ordinal: number; text: string; timestamp: number } | null = null;
+			let _currentPlanCandidate: { ordinal: number; text: string; timestamp: number } | null = null;
 			let lastActivityTime = 0;
 
 			// Check if plan file exists and is stable (mtime unchanged)
@@ -2190,7 +2190,7 @@ export default function (pi: ExtensionAPI) {
 					currentCodexSessionId = session.id;
 					currentProjectRoot = session.projectRoot;
 					nc("CodexSessionStarted", {
-						requirement: session.threadName || "Codex session",
+						requirement: `${session.threadName || "Codex session"} [${session.projectRoot || "unknown"}]`,
 						taskTitle: session.id,
 					});
 				} else {
