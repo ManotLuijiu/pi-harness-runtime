@@ -22,6 +22,8 @@ export interface CodexSession {
     updatedAt: string;
     /** Absolute path to the rollout transcript file */
     rolloutPath: string;
+    /** Canonical absolute path to the project working directory */
+    projectRoot: string;
 }
 export interface CodexMessage {
     /** Unique ordinal within the session (monotonically increasing) */

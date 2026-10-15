@@ -3,7 +3,8 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
 /** Find the most recently active Codex session. */
 export function getLatestSession(codexDir) {
     const indexPath = getSessionIndexPath(codexDir);
@@ -20,11 +21,14 @@ export function getLatestSession(codexDir) {
     }
     if (!latest)
         return null;
+    const rolloutPath = findRolloutPath(latest.id, codexDir);
+    const projectRoot = getProjectRootFromRollout(rolloutPath);
     return {
         id: latest.id,
         threadName: latest.thread_name,
         updatedAt: latest.updated_at,
-        rolloutPath: findRolloutPath(latest.id, codexDir),
+        rolloutPath,
+        projectRoot,
     };
 }
 /** Get all sessions sorted by most recent first. */
@@ -40,12 +44,17 @@ export function getAllSessions(codexDir) {
     }
     return sessions
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-        .map((e) => ({
-        id: e.id,
-        threadName: e.thread_name,
-        updatedAt: e.updated_at,
-        rolloutPath: findRolloutPath(e.id, codexDir),
-    }));
+        .map((e) => {
+        const rolloutPath = findRolloutPath(e.id, codexDir);
+        const projectRoot = getProjectRootFromRollout(rolloutPath);
+        return {
+            id: e.id,
+            threadName: e.thread_name,
+            updatedAt: e.updated_at,
+            rolloutPath,
+            projectRoot,
+        };
+    });
 }
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -121,5 +130,45 @@ function readLines(filePath) {
     catch {
         return [];
     }
+}
+/**
+ * Parse rollout file for project working directory.
+ * Looks for session_meta JSONL records containing the working directory.
+ * Returns canonical absolute path or empty string if not found.
+ */
+function getProjectRootFromRollout(rolloutPath) {
+    try {
+        if (!existsSync(rolloutPath))
+            return "";
+        const lines = readLines(rolloutPath);
+        // Look for session_meta records with working directory
+        for (const line of lines) {
+            try {
+                const obj = JSON.parse(line);
+                if (obj.type === "session_meta" || obj.type === "session_start") {
+                    const data = obj.data;
+                    if (data && typeof data.working_directory === "string") {
+                        const cwd = data.working_directory;
+                        if (cwd && cwd.startsWith("/")) {
+                            // Canonicalize the path
+                            try {
+                                return realpathSync(cwd);
+                            }
+                            catch {
+                                return resolve(cwd);
+                            }
+                        }
+                    }
+                }
+            }
+            catch {
+                // Skip malformed JSON lines
+            }
+        }
+    }
+    catch {
+        // File read error
+    }
+    return "";
 }
 //# sourceMappingURL=session.js.map
