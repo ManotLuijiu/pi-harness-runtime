@@ -380,6 +380,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	let pendingPromptContents: string[] = []; // Accumulate batch prompt contents
 	const PROMPT_WINDOW_MS = 2000; // 2 second debounce window
 
+	// --- Codex plan auto-trigger: Track our Pi session's cwd ---
+	let _piSessionCwd = "";
+	const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
+
+	// Capture our Pi session's cwd on session_start
+	pi.on("session_start", () => {
+		try {
+			_piSessionCwd = realpathSync(process.cwd());
+			logToFile("[codex-trigger]", "Pi session cwd captured:", _piSessionCwd);
+		} catch {
+			_piSessionCwd = process.cwd();
+		}
+	});
+
 	// Detect user responses - track prompts for debounced task capture
 		pi.on("message_start", async (event) => {
 			const msg = event.message as { role?: string } | undefined;
@@ -1627,7 +1641,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync, realpathSync } from "node:fs";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
 
@@ -2049,39 +2063,122 @@ export default function (pi: ExtensionAPI) {
 	// Collect promise so we can wait for initialization before showing startup notification
 	asyncInitPromises.push(initTelegram(pi));
 
-		// --- codex-watcher: Inject Codex plans into pi.dev + Telegram --------------
-		// Lightweight: polls ~/.codex/sessions/ every 5s, no LangChain daemon.
-		// On plan detected: sends Telegram alert + steer message to pi.dev.
+		// --- codex-watcher: Auto-trigger Pi when Codex finishes a plan ---
+		// Flow: detect plan -> settle timer -> file stability check -> cwd match -> trigger
 		try {
-			// Pending delivery queue: messages waiting to be delivered to Pi
-			// Keyed by sessionId, value is array of {ordinal, text, delivered}
-			const pendingDelivery = new Map<string, Array<{ordinal: number; text: string; delivered: boolean}>>();
-			let currentSessionId: string | null = null;
+			// Event tracking for deduplication
+			interface PlanEvent {
+				codexSessionId: string;
+				planPath: string;
+				planHash: string;
+				status: "observed" | "settling" | "ready" | "triggered" | "failed";
+				ordinal: number;
+				lastActivity: number;
+				settleTimer: ReturnType<typeof setTimeout> | null;
+				fileStableSince: number;
+			}
+			const deliveredEvents = new Map<string, PlanEvent>();
+			let currentCodexSessionId: string | null = null;
+			let currentProjectRoot = "";
+			let currentPlanCandidate: { ordinal: number; text: string; timestamp: number } | null = null;
+			let lastActivityTime = 0;
 
-			// Process pending delivery queue - try to deliver queued messages
-			function processDeliveryQueue(sessionId: string) {
-				const queue = pendingDelivery.get(sessionId);
-				if (!queue || queue.length === 0) return;
+			// Check if plan file exists and is stable (mtime unchanged)
+			function checkPlanFileStable(planPath: string, sinceMs: number): boolean {
+				try {
+					const stat = statSync(planPath);
+					const ageMs = Date.now() - stat.mtimeMs;
+					return ageMs >= sinceMs;
+				} catch {
+					return false;
+			}
+			}
 
-				// Try to deliver pending messages
-				for (const item of queue) {
-					if (item.delivered) continue;
+			// Try to find wiki/plan.md in project root
+			function findPlanFile(projectRoot: string): string | null {
+				const candidates = [
+					join(projectRoot, "wiki", "plan.md"),
+					join(projectRoot, "wiki", "PLAN.md"),
+					join(projectRoot, "docs", "plan.md"),
+				];
+				for (const path of candidates) {
+					if (existsSync(path)) return path;
+				}
+				return null;
+			}
 
-					try {
-						const planContent = `[Codex plan detected — ordinal ${item.ordinal}]\n\n${item.text}`;
-						pi.sendUserMessage(planContent, { deliverAs: "steer" });
-						item.delivered = true;
-						logToFile("[codex]", `Delivered queued ordinal ${item.ordinal} to Pi`);
-					} catch {
-						// Still failing, will retry on next poll
-						logToFile("[codex]", `Retry failed for ordinal ${item.ordinal}`);
+			// Trigger Pi to read the plan
+			async function triggerPiForPlan(event: PlanEvent): Promise<void> {
+				// Check cwd match
+				if (_piSessionCwd && currentProjectRoot && _piSessionCwd !== currentProjectRoot) {
+					logToFile("[codex-trigger]", "Cwd mismatch, skipping:", _piSessionCwd, "!=", currentProjectRoot);
+					return;
+				}
+
+				const triggerMsg = `Codex finished a plan for this workspace. Read and follow the plan at:\n${event.planPath}\n\nTreat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.`;
+
+				try {
+					await pi.sendUserMessage(triggerMsg, { deliverAs: "steer" });
+					event.status = "triggered";
+					logToFile("[codex-trigger]", "Triggered Pi for plan:", event.planPath);
+					nc("CodexPlanDetected", {
+						requirement: `Plan ready: ${event.planPath}`,
+						taskTitle: `Ordinal ${event.ordinal}`,
+					});
+				} catch (err) {
+					event.status = "failed";
+					logToFile("[codex-trigger]", "Trigger failed:", String(err));
+				}
+			}
+
+			// Start settle timer for plan
+			function startSettleTimer(planPath: string, ordinal: number) {
+				const eventKey = `${currentCodexSessionId}:${planPath}`;
+				const existing = deliveredEvents.get(eventKey);
+				if (existing && (existing.status === "triggered" || existing.status === "ready")) {
+					logToFile("[codex-trigger]", "Plan already handled:", eventKey);
+					return;
+				}
+
+				const event: PlanEvent = {
+					codexSessionId: currentCodexSessionId ?? "",
+					planPath,
+					planHash: "",
+					status: "settling",
+					ordinal,
+					lastActivity: Date.now(),
+					settleTimer: null,
+					fileStableSince: 0,
+				};
+				deliveredEvents.set(eventKey, event);
+
+				logToFile("[codex-trigger]", "Plan observed, starting settle timer:", planPath);
+
+				// Cancel existing timer if any
+				if (event.settleTimer) {
+					clearTimeout(event.settleTimer);
+				}
+
+				event.settleTimer = setTimeout(async () => {
+					// Check file stability (5 seconds without changes)
+					if (!checkPlanFileStable(planPath, _SETTLE_DELAY_MS)) {
+						logToFile("[codex-trigger]", "Plan file still changing, restarting timer:", planPath);
+						// Restart timer
+						event.lastActivity = Date.now();
+						startSettleTimer(planPath, ordinal);
+						return;
 					}
-				}
 
-				// Clean up delivered messages from the front of the queue
-				while (queue.length > 0 && queue[0].delivered) {
-					queue.shift();
-				}
+					// Check no new activity during settle
+					if (Date.now() - lastActivityTime > _SETTLE_DELAY_MS) {
+						event.status = "ready";
+						logToFile("[codex-trigger]", "Plan settled, triggering Pi:", planPath);
+						await triggerPiForPlan(event);
+					} else {
+						logToFile("[codex-trigger]", "New activity during settle, restarting:", planPath);
+						startSettleTimer(planPath, ordinal);
+					}
+				}, _SETTLE_DELAY_MS);
 			}
 
 			const codexHandle = startWatcher({
@@ -2089,61 +2186,59 @@ export default function (pi: ExtensionAPI) {
 				maxIdlePolls: Infinity,
 				onSessionChange: (session) => {
 				if (session) {
-					logToFile("[codex]", `Session started: ${session.threadName}`);
-					currentSessionId = session.id;
-					// Initialize queue for new session
-					if (!pendingDelivery.has(session.id)) {
-						pendingDelivery.set(session.id, []);
-					}
+					logToFile("[codex]", `Session started: ${session.threadName}, root: ${session.projectRoot}`);
+					currentCodexSessionId = session.id;
+					currentProjectRoot = session.projectRoot;
 					nc("CodexSessionStarted", {
 						requirement: session.threadName || "Codex session",
 						taskTitle: session.id,
 					});
 				} else {
-					currentSessionId = null;
+					currentCodexSessionId = null;
+					currentProjectRoot = "";
+					currentPlanCandidate = null;
 				}
 			},
 			onMessages: (msgs) => {
-				const sessionId = currentSessionId;
-				if (!sessionId) return;
-
-				// First, try to deliver any pending messages
-				processDeliveryQueue(sessionId);
+				if (!currentCodexSessionId) return;
 
 				for (const msg of msgs) {
-					// Skip user messages — only track assistant plans
+					lastActivityTime = Date.now();
+
 					if (msg.role !== "assistant") continue;
 
 					const classification = classifyMessage(msg.text);
 					if (classification !== "plan" && classification !== "mixed") continue;
 
-					// Emit Telegram alert with preview (include more of the plan)
-					const planPreview = msg.text.slice(0, 800) + (msg.text.length > 800 ? "\n... (full plan forwarded to Pi)" : "");
+					// Track plan candidate
+					currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
+
+					// Try to find plan file in project root
+					if (currentProjectRoot) {
+						const planPath = findPlanFile(currentProjectRoot);
+						if (planPath) {
+							logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
+							startSettleTimer(planPath, msg.ordinal);
+						} else {
+							// No wiki/plan.md found yet - wait for file to appear
+							logToFile("[codex-trigger]", "Plan message but no wiki/plan.md yet, waiting...");
+						}
+					}
+
+					// Emit Telegram alert
+					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "\n..." : "");
 					nc("CodexPlanDetected", {
 						requirement: planPreview,
 						taskTitle: `Ordinal ${msg.ordinal}`,
 					});
-
-					// Inject full plan into pi.dev as a steer message
-					const planContent = `[Codex plan detected — ordinal ${msg.ordinal}]\n\n${msg.text}`;
-					try {
-						pi.sendUserMessage(planContent, { deliverAs: "steer" });
-						logToFile("[codex]", `Delivered ordinal ${msg.ordinal} to Pi`);
-					} catch {
-						// Add to pending queue for retry
-						const queue = pendingDelivery.get(sessionId) ?? [];
-						queue.push({ ordinal: msg.ordinal, text: msg.text, delivered: false });
-						pendingDelivery.set(sessionId, queue);
-						logToFile("[codex]", `Delivery failed for ordinal ${msg.ordinal}, queued for retry`);
-					}
 				}
 			},
 		});
 
 		// Clean up when pi session ends
-	pi.on("session_shutdown", () => codexHandle.stop());
+		pi.on("session_shutdown", () => codexHandle.stop());
 	} catch {
-		// Codex watcher unavailable (e.g. no codex package installed)
+		// Codex watcher unavailable
 	}
 
 	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
