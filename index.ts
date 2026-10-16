@@ -380,10 +380,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	let pendingPromptContents: string[] = []; // Accumulate batch prompt contents
 	const PROMPT_WINDOW_MS = 2000; // 2 second debounce window
 
-	// --- Codex plan auto-trigger: Track our Pi session's cwd ---
-	let _piSessionCwd = "";
-	const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
-
 	// Capture our Pi session's cwd on session_start
 	pi.on("session_start", async () => {
 		try {
@@ -933,6 +929,9 @@ async function initQdrant(): Promise<void> {
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
 
 // Shared Codex session state - accessible by both initTelegram() and the watcher
+let _piSessionCwd = "";
+const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
+
 interface PlanEvent {
 	codexSessionId: string;
 	planPath: string;
