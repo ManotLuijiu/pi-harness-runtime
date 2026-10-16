@@ -295,35 +295,52 @@ export class TelegramAdapter extends BaseChannelAdapter {
             }
             const cfg = this.config.config;
             const message = this.formatMessage(payload);
-            // Build request body
-            // Use plain text by default to avoid MarkdownV2 escaping issues with dynamic content
-            // If parseMode is explicitly set, use it (caller is responsible for escaping)
-            const body = {
-                chat_id: cfg.chatId,
-                text: message,
-            };
-            // Only add parse_mode if explicitly configured
-            if (cfg.parseMode) {
-                body.parse_mode = cfg.parseMode;
-            }
+            // Chunk long messages (Telegram limit is ~4096)
+            const chunks = this.chunkMessage(message);
+            const totalChunks = chunks.length;
+            // Log chunk count for telemetry (no full content)
+            logInfo("[TelegramAdapter]", `Sending ${totalChunks} chunk(s) for job=${payload.jobId}`);
             // Read buttons from payload.details (set by notifyWithApproval)
             const enableInlineKeyboard = payload.details?._enableInlineKeyboard ?? cfg.enableInlineKeyboard;
             const actionButtons = payload.details?._actionButtons ?? cfg.actionButtons;
-            // Add inline keyboard if enabled and buttons are configured
-            if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
-                body.reply_markup = this.buildInlineKeyboard(actionButtons);
+            // Send each chunk sequentially
+            let lastError;
+            for (let i = 0; i < chunks.length; i++) {
+                let chunkText = chunks[i];
+                // Add part indicator for multi-chunk messages
+                if (totalChunks > 1) {
+                    const partHeader = `[Part ${i + 1}/${totalChunks}]\n`;
+                    chunkText = partHeader + chunkText;
+                }
+                // Build request body
+                const body = {
+                    chat_id: cfg.chatId,
+                    text: chunkText,
+                };
+                // Only add parse_mode if explicitly configured
+                if (cfg.parseMode) {
+                    body.parse_mode = cfg.parseMode;
+                }
+                // Add inline keyboard if enabled and buttons are configured
+                if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
+                    body.reply_markup = this.buildInlineKeyboard(actionButtons);
+                }
+                const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) {
+                    const error = await response.text();
+                    lastError = `Telegram API error: ${error}`;
+                    break;
+                }
             }
-            const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
-            if (!response.ok) {
-                const error = await response.text();
+            if (lastError) {
                 return {
                     success: false,
                     channel: this.id,
-                    error: `Telegram API error: ${error}`,
+                    error: lastError,
                 };
             }
             return { success: true, channel: this.id };
@@ -532,16 +549,41 @@ export class TelegramAdapter extends BaseChannelAdapter {
         const taskTitle = payload.details?.taskTitle;
         const jobId = payload.details?.jobId;
         const errorVal = payload.details?.error;
+        const artifact = payload.details?.artifact;
+        const stage = payload.details?.stage;
+        const ordinal = payload.details?.ordinal;
+        const planPath = payload.details?.planPath;
+        const projectRoot = payload.details?.projectRoot;
         const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
         const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
         const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
+        const maskedProjectRoot = typeof projectRoot === "string" ? maskString(projectRoot) : undefined;
+        const maskedPlanPath = typeof planPath === "string" ? maskString(planPath) : undefined;
         // Get hostname for multi-machine identification
         const hostTag = `[${hostname()}]`;
         const label = this.getStatusLabel(payload.event);
         const title = `${label} ${maskedTitle} ${hostTag}`;
-        const lines = [title, "", maskedMessage];
+        const lines = [title];
+        // Add metadata for Codex events
         if (maskedTaskTitle) {
             lines.push("", `Task: ${maskedTaskTitle}`);
+        }
+        if (maskedProjectRoot) {
+            lines.push(`Root: ${maskedProjectRoot}`);
+        }
+        if (ordinal !== undefined) {
+            lines.push(`Ordinal: ${ordinal}`);
+        }
+        if (maskedPlanPath) {
+            lines.push(`Plan: ${maskedPlanPath}`);
+        }
+        // Add message/artifact content
+        if (artifact) {
+            // For Codex artifacts, the artifact is in details, message may be empty or a summary
+            lines.push("", artifact);
+        }
+        else if (maskedMessage) {
+            lines.push("", maskedMessage);
         }
         if (maskedJobId) {
             lines.push(`Job: ${maskedJobId}`);
@@ -551,6 +593,39 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
         // Final mask pass on the complete rendered string
         return maskString(lines.filter(Boolean).join("\n"));
+    }
+    /**
+     * Split long messages into ordered chunks for Telegram.
+     * Telegram message limit is ~4096 characters.
+     */
+    chunkMessage(text, maxLength = 3500) {
+        if (text.length <= maxLength) {
+            return [text];
+        }
+        const chunks = [];
+        let remaining = text;
+        let part = 1;
+        const totalParts = Math.ceil(text.length / maxLength);
+        while (remaining.length > 0) {
+            // Try to split at paragraph or line boundary
+            let splitIndex = maxLength;
+            const lastNewline = remaining.lastIndexOf("\n", maxLength);
+            if (lastNewline > maxLength * 0.7) {
+                // Found a good newline boundary
+                splitIndex = lastNewline;
+            }
+            else {
+                // Split at maxLength, but try to avoid cutting words
+                const lastSpace = remaining.lastIndexOf(" ", maxLength);
+                if (lastSpace > maxLength * 0.8) {
+                    splitIndex = lastSpace;
+                }
+            }
+            chunks.push(remaining.slice(0, splitIndex));
+            remaining = remaining.slice(splitIndex).trimStart();
+            part++;
+        }
+        return chunks;
     }
     getStatusLabel(event) {
         // Use ASCII labels per AGENTS.md convention

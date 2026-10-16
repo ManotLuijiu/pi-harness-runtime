@@ -2348,12 +2348,19 @@ export default function (pi: ExtensionAPI) {
 						}
 					}
 
-					// Emit Telegram alert
-					const planPreview = msg.text.slice(0, 500) + (msg.text.length > 500 ? "\n..." : "");
-					nc("CodexPlanDetected", {
-						requirement: planPreview,
-						taskTitle: `Ordinal ${msg.ordinal}`,
-					});
+				// Emit Telegram alert with full plan text
+							const planPath = currentProjectRoot ? findPlanFile(currentProjectRoot) : undefined;
+							nc("CodexPlanDetected", {
+								requirement: msg.text, // Full text, no truncation
+								taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
+								details: {
+									ordinal: msg.ordinal,
+									stage: "plan",
+									projectRoot: currentProjectRoot || undefined,
+									planPath: planPath || undefined,
+									messageLength: msg.text.length,
+								},
+							});
 				}
 			},
 		});

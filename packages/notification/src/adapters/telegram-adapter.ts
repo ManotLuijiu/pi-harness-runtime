@@ -336,75 +336,97 @@ return this._botUsername;
 	/**
 	 * Send a message with optional inline keyboard buttons
 	 */
-	async send(payload: NotificationPayload): Promise<NotificationResult> {
-		try {
-			// SECURITY: Jev-powered content filter - block if contains sensitive credentials
-			const filterResult = await filterTelegramContent(payload);
-			if (!filterResult.shouldSend) {
-				logWarn(
-					"[TelegramAdapter]",
-					`BLOCKED by Jev judgment=${filterResult.judgment} reason=${filterResult.reason} job=${payload.jobId}`,
-				);
-				// Log safe notification metadata (no secrets)
-				logInfo("[TelegramAdapter]", getSafeNotificationLog(payload));
+		async send(payload: NotificationPayload): Promise<NotificationResult> {
+			try {
+				// SECURITY: Jev-powered content filter - block if contains sensitive credentials
+				const filterResult = await filterTelegramContent(payload);
+				if (!filterResult.shouldSend) {
+					logWarn(
+						"[TelegramAdapter]",
+						`BLOCKED by Jev judgment=${filterResult.judgment} reason=${filterResult.reason} job=${payload.jobId}`,
+					);
+					// Log safe notification metadata (no secrets)
+					logInfo("[TelegramAdapter]", getSafeNotificationLog(payload));
+					return {
+						success: false,
+						channel: this.id,
+						error: "Content blocked: sensitive credentials detected",
+					};
+				}
+
+				const cfg = this.config.config as TelegramConfig;
+				const message = this.formatMessage(payload);
+
+				// Chunk long messages (Telegram limit is ~4096)
+				const chunks = this.chunkMessage(message);
+				const totalChunks = chunks.length;
+
+				// Log chunk count for telemetry (no full content)
+				logInfo("[TelegramAdapter]", `Sending ${totalChunks} chunk(s) for job=${payload.jobId}`);
+
+				// Read buttons from payload.details (set by notifyWithApproval)
+				const enableInlineKeyboard = (payload.details?._enableInlineKeyboard as boolean) ?? cfg.enableInlineKeyboard;
+				const actionButtons = (payload.details?._actionButtons as InlineKeyboardButton[]) ?? cfg.actionButtons;
+
+				// Send each chunk sequentially
+				let lastError: string | undefined;
+				for (let i = 0; i < chunks.length; i++) {
+					let chunkText = chunks[i];
+
+					// Add part indicator for multi-chunk messages
+					if (totalChunks > 1) {
+						const partHeader = `[Part ${i + 1}/${totalChunks}]\n`;
+						chunkText = partHeader + chunkText;
+					}
+
+					// Build request body
+					const body: Record<string, unknown> = {
+						chat_id: cfg.chatId,
+						text: chunkText,
+					};
+
+					// Only add parse_mode if explicitly configured
+					if (cfg.parseMode) {
+						body.parse_mode = cfg.parseMode;
+					}
+
+					// Add inline keyboard if enabled and buttons are configured
+					if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
+						body.reply_markup = this.buildInlineKeyboard(actionButtons);
+					}
+
+					const response = await fetch(
+						`https://api.telegram.org/bot${cfg.botToken}/sendMessage`,
+						{
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify(body),
+						},
+					);
+
+					if (!response.ok) {
+						const error = await response.text();
+						lastError = `Telegram API error: ${error}`;
+						break;
+					}
+				}
+
+				if (lastError) {
+					return {
+						success: false,
+						channel: this.id,
+						error: lastError,
+					};
+				}
+
+				return { success: true, channel: this.id };
+			} catch (error) {
 				return {
 					success: false,
 					channel: this.id,
-					error: "Content blocked: sensitive credentials detected",
+					error: String(error),
 				};
 			}
-
-			const cfg = this.config.config as TelegramConfig;
-			const message = this.formatMessage(payload);
-
-			// Build request body
-			// Use plain text by default to avoid MarkdownV2 escaping issues with dynamic content
-			// If parseMode is explicitly set, use it (caller is responsible for escaping)
-			const body: Record<string, unknown> = {
-				chat_id: cfg.chatId,
-				text: message,
-			};
-
-			// Only add parse_mode if explicitly configured
-			if (cfg.parseMode) {
-				body.parse_mode = cfg.parseMode;
-			}
-
-			// Read buttons from payload.details (set by notifyWithApproval)
-			const enableInlineKeyboard = (payload.details?._enableInlineKeyboard as boolean) ?? cfg.enableInlineKeyboard;
-			const actionButtons = (payload.details?._actionButtons as InlineKeyboardButton[]) ?? cfg.actionButtons;
-
-			// Add inline keyboard if enabled and buttons are configured
-			if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
-				body.reply_markup = this.buildInlineKeyboard(actionButtons);
-			}
-
-			const response = await fetch(
-				`https://api.telegram.org/bot${cfg.botToken}/sendMessage`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(body),
-				},
-			);
-
-			if (!response.ok) {
-				const error = await response.text();
-				return {
-					success: false,
-					channel: this.id,
-					error: `Telegram API error: ${error}`,
-				};
-			}
-
-			return { success: true, channel: this.id };
-		} catch (error) {
-			return {
-				success: false,
-				channel: this.id,
-				error: String(error),
-			};
-		}
 	}
 
 	/**
@@ -642,21 +664,47 @@ return this._botUsername;
 		const taskTitle = payload.details?.taskTitle;
 		const jobId = payload.details?.jobId;
 		const errorVal = payload.details?.error;
+		const artifact = payload.details?.artifact as string | undefined;
+		const stage = payload.details?.stage as string | undefined;
+		const ordinal = payload.details?.ordinal as number | undefined;
+		const planPath = payload.details?.planPath as string | undefined;
+		const projectRoot = payload.details?.projectRoot as string | undefined;
 
 		const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
 		const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
 		const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
+		const maskedProjectRoot = typeof projectRoot === "string" ? maskString(projectRoot) : undefined;
+		const maskedPlanPath = typeof planPath === "string" ? maskString(planPath) : undefined;
 
 		// Get hostname for multi-machine identification
 		const hostTag = `[${hostname()}]`;
 
 		const label = this.getStatusLabel(payload.event);
 		const title = `${label} ${maskedTitle} ${hostTag}`;
-		const lines = [title, "", maskedMessage];
+		const lines = [title];
 
+		// Add metadata for Codex events
 		if (maskedTaskTitle) {
 			lines.push("", `Task: ${maskedTaskTitle}`);
 		}
+		if (maskedProjectRoot) {
+			lines.push(`Root: ${maskedProjectRoot}`);
+		}
+		if (ordinal !== undefined) {
+			lines.push(`Ordinal: ${ordinal}`);
+		}
+		if (maskedPlanPath) {
+			lines.push(`Plan: ${maskedPlanPath}`);
+		}
+
+		// Add message/artifact content
+		if (artifact) {
+			// For Codex artifacts, the artifact is in details, message may be empty or a summary
+			lines.push("", artifact);
+		} else if (maskedMessage) {
+			lines.push("", maskedMessage);
+		}
+
 		if (maskedJobId) {
 			lines.push(`Job: ${maskedJobId}`);
 		}
@@ -666,6 +714,43 @@ return this._botUsername;
 
 		// Final mask pass on the complete rendered string
 		return maskString(lines.filter(Boolean).join("\n"));
+	}
+
+	/**
+	 * Split long messages into ordered chunks for Telegram.
+	 * Telegram message limit is ~4096 characters.
+	 */
+	private chunkMessage(text: string, maxLength = 3500): string[] {
+		if (text.length <= maxLength) {
+			return [text];
+		}
+
+		const chunks: string[] = [];
+		let remaining = text;
+		let part = 1;
+		const totalParts = Math.ceil(text.length / maxLength);
+
+		while (remaining.length > 0) {
+			// Try to split at paragraph or line boundary
+			let splitIndex = maxLength;
+			const lastNewline = remaining.lastIndexOf("\n", maxLength);
+			if (lastNewline > maxLength * 0.7) {
+				// Found a good newline boundary
+				splitIndex = lastNewline;
+			} else {
+				// Split at maxLength, but try to avoid cutting words
+				const lastSpace = remaining.lastIndexOf(" ", maxLength);
+				if (lastSpace > maxLength * 0.8) {
+					splitIndex = lastSpace;
+				}
+			}
+
+			chunks.push(remaining.slice(0, splitIndex));
+			remaining = remaining.slice(splitIndex).trimStart();
+			part++;
+		}
+
+		return chunks;
 	}
 
 	private getStatusLabel(event: NotificationPayload["event"]): string {
