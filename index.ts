@@ -2551,14 +2551,21 @@ export default function (pi: ExtensionAPI) {
 			// --- greeting: Track baseline session on watcher startup ---
 			// Get the current Codex session ID as baseline - don't greet it.
 			// The first watcher poll will see this as "existing" and skip it.
-			// Also track firstPollDone to ensure the first callback is always skipped.
+			// Only treat recent sessions (within 10 min) as baseline to avoid stale entries.
 			let firstPollDone = false;
 			try {
 				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
 				const baseline = getLatestSession();
-				if (baseline) {
-					codexSessionState.greetingBaselineSessionId = baseline.id;
-					logToFile("[codex-greeting]", "Baseline session set:", baseline.id);
+				if (baseline && baseline.updatedAt) {
+					const updatedAtMs = Date.parse(baseline.updatedAt);
+					const sessionAgeMs = Date.now() - updatedAtMs;
+					const isRecent = updatedAtMs > 0 && sessionAgeMs < 10 * 60 * 1000;
+					if (isRecent) {
+						codexSessionState.greetingBaselineSessionId = baseline.id;
+						logToFile("[codex-greeting]", "Baseline session set (recent):", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+					} else {
+						logToFile("[codex-greeting]", "Baseline session stale, skipped:", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+					}
 				}
 			} catch {
 				logToFile("[codex-greeting]", "Could not get baseline session");
