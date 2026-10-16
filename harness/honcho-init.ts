@@ -482,11 +482,27 @@ export async function initHoncho(options?: {
     apiKey: key,
   });
 
-  // Discover tools and establish identity
-  const workspaceName = options?.workspaceName ?? DEFAULT_WORKSPACE_NAME;
-  const assistantName = options?.assistantName ?? DEFAULT_ASSISTANT_NAME;
-  const userName = options?.userName ?? "pi-user";
-  const sessionId = options?.sessionId ?? `pi-session-${Date.now()}`;
+  // MCP registration done - identity setup deferred to session_start
+  // (MCP tool calls require an active Pi session)
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed", reason: "identity_setup_deferred" });
+  honchoStatus.recordSuccess("init", undefined, { note: "identity deferred to session_start" });
+
+  return _honchoMemory;
+}
+
+/**
+ * Ensure Honcho workspace, peers, and session are created.
+ * Call this on session_start when MCP tool calls are available.
+ */
+export async function ensureHonchoIdentity(): Promise<boolean> {
+  if (!_honchoMemory || _initSucceeded) {
+    return _initSucceeded;
+  }
+
+  const workspaceName = DEFAULT_WORKSPACE_NAME;
+  const assistantName = DEFAULT_ASSISTANT_NAME;
+  const userName = "pi-user";
+  const sessionId = `pi-session-${Date.now()}`;
 
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "identity", phase: "start" });
 
@@ -495,7 +511,7 @@ export async function initHoncho(options?: {
   if (!workspaceId) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_workspace", phase: "failed" });
     honchoStatus.recordFailure("init", "workspace_failed", {});
-    return _honchoMemory; // Return instance but mark as not ready
+    return false;
   }
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_workspace", phase: "completed", workspaceId });
 
@@ -504,7 +520,7 @@ export async function initHoncho(options?: {
   if (!userPeerId) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_user_peer", phase: "failed" });
     honchoStatus.recordFailure("init", "user_peer_failed", {});
-    return _honchoMemory;
+    return false;
   }
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_user_peer", phase: "completed", userPeerId });
 
@@ -513,7 +529,7 @@ export async function initHoncho(options?: {
   if (!assistantPeerId) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_assistant_peer", phase: "failed" });
     honchoStatus.recordFailure("init", "assistant_peer_failed", {});
-    return _honchoMemory;
+    return false;
   }
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_assistant_peer", phase: "completed", assistantPeerId });
 
@@ -522,7 +538,7 @@ export async function initHoncho(options?: {
   if (!honchoSessionId) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "create_session", phase: "failed" });
     honchoStatus.recordFailure("init", "session_failed", {});
-    return _honchoMemory;
+    return false;
   }
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "create_session", phase: "completed", honchoSessionId });
 
@@ -551,7 +567,7 @@ export async function initHoncho(options?: {
   // Mark initialization as successful
   _initSucceeded = true;
 
-  return _honchoMemory;
+  return true;
 }
 
 /**
