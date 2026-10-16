@@ -2549,23 +2549,25 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// --- greeting: Track baseline session on watcher startup ---
-			// Get the current Codex session ID as baseline - don't greet it.
-			// The first watcher poll will see this as "existing" and skip it.
-			// Only treat recent sessions (within 10 min) as baseline to avoid stale entries.
+			// Capture ANY session present at startup as baseline - skip it to avoid
+			// greeting stale sessions from history. If no session exists at startup,
+			// the first session to appear afterward is treated as new and greeted.
 			let firstPollDone = false;
 			try {
 				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
 				const baseline = getLatestSession();
-				if (baseline && baseline.updatedAt) {
-					const updatedAtMs = Date.parse(baseline.updatedAt);
-					const sessionAgeMs = Date.now() - updatedAtMs;
-					const isRecent = updatedAtMs > 0 && sessionAgeMs < 10 * 60 * 1000;
-					if (isRecent) {
-						codexSessionState.greetingBaselineSessionId = baseline.id;
-						logToFile("[codex-greeting]", "Baseline session set (recent):", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+				if (baseline) {
+					codexSessionState.greetingBaselineSessionId = baseline.id;
+					// Log freshness for debugging, but always use as baseline
+					if (baseline.updatedAt) {
+						const ageMs = Date.now() - Date.parse(baseline.updatedAt);
+						const ageStr = ageMs < 10 * 60 * 1000 ? "recent" : "stale";
+						logToFile("[codex-greeting]", `Baseline session set (${ageStr}):`, baseline.id, `age=${Math.round(ageMs/1000)}s`);
 					} else {
-						logToFile("[codex-greeting]", "Baseline session stale, skipped:", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+						logToFile("[codex-greeting]", "Baseline session set:", baseline.id);
 					}
+				} else {
+					logToFile("[codex-greeting]", "No baseline session at startup");
 				}
 			} catch {
 				logToFile("[codex-greeting]", "Could not get baseline session");
