@@ -408,15 +408,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								{ deliverAs: "followUp" }
 							);
 							codexSessionState.greetedSessions.add(greetKey);
-						} catch (err) {
-							logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+								} catch (err) {
+									logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+									// Keep pendingGreeting for retry - don't clear on failure
+									return;
+								}
+							}
+						codexSessionState.pendingGreeting = null;
 						}
-					}
-					codexSessionState.pendingGreeting = null;
 				}
-			}
-		} catch {
-			logToFile("[codex-greeting]", "Error in session_start greeting drain");
+			} catch {
+				logToFile("[codex-greeting]", "Error in session_start greeting drain");
 		}
 	});
 
@@ -2548,22 +2550,15 @@ export default function (pi: ExtensionAPI) {
 
 			// --- greeting: Track baseline session on watcher startup ---
 			// Get the current Codex session ID as baseline - don't greet it.
-			// Only treat it as baseline if it's recent (within 10 minutes) to avoid
-			// stale index entries being treated as "current" sessions.
+			// The first watcher poll will see this as "existing" and skip it.
+			// Also track firstPollDone to ensure the first callback is always skipped.
+			let firstPollDone = false;
 			try {
 				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
 				const baseline = getLatestSession();
-				if (baseline && baseline.updatedAt) {
-					// Parse ISO-8601 timestamp to milliseconds
-					const updatedAtMs = Date.parse(baseline.updatedAt);
-					const sessionAgeMs = Date.now() - updatedAtMs;
-					const isRecent = updatedAtMs > 0 && sessionAgeMs < 10 * 60 * 1000;
-					if (isRecent) {
-						codexSessionState.greetingBaselineSessionId = baseline.id;
-						logToFile("[codex-greeting]", "Baseline session set (recent):", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
-					} else {
-						logToFile("[codex-greeting]", "Baseline session stale, skipping baseline:", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
-					}
+				if (baseline) {
+					codexSessionState.greetingBaselineSessionId = baseline.id;
+					logToFile("[codex-greeting]", "Baseline session set:", baseline.id);
 				}
 			} catch {
 				logToFile("[codex-greeting]", "Could not get baseline session");
@@ -2590,6 +2585,8 @@ export default function (pi: ExtensionAPI) {
 							codexSessionState.greetedSessions.add(greetKey);
 						} catch (err) {
 							logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+							// Keep pendingGreeting for retry - don't clear on failure
+							return;
 						}
 					}
 					codexSessionState.pendingGreeting = null;
@@ -2599,9 +2596,67 @@ export default function (pi: ExtensionAPI) {
 			const codexHandle = startWatcher({
 				pollIntervalMs: 5000,
 				maxIdlePolls: Infinity,
-				onSessionChange: (session) => {
+				onSessionChange: async (session) => {
 				if (session) {
 					logToFile("[codex]", `Session started: ${session.threadName}, root: ${session.projectRoot}`);
+
+					// --- Same-workspace greeting ---
+					const codexSessionId = session.id;
+					const codexProjectRoot = session.projectRoot;
+
+					// Skip the first callback - it's the baseline poll, not a new session
+					if (!firstPollDone) {
+						firstPollDone = true;
+						logToFile("[codex-greeting]", "Skipping first poll callback (baseline):", codexSessionId);
+						return;
+					}
+
+					// Skip if this is the baseline session (Pi just restarted)
+					if (codexSessionId === codexSessionState.greetingBaselineSessionId) {
+						logToFile("[codex-greeting]", "Skipping baseline session:", codexSessionId);
+						return;
+					}
+
+					// Check for duplicate greeting
+					const piCwd = _piSessionCwd || "";
+					const greetKey = `${piCwd}:${codexSessionId}`;
+					if (codexSessionState.greetedSessions.has(greetKey)) {
+						logToFile("[codex-greeting]", "Already greeted:", greetKey);
+						return;
+					}
+
+					// Check root match
+					if (!piCwd || !codexProjectRoot || piCwd !== codexProjectRoot) {
+						logToFile("[codex-greeting]", "Different workspace or Pi cwd unknown, skipping greeting");
+						return;
+					}
+
+					logToFile("[codex-greeting]", "Same workspace detected:", codexSessionId);
+
+					// Use _piSessionCwd (Pi state) to check if Pi is active
+					if (piCwd) {
+						// Pi session active - send greeting now with await for safe delivery
+						logToFile("[codex-greeting]", "Sending greeting for:", codexSessionId);
+						try {
+							await pi.sendUserMessage(
+								`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
+								{ deliverAs: "followUp" }
+							);
+							codexSessionState.greetedSessions.add(greetKey);
+						} catch (err) {
+							logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+							// Keep greetKey out of greetedSessions so retry is possible
+						}
+					} else {
+						// Pi session not active yet - queue for delivery on session_start
+						logToFile("[codex-greeting]", "Pi not active, queueing greeting for:", codexSessionId);
+						codexSessionState.pendingGreeting = {
+							sessionId: codexSessionId,
+							projectRoot: codexProjectRoot,
+							timestamp: Date.now(),
+						};
+					}
+					return;
 					
 					// --- Same-workspace greeting ---
 					const codexSessionId = session.id;
