@@ -2343,30 +2343,30 @@ export default function (pi: ExtensionAPI) {
 					const hasReviewMarker = classification === "unknown" && detectReviewMarker(msg.text);
 					if (classification !== "plan" && classification !== "mixed" && !hasReviewMarker) continue;
 				
-					// Determine stage
-					const stage = hasReviewMarker ? "review" : classification;
+				// Determine stage
+				const stage = hasReviewMarker ? "review" : classification;
 
-					// Track plan candidate
-					currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
-
-					// Try to find plan file in project root
-					if (currentProjectRoot) {
-						const planPath = findPlanFile(currentProjectRoot);
-						if (planPath) {
-							logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
-							startSettleTimer(planPath, msg.ordinal);
-						} else {
-							// No wiki/plan.md found yet - wait for file to appear
-							logToFile("[codex-trigger]", "Plan message but no wiki/plan.md yet, waiting...");
-						}
-					}
+				// Only start settle timer for plans (not reviews)
+				// Reviews don't have a file to watch
+				if (!hasReviewMarker && currentProjectRoot) {
+							const planPath = findPlanFile(currentProjectRoot);
+							if (planPath) {
+								// Track plan candidate
+								currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
+								logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
+								startSettleTimer(planPath, msg.ordinal);
+							} else {
+								// No wiki/plan.md found yet - wait for file to appear
+								logToFile("[codex-trigger]", "Plan message but no wiki/plan.md yet, waiting...");
+							}
+				}
 
 				// Emit Telegram alert with full content
-							const planPath = currentProjectRoot ? findPlanFile(currentProjectRoot) : undefined;
-							
-							// Use event type based on stage
-							if (hasReviewMarker) {
-								nc("CodexReviewDetected", {
+				const planPath = currentProjectRoot ? findPlanFile(currentProjectRoot) : undefined;
+
+				// Use event type based on stage
+				if (hasReviewMarker) {
+							nc("CodexReviewDetected", {
 									requirement: msg.text,
 									taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
 									details: {
