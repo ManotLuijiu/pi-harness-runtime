@@ -549,8 +549,6 @@ export class TelegramAdapter extends BaseChannelAdapter {
         const taskTitle = payload.details?.taskTitle;
         const jobId = payload.details?.jobId;
         const errorVal = payload.details?.error;
-        const artifact = payload.details?.artifact;
-        const stage = payload.details?.stage;
         const ordinal = payload.details?.ordinal;
         const planPath = payload.details?.planPath;
         const projectRoot = payload.details?.projectRoot;
@@ -577,12 +575,8 @@ export class TelegramAdapter extends BaseChannelAdapter {
         if (maskedPlanPath) {
             lines.push(`Plan: ${maskedPlanPath}`);
         }
-        // Add message/artifact content
-        if (artifact) {
-            // For Codex artifacts, the artifact is in details, message may be empty or a summary
-            lines.push("", artifact);
-        }
-        else if (maskedMessage) {
+        // Add message content (artifact content flows through message)
+        if (maskedMessage) {
             lines.push("", maskedMessage);
         }
         if (maskedJobId) {
@@ -604,8 +598,6 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
         const chunks = [];
         let remaining = text;
-        let part = 1;
-        const totalParts = Math.ceil(text.length / maxLength);
         while (remaining.length > 0) {
             // Try to split at paragraph or line boundary
             let splitIndex = maxLength;
@@ -623,7 +615,6 @@ export class TelegramAdapter extends BaseChannelAdapter {
             }
             chunks.push(remaining.slice(0, splitIndex));
             remaining = remaining.slice(splitIndex).trimStart();
-            part++;
         }
         return chunks;
     }

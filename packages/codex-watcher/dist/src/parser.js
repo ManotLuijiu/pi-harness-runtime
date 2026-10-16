@@ -183,4 +183,31 @@ export function classifyMessage(text) {
         return "mixed";
     return "unknown";
 }
+/**
+ * Detect explicit review markers in message text.
+ * Review stage is identified via state markers, not prose guessing.
+ * Returns true if text contains an explicit review indicator.
+ */
+export function detectReviewMarker(text) {
+    if (!text || text.trim().length < 20)
+        return false;
+    // Explicit review indicators
+    const reviewMarkers = [
+        /\breview\s+(?:report|findings?|result|output|assessment)\b/i,
+        /\bcode\s+review\b/i,
+        /\blgtm\b/i,
+        /\bapproved?\b/i,
+        /\bchanges?\s+requested\b/i,
+        /\bneeds?\s+(?:more\s+)?(?:work|changes|revision)\b/i,
+        /\bready\s+(?:for|to)\s+(?:merge|ship|deploy)\b/i,
+        /\bplan\s+(?:approved?|rejected?|reviewed)\b/i,
+        /\bfinal\s+review\b/i,
+    ];
+    for (const marker of reviewMarkers) {
+        if (marker.test(text)) {
+            return true;
+        }
+    }
+    return false;
+}
 //# sourceMappingURL=parser.js.map
