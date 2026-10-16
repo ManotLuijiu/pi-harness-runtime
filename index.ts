@@ -903,6 +903,26 @@ async function initQdrant(): Promise<void> {
 
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
+
+// Shared Codex session state - accessible by both initTelegram() and the watcher
+interface PlanEvent {
+	codexSessionId: string;
+	planPath: string;
+	planHash: string;
+	status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done";
+	ordinal: number;
+	lastActivity: number;
+	settleTimer: ReturnType<typeof setTimeout> | null;
+	fileStableSince: number;
+}
+
+const codexSessionState = {
+	deliveredEvents: new Map<string, PlanEvent>(),
+	currentCodexSessionId: null as string | null,
+	currentProjectRoot: null as string | null,
+	currentPlanCandidate: null as { ordinal: number; text: string; timestamp: number } | null,
+};
+
 async function initTelegram(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Telegram", "initializing", "wait");
 	try {
@@ -1002,10 +1022,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				const [, sessionId, action] = taskCommandMatch;
 				
 				// Find matching Codex session
-				const matchingSession = deliveredEvents.get(sessionId) || 
-					Array.from(deliveredEvents.values()).find(e => e.codexSessionId === sessionId);
+				const matchingSession = codexSessionState.deliveredEvents.get(sessionId) || 
+					Array.from(codexSessionState.deliveredEvents.values()).find(e => e.codexSessionId === sessionId);
 				
-				if (matchingSession && matchingSession.codexSessionId === currentCodexSessionId) {
+				if (matchingSession && matchingSession.codexSessionId === codexSessionState.currentCodexSessionId) {
 					logToFile("[codex-trigger]", `Human command: ${action} for session ${sessionId}`);
 					
 					if (action.toLowerCase() === "code") {
@@ -1028,15 +1048,15 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 						logToFile("[codex-trigger]", "Human marked session done:", sessionId);
 					}
 					return;
-			} else {
-				logToFile("[codex-trigger]", `Unknown session or wrong project: ${sessionId}`);
+				} else {
+					logToFile("[codex-trigger]", `Unknown session or wrong project: ${sessionId}`);
+				}
 			}
-		}
-		
-		logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
-		// Forward the message to Pi as a user message
-		await pi.sendUserMessage(text, { deliverAs: "steer" });
-	});
+			
+			logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
+			// Forward the message to Pi as a user message
+			await pi.sendUserMessage(text, { deliverAs: "steer" });
+		});
 
 		// Wire to singleton nc() helper so all event emitters can reach Telegram
 		_nc = {
@@ -2190,10 +2210,7 @@ export default function (pi: ExtensionAPI) {
 	// Collect async init promises so we can wait for them before showing startup notification
 	const asyncInitPromises: Promise<unknown>[] = [];
 
-	// --- shared Codex session state (for /task command handler) ---
-	const deliveredEvents = new Map<string, PlanEvent>();
-	let currentCodexSessionId: string | null = null;
-	let currentProjectRoot: string | null = null;
+	// Note: Session state moved to module-level codexSessionState object
 
 	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
 	// Start async init but don't await - runs in background
@@ -2242,8 +2259,7 @@ export default function (pi: ExtensionAPI) {
 				settleTimer: ReturnType<typeof setTimeout> | null;
 				fileStableSince: number;
 			}
-			// Note: deliveredEvents, currentCodexSessionId, currentProjectRoot are now module-level
-			let _currentPlanCandidate: { ordinal: number; text: string; timestamp: number } | null = null;
+			// Use codexSessionState object for all session tracking
 			let lastActivityTime = 0;
 
 			// Check if plan file exists and is stable (mtime unchanged)
