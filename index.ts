@@ -1484,8 +1484,8 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 				lastUserMessage = msg.content;
 			}
 
-			// Ingest to Honcho for conversational memory
-			if (honchoReady && honchoMemory) {
+			// Ingest to Honcho for conversational memory (user messages only - assistant handled by registerHonchoLifecycle)
+				if (msg.role === "user" && honchoMemory?.isReady()) {
 				try {
 					// Skip harness-generated prompts
 					const content = typeof msg.content === "string" ? msg.content : "";
@@ -1524,8 +1524,8 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 			}
 
 			// 2. Retrieve Honcho context if available and we have a query
-			let honchoContext = "";
-			if (honchoReady && honchoMemory && lastUserMessage.trim().length > 0) {
+				let honchoContext = "";
+				if (honchoMemory?.isReady() && lastUserMessage.trim().length > 0) {
 				try {
 					const result = await honchoMemory.retrieveContext(lastUserMessage);
 					if (result.success && !result.empty && result.context) {
