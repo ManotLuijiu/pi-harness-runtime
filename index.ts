@@ -2383,7 +2383,7 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 	logToFile("[JobPipe]", "Watching for Telegram approval commands via API (polling every 60s)");
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
