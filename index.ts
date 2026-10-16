@@ -932,6 +932,10 @@ const codexSessionState = {
 	currentProjectRoot: null as string | null,
 	currentPlanCandidate: null as { ordinal: number; text: string; timestamp: number } | null,
 	pendingActions: new Map<string, PendingPINGPONGAction>(),
+	// --- greeting state ---
+	greetingBaselineSessionId: null as string | null,  // set on watcher startup
+	greetedSessions: new Set<string>(),                 // "piSessionId:codexSessionId"
+	pendingGreeting: null as { sessionId: string; projectRoot: string; timestamp: number } | null,
 };
 
 // PING_PONG callback action type (different from generic APPROVE/REJECT)
@@ -1110,7 +1114,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const { parseCallbackData, CallbackActions } = await import(
 			"./packages/notification/dist/telegram-webhook-handler.js"
 		);
-		center.setCallbackHandler(async (data: string, query: { id: string; from: { id: number } }, acknowledge) => {
+		center.setCallbackHandler(async (data: string, _query: { id: string; from: { id: number } }, acknowledge) => {
 			const parsed = parseCallbackData(data);
 			logToFile("[TelegramCallback]", `action=${parsed.action} target=${parsed.targetId}`);
 
@@ -2516,12 +2520,87 @@ export default function (pi: ExtensionAPI) {
 				}, _SETTLE_DELAY_MS);
 			}
 
+			// --- greeting: Track baseline session on watcher startup ---
+			// Get the current Codex session ID as baseline - don't greet it
+			try {
+				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
+				const baseline = getLatestSession();
+				if (baseline) {
+					codexSessionState.greetingBaselineSessionId = baseline.id;
+					logToFile("[codex-greeting]", "Baseline session set:", baseline.id);
+				}
+			} catch {
+				logToFile("[codex-greeting]", "Could not get baseline session");
+			}
+
+			// Deliver any pending greeting if Pi session is now active
+			if (codexSessionState.pendingGreeting && _piSessionCwd) {
+				const pg = codexSessionState.pendingGreeting;
+				// Check expiry (5 minutes)
+				if (Date.now() - pg.timestamp > 5 * 60 * 1000) {
+					logToFile("[codex-greeting]", "Pending greeting expired");
+					codexSessionState.pendingGreeting = null;
+				} else if (_piSessionCwd === pg.projectRoot) {
+					// Roots match - send greeting
+					const greetKey = `${_piSessionCwd}:${pg.sessionId}`;
+					if (!codexSessionState.greetedSessions.has(greetKey)) {
+						logToFile("[codex-greeting]", "Delivering pending greeting for:", pg.sessionId);
+						void pi.sendUserMessage(
+							`Codex opened in this workspace (session ${pg.sessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`
+						);
+						codexSessionState.greetedSessions.add(greetKey);
+					}
+					codexSessionState.pendingGreeting = null;
+				}
+			}
+
 			const codexHandle = startWatcher({
 				pollIntervalMs: 5000,
 				maxIdlePolls: Infinity,
 				onSessionChange: (session) => {
 				if (session) {
 					logToFile("[codex]", `Session started: ${session.threadName}, root: ${session.projectRoot}`);
+					
+					// --- Same-workspace greeting ---
+					const codexSessionId = session.id;
+					const codexProjectRoot = session.projectRoot;
+
+					// Skip if this is the baseline session (Pi just restarted)
+					if (codexSessionId === codexSessionState.greetingBaselineSessionId) {
+						logToFile("[codex-greeting]", "Skipping baseline session:", codexSessionId);
+					} else {
+						// Check for duplicate greeting
+						const piCwd = _piSessionCwd || "";
+						const greetKey = `${piCwd}:${codexSessionId}`;
+						if (!codexSessionState.greetedSessions.has(greetKey)) {
+							// Check root match
+							if (piCwd && codexProjectRoot && piCwd === codexProjectRoot) {
+								logToFile("[codex-greeting]", "Same workspace detected:", codexSessionId);
+								
+								if (codexSessionState.currentCodexSessionId) {
+									// Pi session active - send greeting now
+									logToFile("[codex-greeting]", "Sending greeting for:", codexSessionId);
+									void pi.sendUserMessage(
+										`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`
+									);
+									codexSessionState.greetedSessions.add(greetKey);
+								} else {
+									// Pi session not active yet - queue for delivery on session_start
+									logToFile("[codex-greeting]", "Pi not active, queueing greeting for:", codexSessionId);
+									codexSessionState.pendingGreeting = {
+										sessionId: codexSessionId,
+										projectRoot: codexProjectRoot,
+										timestamp: Date.now(),
+									};
+								}
+							} else {
+								logToFile("[codex-greeting]", "Different workspace or Pi cwd unknown, skipping greeting");
+							}
+						} else {
+							logToFile("[codex-greeting]", "Already greeted:", greetKey);
+							}
+					}
+
 					codexSessionState.currentCodexSessionId = session.id;
 					codexSessionState.currentProjectRoot = session.projectRoot;
 					nc("CodexSessionStarted", {
