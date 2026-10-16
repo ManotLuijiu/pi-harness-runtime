@@ -2265,8 +2265,8 @@ export default function (pi: ExtensionAPI) {
 			function startSettleTimer(planPath: string, ordinal: number) {
 				const eventKey = `${currentCodexSessionId}:${planPath}`;
 				const existing = deliveredEvents.get(eventKey);
-				if (existing && (existing.status === "triggered" || existing.status === "ready")) {
-					logToFile("[codex-trigger]", "Plan already handled:", eventKey);
+				if (existing && (existing.status === "triggered" || existing.status === "ready" || existing.status === "manual_wait")) {
+					logToFile("[codex-trigger]", "Event already handled:", eventKey);
 					return;
 				}
 
