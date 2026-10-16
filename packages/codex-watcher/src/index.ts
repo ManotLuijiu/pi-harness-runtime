@@ -31,7 +31,8 @@ import type {
 } from "./types.js";
 
 export type { CodexMessage, CodexSession, WatcherHandle, WatcherOptions };
-export { classifyMessage, getAllSessions, getLatestSession };
+export { classifyMessage, detectReviewMarker, getAllSessions, getLatestSession };
+import { detectReviewMarker } from "./parser.js";
 
 // ---------------------------------------------------------------------------
 // One-shot API

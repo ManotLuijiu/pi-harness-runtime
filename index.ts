@@ -70,7 +70,7 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
-import { startWatcher, classifyMessage } from "./packages/codex-watcher/dist/src/index.js";
+import { startWatcher, classifyMessage, detectReviewMarker } from "./packages/codex-watcher/dist/src/index.js";
 import {
 	getPaperclipConfig,
 	hasPaperclipConfig,
@@ -2194,7 +2194,7 @@ export default function (pi: ExtensionAPI) {
 				codexSessionId: string;
 				planPath: string;
 				planHash: string;
-				status: "observed" | "settling" | "ready" | "triggered" | "failed";
+				status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait";
 				ordinal: number;
 				lastActivity: number;
 				settleTimer: ReturnType<typeof setTimeout> | null;
@@ -2338,7 +2338,13 @@ export default function (pi: ExtensionAPI) {
 					if (msg.role !== "assistant") continue;
 
 					const classification = classifyMessage(msg.text);
-					if (classification !== "plan" && classification !== "mixed") continue;
+				
+					// Check for review markers in unknown messages
+					const hasReviewMarker = classification === "unknown" && detectReviewMarker(msg.text);
+					if (classification !== "plan" && classification !== "mixed" && !hasReviewMarker) continue;
+				
+					// Determine stage
+					const stage = hasReviewMarker ? "review" : classification;
 
 					// Track plan candidate
 					currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
@@ -2355,19 +2361,34 @@ export default function (pi: ExtensionAPI) {
 						}
 					}
 
-				// Emit Telegram alert with full plan text
+				// Emit Telegram alert with full content
 							const planPath = currentProjectRoot ? findPlanFile(currentProjectRoot) : undefined;
-							nc("CodexPlanDetected", {
-								requirement: msg.text, // Full text, no truncation
-								taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
-								details: {
-									ordinal: msg.ordinal,
-									stage: "plan",
-									projectRoot: currentProjectRoot || undefined,
-									planPath: planPath || undefined,
-									messageLength: msg.text.length,
-								},
-							});
+							
+							// Use event type based on stage
+							if (hasReviewMarker) {
+								nc("CodexReviewDetected", {
+									requirement: msg.text,
+									taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
+									details: {
+										ordinal: msg.ordinal,
+											stage: "review",
+											projectRoot: currentProjectRoot || undefined,
+											messageLength: msg.text.length,
+										},
+								});
+							} else {
+								nc("CodexPlanDetected", {
+									requirement: msg.text, // Full text, no truncation
+									taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
+									details: {
+										ordinal: msg.ordinal,
+											stage: "plan",
+											projectRoot: currentProjectRoot || undefined,
+											planPath: planPath || undefined,
+											messageLength: msg.text.length,
+									},
+								});
+							}
 				}
 			},
 		});
