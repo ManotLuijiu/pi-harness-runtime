@@ -2371,13 +2371,14 @@ export default function (pi: ExtensionAPI) {
 	asyncInitPromises.push(initHoncho(pi));
 
 	// Defer Honcho workspace/identity creation until we have an active session
-	let honchoIdentitySetup = false;
+	// Use a ref object so we can check and update atomically
+	const honchoIdentityState = { done: false, success: false };
 	pi.on("session_start", async () => {
-		if (honchoIdentitySetup) return;
-		honchoIdentitySetup = true;
+		if (honchoIdentityState.done) return;
+		honchoIdentityState.done = true; // Prevent concurrent calls
 
 		const { ensureHonchoIdentity } = await import("./harness/honcho-init.js");
-		await ensureHonchoIdentity();
+		honchoIdentityState.success = await ensureHonchoIdentity();
 	});
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------

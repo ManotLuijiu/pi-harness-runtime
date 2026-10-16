@@ -723,11 +723,11 @@ export function registerHonchoLifecycle(
     on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
   }
 ): void {
-  // Initialize at session start
-  pi.on("session_start", async () => {
-    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "session_start", phase: "start" });
-    await initHoncho();
-  });
+  // Note: initHoncho() is called at startup in index.ts
+  // ensureHonchoIdentity() is called via session_start handler in index.ts
+  // This function only handles message ingestion and shutdown
+
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "lifecycle_hooks", phase: "start" });
 
   // Shutdown at session shutdown
   pi.on("session_shutdown", async () => {
