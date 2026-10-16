@@ -664,8 +664,6 @@ return this._botUsername;
 		const taskTitle = payload.details?.taskTitle;
 		const jobId = payload.details?.jobId;
 		const errorVal = payload.details?.error;
-		const artifact = payload.details?.artifact as string | undefined;
-		const stage = payload.details?.stage as string | undefined;
 		const ordinal = payload.details?.ordinal as number | undefined;
 		const planPath = payload.details?.planPath as string | undefined;
 		const projectRoot = payload.details?.projectRoot as string | undefined;
@@ -697,11 +695,8 @@ return this._botUsername;
 			lines.push(`Plan: ${maskedPlanPath}`);
 		}
 
-		// Add message/artifact content
-		if (artifact) {
-			// For Codex artifacts, the artifact is in details, message may be empty or a summary
-			lines.push("", artifact);
-		} else if (maskedMessage) {
+		// Add message content (artifact content flows through message)
+		if (maskedMessage) {
 			lines.push("", maskedMessage);
 		}
 
@@ -727,8 +722,6 @@ return this._botUsername;
 
 		const chunks: string[] = [];
 		let remaining = text;
-		let part = 1;
-		const totalParts = Math.ceil(text.length / maxLength);
 
 		while (remaining.length > 0) {
 			// Try to split at paragraph or line boundary
@@ -747,7 +740,6 @@ return this._botUsername;
 
 			chunks.push(remaining.slice(0, splitIndex));
 			remaining = remaining.slice(splitIndex).trimStart();
-			part++;
 		}
 
 		return chunks;

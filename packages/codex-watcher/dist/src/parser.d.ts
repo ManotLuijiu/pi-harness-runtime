@@ -33,4 +33,10 @@ export declare function extractCodeBlocks(text: string): string[];
  * "mixed" if both, "unknown" otherwise.
  */
 export declare function classifyMessage(text: string): "plan" | "code" | "mixed" | "unknown";
+/**
+ * Detect explicit review markers in message text.
+ * Review stage is identified via state markers, not prose guessing.
+ * Returns true if text contains an explicit review indicator.
+ */
+export declare function detectReviewMarker(text: string): boolean;
 //# sourceMappingURL=parser.d.ts.map
