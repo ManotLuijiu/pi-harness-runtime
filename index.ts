@@ -2577,8 +2577,8 @@ export default function (pi: ExtensionAPI) {
 				
 				// Use event type based on stage
 				if (hasReviewMarker) {
-					// Review stage: buttons are Review and Done
-					const reviewToken = _createPendingAction(sessionId, "review", projectRoot, "review");
+					// Review stage: buttons are Code again and Done
+					const codeAgainToken = _createPendingAction(sessionId, "code_again", projectRoot, "review");
 					void nc.center.notifyWithButtons("CodexReviewDetected", {
 						requirement: msg.text,
 						taskTitle: sessionId,
@@ -2589,7 +2589,7 @@ export default function (pi: ExtensionAPI) {
 							messageLength: msg.text.length,
 					},
 					}, [
-						{ text: "Review", action: PING_PONG_ACTIONS.REVIEW, targetId: reviewToken },
+						{ text: "Code again", action: PING_PONG_ACTIONS.CODE_AGAIN, targetId: codeAgainToken },
 						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
 					]);
 				} else {
