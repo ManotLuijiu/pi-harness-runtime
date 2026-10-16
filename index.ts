@@ -385,12 +385,38 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
 
 	// Capture our Pi session's cwd on session_start
-	pi.on("session_start", () => {
+	pi.on("session_start", async () => {
 		try {
 			_piSessionCwd = realpathSync(process.cwd());
 			logToFile("[codex-trigger]", "Pi session cwd captured:", _piSessionCwd);
+
+			// --- Drain pending greeting when Pi becomes active ---
+			if (codexSessionState.pendingGreeting) {
+				const pg = codexSessionState.pendingGreeting;
+				// Check expiry (5 minutes)
+				if (Date.now() - pg.timestamp > 5 * 60 * 1000) {
+					logToFile("[codex-greeting]", "Pending greeting expired");
+					codexSessionState.pendingGreeting = null;
+				} else if (_piSessionCwd === pg.projectRoot) {
+					// Roots match - send greeting with followUp mode
+					const greetKey = `${_piSessionCwd}:${pg.sessionId}`;
+					if (!codexSessionState.greetedSessions.has(greetKey)) {
+						logToFile("[codex-greeting]", "Delivering pending greeting for:", pg.sessionId);
+						try {
+							await pi.sendUserMessage(
+								`Codex opened in this workspace (session ${pg.sessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
+								{ deliverAs: "followUp" }
+							);
+							codexSessionState.greetedSessions.add(greetKey);
+						} catch (err) {
+							logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+						}
+					}
+					codexSessionState.pendingGreeting = null;
+				}
+			}
 		} catch {
-			_piSessionCwd = process.cwd();
+			logToFile("[codex-greeting]", "Error in session_start greeting drain");
 		}
 	});
 
@@ -2593,22 +2619,27 @@ export default function (pi: ExtensionAPI) {
 							if (piCwd && codexProjectRoot && piCwd === codexProjectRoot) {
 								logToFile("[codex-greeting]", "Same workspace detected:", codexSessionId);
 								
-								if (codexSessionState.currentCodexSessionId) {
-									// Pi session active - send greeting now
-									logToFile("[codex-greeting]", "Sending greeting for:", codexSessionId);
-								void pi.sendUserMessage(
-									`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
-										{ deliverAs: "followUp" }
-								);
-									codexSessionState.greetedSessions.add(greetKey);
-								} else {
-									// Pi session not active yet - queue for delivery on session_start
-									logToFile("[codex-greeting]", "Pi not active, queueing greeting for:", codexSessionId);
-									codexSessionState.pendingGreeting = {
-										sessionId: codexSessionId,
-										projectRoot: codexProjectRoot,
-										timestamp: Date.now(),
-									};
+						// Use _piSessionCwd (Pi state) to check if Pi is active, not Codex state
+							if (piCwd) {
+								// Pi session active - send greeting now with await for safe delivery
+								logToFile("[codex-greeting]", "Sending greeting for:", codexSessionId);
+								try {
+									await pi.sendUserMessage(
+										`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
+											{ deliverAs: "followUp" }
+										);
+										codexSessionState.greetedSessions.add(greetKey);
+									} catch (err) {
+										logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+									}
+							} else {
+								// Pi session not active yet - queue for delivery on session_start
+								logToFile("[codex-greeting]", "Pi not active, queueing greeting for:", codexSessionId);
+								codexSessionState.pendingGreeting = {
+									sessionId: codexSessionId,
+									projectRoot: codexProjectRoot,
+									timestamp: Date.now(),
+								};
 								}
 							} else {
 								logToFile("[codex-greeting]", "Different workspace or Pi cwd unknown, skipping greeting");
