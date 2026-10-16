@@ -2521,13 +2521,21 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// --- greeting: Track baseline session on watcher startup ---
-			// Get the current Codex session ID as baseline - don't greet it
+			// Get the current Codex session ID as baseline - don't greet it.
+			// Only treat it as baseline if it's recent (within 10 minutes) to avoid
+			// stale index entries being treated as "current" sessions.
 			try {
 				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
 				const baseline = getLatestSession();
 				if (baseline) {
-					codexSessionState.greetingBaselineSessionId = baseline.id;
-					logToFile("[codex-greeting]", "Baseline session set:", baseline.id);
+					const sessionAgeMs = Date.now() - (baseline.updatedAt || 0);
+					const isRecent = (baseline.updatedAt || 0) > 0 && sessionAgeMs < 10 * 60 * 1000;
+					if (isRecent) {
+						codexSessionState.greetingBaselineSessionId = baseline.id;
+						logToFile("[codex-greeting]", "Baseline session set (recent):", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+					} else {
+						logToFile("[codex-greeting]", "Baseline session stale, skipping baseline:", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
+					}
 				}
 			} catch {
 				logToFile("[codex-greeting]", "Could not get baseline session");
