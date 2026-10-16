@@ -72,11 +72,13 @@ describe("Honcho CLI E2E Tests", () => {
       expect(workspaceIds).toContain("pi-harness");
     });
     
-    it("should create a new workspace", () => {
+    it("should create a new workspace with metadata", () => {
       const testWorkspace = `${TEST_WORKSPACE_PREFIX}-${Date.now()}`;
       ctx.testWorkspaces.push(testWorkspace);
       
-      const output = execHoncho(["workspace", "create", testWorkspace, "--json"]);
+      // Create with metadata
+      const metadata = JSON.stringify({ purpose: "pi-harness E2E test", version: "1.0.0" });
+      const output = execHoncho(["workspace", "create", testWorkspace, "--json", "--metadata", metadata]);
       const result = JSON.parse(output);
       
       expect(result).toHaveProperty("workspace_id");

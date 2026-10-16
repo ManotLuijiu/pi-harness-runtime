@@ -207,6 +207,29 @@ async function callHonchoTool(
 // ---------------------------------------------------------------------------
 
 /**
+ * Set workspace metadata using pi-harness-runtime info
+ */
+async function setWorkspaceMetadata(workspaceId: string, _workspaceName: string): Promise<void> {
+  const metadata = {
+    purpose: "pi-harness runtime memory",
+    version: "1.0.0",
+    created: new Date().toISOString(),
+    source: "pi-harness-runtime",
+  };
+
+  const result = await callHonchoTool("set_metadata", {
+    workspace_id: workspaceId,
+    metadata,
+  });
+
+  if (result.success) {
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_metadata", phase: "completed", workspaceId });
+  } else {
+    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "workspace_metadata", phase: "failed", reason: result.error });
+  }
+}
+
+/**
  * Get or validate workspace ID.
  * 
  * Note: Honcho MCP does NOT have create_workspace/get_workspace tools.
@@ -229,9 +252,15 @@ async function ensureWorkspace(workspaceName: string): Promise<string | null> {
   });
 
   if (inspectResult.success && inspectResult.result) {
-    const response = inspectResult.result as { workspace?: { id?: string }; id?: string };
+    const response = inspectResult.result as { workspace?: { id?: string }; id?: string; metadata?: Record<string, unknown> };
     const workspaceId = response.workspace?.id ?? response.id ?? workspaceName;
     savePersistedWorkspace(workspaceId, workspaceName);
+    
+    // Set metadata if not already set
+    if (!response.metadata || Object.keys(response.metadata).length === 0) {
+      await setWorkspaceMetadata(workspaceId, workspaceName);
+    }
+    
     logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_validate", phase: "completed", workspaceId });
     return workspaceId;
   }
