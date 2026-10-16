@@ -2230,11 +2230,22 @@ export default function (pi: ExtensionAPI) {
 				return null;
 			}
 
+			// Check if manual mode is enabled (human-in-the-loop)
+			const isManualMode = process.env.CODEX_MANUAL_MODE === "true";
+
 			// Trigger Pi to read the plan
 			async function triggerPiForPlan(event: PlanEvent): Promise<void> {
 				// Check cwd match
 				if (_piSessionCwd && currentProjectRoot && _piSessionCwd !== currentProjectRoot) {
 					logToFile("[codex-trigger]", "Cwd mismatch, skipping:", _piSessionCwd, "!=", currentProjectRoot);
+					return;
+				}
+
+				// In manual mode, do NOT auto-trigger Pi - wait for human command
+				if (isManualMode) {
+					logToFile("[codex-trigger]", "Manual mode: plan ready but NOT auto-triggering Pi. Awaiting human command.");
+					event.status = "manual_wait";
+					// Full plan already sent via onMessages notification - no duplicate notification here
 					return;
 				}
 
@@ -2244,10 +2255,6 @@ export default function (pi: ExtensionAPI) {
 					await pi.sendUserMessage(triggerMsg, { deliverAs: "steer" });
 					event.status = "triggered";
 					logToFile("[codex-trigger]", "Triggered Pi for plan:", event.planPath);
-					nc("CodexPlanDetected", {
-						requirement: `Plan ready: ${event.planPath}`,
-						taskTitle: `Ordinal ${event.ordinal}`,
-					});
 				} catch (err) {
 					event.status = "failed";
 					logToFile("[codex-trigger]", "Trigger failed:", String(err));
