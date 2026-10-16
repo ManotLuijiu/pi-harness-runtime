@@ -2190,6 +2190,11 @@ export default function (pi: ExtensionAPI) {
 	// Collect async init promises so we can wait for them before showing startup notification
 	const asyncInitPromises: Promise<unknown>[] = [];
 
+	// --- shared Codex session state (for /task command handler) ---
+	const deliveredEvents = new Map<string, PlanEvent>();
+	let currentCodexSessionId: string | null = null;
+	let currentProjectRoot: string | null = null;
+
 	// --- todo-bd-sync: Initialize two-way sync with bd ---------------
 	// Start async init but don't await - runs in background
 	void initTodoBdSync(pi);
@@ -2231,15 +2236,13 @@ export default function (pi: ExtensionAPI) {
 				codexSessionId: string;
 				planPath: string;
 				planHash: string;
-				status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait";
+				status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done";
 				ordinal: number;
 				lastActivity: number;
 				settleTimer: ReturnType<typeof setTimeout> | null;
 				fileStableSince: number;
 			}
-			const deliveredEvents = new Map<string, PlanEvent>();
-			let currentCodexSessionId: string | null = null;
-			let currentProjectRoot = "";
+			// Note: deliveredEvents, currentCodexSessionId, currentProjectRoot are now module-level
 			let _currentPlanCandidate: { ordinal: number; text: string; timestamp: number } | null = null;
 			let lastActivityTime = 0;
 
