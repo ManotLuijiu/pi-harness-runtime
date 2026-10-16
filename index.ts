@@ -1025,32 +1025,50 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				const matchingSession = codexSessionState.deliveredEvents.get(sessionId) || 
 					Array.from(codexSessionState.deliveredEvents.values()).find(e => e.codexSessionId === sessionId);
 				
-				if (matchingSession && matchingSession.codexSessionId === codexSessionState.currentCodexSessionId) {
-					logToFile("[codex-trigger]", `Human command: ${action} for session ${sessionId}`);
-					
-					if (action.toLowerCase() === "code") {
-						// Advance to code stage - send a message to Pi
-						await pi.sendUserMessage(
-							`Human approved the plan. Proceed to implement: ${matchingSession.planPath}`,
-							{ deliverAs: "steer" }
-						);
-						matchingSession.status = "triggered";
-						logToFile("[codex-trigger]", "Triggered Pi for plan:", matchingSession.planPath);
-					} else if (action.toLowerCase() === "review") {
-						// Advance to review stage
-						await pi.sendUserMessage(
-							"Human requests a review of the implementation.",
-							{ deliverAs: "steer" }
-						);
-					} else if (action.toLowerCase() === "done") {
-						// Mark as done
-						matchingSession.status = "done";
-						logToFile("[codex-trigger]", "Human marked session done:", sessionId);
-					}
+				// Validate session matches current project
+				if (!matchingSession || matchingSession.codexSessionId !== codexSessionState.currentCodexSessionId) {
+					logToFile("[codex-trigger]", `Unknown session or session not active: ${sessionId}`);
 					return;
-				} else {
-					logToFile("[codex-trigger]", `Unknown session or wrong project: ${sessionId}`);
 				}
+				
+				// For code/review commands, check Pi cwd matches project root
+				if (action.toLowerCase() === "code" || action.toLowerCase() === "review") {
+					if (_piSessionCwd && codexSessionState.currentProjectRoot && 
+					    _piSessionCwd !== codexSessionState.currentProjectRoot) {
+						logToFile("[codex-trigger]", `Cwd mismatch for /task ${action}: Pi cwd=${_piSessionCwd} vs project=${codexSessionState.currentProjectRoot}`);
+						return;
+					}
+					
+					// For code command, require manual_wait or ready status
+					if (action.toLowerCase() === "code" && 
+					    matchingSession.status !== "manual_wait" && matchingSession.status !== "ready") {
+						logToFile("[codex-trigger]", `Cannot /task code: plan not ready (status=${matchingSession.status})`);
+						return;
+					}
+				}
+				
+				logToFile("[codex-trigger]", `Human command: ${action} for session ${sessionId}`);
+				
+				if (action.toLowerCase() === "code") {
+					// Advance to code stage - send a message to Pi
+					await pi.sendUserMessage(
+						`Human approved the plan. Proceed to implement: ${matchingSession.planPath}`,
+						{ deliverAs: "steer" }
+					);
+					matchingSession.status = "triggered";
+					logToFile("[codex-trigger]", "Triggered Pi for plan:", matchingSession.planPath);
+				} else if (action.toLowerCase() === "review") {
+					// Advance to review stage
+					await pi.sendUserMessage(
+						"Human requests a review of the implementation.",
+						{ deliverAs: "steer" }
+					);
+				} else if (action.toLowerCase() === "done") {
+					// Mark as done
+					matchingSession.status = "done";
+					logToFile("[codex-trigger]", "Human marked session done:", sessionId);
+				}
+				return;
 			}
 			
 			logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
