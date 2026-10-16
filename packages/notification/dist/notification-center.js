@@ -451,8 +451,8 @@ export class NotificationCenter {
                 message: `Codex CLI session "${context.taskTitle ?? "new session"}" is now active`,
             },
             CodexPlanDetected: {
-                title: "Codex Plan Detected",
-                message: `Codex has a new plan ready for your review`,
+                title: "[PLAN] Codex Plan",
+                message: context.requirement ?? "(no plan content)",
             },
             Error: {
                 title: "Runtime Error",

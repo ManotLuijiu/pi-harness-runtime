@@ -100,6 +100,11 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      */
     getWebhookInfo(): Promise<Record<string, unknown> | null>;
     private formatMessage;
+    /**
+     * Split long messages into ordered chunks for Telegram.
+     * Telegram message limit is ~4096 characters.
+     */
+    private chunkMessage;
     private getStatusLabel;
 }
 export {};
