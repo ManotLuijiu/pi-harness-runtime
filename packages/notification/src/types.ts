@@ -19,6 +19,7 @@ export type NotificationEvent =
 	| "WaitingForUserInput"
 	| "CodexSessionStarted"
 	| "CodexPlanDetected"
+	| "CodexReviewDetected"
 	| "AssistantResponse"
 	| "ToolSummary"
 	| "Error"

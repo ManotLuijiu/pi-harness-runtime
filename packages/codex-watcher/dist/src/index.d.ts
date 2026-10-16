@@ -21,7 +21,8 @@ import { classifyMessage } from "./parser.js";
 import { getAllSessions, getLatestSession } from "./session.js";
 import type { CodexMessage, CodexSession, WatcherHandle, WatcherOptions } from "./types.js";
 export type { CodexMessage, CodexSession, WatcherHandle, WatcherOptions };
-export { classifyMessage, getAllSessions, getLatestSession };
+export { classifyMessage, detectReviewMarker, getAllSessions, getLatestSession };
+import { detectReviewMarker } from "./parser.js";
 /** Read all visible messages from a rollout file, starting from a given ordinal. */
 export declare function getVisibleMessages(rolloutPath: string, options?: {
     fromOrdinal?: number;

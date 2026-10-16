@@ -599,6 +599,10 @@ export class NotificationCenter {
 				title: "[PLAN] Codex Plan",
 				message: context.requirement ?? "(no plan content)",
 			},
+			CodexReviewDetected: {
+				title: "[REVIEW] Codex Review",
+				message: context.requirement ?? "(no review content)",
+			},
 			Error: {
 				title: "Runtime Error",
 				message: `An error occurred${context.error ? `: ${context.error}` : ""}`,
