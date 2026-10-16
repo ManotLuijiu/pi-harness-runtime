@@ -2527,9 +2527,11 @@ export default function (pi: ExtensionAPI) {
 			try {
 				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
 				const baseline = getLatestSession();
-				if (baseline) {
-					const sessionAgeMs = Date.now() - (baseline.updatedAt || 0);
-					const isRecent = (baseline.updatedAt || 0) > 0 && sessionAgeMs < 10 * 60 * 1000;
+				if (baseline && baseline.updatedAt) {
+					// Parse ISO-8601 timestamp to milliseconds
+					const updatedAtMs = Date.parse(baseline.updatedAt);
+					const sessionAgeMs = Date.now() - updatedAtMs;
+					const isRecent = updatedAtMs > 0 && sessionAgeMs < 10 * 60 * 1000;
 					if (isRecent) {
 						codexSessionState.greetingBaselineSessionId = baseline.id;
 						logToFile("[codex-greeting]", "Baseline session set (recent):", baseline.id, `age=${Math.round(sessionAgeMs/1000)}s`);
@@ -2542,6 +2544,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Deliver any pending greeting if Pi session is now active
+			// This runs on watcher startup; pending greetings are also drained in session_start
 			if (codexSessionState.pendingGreeting && _piSessionCwd) {
 				const pg = codexSessionState.pendingGreeting;
 				// Check expiry (5 minutes)
@@ -2549,14 +2552,19 @@ export default function (pi: ExtensionAPI) {
 					logToFile("[codex-greeting]", "Pending greeting expired");
 					codexSessionState.pendingGreeting = null;
 				} else if (_piSessionCwd === pg.projectRoot) {
-					// Roots match - send greeting
+					// Roots match - send greeting with followUp mode
 					const greetKey = `${_piSessionCwd}:${pg.sessionId}`;
 					if (!codexSessionState.greetedSessions.has(greetKey)) {
 						logToFile("[codex-greeting]", "Delivering pending greeting for:", pg.sessionId);
-						void pi.sendUserMessage(
-							`Codex opened in this workspace (session ${pg.sessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`
-						);
-						codexSessionState.greetedSessions.add(greetKey);
+						try {
+							await pi.sendUserMessage(
+								`Codex opened in this workspace (session ${pg.sessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
+								{ deliverAs: "followUp" }
+							);
+							codexSessionState.greetedSessions.add(greetKey);
+						} catch (err) {
+							logToFile("[codex-greeting]", "Failed to deliver greeting:", String(err));
+						}
 					}
 					codexSessionState.pendingGreeting = null;
 				}
@@ -2588,9 +2596,10 @@ export default function (pi: ExtensionAPI) {
 								if (codexSessionState.currentCodexSessionId) {
 									// Pi session active - send greeting now
 									logToFile("[codex-greeting]", "Sending greeting for:", codexSessionId);
-									void pi.sendUserMessage(
-										`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`
-									);
+								void pi.sendUserMessage(
+									`Codex opened in this workspace (session ${codexSessionId.slice(0, 8)}...). Say hello briefly, then wait for the user's next instruction.`,
+										{ deliverAs: "followUp" }
+								);
 									codexSessionState.greetedSessions.add(greetKey);
 								} else {
 									// Pi session not active yet - queue for delivery on session_start
