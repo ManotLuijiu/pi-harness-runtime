@@ -1441,23 +1441,25 @@ async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 async function initMemory(pi: ExtensionAPI): Promise<void> {
 	try {
 		const { getGlobalMemoryStore } = await import("./packages/trajectory/src/memory-store.js");
-		const { HonchoMemory } = await import("./harness/honcho-memory.js");
 		const memoryStore = getGlobalMemoryStore();
 
-		// Initialize Honcho memory (will be connected after initHoncho)
-		let honchoMemory: HonchoMemory | null = null;
-		let honchoReady = false;
+		// Get Honcho memory from singleton (avoid creating new instance)
+		let honchoMemory: Awaited<ReturnType<typeof import("./harness/honcho-init.js").getHonchoMemory>> | null = null;
 
-		// Connect Honcho memory after Honcho is initialized
+		// Connect Honcho memory - use singleton from initHoncho
 		pi.on("session_start", async () => {
-			if (honchoMemory) return; // Already initialized
+			if (honchoMemory?.isReady()) return; // Already connected and ready
 
 			try {
-				const honchoConfig = await import("./harness/honcho-init.js");
-				if (honchoConfig.isHonchoReady && honchoConfig.isHonchoReady()) {
-					honchoMemory = new HonchoMemory({});
-					honchoReady = true;
-					logToFile("[memory]", "Honcho memory connected");
+				const { getHonchoMemory, isHonchoInitialized } = await import("./harness/honcho-init.js");
+				if (isHonchoInitialized()) {
+					honchoMemory = getHonchoMemory();
+					if (honchoMemory?.isReady()) {
+						logToFile("[memory]", "Honcho memory connected");
+					} else {
+						honchoMemory = null;
+						logToFile("[memory]", "Honcho initialized but not ready");
+					}
 				}
 			} catch {
 				// Honcho not ready yet
