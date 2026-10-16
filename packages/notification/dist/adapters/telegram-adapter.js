@@ -177,22 +177,13 @@ export class TelegramAdapter extends BaseChannelAdapter {
             if (String(query.message?.chat.id) !== String(cfg.chatId) || query.from?.is_bot)
                 return;
             logInfo("[TelegramAdapter]", `Callback query: ${query.data} from user ${query.from?.id}`);
-            // Answer the callback query (dismiss loading indicator)
-            try {
-                await fetch(`https://api.telegram.org/bot${cfg.botToken}/answerCallbackQuery`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ callback_query_id: query.id }),
-                });
-            }
-            catch (err) {
-                logWarn("[TelegramAdapter]", "Failed to answer callback query:", err);
-            }
+            // NOTE: Acknowledgment is now controlled by the handler via acknowledgeCallback()
+            // This allows the handler to validate before dismissing the loading indicator
             if (await this.handleGreetingReply(query))
                 return;
-            // Call the registered handler
+            // Call the registered handler - handler calls acknowledgeCallback() after validation
             if (this._callbackHandler && query.data) {
-                await this._callbackHandler(query.data, query);
+                await this._callbackHandler(query.data, query, (msg) => this.acknowledgeCallback(query.id, msg));
             }
         }
         // Handle regular message
@@ -444,7 +435,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
                     await this.answerCallbackQuery(query.id);
                     return;
                 }
-                await this._callbackHandler?.(query.data, query);
+                await this._callbackHandler?.(query.data, query, (msg) => this.acknowledgeCallback(query.id, msg));
                 await this.answerCallbackQuery(query.id);
             }
         }
@@ -486,20 +477,33 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
     }
     /**
-     * Answer a callback query to remove loading state
+     * Acknowledge a callback query - call this after validation in the handler
+     * @param callbackQueryId - The callback query ID to acknowledge
+     * @param message - Optional message to show in the popup alert
      */
-    async answerCallbackQuery(callbackQueryId) {
+    async acknowledgeCallback(callbackQueryId, message) {
         try {
             const cfg = this.config.config;
             await fetch(`https://api.telegram.org/bot${cfg.botToken}/answerCallbackQuery`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ callback_query_id: callbackQueryId }),
+                body: JSON.stringify({
+                    callback_query_id: callbackQueryId,
+                    text: message,
+                    show_alert: message ? true : false,
+                }),
             });
         }
         catch (error) {
-            logError("[TelegramAdapter]", `Failed to answer callback query: ${error}`);
+            logError("[TelegramAdapter]", `Failed to acknowledge callback: ${error}`);
         }
+    }
+    /**
+     * Answer a callback query to remove loading state (internal legacy)
+     * @deprecated Use acknowledgeCallback() from the handler instead
+     */
+    async answerCallbackQuery(callbackQueryId) {
+        await this.acknowledgeCallback(callbackQueryId);
     }
     /**
      * Setup webhook for receiving updates

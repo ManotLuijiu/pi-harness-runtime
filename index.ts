@@ -1110,7 +1110,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const { parseCallbackData, CallbackActions } = await import(
 			"./packages/notification/dist/telegram-webhook-handler.js"
 		);
-		center.setCallbackHandler(async (data: string, _query: { id: string; from: { id: number } }) => {
+		center.setCallbackHandler(async (data: string, query: { id: string; from: { id: number } }, acknowledge) => {
 			const parsed = parseCallbackData(data);
 			logToFile("[TelegramCallback]", `action=${parsed.action} target=${parsed.targetId}`);
 
@@ -1131,8 +1131,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				const result = await advanceCodexTask(parsed.targetId, internalAction, pi);
 				if (result.success) {
 					logToFile("[TelegramCallback]", `PING_PONG ${internalAction} succeeded`);
+					await acknowledge(`Action ${internalAction} applied`);
 				} else {
 					logToFile("[TelegramCallback]", `PING_PONG ${internalAction} failed: ${result.error}`);
+					await acknowledge(`Action failed: ${result.error}`);
 				}
 				return; // Don't fall through to generic handlers
 			}
