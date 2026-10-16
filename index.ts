@@ -996,10 +996,47 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Register message handler to forward Telegram messages to Pi
 		center.setMessageHandler(async (text: string, _chatId: string) => {
-			logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
-			// Forward the message to Pi as a user message
-			await pi.sendUserMessage(text, { deliverAs: "steer" });
-		});
+			// Parse /task <session-id> <action> commands
+			const taskCommandMatch = text.match(/^\/task\s+(\S+)\s+(code|review|done)\s*$/i);
+			if (taskCommandMatch) {
+				const [, sessionId, action] = taskCommandMatch;
+				
+				// Find matching Codex session
+				const matchingSession = deliveredEvents.get(sessionId) || 
+					Array.from(deliveredEvents.values()).find(e => e.codexSessionId === sessionId);
+				
+				if (matchingSession && matchingSession.codexSessionId === currentCodexSessionId) {
+					logToFile("[codex-trigger]", `Human command: ${action} for session ${sessionId}`);
+					
+					if (action.toLowerCase() === "code") {
+						// Advance to code stage - send a message to Pi
+						await pi.sendUserMessage(
+							`Human approved the plan. Proceed to implement: ${matchingSession.planPath}`,
+							{ deliverAs: "steer" }
+						);
+						matchingSession.status = "triggered";
+						logToFile("[codex-trigger]", "Triggered Pi for plan:", matchingSession.planPath);
+					} else if (action.toLowerCase() === "review") {
+						// Advance to review stage
+						await pi.sendUserMessage(
+							"Human requests a review of the implementation.",
+							{ deliverAs: "steer" }
+						);
+					} else if (action.toLowerCase() === "done") {
+						// Mark as done
+						matchingSession.status = "done";
+						logToFile("[codex-trigger]", "Human marked session done:", sessionId);
+					}
+					return;
+			} else {
+				logToFile("[codex-trigger]", `Unknown session or wrong project: ${sessionId}`);
+			}
+		}
+		
+		logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
+		// Forward the message to Pi as a user message
+		await pi.sendUserMessage(text, { deliverAs: "steer" });
+	});
 
 		// Wire to singleton nc() helper so all event emitters can reach Telegram
 		_nc = {
@@ -2343,8 +2380,8 @@ export default function (pi: ExtensionAPI) {
 					const hasReviewMarker = classification === "unknown" && detectReviewMarker(msg.text);
 					if (classification !== "plan" && classification !== "mixed" && !hasReviewMarker) continue;
 				
-				// Determine stage
-				const stage = hasReviewMarker ? "review" : classification;
+				// Determine stage (for future use in event metadata)
+				const _stage = hasReviewMarker ? "review" : classification;
 
 				// Only start settle timer for plans (not reviews)
 				// Reviews don't have a file to watch
