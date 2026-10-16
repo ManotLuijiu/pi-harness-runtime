@@ -133,16 +133,21 @@ async function callHonchoTool(
     args,
   };
 
+  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "start", tool: toolName, args: JSON.stringify(args).slice(0, 100) });
+
   // Emit tool call
   piEvents.emit(MCP_RUNTIME_TOOL_CALL_EVENT, request);
 
   // Wait for result - adapter assigns a Promise to request.result
   if (request.result === undefined) {
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, reason: "no response from adapter" });
     return { success: false, error: "No response from MCP adapter" };
   }
 
   // request.result is a Promise from the adapter
   const result = await request.result;
+  
+  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "completed", tool: toolName, result: JSON.stringify(result).slice(0, 200) });
 
   if (!result.ok) {
     return { success: false, error: result.error?.message ?? "Unknown error" };
