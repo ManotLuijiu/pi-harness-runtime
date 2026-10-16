@@ -916,12 +916,132 @@ interface PlanEvent {
 	fileStableSince: number;
 }
 
+interface PendingPINGPONGAction {
+	token: string;
+	sessionId: string;
+	action: "code" | "review" | "code_again" | "done";
+	projectRoot: string;
+	allowedStage: string;
+	expiresAt: number;
+	used: boolean;
+}
+
 const codexSessionState = {
 	deliveredEvents: new Map<string, PlanEvent>(),
 	currentCodexSessionId: null as string | null,
 	currentProjectRoot: null as string | null,
 	currentPlanCandidate: null as { ordinal: number; text: string; timestamp: number } | null,
+	pendingActions: new Map<string, PendingPINGPONGAction>(),
 };
+
+// PING_PONG callback action type (different from generic APPROVE/REJECT)
+const PING_PONG_ACTIONS = {
+	CODE: "ping_code",
+	REVIEW: "ping_review",
+	CODE_AGAIN: "ping_code_again",
+	DONE: "ping_done",
+} as const;
+
+// Generate opaque token for PING_PONG action
+function createPINGPONGToken(): string {
+	const array = new Uint8Array(16);
+	crypto.getRandomValues(array);
+	return Array.from(array, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Create a pending PING_PONG action and return its token (used when sending button notifications)
+function _createPendingAction(
+	sessionId: string,
+	action: "code" | "review" | "code_again" | "done",
+	projectRoot: string,
+	allowedStage: string
+): string {
+	const token = createPINGPONGToken();
+	codexSessionState.pendingActions.set(token, {
+		token,
+		sessionId,
+		action,
+		projectRoot,
+		allowedStage,
+		expiresAt: Date.now() + 30 * 60 * 1000, // 30 min expiry
+		used: false,
+	});
+	return token;
+}
+
+// Find pending action by session ID (for /task fallback)
+function findPendingActionBySession(sessionId: string): PendingPINGPONGAction | undefined {
+	for (const action of codexSessionState.pendingActions.values()) {
+		if (action.sessionId === sessionId && !action.used && Date.now() < action.expiresAt) {
+			return action;
+		}
+	}
+	return undefined;
+}
+
+// Advance Codex task - shared by both button callbacks and /task commands
+async function advanceCodexTask(
+	token: string,
+	action: "code" | "review" | "code_again" | "done",
+	pi: ExtensionAPI
+): Promise<{ success: boolean; error?: string }> {
+	const pending = codexSessionState.pendingActions.get(token);
+	
+	// Validate pending action
+	if (!pending) {
+		return { success: false, error: "Action expired or not found" };
+	}
+	if (pending.used) {
+		return { success: false, error: "Action already used" };
+	}
+	if (Date.now() > pending.expiresAt) {
+		codexSessionState.pendingActions.delete(token);
+		return { success: false, error: "Action expired" };
+	}
+	if (pending.sessionId !== codexSessionState.currentCodexSessionId) {
+		return { success: false, error: "Session no longer active" };
+	}
+	if (pending.projectRoot !== codexSessionState.currentProjectRoot) {
+		return { success: false, error: "Project root mismatch" };
+	}
+	
+	// Mark as used
+	pending.used = true;
+	
+	// Find the event
+	const event = Array.from(codexSessionState.deliveredEvents.values()).find(
+		e => e.codexSessionId === pending.sessionId
+	);
+	if (!event) {
+		return { success: false, error: "Session event not found" };
+	}
+	
+	// Check status for code action
+	if (action === "code" && event.status !== "manual_wait" && event.status !== "ready") {
+		return { success: false, error: `Plan not ready (status=${event.status})` };
+	}
+	
+	// Execute action
+	if (action === "code" || action === "code_again") {
+		await pi.sendUserMessage(
+			`Human approved. Proceed to implement: ${event.planPath}`,
+			{ deliverAs: "steer" }
+		);
+		event.status = "triggered";
+		logToFile("[codex-trigger]", `Advanced to code: ${event.planPath}`);
+	} else if (action === "review") {
+		await pi.sendUserMessage(
+			"Human requests a review of the implementation.",
+			{ deliverAs: "steer" }
+		);
+		logToFile("[codex-trigger]", "Advanced to review");
+	} else if (action === "done") {
+		event.status = "done";
+		logToFile("[codex-trigger]", "Human marked done");
+	}
+	
+	return { success: true };
+}
 
 async function initTelegram(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Telegram", "initializing", "wait");
@@ -986,13 +1106,36 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			return;
 		}
 
-		// Register callback handler for inline keyboard button clicks (approve/reject)
+		// Register callback handler for inline keyboard button clicks
 		const { parseCallbackData, CallbackActions } = await import(
-				"./packages/notification/dist/telegram-webhook-handler.js"
+			"./packages/notification/dist/telegram-webhook-handler.js"
 		);
-		center.setCallbackHandler(async (data: string, _query: { id: string }) => {
+		center.setCallbackHandler(async (data: string, _query: { id: string; from: { id: number } }) => {
 			const parsed = parseCallbackData(data);
 			logToFile("[TelegramCallback]", `action=${parsed.action} target=${parsed.targetId}`);
+
+			// Handle PING_PONG button callbacks
+			if (parsed.action === PING_PONG_ACTIONS.CODE || 
+				parsed.action === PING_PONG_ACTIONS.REVIEW ||
+				parsed.action === PING_PONG_ACTIONS.CODE_AGAIN ||
+				parsed.action === PING_PONG_ACTIONS.DONE) {
+				// Map action string to internal action type
+				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+					[PING_PONG_ACTIONS.CODE]: "code",
+					[PING_PONG_ACTIONS.REVIEW]: "review",
+					[PING_PONG_ACTIONS.CODE_AGAIN]: "code_again",
+					[PING_PONG_ACTIONS.DONE]: "done",
+				};
+				const internalAction = actionMap[parsed.action];
+				
+				const result = await advanceCodexTask(parsed.targetId, internalAction, pi);
+				if (result.success) {
+					logToFile("[TelegramCallback]", `PING_PONG ${internalAction} succeeded`);
+				} else {
+					logToFile("[TelegramCallback]", `PING_PONG ${internalAction} failed: ${result.error}`);
+				}
+				return; // Don't fall through to generic handlers
+			}
 
 			switch (parsed.action) {
 				case CallbackActions.APPROVE:
@@ -1021,52 +1164,38 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			if (taskCommandMatch) {
 				const [, sessionId, action] = taskCommandMatch;
 				
-				// Find matching Codex session
-				const matchingSession = codexSessionState.deliveredEvents.get(sessionId) || 
-					Array.from(codexSessionState.deliveredEvents.values()).find(e => e.codexSessionId === sessionId);
-				
-				// Validate session matches current project
-				if (!matchingSession || matchingSession.codexSessionId !== codexSessionState.currentCodexSessionId) {
-					logToFile("[codex-trigger]", `Unknown session or session not active: ${sessionId}`);
+				// Map action string to internal type
+				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+					code: "code",
+					review: "review",
+					done: "done",
+				};
+				const internalAction = actionMap[action.toLowerCase()];
+				if (!internalAction) {
+					logToFile("[codex-trigger]", `Unknown /task action: ${action}`);
 					return;
 				}
 				
-				// For code/review commands, check Pi cwd matches project root
-				if (action.toLowerCase() === "code" || action.toLowerCase() === "review") {
+				// For /task, find pending action by session ID (buttons use token directly)
+				const pendingAction = findPendingActionBySession(sessionId);
+				if (!pendingAction) {
+					logToFile("[codex-trigger]", `No pending action found for session: ${sessionId}`);
+					return;
+				}
+				
+				// Validate cwd for code/review
+				if (internalAction === "code" || internalAction === "review") {
 					if (_piSessionCwd && codexSessionState.currentProjectRoot && 
 					    _piSessionCwd !== codexSessionState.currentProjectRoot) {
-						logToFile("[codex-trigger]", `Cwd mismatch for /task ${action}: Pi cwd=${_piSessionCwd} vs project=${codexSessionState.currentProjectRoot}`);
-						return;
-					}
-					
-					// For code command, require manual_wait or ready status
-					if (action.toLowerCase() === "code" && 
-					    matchingSession.status !== "manual_wait" && matchingSession.status !== "ready") {
-						logToFile("[codex-trigger]", `Cannot /task code: plan not ready (status=${matchingSession.status})`);
+						logToFile("[codex-trigger]", `Cwd mismatch: Pi cwd=${_piSessionCwd} vs project=${codexSessionState.currentProjectRoot}`);
 						return;
 					}
 				}
 				
-				logToFile("[codex-trigger]", `Human command: ${action} for session ${sessionId}`);
-				
-				if (action.toLowerCase() === "code") {
-					// Advance to code stage - send a message to Pi
-					await pi.sendUserMessage(
-						`Human approved the plan. Proceed to implement: ${matchingSession.planPath}`,
-						{ deliverAs: "steer" }
-					);
-					matchingSession.status = "triggered";
-					logToFile("[codex-trigger]", "Triggered Pi for plan:", matchingSession.planPath);
-				} else if (action.toLowerCase() === "review") {
-					// Advance to review stage
-					await pi.sendUserMessage(
-						"Human requests a review of the implementation.",
-						{ deliverAs: "steer" }
-					);
-				} else if (action.toLowerCase() === "done") {
-					// Mark as done
-					matchingSession.status = "done";
-					logToFile("[codex-trigger]", "Human marked session done:", sessionId);
+				logToFile("[codex-trigger]", `Human command: /task ${sessionId} ${action}`);
+				const result = await advanceCodexTask(pendingAction.token, internalAction, pi);
+				if (!result.success) {
+					logToFile("[codex-trigger]", `/task failed: ${result.error}`);
 				}
 				return;
 			}
@@ -2435,34 +2564,51 @@ export default function (pi: ExtensionAPI) {
 							}
 				}
 
-				// Emit Telegram alert with full content
+				// Emit Telegram alert with full content (async, non-blocking)
 				const planPath = codexSessionState.currentProjectRoot ? findPlanFile(codexSessionState.currentProjectRoot) : undefined;
 
+				// Create pending actions for PING_PONG buttons
+				const sessionId = codexSessionState.currentCodexSessionId || "unknown";
+				const projectRoot = codexSessionState.currentProjectRoot || "";
+				
+				// Create tokens for each action
+				const codeToken = _createPendingAction(sessionId, "code", projectRoot, "plan");
+				const doneToken = _createPendingAction(sessionId, "done", projectRoot, "plan");
+				
 				// Use event type based on stage
 				if (hasReviewMarker) {
-							nc("CodexReviewDetected", {
-									requirement: msg.text,
-										taskTitle: codexSessionState.currentCodexSessionId || `Ordinal ${msg.ordinal}`,
-											details: {
-												ordinal: msg.ordinal,
-												stage: "review",
-												projectRoot: codexSessionState.currentProjectRoot || undefined,
-											messageLength: msg.text.length,
-										},
-								});
-							} else {
-								nc("CodexPlanDetected", {
-								requirement: msg.text, // Full text, no truncation
-								taskTitle: codexSessionState.currentCodexSessionId || `Ordinal ${msg.ordinal}`,
-								details: {
-								ordinal: msg.ordinal,
-									stage: "plan",
-									projectRoot: codexSessionState.currentProjectRoot || undefined,
-											planPath: planPath || undefined,
-											messageLength: msg.text.length,
-									},
-								});
-							}
+					// Review stage: buttons are Review and Done
+					const reviewToken = _createPendingAction(sessionId, "review", projectRoot, "review");
+					void nc.center.notifyWithButtons("CodexReviewDetected", {
+						requirement: msg.text,
+						taskTitle: sessionId,
+						details: {
+							ordinal: msg.ordinal,
+							stage: "review",
+							projectRoot,
+							messageLength: msg.text.length,
+					},
+					}, [
+						{ text: "Review", action: PING_PONG_ACTIONS.REVIEW, targetId: reviewToken },
+						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
+					]);
+				} else {
+					// Plan stage: buttons are Code and Done
+					void nc.center.notifyWithButtons("CodexPlanDetected", {
+						requirement: msg.text, // Full text, no truncation
+						taskTitle: sessionId,
+						details: {
+							ordinal: msg.ordinal,
+							stage: "plan",
+							projectRoot,
+							planPath: planPath || undefined,
+							messageLength: msg.text.length,
+					},
+					}, [
+						{ text: "Code", action: PING_PONG_ACTIONS.CODE, targetId: codeToken },
+						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
+					]);
+				}
 				}
 			},
 		});
