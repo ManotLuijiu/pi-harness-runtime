@@ -207,7 +207,13 @@ async function callHonchoTool(
 // ---------------------------------------------------------------------------
 
 /**
- * Create or get workspace for the harness
+ * Get or validate workspace ID.
+ * 
+ * Note: Honcho MCP does NOT have create_workspace/get_workspace tools.
+ * Workspaces are created via CLI/API. MCP tools are for session management.
+ * This function:
+ * 1. Loads persisted workspace ID
+ * 2. Validates it exists by calling inspect_workspace
  */
 async function ensureWorkspace(workspaceName: string): Promise<string | null> {
   // First, check if we have a persisted workspace ID
@@ -217,34 +223,17 @@ async function ensureWorkspace(workspaceName: string): Promise<string | null> {
     return persisted.workspaceId;
   }
 
-  // Try get_workspace first (idempotent)
-  const getResult = await callHonchoTool("get_workspace", {
-    name: workspaceName,
+  // Validate with inspect_workspace (MCP tool to check workspace exists)
+  const inspectResult = await callHonchoTool("inspect_workspace", {
+    workspace_id: workspaceName, // workspace_id can be name or ID
   });
 
-  if (getResult.success && getResult.result) {
-    const response = getResult.result as { id?: string };
-    const workspaceId = response.id ?? null;
-    if (workspaceId) {
-      savePersistedWorkspace(workspaceId, workspaceName);
-      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_reuse", phase: "completed", workspaceId });
-      return workspaceId;
-    }
-  }
-
-  // Create new workspace
-  const result = await callHonchoTool("create_workspace", {
-    name: workspaceName,
-  });
-
-  if (result.success && result.result) {
-    const response = result.result as { id?: string; workspace?: { id?: string } };
-    const workspaceId = response.id ?? response.workspace?.id ?? null;
-    if (workspaceId) {
-      savePersistedWorkspace(workspaceId, workspaceName);
-      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_create", phase: "completed", workspaceId });
-      return workspaceId;
-    }
+  if (inspectResult.success && inspectResult.result) {
+    const response = inspectResult.result as { workspace?: { id?: string }; id?: string };
+    const workspaceId = response.workspace?.id ?? response.id ?? workspaceName;
+    savePersistedWorkspace(workspaceId, workspaceName);
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_validate", phase: "completed", workspaceId });
+    return workspaceId;
   }
 
   logServiceEvent({
@@ -253,7 +242,8 @@ async function ensureWorkspace(workspaceName: string): Promise<string | null> {
     service: "honcho",
     operation: "workspace_failed",
     phase: "failed",
-    error: result.error ?? "Unknown error",
+    error: inspectResult.error ?? "Workspace not found",
+    note: "Create workspace via CLI first: honcho workspace create <name>",
   });
 
   return null;
