@@ -2366,7 +2366,19 @@ export default function (pi: ExtensionAPI) {
 
 	// --- honcho-memory: Honcho MCP for peer/user memory (honcho_profile, etc.) ----
 	// Collect promise so we can wait for initialization before showing startup notification
+	// Note: initHoncho registers the MCP server but workspace creation is deferred to session_start
+	// because MCP tool calls require an active Pi session.
 	asyncInitPromises.push(initHoncho(pi));
+
+	// Defer Honcho workspace/identity creation until we have an active session
+	let honchoIdentitySetup = false;
+	pi.on("session_start", async () => {
+		if (honchoIdentitySetup) return;
+		honchoIdentitySetup = true;
+
+		const { ensureHonchoIdentity } = await import("./harness/honcho-init.js");
+		await ensureHonchoIdentity();
+	});
 
 	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
 	void initMoocodingSyncHint();
