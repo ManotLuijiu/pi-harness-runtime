@@ -1443,35 +1443,24 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 		const { getGlobalMemoryStore } = await import("./packages/trajectory/src/memory-store.js");
 		const memoryStore = getGlobalMemoryStore();
 
-		// Get Honcho memory from singleton (avoid creating new instance)
-		let honchoMemory: Awaited<ReturnType<typeof import("./harness/honcho-init.js").getHonchoMemory>> | null = null;
-
-		// Connect Honcho memory - use singleton from initHoncho
-		pi.on("session_start", async () => {
-			if (honchoMemory?.isReady()) return; // Already connected and ready
-
-			try {
-				const { getHonchoMemory, isHonchoInitialized } = await import("./harness/honcho-init.js");
-				if (isHonchoInitialized()) {
-					honchoMemory = getHonchoMemory();
-					if (honchoMemory?.isReady()) {
-						logToFile("[memory]", "Honcho memory connected");
-					} else {
-						honchoMemory = null;
-						logToFile("[memory]", "Honcho initialized but not ready");
-					}
-				}
-			} catch {
-				// Honcho not ready yet
-			}
-		});
-
 		logToFile("[memory]", "Memory store initialized");
 
 		// Track initialization for truthful status
 		let memoryLoaded = false;
 		let memoryTokenCount = 0;
 		let lastUserMessage = "";
+
+		// Helper to get ready Honcho memory instance
+		const getHonchoReady = async () => {
+			try {
+				const { getHonchoMemory, isHonchoInitialized } = await import("./harness/honcho-init.js");
+			if (!isHonchoInitialized()) return null;
+			const mem = getHonchoMemory();
+			return mem?.isReady() ? mem : null;
+		} catch {
+			return null;
+		}
+		};
 
 		// Capture last user message for Honcho retrieval
 		// Also ingest messages to Honcho for conversational memory
@@ -1485,20 +1474,22 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 			}
 
 			// Ingest to Honcho for conversational memory (user messages only - assistant handled by registerHonchoLifecycle)
-				if (msg.role === "user" && honchoMemory?.isReady()) {
+			if (msg.role === "user") {
+				const honchoMem = await getHonchoReady();
+				if (!honchoMem) return;
+
 				try {
-					// Skip harness-generated prompts
 					const content = typeof msg.content === "string" ? msg.content : "";
 					if (content.includes("[harness:") || content.includes("Please add all tasks")) {
 						return;
 					}
 
-					await honchoMemory.ingestMessage(
-						msg.role as "user" | "assistant",
-						msg.content,
-						new Date(),
-						`turn-${Date.now()}`
-					);
+					honchoMem.ingestMessage(
+							"user",
+								msg.content,
+								new Date(),
+								`turn-${Date.now()}`
+						);
 				} catch (err) {
 					logToFile("[memory]", `Ingest failed:`, String(err));
 				}
@@ -1525,9 +1516,10 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 
 			// 2. Retrieve Honcho context if available and we have a query
 				let honchoContext = "";
-				if (honchoMemory?.isReady() && lastUserMessage.trim().length > 0) {
+				const honchoMem = await getHonchoReady();
+				if (honchoMem && lastUserMessage.trim().length > 0) {
 				try {
-					const result = await honchoMemory.retrieveContext(lastUserMessage);
+					const result = await honchoMem.retrieveContext(lastUserMessage);
 					if (result.success && !result.empty && result.context) {
 						honchoContext = `\n## Relevant Context\n${result.context}\n`;
 						logToFile("[memory]", `Honcho: retrieved ~${result.context.length} chars`);
