@@ -2292,8 +2292,8 @@ export default function (pi: ExtensionAPI) {
 			// Trigger Pi to read the plan
 			async function triggerPiForPlan(event: PlanEvent): Promise<void> {
 				// Check cwd match
-				if (_piSessionCwd && currentProjectRoot && _piSessionCwd !== currentProjectRoot) {
-					logToFile("[codex-trigger]", "Cwd mismatch, skipping:", _piSessionCwd, "!=", currentProjectRoot);
+				if (_piSessionCwd && codexSessionState.currentProjectRoot && _piSessionCwd !== codexSessionState.currentProjectRoot) {
+					logToFile("[codex-trigger]", "Cwd mismatch, skipping:", _piSessionCwd, "!=", codexSessionState.currentProjectRoot);
 					return;
 				}
 
@@ -2319,15 +2319,15 @@ export default function (pi: ExtensionAPI) {
 
 			// Start settle timer for plan
 			function startSettleTimer(planPath: string, ordinal: number) {
-				const eventKey = `${currentCodexSessionId}:${planPath}`;
-				const existing = deliveredEvents.get(eventKey);
+				const eventKey = `${codexSessionState.currentCodexSessionId}:${planPath}`;
+				const existing = codexSessionState.deliveredEvents.get(eventKey);
 				if (existing && (existing.status === "triggered" || existing.status === "ready" || existing.status === "manual_wait")) {
 					logToFile("[codex-trigger]", "Event already handled:", eventKey);
 					return;
 				}
 
 				const event: PlanEvent = {
-					codexSessionId: currentCodexSessionId ?? "",
+					codexSessionId: codexSessionState.currentCodexSessionId ?? "",
 					planPath,
 					planHash: "",
 					status: "settling",
@@ -2336,7 +2336,7 @@ export default function (pi: ExtensionAPI) {
 					settleTimer: null,
 					fileStableSince: 0,
 				};
-				deliveredEvents.set(eventKey, event);
+				codexSessionState.deliveredEvents.set(eventKey, event);
 
 				logToFile("[codex-trigger]", "Plan observed, starting settle timer:", planPath);
 
@@ -2373,20 +2373,20 @@ export default function (pi: ExtensionAPI) {
 				onSessionChange: (session) => {
 				if (session) {
 					logToFile("[codex]", `Session started: ${session.threadName}, root: ${session.projectRoot}`);
-					currentCodexSessionId = session.id;
-					currentProjectRoot = session.projectRoot;
+					codexSessionState.currentCodexSessionId = session.id;
+					codexSessionState.currentProjectRoot = session.projectRoot;
 					nc("CodexSessionStarted", {
 						requirement: `${session.threadName || "Codex session"} [${session.projectRoot || "unknown"}]`,
 						taskTitle: session.id,
 					});
 				} else {
-					currentCodexSessionId = null;
-					currentProjectRoot = "";
-					currentPlanCandidate = null;
+					codexSessionState.currentCodexSessionId = null;
+					codexSessionState.currentProjectRoot = null;
+					codexSessionState.currentPlanCandidate = null;
 				}
 			},
 			onMessages: (msgs) => {
-				if (!currentCodexSessionId) return;
+			if (!codexSessionState.currentCodexSessionId) return;
 
 				for (const msg of msgs) {
 					lastActivityTime = Date.now();
@@ -2404,11 +2404,11 @@ export default function (pi: ExtensionAPI) {
 
 				// Only start settle timer for plans (not reviews)
 				// Reviews don't have a file to watch
-				if (!hasReviewMarker && currentProjectRoot) {
-							const planPath = findPlanFile(currentProjectRoot);
+						if (!hasReviewMarker && codexSessionState.currentProjectRoot) {
+							const planPath = findPlanFile(codexSessionState.currentProjectRoot);
 							if (planPath) {
 								// Track plan candidate
-								currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
+								codexSessionState.currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
 								logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
 								startSettleTimer(planPath, msg.ordinal);
 							} else {
@@ -2418,28 +2418,28 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				// Emit Telegram alert with full content
-				const planPath = currentProjectRoot ? findPlanFile(currentProjectRoot) : undefined;
+				const planPath = codexSessionState.currentProjectRoot ? findPlanFile(codexSessionState.currentProjectRoot) : undefined;
 
 				// Use event type based on stage
 				if (hasReviewMarker) {
 							nc("CodexReviewDetected", {
 									requirement: msg.text,
-									taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
-									details: {
-										ordinal: msg.ordinal,
-											stage: "review",
-											projectRoot: currentProjectRoot || undefined,
+										taskTitle: codexSessionState.currentCodexSessionId || `Ordinal ${msg.ordinal}`,
+											details: {
+												ordinal: msg.ordinal,
+												stage: "review",
+												projectRoot: codexSessionState.currentProjectRoot || undefined,
 											messageLength: msg.text.length,
 										},
 								});
 							} else {
 								nc("CodexPlanDetected", {
-									requirement: msg.text, // Full text, no truncation
-									taskTitle: currentCodexSessionId || `Ordinal ${msg.ordinal}`,
-									details: {
-										ordinal: msg.ordinal,
-											stage: "plan",
-											projectRoot: currentProjectRoot || undefined,
+								requirement: msg.text, // Full text, no truncation
+								taskTitle: codexSessionState.currentCodexSessionId || `Ordinal ${msg.ordinal}`,
+								details: {
+								ordinal: msg.ordinal,
+									stage: "plan",
+									projectRoot: codexSessionState.currentProjectRoot || undefined,
 											planPath: planPath || undefined,
 											messageLength: msg.text.length,
 									},
