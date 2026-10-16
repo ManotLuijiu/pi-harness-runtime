@@ -88,7 +88,14 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      */
     private parseCallbackQuery;
     /**
-     * Answer a callback query to remove loading state
+     * Acknowledge a callback query - call this after validation in the handler
+     * @param callbackQueryId - The callback query ID to acknowledge
+     * @param message - Optional message to show in the popup alert
+     */
+    acknowledgeCallback(callbackQueryId: string, message?: string): Promise<void>;
+    /**
+     * Answer a callback query to remove loading state (internal legacy)
+     * @deprecated Use acknowledgeCallback() from the handler instead
      */
     private answerCallbackQuery;
     /**

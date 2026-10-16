@@ -97,7 +97,8 @@ export interface TelegramCallbackQuery {
  */
 export type TelegramCallbackHandler = (
 	callbackData: string,
-	query: TelegramCallbackQuery
+	query: TelegramCallbackQuery,
+	acknowledge: (message?: string) => Promise<void>
 ) => Promise<void> | void;
 
 export interface NtfyConfig {

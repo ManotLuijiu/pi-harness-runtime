@@ -66,7 +66,7 @@ export interface TelegramCallbackQuery {
 /**
  * Callback handler function type
  */
-export type TelegramCallbackHandler = (callbackData: string, query: TelegramCallbackQuery) => Promise<void> | void;
+export type TelegramCallbackHandler = (callbackData: string, query: TelegramCallbackQuery, acknowledge: (message?: string) => Promise<void>) => Promise<void> | void;
 export interface NtfyConfig {
     server: string;
     topic: string;
