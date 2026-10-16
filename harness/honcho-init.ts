@@ -17,6 +17,9 @@ import {
   ensureMcpConfigDirectory,
   writeHonchoMcpConfig,
 } from "./honcho-memory.js";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,6 +77,49 @@ const HONCHO_SERVER_NAME = "honcho";
 
 /** Default workspace name for Pi harness */
 const DEFAULT_WORKSPACE_NAME = "pi-harness";
+
+/** Honcho config directory */
+const HONCHO_CONFIG_DIR = join(homedir(), ".pi-harness-runtime", "honcho");
+
+/** File to persist workspace ID */
+const WORKSPACE_ID_FILE = join(HONCHO_CONFIG_DIR, "workspace-id.json");
+
+// ---------------------------------------------------------------------------
+// Workspace ID Persistence
+// ---------------------------------------------------------------------------
+
+interface PersistedWorkspace {
+  workspaceId: string;
+  workspaceName: string;
+  createdAt: string;
+}
+
+function loadPersistedWorkspace(): PersistedWorkspace | null {
+  try {
+    if (existsSync(WORKSPACE_ID_FILE)) {
+      const data = readFileSync(WORKSPACE_ID_FILE, "utf-8");
+      return JSON.parse(data) as PersistedWorkspace;
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+function savePersistedWorkspace(workspaceId: string, workspaceName: string): void {
+  try {
+    mkdirSync(HONCHO_CONFIG_DIR, { recursive: true });
+    const data: PersistedWorkspace = {
+      workspaceId,
+      workspaceName,
+      createdAt: new Date().toISOString(),
+    };
+    writeFileSync(WORKSPACE_ID_FILE, JSON.stringify(data, null, 2));
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_persist", phase: "completed", workspaceId });
+  } catch (err) {
+    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "workspace_persist", phase: "failed", reason: String(err) });
+  }
+}
 
 /** Default assistant name */
 const DEFAULT_ASSISTANT_NAME = "pi-agent";
@@ -164,23 +210,41 @@ async function callHonchoTool(
  * Create or get workspace for the harness
  */
 async function ensureWorkspace(workspaceName: string): Promise<string | null> {
-  const result = await callHonchoTool("create_workspace", {
-    name: workspaceName,
-  });
-
-  if (result.success && result.result) {
-    const response = result.result as { id?: string; workspace?: { id?: string } };
-    return response.id ?? response.workspace?.id ?? null;
+  // First, check if we have a persisted workspace ID
+  const persisted = loadPersistedWorkspace();
+  if (persisted && persisted.workspaceName === workspaceName) {
+    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_reuse", phase: "completed", workspaceId: persisted.workspaceId });
+    return persisted.workspaceId;
   }
 
-  // Try get_workspace as fallback
+  // Try get_workspace first (idempotent)
   const getResult = await callHonchoTool("get_workspace", {
     name: workspaceName,
   });
 
   if (getResult.success && getResult.result) {
     const response = getResult.result as { id?: string };
-    return response.id ?? null;
+    const workspaceId = response.id ?? null;
+    if (workspaceId) {
+      savePersistedWorkspace(workspaceId, workspaceName);
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_reuse", phase: "completed", workspaceId });
+      return workspaceId;
+    }
+  }
+
+  // Create new workspace
+  const result = await callHonchoTool("create_workspace", {
+    name: workspaceName,
+  });
+
+  if (result.success && result.result) {
+    const response = result.result as { id?: string; workspace?: { id?: string } };
+    const workspaceId = response.id ?? response.workspace?.id ?? null;
+    if (workspaceId) {
+      savePersistedWorkspace(workspaceId, workspaceName);
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_create", phase: "completed", workspaceId });
+      return workspaceId;
+    }
   }
 
   logServiceEvent({
