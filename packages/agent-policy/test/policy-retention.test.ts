@@ -308,7 +308,7 @@ describe("Policy Retention Tests", () => {
       const manifest = await loader.load(TEST_DIR);
 
       // Full text should include actual content, not just contract pointers
-      const { renderFullPolicyText } = await import("../dist/policy-renderer.js");
+      const { renderFullPolicyText } = await import("../dist/index.js");
       const fullText = renderFullPolicyText(manifest);
 
       assert.ok(fullText.includes("Full Agents"), "Should include source title");
@@ -323,7 +323,7 @@ describe("Policy Retention Tests", () => {
       });
 
       const manifest = await loader.load(TEST_DIR);
-      const { checkPolicyTextSize } = await import("../dist/policy-renderer.js");
+      const { checkPolicyTextSize } = await import("../dist/index.js");
 
       // With normal-sized content, should fit in 100KB limit
       const result = checkPolicyTextSize(manifest, 100 * 1024);
