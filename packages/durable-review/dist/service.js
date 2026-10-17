@@ -1,0 +1,119 @@
+/**
+ * Durable Review Service
+ *
+ * Harness lifecycle, admission, status, cancellation and recovery.
+ */
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+/**
+ * Workspace storage path
+ */
+function getDurableDir() {
+    return join(homedir(), ".pi-harness-runtime", "durable");
+}
+/**
+ * Get workspace-specific directory
+ */
+export function getWorkspaceDir(workspaceKey) {
+    const dir = join(getDurableDir(), workspaceKey);
+    if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+    }
+    return dir;
+}
+/**
+ * Get SQLite database path for workspace
+ */
+export function getDatabasePath(workspaceKey) {
+    return join(getWorkspaceDir(workspaceKey), "review.sqlite");
+}
+/**
+ * Hash workspace path to get stable key
+ */
+export function hashWorkspaceKey(workspacePath) {
+    return createHash("sha256").update(workspacePath).digest("hex").slice(0, 16);
+}
+/**
+ * Get canonical workspace path (realpath)
+ */
+export async function getCanonicalPath(workspacePath) {
+    try {
+        const { realpathSync } = await import("node:fs");
+        return realpathSync(workspacePath);
+    }
+    catch {
+        return workspacePath;
+    }
+}
+/**
+ * Validate review request and compute deduplication key
+ */
+export function validateAndHashRequest(request) {
+    if (!request.requestId) {
+        return { valid: false, error: "requestId is required" };
+    }
+    if (!request.input?.workspacePath) {
+        return { valid: false, error: "workspacePath is required" };
+    }
+    const workspaceKey = hashWorkspaceKey(request.input.workspacePath);
+    const inputHash = createHash("sha256")
+        .update(JSON.stringify(request.input))
+        .digest("hex")
+        .slice(0, 32);
+    return {
+        valid: true,
+        inputHash,
+        workspaceKey,
+        canonicalWorkspace: request.input.workspacePath,
+    };
+}
+/**
+ * Convert internal job record to API response
+ */
+export function toStatusResponse(job) {
+    return {
+        jobId: job.jobId,
+        status: job.status,
+        verdict: job.verdict,
+        findings: job.findings,
+        summary: job.summary,
+        error: job.error,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        completedAt: job.completedAt,
+    };
+}
+/**
+ * Create new job record from request
+ */
+export function createJobRecord(jobId, request, validation) {
+    const now = new Date().toISOString();
+    return {
+        jobId,
+        requestId: request.requestId,
+        workspacePath: request.input.workspacePath,
+        canonicalWorkspace: validation.canonicalWorkspace,
+        workspaceKey: validation.workspaceKey,
+        inputHash: validation.inputHash,
+        provider: request.provider,
+        model: request.model,
+        maxPasses: request.maxPasses ?? 5,
+        maxToolCalls: request.maxToolCalls ?? 100,
+        status: "queued",
+        createdAt: now,
+        updatedAt: now,
+    };
+}
+/**
+ * Job status constants
+ */
+export const JOB_STATUS = {
+    QUEUED: "queued",
+    RUNNING: "running",
+    COMPLETED: "completed",
+    FAILED: "failed",
+    CANCELLED: "cancelled",
+};
+//# sourceMappingURL=service.js.map
