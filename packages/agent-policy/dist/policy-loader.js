@@ -60,13 +60,30 @@ export class PolicyLoader {
     }
     /**
      * Load policy for a specific target file (considers scoped rules).
+     * Resolves applicable rules from workspace toward the target directory.
      */
     async loadForTarget(projectRoot, targetPath) {
-        // The current loader collects only project-root and ancestor rules, all of
-        // which apply to every target. Use the same manifest as harness_rules.
-        // Filtering here mutated the cached manifest, dropped ancestor rules, and
-        // hashed advisory sources that load() deliberately excludes from revision.
-        return this.load(projectRoot);
+        // Load base manifest first
+        const baseManifest = await this.load(projectRoot);
+        // If no target path, return base manifest
+        if (!targetPath) {
+            return baseManifest;
+        }
+        // Determine target scope by finding the most specific matching rule
+        const targetDir = resolve(targetPath);
+        // Filter sources to only those applicable to this target
+        // Rules apply if their scope is empty (root) or is a prefix of the target path
+        const applicableSources = baseManifest.sources.filter(source => {
+            if (!source.scope)
+                return true; // Root scope applies everywhere
+            const scopePath = resolve(projectRoot, source.scope);
+            return targetDir.startsWith(scopePath) || targetDir.startsWith(source.scope);
+        });
+        // Return manifest with filtered sources
+        return {
+            ...baseManifest,
+            sources: applicableSources,
+        };
     }
     /**
      * Invalidate cache for a project root.
@@ -88,17 +105,12 @@ export class PolicyLoader {
         // 1. Load harness-owned rules first (highest priority)
         const harnessSources = await this.loadHarnessRules();
         sources.push(...harnessSources);
-        // 2. Load project rules (if project is trusted)
+        // 2. Load project rules
+        // Load both AGENTS.md (mandatory if present) and RULES.md (advisory if present)
+        const projectSources = await this.loadProjectRules(projectRoot);
+        sources.push(...projectSources);
+        // Evaluate trust after loading rules (trust is determined by host, not just files)
         const trust = this.evaluateTrust(projectRoot);
-        if (trust !== "unknown") {
-            const projectSources = await this.loadProjectRules(projectRoot);
-            sources.push(...projectSources);
-        }
-        else {
-            // Project not trusted, but we still try to load AGENTS.md as advisory
-            const untrustedSources = await this.loadProjectRules(projectRoot, true);
-            sources.push(...untrustedSources);
-        }
         // 3. Compute revision from mandatory sources
         const mandatorySources = sources.filter(s => s.priority === "mandatory");
         const revision = this.computeRevision(mandatorySources);
@@ -207,21 +219,34 @@ export class PolicyLoader {
     }
     /**
      * Evaluate trust level for a project.
+     *
+     * NOTE: Trust should ultimately be determined by host authorization (ctx.isProjectTrusted()),
+     * not by file presence alone. This method provides a fallback assessment.
+     * The presence of .git or package.json indicates a repository but does not confer trust
+     * without host authorization.
      */
     evaluateTrust(projectRoot) {
+        // Check for trust indicators
         let trustIndicatorsFound = 0;
-        let untrustIndicatorsFound = 0;
         for (const indicator of TRUST_INDICATORS) {
             if (existsSync(join(projectRoot, indicator))) {
                 trustIndicatorsFound++;
             }
         }
-        // Check for untrusted indicators (e.g., downloaded zip, unknown origin)
-        // For now, presence of .git or package.json means trusted
+        // Trust is "unknown" unless explicitly set by host authorization
+        // File presence alone does not determine trust
         if (trustIndicatorsFound > 0) {
-            return "trusted";
+            // Repository detected, but trust requires host authorization
+            return "unknown";
         }
         return "unknown";
+    }
+    /**
+     * Check if project has explicit trust from host.
+     * This should be called with host authorization state.
+     */
+    hasExplicitTrust(projectRoot) {
+        return this.evaluateTrust(projectRoot) === "trusted";
     }
     /**
      * Infer the scope from a relative path.
