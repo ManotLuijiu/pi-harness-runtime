@@ -16,6 +16,21 @@ export declare function renderSystemContract(manifest: PolicyManifest): string;
  */
 export declare function parseSections(content: string, source: string, scope: string, priority: "mandatory" | "advisory"): PolicySection[];
 /**
+ * Render full policy text for injection after compaction.
+ * This includes the ACTUAL rule file contents, not just a contract pointer.
+ * Used after session_compact to deliver fresh policy text to the model.
+ */
+export declare function renderFullPolicyText(manifest: PolicyManifest): string;
+/**
+ * Check if full policy text would fit in context.
+ * Returns { fits: true } or { fits: false, reason: string, bytes: number }.
+ */
+export declare function checkPolicyTextSize(manifest: PolicyManifest, maxBytes?: number): {
+    fits: boolean;
+    bytes?: number;
+    reason?: string;
+};
+/**
  * Render full rules for the harness_rules tool.
  */
 export declare function renderFullRules(manifest: PolicyManifest, options?: {

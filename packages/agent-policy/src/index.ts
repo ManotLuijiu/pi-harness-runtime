@@ -40,6 +40,8 @@ export {
   renderFullRules, 
   renderManifestSummary,
   renderFindingEnvelope,
+  renderFullPolicyText,
+  checkPolicyTextSize,
   parseSections,
   createCleanEnvelope,
   createDegradedEnvelope,

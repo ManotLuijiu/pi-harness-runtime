@@ -26,8 +26,11 @@ import { getPolicyStore } from "./policy-store.js";
 import { 
   renderSystemContract, 
   renderFullRules, 
+  renderFullPolicyText,
+  checkPolicyTextSize,
 } from "./policy-renderer.js";
 import { classifyToolCall } from "./types.js";
+import { checkSshNecessity } from "./ssh-guard.js";
 import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -78,11 +81,26 @@ export function registerAgentPolicy(
         "system_prompt"
       );
 
-      // Render and inject contract
-      const contract = renderSystemContract(manifest);
+      // Decide what to deliver based on compaction state
+      let policyText: string;
+      if (needsFullDelivery) {
+        // After compaction, deliver FULL policy text so model has actual rules
+        const sizeCheck = checkPolicyTextSize(manifest);
+        if (sizeCheck.fits) {
+          policyText = renderFullPolicyText(manifest);
+        } else {
+          // Too large, deliver contract with warning
+          policyText = renderSystemContract(manifest) +
+            `\n[WARNING: ${sizeCheck.reason}]`;
+        }
+        needsFullDelivery = false;
+      } else {
+        // Normal delivery: compact contract
+        policyText = renderSystemContract(manifest);
+      }
 
       // Build augmented system prompt
-      const augmentedPrompt = event.systemPrompt + "\n\n" + contract;
+      const augmentedPrompt = event.systemPrompt + "\n\n" + policyText;
 
       // Log for debugging
       logInfo("[agent-policy]", `Delivered policy ${manifest.revision} to session ${receipt.sessionId}`);
@@ -155,12 +173,30 @@ Use harness_rules to check policy status.
         }
       }
 
+      // Check SSH guard for shell/bash commands
+      if ((toolName === "bash" || toolName === "shell" || toolName === "ctx_execute") && input && typeof input === "object") {
+        const inputObj = input as Record<string, unknown>;
+        const command = String(inputObj.command ?? "");
+        
+        // Check if this is an SSH command
+        if (/\bssh\b/.test(command)) {
+          const sshCheck = await checkSshNecessity(command);
+          if (!sshCheck.allowed) {
+            logInfo("[agent-policy]", `Blocked SSH to local destination: ${sshCheck.message}`);
+            return {
+              block: true,
+              reason: `[SSH GUARD] ${sshCheck.message}`,
+            };
+          }
+        }
+      }
+
       // Policy satisfied, allow the call
       return {};
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       logError("[agent-policy]", `Policy check failed: ${errorMessage}`);
-      
+
       // On error, fail open for the command but log the issue
       // This matches pi-lens's total handler guard behavior
       return {};
@@ -336,24 +372,26 @@ Use harness_rules to check policy status.
     logInfo("[agent-policy]", `Session started: ${sessionId} in ${cwd}`);
   });
 
-  // ---------------------------------------------------------------------------
-  // context: Request-time policy delivery
-  // ---------------------------------------------------------------------------
-  // session_compact: Invalidate delivery coverage for next request
-  // ---------------------------------------------------------------------------
-  //
-  // After compaction, clear receipts so the next before_agent_start delivers fresh policy.
-  // This ensures the model sees current rules after context recovery.
-  //
+  // Track if we need full policy delivery (after compaction)
+  let needsFullDelivery = false;
 
+  // ---------------------------------------------------------------------------
+  // session_compact: Flag for full policy delivery
+  // ---------------------------------------------------------------------------
+  //
+  // After compaction, we must deliver FULL policy text on next before_agent_start.
+  // The model needs actual rule content, not a reminder pointer.
+  //
   pi.on("session_compact", (_event: SessionCompactEvent, ctx: unknown) => {
     const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
-    
-    // Clear receipts for this session so next request gets fresh policy delivery
-    // This ensures rules are re-delivered after compaction without stale receipt blocking
+
+    // Clear receipts so before_agent_start will re-deliver
     store.clearSession(sessionId);
-    
-    logInfo("[agent-policy]", `Session compact: cleared receipts for session ${sessionId}`);
+
+    // Flag that next before_agent_start should deliver full text
+    needsFullDelivery = true;
+
+    logInfo("[agent-policy]", `Session compact: flagged for full policy delivery to session ${sessionId}`);
   });
 
   // ---------------------------------------------------------------------------

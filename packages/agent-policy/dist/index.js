@@ -19,7 +19,7 @@
 // Policy Components
 export { PolicyLoader, createPolicyLoader } from "./policy-loader.js";
 export { PolicyStore, getPolicyStore, resetPolicyStore } from "./policy-store.js";
-export { renderSystemContract, renderFullRules, renderManifestSummary, renderFindingEnvelope, parseSections, createCleanEnvelope, createDegradedEnvelope, } from "./policy-renderer.js";
+export { renderSystemContract, renderFullRules, renderManifestSummary, renderFindingEnvelope, renderFullPolicyText, checkPolicyTextSize, parseSections, createCleanEnvelope, createDegradedEnvelope, } from "./policy-renderer.js";
 // Extension Registration
 export { registerAgentPolicy, registerDefault } from "./extension.js";
 // Tool Classifier
