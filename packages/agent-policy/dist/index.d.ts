@@ -19,7 +19,7 @@
 export type { AgentPolicyConfig, HarnessRulesInput, HarnessRulesOutput, MinimaxFindingEnvelope, PolicyFinding, PolicyManifest, PolicyReceipt, PolicySection, PolicySource, ToolCallCapability, HarnessAgentVerdict, } from "./types.js";
 export { PolicyLoader, createPolicyLoader } from "./policy-loader.js";
 export { PolicyStore, getPolicyStore, resetPolicyStore } from "./policy-store.js";
-export { renderSystemContract, renderFullRules, renderManifestSummary, renderFindingEnvelope, parseSections, createCleanEnvelope, createDegradedEnvelope, } from "./policy-renderer.js";
+export { renderSystemContract, renderFullRules, renderManifestSummary, renderFindingEnvelope, renderFullPolicyText, checkPolicyTextSize, parseSections, createCleanEnvelope, createDegradedEnvelope, } from "./policy-renderer.js";
 export { registerAgentPolicy, registerDefault } from "./extension.js";
 export { classifyToolCall } from "./types.js";
 //# sourceMappingURL=index.d.ts.map

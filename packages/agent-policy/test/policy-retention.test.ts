@@ -292,8 +292,47 @@ describe("Policy Retention Tests", () => {
 
       // Note partial delivery (only section 1)
       const receipt = store.noteDelivered(sessionId, manifest, "tool", ["section-1"]);
-
       assert.deepStrictEqual(receipt.sectionsDelivered, ["section-1"]);
+    });
+  });
+
+  // --- Full Policy Text Delivery Tests ---
+  describe("Full policy text delivery", () => {
+    it("should compute full policy text after revision change", async () => {
+      writeFileSync(AGENTS_MD, "# Full Agents\n\n## Rule 1\n\nContent 1.\n\n## Rule 2\n\nContent 2.", "utf8");
+
+      const loader = new PolicyLoader({
+        harnessRulesPath: new URL(`file://${AGENTS_MD}`),
+      });
+
+      const manifest = await loader.load(TEST_DIR);
+
+      // Full text should include actual content, not just contract pointers
+      const { renderFullPolicyText } = await import("../dist/policy-renderer.js");
+      const fullText = renderFullPolicyText(manifest);
+
+      assert.ok(fullText.includes("Full Agents"), "Should include source title");
+      assert.ok(fullText.includes("Rule 1"), "Should include section heading");
+      assert.ok(fullText.includes("Content 1"), "Should include actual content");
+      assert.ok(fullText.includes("revision="), "Should include revision info");
+    });
+
+    it("should detect when full policy exceeds size limit", async () => {
+      const loader = new PolicyLoader({
+        harnessRulesPath: new URL(`file://${AGENTS_MD}`),
+      });
+
+      const manifest = await loader.load(TEST_DIR);
+      const { checkPolicyTextSize } = await import("../dist/policy-renderer.js");
+
+      // With normal-sized content, should fit in 100KB limit
+      const result = checkPolicyTextSize(manifest, 100 * 1024);
+      assert.strictEqual(result.fits, true, "Normal policy should fit in 100KB");
+
+      // With very small limit, should report overflow
+      const smallResult = checkPolicyTextSize(manifest, 10);
+      assert.strictEqual(smallResult.fits, false, "Should report when limit is too small");
+      assert.ok(smallResult.reason?.includes("exceeds limit"), "Should explain overflow");
     });
   });
 });

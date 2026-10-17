@@ -115,6 +115,65 @@ export function parseSections(content, source, scope, priority) {
     return sections;
 }
 // ---------------------------------------------------------------------------
+// Full Policy Text Rendering
+// ---------------------------------------------------------------------------
+/**
+ * Render full policy text for injection after compaction.
+ * This includes the ACTUAL rule file contents, not just a contract pointer.
+ * Used after session_compact to deliver fresh policy text to the model.
+ */
+export function renderFullPolicyText(manifest) {
+    const lines = [];
+    lines.push(`PI-HARNESS POLICY (full text) revision=${manifest.revision} coverage=${manifest.coverage}`);
+    lines.push("");
+    // Include all mandatory sources with their full content
+    for (const source of manifest.sources) {
+        if (source.priority === "mandatory" || source.harnessOwned) {
+            const content = readSourceContent(source.path);
+            if (content) {
+                lines.push(`--- ${source.path} [${source.priority}] ---`);
+                lines.push("");
+                lines.push(content);
+                lines.push("");
+            }
+        }
+    }
+    // Include advisory sources if they exist
+    for (const source of manifest.sources) {
+        if (source.priority === "advisory" && !source.harnessOwned) {
+            const content = readSourceContent(source.path);
+            if (content) {
+                lines.push(`--- ${source.path} [advisory] ---`);
+                lines.push("");
+                lines.push(content);
+                lines.push("");
+            }
+        }
+    }
+    return lines.join("\n");
+}
+/**
+ * Check if full policy text would fit in context.
+ * Returns { fits: true } or { fits: false, reason: string, bytes: number }.
+ */
+export function checkPolicyTextSize(manifest, maxBytes = 100 * 1024) {
+    let totalBytes = 0;
+    for (const source of manifest.sources) {
+        const content = readSourceContent(source.path);
+        if (content) {
+            totalBytes += Buffer.byteLength(content, "utf8");
+        }
+    }
+    if (totalBytes <= maxBytes) {
+        return { fits: true, bytes: totalBytes };
+    }
+    return {
+        fits: false,
+        bytes: totalBytes,
+        reason: `Full policy text (${totalBytes} bytes) exceeds limit (${maxBytes} bytes). Use harness_rules read for selective retrieval.`,
+    };
+}
+// ---------------------------------------------------------------------------
 // Full Rules Rendering
 // ---------------------------------------------------------------------------
 /**
