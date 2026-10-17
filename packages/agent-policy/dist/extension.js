@@ -11,6 +11,7 @@ import { logError, logInfo } from "./file-logger.js";
 import { getPolicyStore } from "./policy-store.js";
 import { renderSystemContract, renderFullRules, } from "./policy-renderer.js";
 import { classifyToolCall } from "./types.js";
+import { checkSshNecessity } from "./ssh-guard.js";
 import { randomUUID } from "node:crypto";
 // ---------------------------------------------------------------------------
 // Extension Registration
@@ -104,6 +105,22 @@ Use harness_rules to check policy status.
                         block: true,
                         reason: `[GIT GUARD] Blocking git operation until findings are resolved.\n\n${blockingFindings}`,
                     };
+                }
+            }
+            // Check SSH guard for shell/bash commands
+            if ((toolName === "bash" || toolName === "shell" || toolName === "ctx_execute") && input && typeof input === "object") {
+                const inputObj = input;
+                const command = String(inputObj.command ?? "");
+                // Check if this is an SSH command
+                if (/\bssh\b/.test(command)) {
+                    const sshCheck = await checkSshNecessity(command);
+                    if (!sshCheck.allowed) {
+                        logInfo("[agent-policy]", `Blocked SSH to local destination: ${sshCheck.message}`);
+                        return {
+                            block: true,
+                            reason: `[SSH GUARD] ${sshCheck.message}`,
+                        };
+                    }
                 }
             }
             // Policy satisfied, allow the call

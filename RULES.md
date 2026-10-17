@@ -52,3 +52,22 @@ Follow conventional commits:
 - `fix:` for bug fixes
 - `feat:` for new features
 - `chore:` for maintenance tasks
+
+## SSH Necessity Check
+
+Before every SSH invocation:
+
+1. Run `ip address` in the current execution environment.
+2. Identify the SSH destination, including any hostname or SSH alias.
+3. Compare its resolved address with this environment's local addresses.
+4. If the destination is this same server and the required user,
+   filesystem, and execution environment match, run the command locally.
+5. If SSH is still necessary, briefly state why.
+
+Do not assume the current terminal is on a different machine.
+
+**Automatic enforcement:** The harness intercepts SSH commands and performs this check automatically using `ip -j address` for machine-readable output. If it detects an unnecessary connection back to the current environment, it returns:
+
+> SSH destination matches this environment. Run the command locally, or explain why a separate SSH session is required.
+
+Do not automatically rewrite SSH commands into local commands. SSH may intentionally use another account, a container boundary, or forwarding. Hostnames and SSH aliases need resolution; comparing the command's hostname directly with `ip address` output is insufficient.
