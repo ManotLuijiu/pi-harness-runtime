@@ -12,7 +12,10 @@ import type {
   ToolCallEvent,
   SessionStartEvent,
   BeforeAgentStartEvent,
+  SessionCompactEvent,
 } from "@earendil-works/pi-coding-agent";
+
+
 import type {
   AgentPolicyConfig,
   HarnessRulesInput,
@@ -331,6 +334,26 @@ Use harness_rules to check policy status.
     const cwd = getCwdFromContext(ctx);
     
     logInfo("[agent-policy]", `Session started: ${sessionId} in ${cwd}`);
+  });
+
+  // ---------------------------------------------------------------------------
+  // context: Request-time policy delivery
+  // ---------------------------------------------------------------------------
+  // session_compact: Invalidate delivery coverage for next request
+  // ---------------------------------------------------------------------------
+  //
+  // After compaction, clear receipts so the next before_agent_start delivers fresh policy.
+  // This ensures the model sees current rules after context recovery.
+  //
+
+  pi.on("session_compact", (_event: SessionCompactEvent, ctx: unknown) => {
+    const sessionId = getSessionIdFromCtx(ctx, fallbackSessionId);
+    
+    // Clear receipts for this session so next request gets fresh policy delivery
+    // This ensures rules are re-delivered after compaction without stale receipt blocking
+    store.clearSession(sessionId);
+    
+    logInfo("[agent-policy]", `Session compact: cleared receipts for session ${sessionId}`);
   });
 
   // ---------------------------------------------------------------------------

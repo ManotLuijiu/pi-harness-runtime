@@ -32,6 +32,7 @@ export declare class PolicyLoader {
     load(projectRoot: string): Promise<PolicyManifest>;
     /**
      * Load policy for a specific target file (considers scoped rules).
+     * Resolves applicable rules from workspace toward the target directory.
      */
     loadForTarget(projectRoot: string, targetPath?: string): Promise<PolicyManifest>;
     /**
@@ -52,8 +53,18 @@ export declare class PolicyLoader {
     private loadProjectRules;
     /**
      * Evaluate trust level for a project.
+     *
+     * NOTE: Trust should ultimately be determined by host authorization (ctx.isProjectTrusted()),
+     * not by file presence alone. This method provides a fallback assessment.
+     * The presence of .git or package.json indicates a repository but does not confer trust
+     * without host authorization.
      */
     private evaluateTrust;
+    /**
+     * Check if project has explicit trust from host.
+     * This should be called with host authorization state.
+     */
+    hasExplicitTrust(projectRoot: string): boolean;
     /**
      * Infer the scope from a relative path.
      */
