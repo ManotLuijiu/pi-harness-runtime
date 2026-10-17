@@ -7,7 +7,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PolicyManifest } from "../dist/types.js";
 import { PolicyLoader } from "../dist/policy-loader.js";
@@ -333,6 +333,48 @@ describe("Policy Retention Tests", () => {
       const smallResult = checkPolicyTextSize(manifest, 10);
       assert.strictEqual(smallResult.fits, false, "Should report when limit is too small");
       assert.ok(smallResult.reason?.includes("exceeds limit"), "Should explain overflow");
+    });
+  });
+
+  // --- Scope Separation Tests ---
+  describe("Scope separation", () => {
+    it("should NOT include harness rules when working outside harness repo", async () => {
+      // Create a harness rules file in a different location
+      const harnessRulesPath = join(TEST_DIR, "harness-rules", "AGENTS.md");
+      mkdirSync(dirname(harnessRulesPath), { recursive: true });
+      writeFileSync(harnessRulesPath, "# Harness Rules\n\nThese are harness-specific rules.", "utf8");
+
+      // Working in a different directory (not the harness repo)
+      const userProjectDir = join(TEST_DIR, "user-project");
+      mkdirSync(userProjectDir, { recursive: true });
+
+      const loader = new PolicyLoader({
+        harnessRulesPath: new URL(`file://${harnessRulesPath}`),
+      });
+
+      const manifest = await loader.load(userProjectDir);
+
+      // Harness rules should NOT be included since we're not in the harness repo
+      const harnessSources = manifest.sources.filter(s => s.harnessOwned);
+      assert.strictEqual(harnessSources.length, 0, "Harness rules should not apply outside harness repo");
+    });
+
+    it("should include harness rules when working inside harness repo", async () => {
+      // Create a harness rules file
+      writeFileSync(AGENTS_MD, "# Harness Rules\n\nThese are harness-specific rules.", "utf8");
+
+      const harnessDir = TEST_DIR; // The harness rules are in this directory
+
+      const loader = new PolicyLoader({
+        harnessRulesPath: new URL(`file://${AGENTS_MD}`),
+      });
+
+      // Working in the harness directory itself
+      const manifest = await loader.load(harnessDir);
+
+      // Harness rules SHOULD be included since we're in the harness repo
+      const harnessSources = manifest.sources.filter(s => s.harnessOwned);
+      assert.ok(harnessSources.length > 0, "Harness rules should apply inside harness repo");
     });
   });
 });

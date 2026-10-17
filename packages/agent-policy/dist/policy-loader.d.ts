@@ -44,7 +44,14 @@ export declare class PolicyLoader {
      */
     private buildManifest;
     /**
+     * Check if harness rules should apply to a given project root.
+     * Harness rules only apply when working inside the harness repository itself,
+     * not when shipped to user projects.
+     */
+    private harnessRulesApplyTo;
+    /**
      * Load harness-owned rule files.
+     * Only loads when working inside the harness repository itself.
      */
     private loadHarnessRules;
     /**
@@ -68,7 +75,7 @@ export declare class PolicyLoader {
     /**
      * Infer the scope from a relative path.
      */
-    private inferScope;
+    private _inferScope;
     /**
      * Normalize content for consistent hashing.
      */

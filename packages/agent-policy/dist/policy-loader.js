@@ -103,7 +103,7 @@ export class PolicyLoader {
         const sources = [];
         const errors = [];
         // 1. Load harness-owned rules first (highest priority)
-        const harnessSources = await this.loadHarnessRules();
+        const harnessSources = await this.loadHarnessRules(projectRoot);
         sources.push(...harnessSources);
         // 2. Load project rules
         // Load both AGENTS.md (mandatory if present) and RULES.md (advisory if present)
@@ -127,10 +127,28 @@ export class PolicyLoader {
         };
     }
     /**
-     * Load harness-owned rule files.
+     * Check if harness rules should apply to a given project root.
+     * Harness rules only apply when working inside the harness repository itself,
+     * not when shipped to user projects.
      */
-    async loadHarnessRules() {
+    harnessRulesApplyTo(projectRoot) {
+        const harnessPath = this.harnessRulesPath.toString().replace("file://", "");
+        const harnessDir = dirname(resolve(harnessPath));
+        const projectResolved = resolve(projectRoot);
+        // Harness rules apply only if project root is the harness repo or its parent
+        // This prevents pi-harness-runtime's contribution rules from leaking to user projects
+        return projectResolved === harnessDir || projectResolved.startsWith(harnessDir + "/");
+    }
+    /**
+     * Load harness-owned rule files.
+     * Only loads when working inside the harness repository itself.
+     */
+    async loadHarnessRules(projectRoot) {
         const sources = [];
+        // Only load harness rules when working inside the harness repository
+        if (!this.harnessRulesApplyTo(projectRoot)) {
+            return sources; // Empty - harness rules don't apply to this project
+        }
         // Load main harness AGENTS.md
         if (existsSync(this.harnessRulesPath)) {
             try {
@@ -139,7 +157,7 @@ export class PolicyLoader {
                 const sha256 = this.hashContent(normalized);
                 sources.push({
                     path: this.harnessRulesPath.toString(),
-                    scope: "", // Root scope - applies everywhere
+                    scope: resolve(dirname(this.harnessRulesPath.toString().replace("file://", ""))), // Scope to harness repo
                     priority: "mandatory",
                     sha256,
                     bytes: Buffer.byteLength(content, "utf8"),
@@ -162,7 +180,7 @@ export class PolicyLoader {
                     const sha256 = this.hashContent(normalized);
                     sources.push({
                         path: rulesPath.toString(),
-                        scope: "", // Root scope
+                        scope: resolve(dirname(rulesPath.toString().replace("file://", ""))), // Scope to harness repo
                         priority: "mandatory",
                         sha256,
                         bytes: Buffer.byteLength(content, "utf8"),
@@ -251,7 +269,7 @@ export class PolicyLoader {
     /**
      * Infer the scope from a relative path.
      */
-    inferScope(relativePath) {
+    _inferScope(relativePath) {
         // Extract directory component
         const segments = relativePath.split("/");
         if (segments.length <= 1) {
