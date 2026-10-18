@@ -187,13 +187,24 @@ export class NotificationCenter {
     /**
      * Send a notification to all configured channels
      */
-    async notify(event, context) {
+    async notify(event, context, options) {
+        const includeToggles = options?.includeToggles ?? true;
+        // Build payload
         const payload = this.buildPayload(event, context);
+        // Add toggle buttons if enabled
+        if (includeToggles && (this.adapters.size > 1 || this.adapters.has("telegram"))) {
+            payload.actionButtons = this.buildToggleButtons();
+            payload.enableInlineKeyboard = true;
+        }
         const results = [];
         // Send to all adapters in parallel
         const adapterEntries = Array.from(this.adapters.entries());
         await Promise.all(adapterEntries.map(async ([id, adapter]) => {
             try {
+                // Check if channel is enabled
+                if (!this.isChannelEnabled(id)) {
+                    return { success: true, channel: id, skipped: true };
+                }
                 // Redact sensitive data
                 const redactedPayload = this.redact(payload);
                 const result = await adapter.send(redactedPayload);
