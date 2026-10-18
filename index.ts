@@ -2054,7 +2054,19 @@ let _nc: {
 		ctx: Record<string, unknown>,
 		options?: { approveLabel?: string; rejectLabel?: string },
 	) => Promise<unknown>;
+	notifyWithButtons?: (
+		event: string,
+		ctx: Record<string, unknown>,
+		buttons: Array<{ text: string; action: string; targetId: string; url?: string }>,
+	) => Promise<unknown>;
 } | null = null;
+
+// Type for _nc.center
+type NcCenter = {
+	notifyWithApproval: Function;
+	notify: Function;
+	notifyWithButtons?: Function;
+};
 
 /**
  * Fire a Telegram notification event. Logs delivery outcomes.
@@ -2063,12 +2075,7 @@ let _nc: {
 async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
 	if (!_nc) return;
 	try {
-		const nc = _nc as {
-			center: {
-				notifyWithApproval: Function;
-				notify: Function;
-			};
-		};
+		const center = _nc!.center as NcCenter;
 
 		// Import policy engine dynamically to check if approval buttons needed
 		// This is a simple sync check - can be replaced with Jev-powered evaluation
@@ -2077,9 +2084,9 @@ async function nc(event: string, ctx: Record<string, unknown>): Promise<void> {
 		// Capture results for logging
 		let results: unknown;
 		if (requiresApproval(event)) {
-			results = await nc.center.notifyWithApproval(event as never, ctx as never);
+			results = await center.notifyWithApproval(event as never, ctx as never);
 		} else {
-			results = await nc.center.notify(event as never, ctx as never);
+			results = await center.notify(event as never, ctx as never);
 		}
 
 		// Log delivery outcomes to file
@@ -2730,10 +2737,11 @@ export default async function (pi: ExtensionAPI) {
 				const doneToken = _createPendingAction(sessionId, "done", projectRoot, "plan");
 				
 				// Use event type based on stage
-				if (hasReviewMarker) {
+if (hasReviewMarker) {
 					// Review stage: buttons are Code again and Done
 					const codeAgainToken = _createPendingAction(sessionId, "code_again", projectRoot, "review");
-					void nc.center.notifyWithButtons("CodexReviewDetected", {
+					// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
+				void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexReviewDetected", {
 						requirement: msg.text,
 						taskTitle: sessionId,
 						details: {
@@ -2746,9 +2754,10 @@ export default async function (pi: ExtensionAPI) {
 						{ text: "Code again", action: PING_PONG_ACTIONS.CODE_AGAIN, targetId: codeAgainToken },
 						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
 					]);
-				} else {
+} else {
 					// Plan stage: buttons are Code and Done
-					void nc.center.notifyWithButtons("CodexPlanDetected", {
+					// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
+				void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexPlanDetected", {
 						requirement: msg.text, // Full text, no truncation
 						taskTitle: sessionId,
 						details: {
