@@ -1,0 +1,41 @@
+# React Component Size Rules for ast-grep
+# Flags React components exceeding size thresholds
+
+rules:
+  - id: react-large-component
+    language: TypeScript
+    message: |
+      React component exceeds 150 lines. Consider extracting sub-components.
+
+      Guidelines:
+      - Extract sections with distinct purposes to <SubComponent />
+      - Move complex stateful logic to custom hooks (useXxx)
+      - Extract repeated JSX patterns to reusable components
+    severity: warning
+    rule:
+      and:
+        - kind: function_declaration
+          regex: "^[A-Z].*"
+        - hasDescendantKind: jsx_element
+    options:
+      maxLines: 150
+
+  - id: react-giant-component
+    language: TypeScript
+    message: |
+      React component exceeds 300 lines. MUST extract before committing.
+
+      This component is too large for maintainability.
+      Break it into smaller, focused components:
+      - Header/Footer/Sidebar sections
+      - List/item components
+      - Form sections
+      - Custom hooks for business logic
+    severity: error
+    rule:
+      and:
+        - kind: function_declaration
+          regex: "^[A-Z].*"
+        - hasDescendantKind: jsx_element
+    options:
+      maxLines: 300
