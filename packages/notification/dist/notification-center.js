@@ -139,6 +139,31 @@ export class NotificationCenter {
         return !current;
     }
     /**
+     * Build channel toggle buttons for inline keyboard
+     */
+    buildToggleButtons() {
+        const buttons = [];
+        // Add Telegram toggle if adapter exists
+        if (this.adapters.has("telegram")) {
+            const isEnabled = this.isChannelEnabled("telegram");
+            const icon = isEnabled ? "\u2705" : "\u2744";
+            buttons.push({
+                text: `${icon} Telegram: ${isEnabled ? "ON" : "OFF"}`,
+                callbackData: buildCallbackData("toggle_telegram", "settings"),
+            });
+        }
+        // Add LINE toggle if adapter exists
+        if (this.adapters.has("line")) {
+            const isEnabled = this.isChannelEnabled("line");
+            const icon = isEnabled ? "\u2705" : "\u2744";
+            buttons.push({
+                text: `${icon} LINE: ${isEnabled ? "ON" : "OFF"}`,
+                callbackData: buildCallbackData("toggle_line", "settings"),
+            });
+        }
+        return buttons;
+    }
+    /**
      * Set callback handler for Telegram adapters
      * Enables handling of inline keyboard button clicks (approve/reject)
      */
