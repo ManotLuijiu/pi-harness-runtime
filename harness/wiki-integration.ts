@@ -11,18 +11,29 @@ import path from "node:path";
 
 // Cache managers by workspace root to avoid recreating
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Cache managers by workspace root to avoid recreating
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const wikiManagers = new Map<string, any>();
+
+// Pre-load the wiki module for ESM compatibility
+let wikiModule: typeof import("../packages/wiki/dist/index.js") | null = null;
+async function getWikiModule() {
+  if (!wikiModule) {
+    wikiModule = await import("../packages/wiki/dist/index.js");
+  }
+  return wikiModule;
+}
 
 /**
  * Get or create wiki manager for a workspace
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getWiki(workspaceRoot: string): any {
+async function getWiki(workspaceRoot: string): Promise<any> {
   let manager = wikiManagers.get(workspaceRoot);
   if (!manager) {
-    const { createWikiManager } = require("../packages/wiki/dist/index.js");
+    const mod = await getWikiModule();
     const projectId = path.basename(workspaceRoot) || "unknown";
-    manager = createWikiManager(workspaceRoot, projectId);
+    manager = mod.createWikiManager(workspaceRoot, projectId);
     wikiManagers.set(workspaceRoot, manager);
   }
   return manager;

@@ -466,8 +466,14 @@ verification:
     const entries = Array.from(merged.values());
     const content = JSON.stringify(entries, null, 2);
     const tmpFile = this.config.indexFile + ".tmp";
+    // Validate temp path for symlink containment
+    this.ensureWithinDirectory(tmpFile, this.config.harnessDir);
     writeFileSync(tmpFile, content, "utf8");
     renameSync(tmpFile, this.config.indexFile);
+
+    // Clear successfully persisted mutations
+    this.modifiedIds.clear();
+    this.deletedIds.clear();
   }
 
   /**
