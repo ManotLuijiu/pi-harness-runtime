@@ -596,14 +596,14 @@ mkdir -p ~/.pi-harness-runtime/keys
 cat > ~/.pi-harness-runtime/keys/paperclip-config.json << 'EOF'
 {
   "apiKey": "your-agent-api-key-here",
-  "baseUrl": "https://paperclip.moo-vpn.online/api",
+  "baseUrl": "https://paperclip.example.com/api",
   "companyId": "your-company-id"
 }
 EOF
 
 # Option 2: Individual files
 # echo "your-agent-api-key-here" > ~/.pi-harness-runtime/keys/paperclip-api-key.txt
-# echo "https://paperclip.moo-vpn.online/api" > ~/.pi-harness-runtime/keys/paperclip-base-url.txt
+# echo "https://paperclip.example.com/api" > ~/.pi-harness-runtime/keys/paperclip-base-url.txt
 ```
 
 ### Architecture

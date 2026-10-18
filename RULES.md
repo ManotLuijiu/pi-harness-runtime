@@ -71,3 +71,48 @@ Do not assume the current terminal is on a different machine.
 > SSH destination matches this environment. Run the command locally, or explain why a separate SSH session is required.
 
 Do not automatically rewrite SSH commands into local commands. SSH may intentionally use another account, a container boundary, or forwarding. Hostnames and SSH aliases need resolution; comparing the command's hostname directly with `ip address` output is insufficient.
+
+## Sensitive Data (STRICT)
+
+**This is a PUBLIC repository. Never put sensitive data in the codebase.**
+
+All secrets, tokens, URLs, API keys, and credentials MUST be stored in key files:
+
+```
+~/.pi-harness-runtime/keys/
+├── telegram-bot-token.txt      # Telegram bot token
+├── telegram-chat-id.txt       # Authorized chat ID
+├── telegram-webhook-url.txt   # Webhook URL
+├── telegram-webhook-secret.txt # Webhook secret token
+├── skills-saas-url.txt        # Skills SaaS base URL
+├── paperclip-base-url.txt     # Paperclip API URL
+├── r2-account-id.txt        # Cloudflare R2 account ID
+├── r2-access-key-id.txt     # R2 access key ID
+├── r2-secret-access-key.txt  # R2 secret access key
+├── r2-bucket-name.txt       # R2 bucket name
+├── r2-endpoint.txt          # R2 endpoint (usually auto)
+├── r2-public-url-prefix.txt # R2 public URL prefix (optional)
+└── ...
+```
+
+**RULES (enforced strictly):**
+- No hardcoded URLs, tokens, API keys, or secrets in source code
+- No real domain names (use `example.com` or `yourdomain.com` as placeholder)
+- No API keys, tokens, or credentials in comments
+- No IP addresses in source code
+- All external service URLs must be in key files or environment variables
+- README/docs must use generic placeholders
+
+**Loading secrets from key files:**
+```bash
+# Read from key file
+TELEGRAM_BOT_TOKEN=$(cat ~/.pi-harness-runtime/keys/telegram-bot-token.txt)
+
+# Or in code
+const token = readFileSync("~/.pi-harness-runtime/keys/telegram-bot-token.txt", "utf8").trim();
+```
+
+**Scanning:** Before committing, run:
+```bash
+grep -rn "moo-vpn\|bunchee\|moo-ai\|moocoding\|sk-\|api_key\|token\s*=" --include="*.ts" --include="*.md"
+```

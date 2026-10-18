@@ -17,6 +17,9 @@ const keysDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime
 
 const botToken = fs.readFileSync(path.join(keysDir, "telegram-bot-token.txt"), "utf8").trim();
 const chatId = fs.readFileSync(path.join(keysDir, "telegram-chat-id.txt"), "utf8").trim();
+const webhookUrl = fs.existsSync(path.join(keysDir, "telegram-webhook-url.txt"))
+  ? fs.readFileSync(path.join(keysDir, "telegram-webhook-url.txt"), "utf8").trim()
+  : "https://yourdomain.com/api/telegram/webhook";
 
 async function sendTestApproval() {
   const message = `*Test Approval Request*\n\n` +
@@ -54,7 +57,7 @@ async function sendTestApproval() {
     console.log(`✅ Test message sent! Message ID: ${data.result?.message_id}`);
     console.log(`\n📱 Check your Telegram for the approval message.`);
     console.log(`\nWhen you click a button, the webhook at:`);
-    console.log(`  https://telegram.moo-vpn.online/api/telegram/webhook`);
+    console.log(`  ${webhookUrl}`);
     console.log(`\nwill receive the callback and process it.`);
   } else {
     console.error(`❌ Failed to send message:`, data);
