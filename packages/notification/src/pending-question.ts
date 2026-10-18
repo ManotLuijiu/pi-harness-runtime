@@ -1,0 +1,594 @@
+/**
+ * Pending Question Controller
+ * 
+ * Manages pending questions that require human response.
+ * Supports multiple channels (Telegram, LINE) and Jev evaluation.
+ */
+
+import { logWarn } from "./file-logger.js";
+
+/**
+ * Question kinds
+ */
+export type QuestionKind = 
+  | "routine"      // "Should I continue?"
+  | "approval"      // "Want me to implement X?"
+  | "clarification" // "Do you mean X or Y?"
+  | "explicit";     // Explicit approval required
+
+/**
+ * Question states
+ */
+export type QuestionState = 
+  | "pending"      // Waiting for response
+  | "evaluating"   // Jev is evaluating
+  | "resolved"     // User answered
+  | "cancelled"    // Cancelled (e.g., session switch)
+  | "expired";     // Timed out
+
+/**
+ * Channel delivery states
+ */
+export interface ChannelDeliveryState {
+  delivered: boolean;
+  deliveredAt?: Date;
+  error?: string;
+}
+
+/**
+ * Pending Question
+ */
+export interface PendingQuestion {
+  /** Unique request ID for this question */
+  requestId: string;
+  /** Session ID */
+  sessionId: string;
+  /** Workspace path */
+  workspacePath: string;
+  /** Job ID if associated */
+  jobId?: string;
+  /** The question text */
+  questionText: string;
+  /** Question kind */
+  kind: QuestionKind;
+  /** Current state */
+  state: QuestionState;
+  /** When created */
+  createdAt: Date;
+  /** When evaluation is due (for Jev) */
+  dueAt?: Date;
+  /** When resolved */
+  resolvedAt?: Date;
+  /** Resolution: "yes", "no", "clarification", or undefined */
+  resolution?: "yes" | "no" | "clarification";
+  /** Who resolved it */
+  resolvedBy?: "user" | "jev" | "timeout";
+  /** Channel delivery states */
+  deliveryState: {
+    telegram?: ChannelDeliveryState;
+    line?: ChannelDeliveryState;
+  };
+  /** Whether user was notified */
+  userNotified: boolean;
+  /** For deduplication: last notified question text */
+  lastNotifiedQuestion?: string;
+  /** State revision for deduplication */
+  revision: number;
+}
+
+/**
+ * Question detection result
+ */
+export interface DetectionResult {
+  detected: boolean;
+  questionText?: string;
+  kind?: QuestionKind;
+  isRoutine?: boolean;
+}
+
+/**
+ * Jev evaluation result
+ */
+export interface JevDecision {
+  action: "continue" | "wait" | "clarify" | "stop";
+  reason: string;
+  eligible: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Pending Question Controller
+ */
+export class PendingQuestionController {
+  private questions: Map<string, PendingQuestion> = new Map();
+  private currentQuestion: PendingQuestion | null = null;
+  private jevDecisionCallback?: (question: PendingQuestion, decision: JevDecision) => void;
+  private userAnswerCallback?: (question: PendingQuestion, answer: string) => void;
+  private config: {
+    evaluationDelayMs: number;
+    jevEnabled: boolean;
+  };
+
+  constructor(config?: {
+    evaluationDelayMs?: number;
+    jevEnabled?: boolean;
+  }) {
+    this.config = {
+      evaluationDelayMs: config?.evaluationDelayMs ?? 5 * 60 * 1000, // 5 minutes
+      jevEnabled: config?.jevEnabled ?? true,
+    };
+  }
+
+  /**
+   * Set callback for Jev decisions
+   */
+  onJevDecision(callback: (question: PendingQuestion, decision: JevDecision) => void): void {
+    this.jevDecisionCallback = callback;
+  }
+
+  /**
+   * Set callback for user answers
+   */
+  onUserAnswer(callback: (question: PendingQuestion, answer: string) => void): void {
+    this.userAnswerCallback = callback;
+  }
+
+  /**
+   * Generate unique request ID
+   */
+  private generateRequestId(): string {
+      return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+	/**
+	 * Detect if text contains a question requiring response
+	 */
+	detectQuestion(text: string, _options?: {
+		sessionId?: string;
+		workspacePath?: string;
+		jobId?: string;
+	}
+	): DetectionResult {
+		// Find all question positions and extract each question sentence
+		const questionPositions: Array<{ start: number; end: number; sentence: string }> = [];
+		let searchFrom = 0;
+		
+		while (true) {
+			const questionIndex = text.indexOf('?', searchFrom);
+			if (questionIndex === -1) break;
+			
+			// Check if this question is inside quotes - if so, skip
+			const beforeQuestion = text.substring(0, questionIndex);
+			
+			// Count unescaped quotes before and after
+			const openQuotes = (beforeQuestion.match(/"/g) || []).length;
+			const isInsideQuotes = openQuotes % 2 === 1;
+			
+			if (isInsideQuotes) {
+				// This question is inside quotes - skip it
+				searchFrom = questionIndex + 1;
+				continue;
+			}
+			
+			// Extract sentence for this question
+			let sentenceStart = searchFrom;
+			
+			// Look backwards for sentence start
+			for (let i = questionIndex - 1; i >= searchFrom; i--) {
+				const char = text[i];
+				if (char === '.' || char === '!' || char === '\n') {
+					sentenceStart = i + 1;
+					break;
+				}
+			}
+			
+			const sentence = text.substring(sentenceStart, questionIndex + 1).trim();
+			questionPositions.push({ start: sentenceStart, end: questionIndex, sentence });
+			searchFrom = questionIndex + 1;
+		}
+		
+		// Check each question for approval/clarification first (priority)
+		for (const q of questionPositions) {
+			// Skip quoted questions
+			if (this.isQuotedOrCode(text, q.sentence)) {
+				continue;
+			}
+			
+			const isRoutine = this.isRoutineContinuation(q.sentence);
+			const kind = this.determineKind(q.sentence, isRoutine);
+			
+			// Return first approval or clarification question found
+			if (kind === "approval" || kind === "clarification") {
+				return {
+					detected: true,
+					questionText: q.sentence,
+					kind,
+					isRoutine,
+				};
+			}
+		}
+		
+		// If no approval/clarification found, return first non-quoted routine question
+		for (const q of questionPositions) {
+			if (this.isQuotedOrCode(text, q.sentence)) {
+				continue;
+			}
+			
+			const isRoutine = this.isRoutineContinuation(q.sentence);
+			
+			return {
+				detected: true,
+				questionText: q.sentence,
+				kind: "routine",
+				isRoutine,
+			};
+		}
+		
+		// No question found - check for approval patterns without ?
+		const approvalResult = this.checkApprovalPatterns(text);
+		if (approvalResult) return approvalResult;
+		
+		return { detected: false };
+	}
+	
+	/**
+	 * Check for approval patterns in text without question mark
+	 * Only triggers if the text is short and looks like a question (no example: prefix)
+	 */
+	private checkApprovalPatterns(text: string): DetectionResult | null {
+		// Don't trigger on example/quotation text or code
+		const lower = text.toLowerCase();
+		if (/\b(example|such as|like this|for instance)\b/.test(lower)) {
+			return null;
+		}
+		
+		// Don't trigger on code blocks
+		if (/```/.test(text)) {
+			return null;
+		}
+		
+		// Only trigger if text is reasonably short (likely a real question, not a paragraph)
+		if (text.length > 200) {
+			return null;
+		}
+		
+		const approvalPatterns = [
+			/\bwant me to\b/i,
+			/\bwould you like me to\b/i,
+			/\bshall i\b/i,
+			/\bshould i add\b/i,
+			/\bshould i implement\b/i,
+			/\bshould we add\b/i,
+			/\bshould we implement\b/i,
+			/\bdo you want me to\b/i,
+			/\bcan i (start|proceed|continue)\b/i,
+		];
+		
+		for (const pattern of approvalPatterns) {
+			if (pattern.test(text)) {
+				return {
+					detected: true,
+					questionText: text.trim(),
+					kind: "approval",
+					isRoutine: false,
+				};
+			}
+		}
+		
+		return null;
+	}
+
+  /**
+   * Check if question is quoted or in code block
+   */
+  private isQuotedOrCode(fullText: string, question: string): boolean {
+    // Normalize question for comparison - remove surrounding quotes if present
+    let normalizedQuestion = question.trim();
+		
+    // Check if the question itself starts with a quote
+    const startsWithQuote = normalizedQuestion.startsWith('"') || normalizedQuestion.startsWith("'");
+    if (startsWithQuote) {
+      return true;
+    }
+		
+    // Check if question appears inside code block
+    const codeBlockPattern = /```[\s\S]*?```/g;
+    const codeBlocks = fullText.match(codeBlockPattern) || [];
+    for (const block of codeBlocks) {
+      // Check if the normalized question is inside this code block
+      if (block.includes(normalizedQuestion)) {
+        return true;
+      }
+    }
+		
+    // Check if the question text appears inside quotes in the original full text
+    // This catches cases like: Here's an example: "Want me to implement this?"
+    // where the extracted sentence is "Here's an example: "Want me to implement this?"
+    // but we need to check if the CORE question is inside quotes
+    const questionWithoutQ = normalizedQuestion.replace(/\?$/, '');
+		
+    // Look for the question text inside double quotes in the original text
+    // Pattern: find "...question...?" or "...question..."
+    const escapedQuestion = questionWithoutQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const quotedQuestionPattern = new RegExp(`"[^"]*${escapedQuestion}[^"]*"`, 'i');
+    if (quotedQuestionPattern.test(fullText)) {
+      return true;
+    }
+		
+    // Also check single quotes
+    const singleQuotedPattern = new RegExp(`'[^']*${escapedQuestion}[^']*'`, 'i');
+    if (singleQuotedPattern.test(fullText)) {
+      return true;
+    }
+		
+    return false;
+  }
+
+  /**
+   * Determine question kind
+   */
+  private determineKind(question: string, isRoutine: boolean): QuestionKind {
+    if (isRoutine) return "routine";
+		
+    const lower = question.toLowerCase();
+		
+    // Clarification patterns (check first - more specific)
+    const clarifyPatterns = [
+      /\bdo you mean\b/i,
+      /\bwhich (one|option|approach)\b/i,
+      /\bshould i use\b/i,
+      /\bprefers?\b/i,
+      /\bwhich (one|option)\b/i,
+    ];
+		
+    for (const pattern of clarifyPatterns) {
+      if (pattern.test(lower)) {
+        return "clarification";
+      }
+    }
+		
+    // Explicit approval patterns (want me to, would you like me to, etc.)
+    const approvalPatterns = [
+      /\bwant me to\b/i,
+      /\bwould you like me to\b/i,
+      /\bshall i\b/i,
+      /\bshould i add\b/i,
+      /\bshould i implement\b/i,
+      /\bshould we add\b/i,
+      /\bshould we implement\b/i,
+      /\bdo you want me to\b/i,
+      /\bcan i (start|proceed|add|implement)\b/i,
+    ];
+		
+    for (const pattern of approvalPatterns) {
+      if (pattern.test(lower)) {
+        return "approval";
+      }
+    }
+		
+    return "routine";
+  }
+
+  /**
+   * Check if it's a routine continuation question
+   */
+  private isRoutineContinuation(question: string): boolean {
+    const lower = question.toLowerCase();
+		
+    // Be specific - these patterns mean "continue with next task"
+    // Don't match approval patterns like "Would you like me to add X next?"
+    const routinePatterns = [
+      /\bshould i continue/i,
+      /\bshould we continue/i,
+      /\bcan i continue/i,
+      /\bcan we continue/i,
+      /\bmay i continue/i,
+      /\bshall i proceed/i,
+      /\bshould i proceed/i,
+      /^continue\?$/i,
+      /^proceed\?$/i,
+      /^next\?$/i,
+      /\bshall we (proceed|continue)/i,
+      /\bmay we (proceed|continue)/i,
+      /\bcan i proceed/i,
+      /\bshould i continue with/i,
+      /\bcan i proceed with/i,
+    ];
+		
+    for (const pattern of routinePatterns) {
+      if (pattern.test(lower)) {
+        return true;
+      }
+    }
+		
+    return false;
+  }
+
+  /**
+   * Create a new pending question
+   */
+  createQuestion(params: {
+    text: string;
+    sessionId: string;
+    workspacePath: string;
+    jobId?: string;
+    kind: QuestionKind;
+  }): PendingQuestion {
+    const requestId = this.generateRequestId();
+    
+    const question: PendingQuestion = {
+      requestId,
+      sessionId: params.sessionId,
+      workspacePath: params.workspacePath,
+      jobId: params.jobId,
+      questionText: params.text,
+      kind: params.kind,
+      state: "pending",
+      createdAt: new Date(),
+      dueAt: new Date(Date.now() + this.config.evaluationDelayMs),
+      deliveryState: {},
+      userNotified: false,
+      revision: 1,
+    };
+    
+    this.questions.set(requestId, question);
+    this.currentQuestion = question;
+    
+    logWarn("[PendingQuestion]", `Created question ${requestId}: ${params.text.slice(0, 50)}...`);
+    
+    return question;
+  }
+
+  /**
+   * Get current pending question
+   */
+  getCurrentQuestion(): PendingQuestion | null {
+    return this.currentQuestion;
+  }
+
+  /**
+   * Check if there's a pending question
+   */
+  hasPendingQuestion(): boolean {
+    return this.currentQuestion !== null && 
+           this.currentQuestion.state === "pending";
+  }
+
+  /**
+   * Update delivery state for a channel
+   */
+  updateDeliveryState(
+    channel: "telegram" | "line",
+    delivered: boolean,
+    error?: string
+  ): void {
+    if (!this.currentQuestion) return;
+    
+    this.currentQuestion.deliveryState[channel] = {
+      delivered,
+      deliveredAt: delivered ? new Date() : undefined,
+      error,
+    };
+    
+    if (delivered) {
+      this.currentQuestion.userNotified = true;
+    }
+  }
+
+  /**
+   * Resolve the current question
+   */
+  resolve(params: {
+    resolution: "yes" | "no" | "clarification";
+    by: "user" | "jev" | "timeout";
+  }): void {
+    if (!this.currentQuestion) {
+      logWarn("[PendingQuestion]", "No question to resolve");
+      return;
+    }
+    
+    this.currentQuestion.state = "resolved";
+    this.currentQuestion.resolution = params.resolution;
+    this.currentQuestion.resolvedBy = params.by;
+    this.currentQuestion.resolvedAt = new Date();
+    
+    logWarn("[PendingQuestion]", `Resolved question ${this.currentQuestion.requestId}: ${params.resolution} by ${params.by}`);
+    
+    // Notify callback
+    if (this.userAnswerCallback) {
+      this.userAnswerCallback(this.currentQuestion, params.resolution);
+    }
+  }
+
+  /**
+   * Cancel the current question (e.g., on session switch)
+   */
+  cancel(reason: string = "cancelled"): void {
+    if (!this.currentQuestion) return;
+    
+    this.currentQuestion.state = "cancelled";
+    logWarn("[PendingQuestion]", `Cancelled question ${this.currentQuestion.requestId}: ${reason}`);
+    
+    this.currentQuestion = null;
+  }
+
+  /**
+   * Start Jev evaluation
+   */
+  startEvaluation(): void {
+    if (!this.currentQuestion) return;
+    
+    if (this.currentQuestion.state !== "pending") {
+      logWarn("[PendingQuestion]", `Cannot start evaluation: state is ${this.currentQuestion.state}`);
+      return;
+    }
+    
+    this.currentQuestion.state = "evaluating";
+    logWarn("[PendingQuestion]", `Started evaluation for question ${this.currentQuestion.requestId}`);
+  }
+
+  /**
+   * Get pending question by request ID
+   */
+  getQuestion(requestId: string): PendingQuestion | undefined {
+    return this.questions.get(requestId);
+  }
+
+  /**
+   * Get all questions
+   */
+  getAllQuestions(): PendingQuestion[] {
+    return Array.from(this.questions.values());
+  }
+
+  /**
+   * Clean up old resolved questions
+   */
+  cleanup(maxAgeMs: number = 60 * 60 * 1000): void {
+    const now = Date.now();
+    for (const [id, q] of this.questions.entries()) {
+      if (q.resolvedAt && (now - q.resolvedAt.getTime()) > maxAgeMs) {
+        this.questions.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Check if question is answered
+   */
+  isResolved(): boolean {
+    return this.currentQuestion?.state === "resolved";
+  }
+
+  /**
+   * Get resolution
+   */
+  getResolution(): PendingQuestion["resolution"] | undefined {
+    return this.currentQuestion?.resolution;
+  }
+
+  /**
+   * Check if should suppress completion
+   */
+  shouldSuppressCompletion(): boolean {
+    return this.hasPendingQuestion();
+  }
+}
+
+/** Singleton instance */
+let instance: PendingQuestionController | null = null;
+
+export function getPendingQuestionController(): PendingQuestionController {
+  if (!instance) {
+    instance = new PendingQuestionController();
+  }
+  return instance;
+}
+
+export function createPendingQuestionController(config?: {
+  evaluationDelayMs?: number;
+  jevEnabled?: boolean;
+}): PendingQuestionController {
+  instance = new PendingQuestionController(config);
+  return instance;
+}

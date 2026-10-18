@@ -392,7 +392,7 @@ export class NotificationCenter {
         ];
         // Track this pending approval so callback can resolve it
         this.trackPendingApproval(context.jobId, event, context);
-        // Send to each channel with buttons (Telegram only)
+        // Send to each channel with buttons
         const results = [];
         for (const [id, adapter] of this.adapters.entries()) {
             if (adapter instanceof TelegramAdapter) {
@@ -404,6 +404,28 @@ export class NotificationCenter {
                     });
                     const result = await adapter.send(payload);
                     results.push(result);
+                }
+                catch (error) {
+                    results.push({ success: false, channel: id, error: String(error) });
+                }
+            }
+            else if (adapter instanceof LineAdapter) {
+                // LINE: Send approval request with text fallback directing user to answer via Telegram or Pi
+                try {
+                    const linePayload = {
+                        jobId: context.jobId,
+                        timestamp: new Date().toISOString(),
+                        event,
+                        title: "Approval Required",
+                        message: context.requirement || "A decision is needed.",
+                        details: {
+                            jobId: context.jobId,
+                            ...options?.additionalDetails,
+                        },
+                    };
+                    const result = await adapter.send(linePayload);
+                    results.push(result);
+                    logWarn("[NotificationCenter]", `LINE approval sent to ${id}`);
                 }
                 catch (error) {
                     results.push({ success: false, channel: id, error: String(error) });
