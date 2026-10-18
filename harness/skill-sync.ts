@@ -33,8 +33,17 @@ async function getClient(): Promise<SkillMCPClient | null> {
 	try {
 		const mod = await import("../packages/skill-mcp-client/src/client.js");
 		const SkillMCPClientClass = mod.SkillMCPClient;
-		const serverUrl =
-			process.env.SKILLS_SAAS_URL || "https://api.skills.bunchee.online";
+		const serverUrl = await getSkillsSaasUrl();
+
+		async function getSkillsSaasUrl(): Promise<string> {
+			if (process.env.SKILLS_SAAS_URL) return process.env.SKILLS_SAAS_URL;
+			try {
+				const { readFileSync, existsSync } = await import("node:fs");
+				const keyFile = `${process.env.HOME}/.pi-harness-runtime/keys/skills-saas-url.txt`;
+				if (existsSync(keyFile)) return readFileSync(keyFile, "utf8").trim();
+			} catch {}
+			return "https://api.skills.example.com";
+		}
 
 		clientInstance = new SkillMCPClientClass({
 			serverUrl,
