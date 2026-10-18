@@ -1,0 +1,4 @@
+/**
+ * Voice API Types
+ */
+export {};
