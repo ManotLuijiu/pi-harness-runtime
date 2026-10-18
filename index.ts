@@ -134,6 +134,8 @@ const sharedState = {
 	todoContinuationController: null as unknown,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	updateAutoContinueStatus: null as any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	pqController: null as any,
 };
 
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
@@ -170,6 +172,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
 		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
 		const pqController = createPendingQuestionController();
+		sharedState.pqController = pqController;
 
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
@@ -461,6 +464,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					waitingForUserSince = null;
 					_lastNotifiedQuestion = "";
 					updateAutoContinueStatus("IDLE");
+					// Cancel pending question on user response
+					// (User answered via Pi instead of button)
+					sharedState.pqController?.cancel("User responded via Pi");
 				}
 			}
 		});
@@ -523,6 +529,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				// Check session validity and user response before applying
 				if (checkSessionId !== _sessionId) {
+					// Session changed - cancel pending question
+					sharedState.pqController?.cancel("Session switched");
 					_inferenceInProgress = false;
 					updateAutoContinueStatus("IDLE");
 					return;
@@ -1199,12 +1207,16 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					logToFile("[TelegramCallback] Approved - user clicked Continue, resuming work");
 					sharedState.waitingForUserSince = null;
 					sharedState.updateAutoContinueStatus?.("IDLE");
+					// Resolve pending question with yes
+					sharedState.pqController?.resolve({ resolution: "yes", by: "user" });
 					// Also resume continuation controller
 					(sharedState.todoContinuationController as any)?.resume?.();
 					break;
 				case CallbackActions.REJECT:
 					// User clicked Not yet - just dismiss, don't resume
 					logToFile("[TelegramCallback] Rejected - user clicked Not yet, pausing");
+					// Resolve pending question with no
+					sharedState.pqController?.resolve({ resolution: "no", by: "user" });
 					// Explicitly pause the continuation
 					(sharedState.todoContinuationController as any)?.explicitPause?.();
 					break;
