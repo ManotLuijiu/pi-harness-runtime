@@ -1231,6 +1231,33 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Register message handler to forward Telegram messages to Pi
 		center.setMessageHandler(async (text: string, _chatId: string) => {
+			// Parse /notify command for channel management
+			// Usage: /notify on telegram, /notify off line, /notify on all, /notify (show status)
+			const notifyRegex = /^\/notify(?:\s+(on|off)(?:\s+(telegram|line|all))?/i;
+			const notifyMatch = text.match(notifyRegex);
+			if (notifyMatch) {
+				const [, action, channel] = notifyMatch;
+				const isEnabled = action === "on";
+				const channels = channel === "all" ? ["telegram", "line"] : [channel || "telegram"];
+
+				for (const ch of channels) {
+					(center as any).setChannelEnabled?.(ch, isEnabled);
+					logToFile("[NotifyCommand]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
+				}
+				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
+				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
+				logToFile("[NotifyCommand]", `Current: Telegram=${telegramStatus}, LINE=${lineStatus}`);
+				return;
+			}
+
+			// Show help for /notify without args
+			if (text === "/notify") {
+				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
+				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
+				logToFile("[NotifyCommand]", `Channel Status: Telegram=${telegramStatus}, LINE=${lineStatus}`);
+				return;
+			}
+
 			// Parse /task <session-id> <action> commands
 			const taskCommandMatch = text.match(/^\/task\s+(\S+)\s+(code|review|done)\s*$/i);
 			if (taskCommandMatch) {
