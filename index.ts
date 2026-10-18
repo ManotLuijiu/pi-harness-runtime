@@ -183,7 +183,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Resolve the actual API key: env takes priority, file is fallback
 		const resolvedApiKey = hasEnvKey ||
-			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim();
+			(hasFileKey ? readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim() : "");
 
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
 
