@@ -70,7 +70,7 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
-import { initWiki } from "./harness/wiki-integration.js";
+import { initWiki, getWikiInstruction } from "./harness/wiki-integration.js";
 import { startWatcher, classifyMessage, detectReviewMarker } from "./packages/codex-watcher/dist/src/index.js";
 import {
 	getPaperclipConfig,
@@ -1770,7 +1770,13 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 			}
 
 			// Combine all memory
-			const allMemory = parts.join("\n") + honchoContext;
+			let allMemory = parts.join("\n") + honchoContext;
+
+			// Add wiki instruction if feature is enabled
+			const wikiInstruction = getWikiInstruction();
+			if (wikiInstruction) {
+				allMemory += wikiInstruction;
+			}
 
 			if (!allMemory.trim()) {
 				logToFile("[memory]", "No memory to inject");
