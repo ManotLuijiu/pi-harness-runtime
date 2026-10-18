@@ -334,3 +334,92 @@ Use tools in this order (highest to lowest priority):
 ### 5. Document-Only Changes
 - Wiki/documentation changes go in `wiki/` (gitignored)
 - API keys, tokens, credentials: **never commit**
+
+---
+
+## React Best Practices (CRITICAL)
+
+Agents MUST follow these React composition rules. Violations trigger warnings and require explicit override.
+
+### 6. Component Size Limits
+
+| Threshold | Action |
+|-----------|--------|
+| 0-150 lines | ✅ Green - No action needed |
+| 150-300 lines | 🟡 Yellow - Consider extracting sub-components |
+| 300+ lines | 🔴 Red - MUST extract before committing |
+
+**Before writing any React component >150 lines, ALWAYS ask:**
+- "Can I extract this into smaller, focused components?"
+- "What are the logical sub-sections that could be their own component?"
+
+### 7. Component Extraction Checklist
+
+When a component exceeds 150 lines, extract the following into separate components:
+
+- [ ] **Sub-section with distinct purpose** → Extract to `<SubComponent />`
+- [ ] **Repeated JSX structure** → Extract to `<ListItem />` or `<Card />`
+- [ ] **Complex stateful logic** → Extract to custom hook `useXxx()`
+- [ ] **Large JSX block (>20 lines)** → Extract to `<RenderXxx />` or separate component
+- [ ] **Props interface >5 props** → Consider compound components or children-as-function
+- [ ] **Conditional rendering block** → Extract to `<XxxView />` or `<Show when={...} />`
+
+### 8. Composition Patterns (Prefer These)
+
+**GOOD - Compound Components:**
+```tsx
+<Dialog>
+  <Dialog.Header>Title</Dialog.Header>
+  <Dialog.Body>Content</Dialog.Body>
+  <Dialog.Footer><Button>Close</Button></Dialog.Footer>
+</Dialog>
+```
+
+**GOOD - Children as Content:**
+```tsx
+<Card>
+  <Card.Header title="Info" />
+  <Card.Body>Details here</Card.Body>
+</Card>
+```
+
+**GOOD - Custom Hooks for Logic:**
+```tsx
+const { isLoading, error, data } = useDataFetch(url);
+// NOT: all logic inline in component
+```
+
+**BAD - God Components:**
+```tsx
+// ❌ DON'T: Single file with 500+ lines
+// ❌ DON'T: 15+ props on one component
+// ❌ DON'T: Multiple unrelated state variables
+// ❌ DON'T: Deeply nested conditional rendering
+```
+
+### 9. File Naming Convention
+
+```
+ComponentName/
+├── index.tsx          # Main component (keep <150 lines)
+├── ComponentName.tsx  # Re-export from index
+├── SubComponent.tsx   # Extracted sub-components
+├── useComponent.ts    # Custom hooks
+├── types.ts           # TypeScript interfaces
+└── ComponentName.test.tsx
+```
+
+### 10. Pre-Write Check
+
+**BEFORE starting any React feature, plan the component structure:**
+
+```
+Feature: UserDashboard
+├── components/
+│   ├── UserDashboard/index.tsx      (entry, <100 lines)
+│   ├── UserDashboard/StatsCard.tsx   (extracted)
+│   ├── UserDashboard/UserList.tsx    (extracted)
+│   └── UserDashboard/useUserData.ts  (custom hook)
+```
+
+**This prevents the "write big file, then extract" anti-pattern.**
