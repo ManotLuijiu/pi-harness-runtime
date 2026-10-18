@@ -39,8 +39,15 @@ export class TelegramVoiceHandler {
             }
             // Construct download URL
             const fileUrl = `${this.apiBase}/file/bot${this.botToken}/${filePath}`;
+            // Download audio file
+            const response = await fetch(fileUrl);
+            if (!response.ok) {
+                return { success: false, error: `Failed to download audio: ${response.status}` };
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = new Uint8Array(arrayBuffer);
             // Transcribe
-            const result = await this.transcriber.transcribe({ audioUrl: fileUrl });
+            const result = await this.transcriber.transcribe(audioBuffer);
             if (result.error) {
                 this.onError?.(chatId, new Error(result.error));
                 return { success: false, error: result.error };

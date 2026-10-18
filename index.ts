@@ -1078,16 +1078,17 @@ async function advanceCodexTask(
 async function initTelegram(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Telegram", "initializing", "wait");
 	try {
-		const {
-			NotificationCenter,
-			createConversationBridge,
-		} = await import("./packages/notification/dist/index.js");
+		const notifModule = await import("./packages/notification/dist/index.js");
+		const NotificationCenter = notifModule.NotificationCenter;
+		const createConversationBridge = notifModule.createConversationBridge;
 		const { readFileSync, existsSync } = await import("node:fs");
 		const home = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
 		const keysDir = `${home}/.pi-harness-runtime/keys`;
 
 		const botTokenPath = `${keysDir}/telegram-bot-token.txt`;
 		const chatIdPath = `${keysDir}/telegram-chat-id.txt`;
+		const lineTokenPath = `${keysDir}/line-access-token.txt`;
+		const lineUserIdPath = `${keysDir}/line-user-id.txt`;
 
 		if (!existsSync(botTokenPath) || !existsSync(chatIdPath)) {
 			logStartup("[pi-harness] Telegram (@PiHarnessRuntimeBot) not configured:");
@@ -1107,6 +1108,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const botToken = readFileSync(botTokenPath, "utf8").trim();
 		const chatId = readFileSync(chatIdPath, "utf8").trim();
 
+		// Load LINE credentials
+		const hasLineCredentials = existsSync(lineTokenPath) && existsSync(lineUserIdPath);
+		const lineAccessToken = hasLineCredentials ? readFileSync(lineTokenPath, "utf8").trim() : null;
+		const lineUserId = hasLineCredentials ? readFileSync(lineUserIdPath, "utf8").trim() : null;
+
 		if (!botToken || !chatId) {
 			logStartup("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
 			addHarnessMessage("Telegram", "bot token or chat ID is empty; notifications unavailable", "warn", [
@@ -1115,16 +1121,35 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			return;
 		}
 
+		const channels: Array<{
+			id: string;
+			type: string;
+			enabled: boolean;
+			config: Record<string, unknown>;
+		}> = [
+			{
+				id: "telegram",
+				type: "telegram",
+				enabled: true,
+				config: { botToken, chatId },
+			},
+		];
+
+		// Add LINE channel if credentials exist
+		if (hasLineCredentials && lineAccessToken && lineUserId) {
+			channels.push({
+				id: "line",
+				type: "line" as const,
+				enabled: true,
+				config: { channelAccessToken: lineAccessToken, userId: lineUserId },
+			});
+			addHarnessMessage("LINE", "configured and enabled", "ok");
+		}
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const center = new NotificationCenter({
 			enabled: true,
-			channels: [
-				{
-					id: "telegram",
-					type: "telegram",
-					enabled: true,
-					config: { botToken, chatId },
-				},
-			],
+			channels: channels as any,
 		});
 
 		await center.initialize();
