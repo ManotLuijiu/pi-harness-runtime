@@ -20,4 +20,6 @@ export * from './notifications.js';
 export * from './approvals.js';
 export * from './delegation.js';
 export * from './delegation-assessor.js';
+export * from './delegation-store.js';
 export * from './scope-discovery.js';
+export * from './work-partitioner.js';
