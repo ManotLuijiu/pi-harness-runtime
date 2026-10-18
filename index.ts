@@ -276,22 +276,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			return content;
 		}
 
-		// Detect actual confirmation requests (questions, not progress statements)
-		// Uses the pending question controller for detection with expanded patterns
-		function detectConfirmationRequest(text: string): string | null {
-			const result = pqController.detectQuestion(text);
-			if (result.detected && result.questionText) {
-				return result.questionText;
+		// Set up pending question callback to dispatch answers to Pi
+		pqController.onUserAnswer((question, answer) => {
+			logToFile("[PendingQuestion]", `User answered: ${answer} for question ${question.requestId}`);
+			// Dispatch answer to Pi if needed
+			if (answer === "yes") {
+				pi.sendUserMessage("yes", { deliverAs: "steer" }).catch((_e: unknown) =>
+					logToFile("[PendingQuestion]", "Failed to send yes to Pi")
+				);
+			} else if (answer === "no") {
+				pi.sendUserMessage("not yet", { deliverAs: "steer" }).catch((_e: unknown) =>
+					logToFile("[PendingQuestion]", "Failed to send no to Pi")
+				);
 			}
-			return null;
-		}
-
-		// Detect routine continuation questions ("Should I continue?")
-		// These should NOT block immediate continuation - let Jev/todo controller decide
-		function isRoutineContinuation(question: string): boolean {
-			const result = pqController.detectQuestion(question);
-			return result.isRoutine ?? false;
-		}
+		});
 
 		// Detect when agent asks for continuation
 		pi.on("message_end", async (event) => {
@@ -299,22 +297,33 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (!msg || msg.role !== "assistant") return;
 
 			const content = extractAssistantText(msg);
-			const detectedQuestion = detectConfirmationRequest(content);
+			const result = pqController.detectQuestion(content);
 
 			// Only trigger if: we found a question AND it's different from last notification
 			// Skip routine continuation questions - let Jev/todo controller decide
-			if (detectedQuestion && detectedQuestion !== _lastNotifiedQuestion && !waitingForUserSince) {
+			if (result.detected && result.questionText && result.questionText !== _lastNotifiedQuestion && !waitingForUserSince) {
 				// Skip routine continuation - don't block automatic continuation
-				if (isRoutineContinuation(detectedQuestion)) {
-						logToFile("[auto-continue]", "Routine continuation detected, not blocking");
-						return;
+				if (result.isRoutine) {
+					logToFile("[auto-continue]", "Routine continuation detected, not blocking");
+					return;
 				}
-				_lastNotifiedQuestion = detectedQuestion;
+				
+				// Create question in controller
+				const question = pqController.createQuestion({
+					text: result.questionText,
+					sessionId: _sessionId,
+					workspacePath: _piSessionCwd || "/",
+					kind: result.kind || "approval",
+				});
+				
+				logToFile("[PendingQuestion]", `Question created: ${question.requestId} - ${result.questionText?.slice(0, 50)}`);
+
+				_lastNotifiedQuestion = result.questionText;
 				waitingForUserSince = new Date();
 
 				// Create stable jobId from question content hash (callback-safe: digits only)
 				const questionHash = Math.abs(
-					detectedQuestion.split("").reduce((a, c) => {
+					result.questionText.split("").reduce((a, c) => {
 						a = ((a << 5) - a) + c.charCodeAt(0);
 						return a & a;
 					}, 0)
@@ -336,7 +345,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
 				_nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: `waiting-user-${questionHash}`,
-					requirement: detectedQuestion,
+					requirement: result.questionText,
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
