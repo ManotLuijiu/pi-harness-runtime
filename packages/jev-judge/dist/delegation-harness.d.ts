@@ -2,20 +2,74 @@
  * Delegation Harness Integration
  *
  * Connects delegation assessment to the harness runtime.
+ * Uses inline types to avoid cross-package dependency.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ExtensionCapability } from "@pi-harness/contracts";
-import { type DelegationDecision } from "@pi-harness/contracts";
-import type { DelegationReceipt, ScopeFacts } from "@pi-harness/contracts";
+/**
+ * Extension capability for delegation (inline to avoid dependency)
+ */
+export interface ExtensionCapability {
+    name: string;
+    supportsSubagents: boolean;
+    supportsWorkIsolation: boolean;
+    supportsCancellation: boolean;
+    availableTools: string[];
+    verified: boolean;
+}
+/**
+ * Delegation strategy decision
+ */
+export type DelegationStrategy = "delegate" | "script_then_delegate" | "script_only" | "single_agent" | "unavailable";
+/**
+ * Delegation decision
+ */
+export interface DelegationDecision {
+    strategy: DelegationStrategy;
+    reason: string;
+    workGroups: unknown[];
+    validationExpectations: string;
+    confidence: "high" | "medium" | "low";
+    jevUsed: boolean;
+    reassessmentTriggers: string[];
+}
+/**
+ * Scope facts
+ */
+export interface ScopeFacts {
+    estimatedFiles: number;
+    observedFiles: number;
+    estimatedCallSites: number;
+    observedCallSites: number;
+    independentComponents: number;
+    tightlyCoupled: boolean;
+    isMechanical: boolean;
+    isComplex: boolean;
+    fileTypes: Record<string, number>;
+    fingerprint: string;
+}
+/**
+ * Delegation receipt
+ */
+export interface DelegationReceipt {
+    version: number;
+    workspacePath: string;
+    sessionId: string;
+    parentTaskId: string;
+    scopeFingerprint: string;
+    decision: DelegationDecision;
+    createdAt: number;
+    updatedAt: number;
+    status: "assessing" | "in_progress" | "completed" | "failed" | "cancelled";
+    childIds: string[];
+    pendingValidation: string[];
+    userConstraints: string[];
+}
 /**
  * Delegation harness configuration
  */
 export interface DelegationHarnessConfig {
-    /** Minimum files to trigger assessment */
     minFiles?: number;
-    /** Minimum call sites to trigger assessment */
     minCallSites?: number;
-    /** Minimum independent components for delegation */
     minComponents?: number;
 }
 /**

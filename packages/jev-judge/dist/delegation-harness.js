@@ -2,9 +2,62 @@
  * Delegation Harness Integration
  *
  * Connects delegation assessment to the harness runtime.
+ * Uses inline types to avoid cross-package dependency.
  */
-import { discoverDelegationCapability, makeDeterministicAssessment, } from "@pi-harness/contracts";
-import { saveDelegationReceipt, loadDelegationReceipt, hasReceipt, } from "@pi-harness/contracts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+/**
+ * Store directory path
+ */
+const STORE_DIR = join(process.env.HOME || "/home/frappe", ".pi-harness-runtime", "delegation-state");
+/**
+ * Ensure store directory exists
+ */
+function ensureStoreDir() {
+    if (!existsSync(STORE_DIR)) {
+        mkdirSync(STORE_DIR, { recursive: true });
+    }
+}
+/**
+ * Get receipt file path
+ */
+function getReceiptPath(workspacePath, taskId) {
+    const safePath = workspacePath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(-100);
+    const safeTask = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return join(STORE_DIR, `${safePath}__${safeTask}.json`);
+}
+/**
+ * Save delegation receipt
+ */
+function saveReceipt(receipt) {
+    ensureStoreDir();
+    const path = getReceiptPath(receipt.workspacePath, receipt.parentTaskId);
+    writeFileSync(path, JSON.stringify(receipt, null, 2), "utf8");
+}
+/**
+ * Load delegation receipt
+ */
+function loadReceipt(workspacePath, taskId) {
+    const path = getReceiptPath(workspacePath, taskId);
+    if (!existsSync(path))
+        return null;
+    try {
+        return JSON.parse(readFileSync(path, "utf8"));
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * Check if receipt exists
+ */
+function hasReceipt(workspacePath, taskId) {
+    return existsSync(getReceiptPath(workspacePath, taskId));
+}
+/**
+ * Sub-agent tool names
+ */
+const SUBAGENT_TOOLS = ["subagent", "spawn", "delegate", "run_subagent"];
 /**
  * Create delegation harness integration
  */
@@ -21,11 +74,29 @@ export function createDelegationHarness(pi, config = {}) {
      * Discover and cache delegation capability
      */
     async function discoverCapability() {
-        if (state.capability) {
+        if (state.capability)
             return state.capability;
+        try {
+            const allTools = pi.getAllTools();
+            const toolNames = allTools.map((t) => t.name);
+            const activeTools = pi.getActiveTools();
+            const hasSubagentTool = SUBAGENT_TOOLS.some((tool) => toolNames.includes(tool) || activeTools.includes(tool));
+            if (hasSubagentTool) {
+                state.capability = {
+                    name: "subagent-extension",
+                    supportsSubagents: true,
+                    supportsWorkIsolation: true,
+                    supportsCancellation: true,
+                    availableTools: activeTools.filter((t) => SUBAGENT_TOOLS.some((st) => t.includes(st))),
+                    verified: true,
+                };
+                return state.capability;
+            }
         }
-        state.capability = await discoverDelegationCapability(pi);
-        return state.capability;
+        catch {
+            // Discovery failed
+        }
+        return null;
     }
     /**
      * Check if delegation assessment should be triggered
@@ -40,28 +111,70 @@ export function createDelegationHarness(pi, config = {}) {
         return false;
     }
     /**
+     * Make deterministic assessment
+     */
+    function makeDeterministicAssessment(facts, capability) {
+        if (!capability?.verified) {
+            return {
+                strategy: "unavailable",
+                reason: "No verified sub-agent capability",
+                workGroups: [],
+                validationExpectations: "Parent handles validation",
+                confidence: "high",
+                jevUsed: false,
+                reassessmentTriggers: ["Extension available"],
+            };
+        }
+        if (facts.isMechanical && !facts.isComplex) {
+            return {
+                strategy: "script_only",
+                reason: "Mechanical transformation",
+                workGroups: [],
+                validationExpectations: "Script output validation",
+                confidence: "high",
+                jevUsed: false,
+                reassessmentTriggers: ["Transformation unreliable"],
+            };
+        }
+        if (facts.independentComponents >= 2 && !facts.tightlyCoupled) {
+            return {
+                strategy: "delegate",
+                reason: `${facts.independentComponents} independent components`,
+                workGroups: [],
+                validationExpectations: "Each group validated, then integrated",
+                confidence: "medium",
+                jevUsed: false,
+                reassessmentTriggers: ["Scope expands", "Coupling discovered"],
+            };
+        }
+        return {
+            strategy: "single_agent",
+            reason: "Default to single agent",
+            workGroups: [],
+            validationExpectations: "Parent validates",
+            confidence: "low",
+            jevUsed: false,
+            reassessmentTriggers: ["Scope exceeds threshold"],
+        };
+    }
+    /**
      * Assess delegation for given scope facts
      */
     async function assess(facts, parentTaskId) {
-        // Check if assessment should trigger
-        if (!shouldAssess(facts)) {
+        if (!shouldAssess(facts))
             return null;
-        }
-        // Check for existing receipt (avoid reassessment)
         const workspacePath = process.cwd();
+        // Check existing receipt
         if (hasReceipt(workspacePath, parentTaskId)) {
-            const existing = loadDelegationReceipt(workspacePath, parentTaskId);
+            const existing = loadReceipt(workspacePath, parentTaskId);
             if (existing && existing.scopeFingerprint === facts.fingerprint) {
                 state.currentReceipt = existing;
                 return existing.decision;
             }
         }
-        // Discover capability
         const capability = await discoverCapability();
-        // Make assessment
         const decision = makeDeterministicAssessment(facts, capability);
         state.lastAssessment = decision;
-        // Create receipt
         const receipt = {
             version: 1,
             workspacePath,
@@ -76,37 +189,20 @@ export function createDelegationHarness(pi, config = {}) {
             pendingValidation: [],
             userConstraints: [],
         };
-        // Save receipt
-        saveDelegationReceipt(receipt);
+        saveReceipt(receipt);
         state.currentReceipt = receipt;
         return decision;
-    }
-    /**
-     * Get current receipt
-     */
-    function getReceipt() {
-        return state.currentReceipt;
-    }
-    /**
-     * Get current assessment decision
-     */
-    function getLastDecision() {
-        return state.lastAssessment;
-    }
-    /**
-     * Clear cached state (on session switch)
-     */
-    function clear() {
-        state.currentReceipt = null;
-        state.lastAssessment = null;
     }
     return {
         discoverCapability,
         shouldAssess,
         assess,
-        getReceipt,
-        getLastDecision,
-        clear,
+        getReceipt: () => state.currentReceipt,
+        getLastDecision: () => state.lastAssessment,
+        clear: () => {
+            state.currentReceipt = null;
+            state.lastAssessment = null;
+        },
     };
 }
 //# sourceMappingURL=delegation-harness.js.map
