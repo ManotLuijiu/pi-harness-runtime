@@ -495,10 +495,16 @@ export class NotificationCenter {
 		// Track this pending approval so callback can resolve it
 		this.trackPendingApproval(context.jobId, event, context);
 
-		// Send to each channel with buttons
+		// Send to each channel with buttons (respecting enabled state)
 		const results: NotificationResult[] = [];
 
 		for (const [id, adapter] of this.adapters.entries()) {
+			// Check if this channel is enabled
+			if (!this.isChannelEnabled(id)) {
+				logWarn("[NotificationCenter]", `Channel ${id} is disabled, skipping approval notification`);
+				continue;
+			}
+
 			if (adapter instanceof TelegramAdapter) {
 				try {
 					const payload = this.buildPayload(event, context, {
@@ -519,7 +525,7 @@ export class NotificationCenter {
 						timestamp: new Date().toISOString(),
 						event,
 						title: "Approval Required",
-						message: context.requirement || "A decision is needed.",
+						message: (context.requirement || "A decision is needed.") + "\n\nReply via Telegram or type answer in Pi.",
 						details: {
 						jobId: context.jobId,
 						...options?.additionalDetails,
