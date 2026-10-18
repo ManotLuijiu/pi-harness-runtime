@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, isAbsolute, basename, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   WikiStorage,
@@ -115,7 +115,13 @@ export class WikiManager {
     requireWiki(this.storage);
 
     // Validate source path
-    const resolvedPath = resolve(sourcePath);
+    // Resolve relative paths against wiki root (workspace), not process cwd
+    let resolvedPath: string;
+    if (isAbsolute(sourcePath)) {
+      resolvedPath = sourcePath;
+    } else {
+      resolvedPath = resolve(this.config.wikiRoot, sourcePath);
+    }
     if (!existsSync(resolvedPath)) {
       throw new Error(`Source file not found: ${sourcePath}`);
     }
@@ -193,8 +199,7 @@ export class WikiManager {
 
     // Create a page from the snapshot
     // Title derived from source filename
-    const path = require("node:path");
-    const title = path.basename(sourcePath, path.extname(sourcePath))
+    const title = basename(sourcePath, extname(sourcePath))
       .replace(/[-_]/g, " ")
       .replace(/([a-z])([A-Z])/g, "$1 $2");
 
