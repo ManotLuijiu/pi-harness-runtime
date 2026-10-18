@@ -679,6 +679,9 @@ Your local machine clipboard
 
 Get notified on your phone when tasks complete! LINE notifications via the LINE Messaging API.
 
+> **Self-Hosting Required**: LINE webhooks require your own server. This is NOT a hosted service.
+> You must **clone this repository** and deploy your own webhook server. See [LINE Voice/Webhook Setup](#line-voicewebhook-setup) below.
+
 #### Step-by-Step Setup
 
 **1. Create a LINE Messaging API channel**
@@ -754,6 +757,118 @@ Task: Implement login flow
 Job: feature-auth
 ```
 
+### LINE Voice/Webhook Setup (Voice Commands)
+
+> **Self-Hosting Required**: LINE voice messages require your own server with HTTPS.
+> This is NOT a hosted service. You must **clone this repository** and deploy your own webhook server.
+
+Voice messages from LINE are transcribed via OpenAI Whisper API and executed as commands.
+
+#### Requirements
+
+- **Own server** (VPS, cloud VM) with public IP
+- **Domain** with DNS A record pointing to your server
+- **SSL certificate** (Let's Encrypt via certbot)
+- **Clone this repository** on your server
+
+#### Setup Steps
+
+**1. Clone and Build**
+
+```bash
+# Clone on your server
+git clone https://github.com/ManotLuijiu/pi-harness-runtime.git
+cd pi-harness-runtime
+bun install
+bun run build
+```
+
+**2. Configure DNS**
+
+Create an A record: `line-api.your-domain.com` → `YOUR_SERVER_IP`
+
+**3. Setup Nginx + SSL**
+
+```bash
+# Install certbot
+sudo apt install certbot python3-certbot-nginx
+
+# Create nginx config
+sudo tee /etc/nginx/sites-available/line-api.your-domain.com > /dev/null << 'NGINX'
+server {
+    listen 80;
+    server_name line-api.your-domain.com;
+    location / {
+        proxy_pass http://127.0.0.1:3900;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+}
+NGINX
+
+# Enable and get SSL
+sudo ln -sf /etc/nginx/sites-available/line-api.your-domain.com /etc/nginx/sites-enabled/
+sudo certbot --nginx -d line-api.your-domain.com --noninteractive --agree-tos -m admin@your-domain.com --redirect
+```
+
+**4. Configure LINE Webhook**
+
+```bash
+# Set credentials
+mkdir -p ~/.pi-harness-runtime/keys
+
+# Get from LINE Developers Console > Messaging API > Basic settings
+cp YOUR_ACCESS_TOKEN ~/.pi-harness-runtime/keys/line-access-token.txt
+cp YOUR_CHANNEL_SECRET ~/.pi-harness-runtime/keys/line-channel-secret.txt
+
+# Get from LINE Developers Console > Messaging API > Webhook URL
+# Set to: https://line-api.your-domain.com/webhook/line
+```
+
+**5. Create Webhook Server**
+
+```bash
+# Create startup script
+mkdir -p ~/line-webhook
+cp pi-harness-runtime/packages/voice-api/dist/*.js ~/line-webhook/
+
+# Run server
+bun run ~/line-webhook/server.ts
+```
+
+**6. Set Webhook URL in LINE Console**
+
+1. Go to LINE Developers Console → Messaging API → Messaging settings
+2. Set Webhook URL: `https://line-api.your-domain.com/webhook/line`
+3. Click Verify
+
+#### Systemd Service (Auto-Restart)
+
+```bash
+sudo tee /etc/systemd/system/line-webhook.service > /dev/null << 'SERVICE'
+[Unit]
+Description=LINE Webhook Server for pi-harness
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/line-webhook
+ExecStart=/home/YOUR_USER/.bun/bin/bun run /home/YOUR_USER/line-webhook/server.ts
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable line-webhook.service
+sudo systemctl start line-webhook.service
+```
+
 ### Other Providers
 
 No setup needed. The runtime reads TUI messages and captures quota-exhaustion signals.
@@ -779,6 +894,9 @@ footer updates immediately and the data persists in `mirror.json`.
 ## Telegram 2-Way Communication
 
 Enable interactive Yes/No buttons in Telegram notifications for human approval.
+
+> **Self-Hosting Required**: Telegram webhooks require your own server with HTTPS.
+> This is NOT a hosted service. You must **clone this repository** and deploy your own webhook server.
 
 ### Architecture (Per-User Setup)
 

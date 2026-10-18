@@ -13,6 +13,7 @@ export class LineVoiceHandler {
     channelSecret;
     transcriber;
     apiBase;
+    dataApiBase;
     onTranscribed;
     onError;
     constructor(options) {
@@ -20,13 +21,14 @@ export class LineVoiceHandler {
         this.channelSecret = options.channelSecret;
         this.transcriber = options.transcriber;
         this.apiBase = options.apiBase || 'https://api.line.me';
+        this.dataApiBase = 'https://api-data.line.me'; // Content API is different
         this.onTranscribed = options.onTranscribed;
         this.onError = options.onError;
     }
     /**
      * Verify LINE webhook signature
      */
-    verifySignature(body, signature) {
+    verifySignature(_body, _signature) {
         if (!this.channelSecret)
             return true; // Skip verification if no secret
         // Note: In production, implement proper HMAC verification
@@ -52,9 +54,7 @@ export class LineVoiceHandler {
                     continue;
                 }
                 // Transcribe
-                const result = await this.transcriber.transcribe({
-                    audioBuffer: audioContent,
-                });
+                const result = await this.transcriber.transcribe(audioContent);
                 if (result.error) {
                     this.onError?.(userId, new Error(result.error));
                     responses.push(`Transcription error: ${result.error}`);
@@ -77,18 +77,21 @@ export class LineVoiceHandler {
      */
     async getAudioContent(messageId) {
         try {
-            const response = await fetch(`${this.apiBase}/v2/bot/message/${messageId}/content`, {
+            // Use data API for content retrieval
+            const response = await fetch(`${this.dataApiBase}/v2/bot/message/${messageId}/content`, {
                 headers: {
                     'Authorization': `Bearer ${this.channelAccessToken}`,
                 },
             });
             if (!response.ok) {
+                console.error(`LINE API error: ${response.status} ${response.statusText}`);
                 return null;
             }
             const arrayBuffer = await response.arrayBuffer();
             return new Uint8Array(arrayBuffer);
         }
-        catch {
+        catch (error) {
+            console.error(`Failed to get audio content: ${error}`);
             return null;
         }
     }

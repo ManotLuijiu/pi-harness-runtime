@@ -30,33 +30,33 @@ export declare const Session: z.ZodObject<{
     cost: z.ZodDefault<z.ZodNumber>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    type: "interactive" | "batch" | "background" | "review";
-    status: "active" | "idle" | "suspended" | "ended";
     id: string;
+    type: "background" | "batch" | "interactive" | "review";
+    status: "active" | "ended" | "idle" | "suspended";
     workspaceId: string;
-    startedAt: string;
     provider: string;
+    model?: string | undefined;
+    startedAt: string;
+    endedAt?: string | undefined;
+    lastActivityAt?: string | undefined;
     promptTokens: number;
     completionTokens: number;
     cost: number;
     metadata?: Record<string, unknown> | undefined;
-    model?: string | undefined;
-    endedAt?: string | undefined;
-    lastActivityAt?: string | undefined;
 }, {
-    type: "interactive" | "batch" | "background" | "review";
-    status: "active" | "idle" | "suspended" | "ended";
     id: string;
+    type: "background" | "batch" | "interactive" | "review";
+    status: "active" | "ended" | "idle" | "suspended";
     workspaceId: string;
-    startedAt: string;
     provider: string;
-    metadata?: Record<string, unknown> | undefined;
     model?: string | undefined;
+    startedAt: string;
     endedAt?: string | undefined;
     lastActivityAt?: string | undefined;
     promptTokens?: number | undefined;
     completionTokens?: number | undefined;
     cost?: number | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type Session = z.infer<typeof Session>;
 /**
@@ -69,17 +69,17 @@ export declare const SessionCreate: z.ZodObject<{
     model: z.ZodOptional<z.ZodString>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    type: "interactive" | "batch" | "background" | "review";
+    type: "background" | "batch" | "interactive" | "review";
     workspaceId: string;
     provider: string;
-    metadata?: Record<string, unknown> | undefined;
     model?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }, {
+    type?: "background" | "batch" | "interactive" | "review" | undefined;
     workspaceId: string;
     provider: string;
-    type?: "interactive" | "batch" | "background" | "review" | undefined;
-    metadata?: Record<string, unknown> | undefined;
     model?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type SessionCreate = z.infer<typeof SessionCreate>;
 /**
@@ -93,19 +93,19 @@ export declare const SessionUpdate: z.ZodObject<{
     cost: z.ZodOptional<z.ZodNumber>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    status?: "active" | "idle" | "suspended" | "ended" | undefined;
-    metadata?: Record<string, unknown> | undefined;
+    status?: "active" | "ended" | "idle" | "suspended" | undefined;
     lastActivityAt?: string | undefined;
     promptTokens?: number | undefined;
     completionTokens?: number | undefined;
     cost?: number | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }, {
-    status?: "active" | "idle" | "suspended" | "ended" | undefined;
-    metadata?: Record<string, unknown> | undefined;
+    status?: "active" | "ended" | "idle" | "suspended" | undefined;
     lastActivityAt?: string | undefined;
     promptTokens?: number | undefined;
     completionTokens?: number | undefined;
     cost?: number | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type SessionUpdate = z.infer<typeof SessionUpdate>;
 /**
@@ -120,17 +120,17 @@ export declare const SessionFilter: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     cursor: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    limit: number;
-    type?: "interactive" | "batch" | "background" | "review" | undefined;
-    status?: "active" | "idle" | "suspended" | "ended" | undefined;
     workspaceId?: string | undefined;
+    type?: "background" | "batch" | "interactive" | "review" | undefined;
+    status?: "active" | "ended" | "idle" | "suspended" | undefined;
     since?: string | undefined;
     until?: string | undefined;
+    limit: number;
     cursor?: string | undefined;
 }, {
-    type?: "interactive" | "batch" | "background" | "review" | undefined;
-    status?: "active" | "idle" | "suspended" | "ended" | undefined;
     workspaceId?: string | undefined;
+    type?: "background" | "batch" | "interactive" | "review" | undefined;
+    status?: "active" | "ended" | "idle" | "suspended" | undefined;
     since?: string | undefined;
     until?: string | undefined;
     limit?: number | undefined;
@@ -156,69 +156,69 @@ export declare const SessionList: z.ZodObject<{
         cost: z.ZodDefault<z.ZodNumber>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
-        type: "interactive" | "batch" | "background" | "review";
-        status: "active" | "idle" | "suspended" | "ended";
         id: string;
+        type: "background" | "batch" | "interactive" | "review";
+        status: "active" | "ended" | "idle" | "suspended";
         workspaceId: string;
-        startedAt: string;
         provider: string;
+        model?: string | undefined;
+        startedAt: string;
+        endedAt?: string | undefined;
+        lastActivityAt?: string | undefined;
         promptTokens: number;
         completionTokens: number;
         cost: number;
         metadata?: Record<string, unknown> | undefined;
-        model?: string | undefined;
-        endedAt?: string | undefined;
-        lastActivityAt?: string | undefined;
     }, {
-        type: "interactive" | "batch" | "background" | "review";
-        status: "active" | "idle" | "suspended" | "ended";
         id: string;
+        type: "background" | "batch" | "interactive" | "review";
+        status: "active" | "ended" | "idle" | "suspended";
         workspaceId: string;
-        startedAt: string;
         provider: string;
-        metadata?: Record<string, unknown> | undefined;
         model?: string | undefined;
+        startedAt: string;
         endedAt?: string | undefined;
         lastActivityAt?: string | undefined;
         promptTokens?: number | undefined;
         completionTokens?: number | undefined;
         cost?: number | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }>, "many">;
     nextCursor: z.ZodOptional<z.ZodString>;
     total: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     items: {
-        type: "interactive" | "batch" | "background" | "review";
-        status: "active" | "idle" | "suspended" | "ended";
         id: string;
+        type: "background" | "batch" | "interactive" | "review";
+        status: "active" | "ended" | "idle" | "suspended";
         workspaceId: string;
-        startedAt: string;
         provider: string;
+        model?: string | undefined;
+        startedAt: string;
+        endedAt?: string | undefined;
+        lastActivityAt?: string | undefined;
         promptTokens: number;
         completionTokens: number;
         cost: number;
         metadata?: Record<string, unknown> | undefined;
-        model?: string | undefined;
-        endedAt?: string | undefined;
-        lastActivityAt?: string | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;
 }, {
     items: {
-        type: "interactive" | "batch" | "background" | "review";
-        status: "active" | "idle" | "suspended" | "ended";
         id: string;
+        type: "background" | "batch" | "interactive" | "review";
+        status: "active" | "ended" | "idle" | "suspended";
         workspaceId: string;
-        startedAt: string;
         provider: string;
-        metadata?: Record<string, unknown> | undefined;
         model?: string | undefined;
+        startedAt: string;
         endedAt?: string | undefined;
         lastActivityAt?: string | undefined;
         promptTokens?: number | undefined;
         completionTokens?: number | undefined;
         cost?: number | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;

@@ -4,7 +4,7 @@
  * Handles voice messages from LINE Messaging API.
  */
 
-import type { VoiceMessage, TranscriptionResult } from './types.js';
+import type { TranscriptionResult } from './types.js';
 import { VoiceTranscriber } from './transcriber.js';
 
 /**
@@ -38,7 +38,7 @@ export interface LineWebhookBody {
 /**
  * LINE Messaging API response
  */
-interface LineMessageContent {
+interface _LineMessageContent {
   displayName?: string;
 }
 
@@ -70,6 +70,7 @@ export class LineVoiceHandler {
   private channelSecret?: string;
   private transcriber: VoiceTranscriber;
   private apiBase: string;
+  private dataApiBase: string;
   private onTranscribed?: (userId: string, text: string, result: TranscriptionResult) => Promise<void>;
   private onError?: (userId: string, error: Error) => void;
 
@@ -78,6 +79,7 @@ export class LineVoiceHandler {
     this.channelSecret = options.channelSecret;
     this.transcriber = options.transcriber;
     this.apiBase = options.apiBase || 'https://api.line.me';
+    this.dataApiBase = 'https://api-data.line.me'; // Content API is different
     this.onTranscribed = options.onTranscribed;
     this.onError = options.onError;
   }
@@ -85,7 +87,7 @@ export class LineVoiceHandler {
   /**
    * Verify LINE webhook signature
    */
-  verifySignature(body: string, signature: string): boolean {
+  verifySignature(_body: string, _signature: string): boolean {
     if (!this.channelSecret) return true; // Skip verification if no secret
 
     // Note: In production, implement proper HMAC verification
@@ -116,9 +118,7 @@ export class LineVoiceHandler {
         }
 
         // Transcribe
-        const result = await this.transcriber.transcribe({
-          audioBuffer: audioContent,
-        });
+        const result = await this.transcriber.transcribe(audioContent);
 
         if (result.error) {
           this.onError?.(userId, new Error(result.error));
@@ -145,8 +145,9 @@ export class LineVoiceHandler {
    */
   private async getAudioContent(messageId: string): Promise<Uint8Array | null> {
     try {
+      // Use data API for content retrieval
       const response = await fetch(
-        `${this.apiBase}/v2/bot/message/${messageId}/content`,
+        `${this.dataApiBase}/v2/bot/message/${messageId}/content`,
         {
           headers: {
             'Authorization': `Bearer ${this.channelAccessToken}`,
@@ -155,12 +156,14 @@ export class LineVoiceHandler {
       );
 
       if (!response.ok) {
+        console.error(`LINE API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
       const arrayBuffer = await response.arrayBuffer();
       return new Uint8Array(arrayBuffer);
-    } catch {
+    } catch (error) {
+      console.error(`Failed to get audio content: ${error}`);
       return null;
     }
   }

@@ -31,35 +31,35 @@ export declare const Job: z.ZodObject<{
     completedAt: z.ZodOptional<z.ZodString>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    type: string;
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
     id: string;
+    type: string;
+    status: "cancelled" | "completed" | "failed" | "pending" | "running";
+    priority: "high" | "low" | "normal" | "urgent";
     workspaceId: string;
-    priority: "low" | "normal" | "high" | "urgent";
-    requirement: string;
-    progress: number;
-    createdAt: string;
     sessionId?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
+    requirement: string;
     result?: unknown;
     error?: string | undefined;
+    progress: number;
+    createdAt: string;
     startedAt?: string | undefined;
     completedAt?: string | undefined;
-}, {
-    type: string;
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
-    id: string;
-    workspaceId: string;
-    requirement: string;
-    createdAt: string;
-    sessionId?: string | undefined;
     metadata?: Record<string, unknown> | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
+}, {
+    id: string;
+    type: string;
+    status: "cancelled" | "completed" | "failed" | "pending" | "running";
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
+    workspaceId: string;
+    sessionId?: string | undefined;
+    requirement: string;
     result?: unknown;
     error?: string | undefined;
     progress?: number | undefined;
+    createdAt: string;
     startedAt?: string | undefined;
     completedAt?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type Job = z.infer<typeof Job>;
 /**
@@ -74,18 +74,18 @@ export declare const JobCreate: z.ZodObject<{
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
     type: string;
+    priority: "high" | "low" | "normal" | "urgent";
     workspaceId: string;
-    priority: "low" | "normal" | "high" | "urgent";
-    requirement: string;
     sessionId?: string | undefined;
+    requirement: string;
     metadata?: Record<string, unknown> | undefined;
 }, {
     type: string;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     workspaceId: string;
-    requirement: string;
     sessionId?: string | undefined;
+    requirement: string;
     metadata?: Record<string, unknown> | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
 }>;
 export type JobCreate = z.infer<typeof JobCreate>;
 /**
@@ -97,15 +97,15 @@ export declare const JobUpdate: z.ZodObject<{
     result: z.ZodOptional<z.ZodUnknown>;
     error: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    status?: "pending" | "running" | "completed" | "failed" | "cancelled" | undefined;
+    status?: "cancelled" | "completed" | "failed" | "pending" | "running" | undefined;
+    progress?: number | undefined;
     result?: unknown;
     error?: string | undefined;
-    progress?: number | undefined;
 }, {
-    status?: "pending" | "running" | "completed" | "failed" | "cancelled" | undefined;
+    status?: "cancelled" | "completed" | "failed" | "pending" | "running" | undefined;
+    progress?: number | undefined;
     result?: unknown;
     error?: string | undefined;
-    progress?: number | undefined;
 }>;
 export type JobUpdate = z.infer<typeof JobUpdate>;
 /**
@@ -121,23 +121,23 @@ export declare const JobFilter: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     cursor: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    limit: number;
-    status?: "pending" | "running" | "completed" | "failed" | "cancelled" | ("pending" | "running" | "completed" | "failed" | "cancelled")[] | undefined;
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
+    status?: "cancelled" | "completed" | "failed" | "pending" | "running" | ("cancelled" | "completed" | "failed" | "pending" | "running")[] | undefined;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     since?: string | undefined;
     until?: string | undefined;
+    limit: number;
     cursor?: string | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
 }, {
-    status?: "pending" | "running" | "completed" | "failed" | "cancelled" | ("pending" | "running" | "completed" | "failed" | "cancelled")[] | undefined;
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
+    status?: "cancelled" | "completed" | "failed" | "pending" | "running" | ("cancelled" | "completed" | "failed" | "pending" | "running")[] | undefined;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     since?: string | undefined;
     until?: string | undefined;
     limit?: number | undefined;
     cursor?: string | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
 }>;
 export type JobFilter = z.infer<typeof JobFilter>;
 /**
@@ -160,73 +160,73 @@ export declare const JobList: z.ZodObject<{
         completedAt: z.ZodOptional<z.ZodString>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
-        status: "pending" | "running" | "completed" | "failed" | "cancelled";
         id: string;
+        type: string;
+        status: "cancelled" | "completed" | "failed" | "pending" | "running";
+        priority: "high" | "low" | "normal" | "urgent";
         workspaceId: string;
-        priority: "low" | "normal" | "high" | "urgent";
-        requirement: string;
-        progress: number;
-        createdAt: string;
         sessionId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
+        requirement: string;
         result?: unknown;
         error?: string | undefined;
+        progress: number;
+        createdAt: string;
         startedAt?: string | undefined;
         completedAt?: string | undefined;
-    }, {
-        type: string;
-        status: "pending" | "running" | "completed" | "failed" | "cancelled";
-        id: string;
-        workspaceId: string;
-        requirement: string;
-        createdAt: string;
-        sessionId?: string | undefined;
         metadata?: Record<string, unknown> | undefined;
-        priority?: "low" | "normal" | "high" | "urgent" | undefined;
+    }, {
+        id: string;
+        type: string;
+        status: "cancelled" | "completed" | "failed" | "pending" | "running";
+        priority?: "high" | "low" | "normal" | "urgent" | undefined;
+        workspaceId: string;
+        sessionId?: string | undefined;
+        requirement: string;
         result?: unknown;
         error?: string | undefined;
         progress?: number | undefined;
+        createdAt: string;
         startedAt?: string | undefined;
         completedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }>, "many">;
     nextCursor: z.ZodOptional<z.ZodString>;
     total: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     items: {
-        type: string;
-        status: "pending" | "running" | "completed" | "failed" | "cancelled";
         id: string;
+        type: string;
+        status: "cancelled" | "completed" | "failed" | "pending" | "running";
+        priority: "high" | "low" | "normal" | "urgent";
         workspaceId: string;
-        priority: "low" | "normal" | "high" | "urgent";
-        requirement: string;
-        progress: number;
-        createdAt: string;
         sessionId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
+        requirement: string;
         result?: unknown;
         error?: string | undefined;
+        progress: number;
+        createdAt: string;
         startedAt?: string | undefined;
         completedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;
 }, {
     items: {
-        type: string;
-        status: "pending" | "running" | "completed" | "failed" | "cancelled";
         id: string;
+        type: string;
+        status: "cancelled" | "completed" | "failed" | "pending" | "running";
+        priority?: "high" | "low" | "normal" | "urgent" | undefined;
         workspaceId: string;
-        requirement: string;
-        createdAt: string;
         sessionId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-        priority?: "low" | "normal" | "high" | "urgent" | undefined;
+        requirement: string;
         result?: unknown;
         error?: string | undefined;
         progress?: number | undefined;
+        createdAt: string;
         startedAt?: string | undefined;
         completedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;

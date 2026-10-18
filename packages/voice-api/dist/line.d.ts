@@ -58,13 +58,14 @@ export declare class LineVoiceHandler {
     private channelSecret?;
     private transcriber;
     private apiBase;
+    private dataApiBase;
     private onTranscribed?;
     private onError?;
     constructor(options: LineVoiceHandlerOptions);
     /**
      * Verify LINE webhook signature
      */
-    verifySignature(body: string, signature: string): boolean;
+    verifySignature(_body: string, _signature: string): boolean;
     /**
      * Handle incoming webhook from LINE
      */

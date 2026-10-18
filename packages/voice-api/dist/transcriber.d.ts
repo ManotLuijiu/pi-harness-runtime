@@ -1,48 +1,19 @@
 /**
- * Voice Transcriber - Main interface for speech-to-text
- */
-import type { TranscriptionResult, TranscribeOptions, VoiceApiConfig } from './types.js';
-import { WhisperProvider } from './provider.js';
-/**
- * Voice Transcriber
+ * OpenAI Whisper API Transcription
  *
- * Main interface for transcribing voice messages to text.
- * Supports multiple providers (OpenAI, Replicate).
+ * Transcribes audio using OpenAI's Whisper API.
  */
-export declare class VoiceTranscriber {
-    private providers;
-    private defaultProvider;
-    constructor(config?: VoiceApiConfig);
-    /**
-     * Check if transcriber is configured
-     */
-    isConfigured(): boolean;
-    /**
-     * Get configured providers
-     */
-    getProviders(): string[];
-    /**
-     * Get default provider
-     */
-    getDefaultProvider(): string | null;
-    /**
-     * Transcribe audio to text
-     */
-    transcribe(options: TranscribeOptions): Promise<TranscriptionResult>;
-    /**
-     * Add a provider
-     */
-    addProvider(name: string, provider: WhisperProvider): void;
-    /**
-     * Remove a provider
-     */
-    removeProvider(name: string): boolean;
-    /**
-     * Set default provider
-     */
-    setDefaultProvider(name: string): boolean;
+import type { TranscriptionResult } from './types.js';
+export interface TranscriberOptions {
+    openaiApiKey: string;
+    model?: string;
 }
-/**
- * Create a VoiceTranscriber from environment variables
- */
-export declare function createFromEnv(): VoiceTranscriber;
+export declare class VoiceTranscriber {
+    private apiKey;
+    private model;
+    constructor(options: TranscriberOptions);
+    /**
+     * Transcribe audio buffer using Whisper API
+     */
+    transcribe(audioBuffer: Uint8Array): Promise<TranscriptionResult>;
+}

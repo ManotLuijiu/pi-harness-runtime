@@ -46,16 +46,15 @@ export declare const Notification: z.ZodObject<{
     readAt: z.ZodOptional<z.ZodString>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    message: string;
     id: string;
-    priority: "low" | "normal" | "high" | "urgent";
     event: string;
-    channel: "telegram" | "email" | "webhook" | "desktop";
-    title: string;
+    channel: "desktop" | "email" | "telegram" | "webhook";
+    priority: "high" | "low" | "normal" | "urgent";
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
+    title: string;
+    message: string;
     data?: Record<string, unknown> | undefined;
     buttons?: {
         text: string;
@@ -65,17 +64,17 @@ export declare const Notification: z.ZodObject<{
     }[] | undefined;
     sentAt?: string | undefined;
     readAt?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }, {
-    message: string;
     id: string;
     event: string;
-    channel: "telegram" | "email" | "webhook" | "desktop";
-    title: string;
+    channel: "desktop" | "email" | "telegram" | "webhook";
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
+    title: string;
+    message: string;
     data?: Record<string, unknown> | undefined;
     buttons?: {
         text: string;
@@ -85,6 +84,7 @@ export declare const Notification: z.ZodObject<{
     }[] | undefined;
     sentAt?: string | undefined;
     readAt?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type Notification = z.infer<typeof Notification>;
 /**
@@ -118,15 +118,14 @@ export declare const NotificationCreate: z.ZodObject<{
     }>, "many">>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
-    message: string;
-    priority: "low" | "normal" | "high" | "urgent";
     event: string;
-    channel: "telegram" | "email" | "webhook" | "desktop";
-    title: string;
+    channel: "desktop" | "email" | "telegram" | "webhook";
+    priority: "high" | "low" | "normal" | "urgent";
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
+    title: string;
+    message: string;
     data?: Record<string, unknown> | undefined;
     buttons?: {
         text: string;
@@ -134,16 +133,16 @@ export declare const NotificationCreate: z.ZodObject<{
         targetId?: string | undefined;
         url?: string | undefined;
     }[] | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }, {
-    message: string;
     event: string;
-    title: string;
+    channel?: "desktop" | "email" | "telegram" | "webhook" | undefined;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
-    channel?: "telegram" | "email" | "webhook" | "desktop" | undefined;
+    title: string;
+    message: string;
     data?: Record<string, unknown> | undefined;
     buttons?: {
         text: string;
@@ -151,6 +150,7 @@ export declare const NotificationCreate: z.ZodObject<{
         targetId?: string | undefined;
         url?: string | undefined;
     }[] | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type NotificationCreate = z.infer<typeof NotificationCreate>;
 /**
@@ -167,25 +167,25 @@ export declare const NotificationFilter: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     cursor: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    limit: number;
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
+    channel?: "desktop" | "email" | "telegram" | "webhook" | undefined;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     since?: string | undefined;
     until?: string | undefined;
+    limit: number;
     cursor?: string | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
-    channel?: "telegram" | "email" | "webhook" | "desktop" | undefined;
 }, {
     workspaceId?: string | undefined;
     sessionId?: string | undefined;
     jobId?: string | undefined;
+    channel?: "desktop" | "email" | "telegram" | "webhook" | undefined;
+    priority?: "high" | "low" | "normal" | "urgent" | undefined;
     since?: string | undefined;
     until?: string | undefined;
     limit?: number | undefined;
     cursor?: string | undefined;
-    priority?: "low" | "normal" | "high" | "urgent" | undefined;
-    channel?: "telegram" | "email" | "webhook" | "desktop" | undefined;
 }>;
 export type NotificationFilter = z.infer<typeof NotificationFilter>;
 /**
@@ -223,16 +223,15 @@ export declare const NotificationList: z.ZodObject<{
         readAt: z.ZodOptional<z.ZodString>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
-        message: string;
         id: string;
-        priority: "low" | "normal" | "high" | "urgent";
         event: string;
-        channel: "telegram" | "email" | "webhook" | "desktop";
-        title: string;
+        channel: "desktop" | "email" | "telegram" | "webhook";
+        priority: "high" | "low" | "normal" | "urgent";
         workspaceId?: string | undefined;
         sessionId?: string | undefined;
         jobId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
+        title: string;
+        message: string;
         data?: Record<string, unknown> | undefined;
         buttons?: {
             text: string;
@@ -242,17 +241,17 @@ export declare const NotificationList: z.ZodObject<{
         }[] | undefined;
         sentAt?: string | undefined;
         readAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }, {
-        message: string;
         id: string;
         event: string;
-        channel: "telegram" | "email" | "webhook" | "desktop";
-        title: string;
+        channel: "desktop" | "email" | "telegram" | "webhook";
+        priority?: "high" | "low" | "normal" | "urgent" | undefined;
         workspaceId?: string | undefined;
         sessionId?: string | undefined;
         jobId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-        priority?: "low" | "normal" | "high" | "urgent" | undefined;
+        title: string;
+        message: string;
         data?: Record<string, unknown> | undefined;
         buttons?: {
             text: string;
@@ -262,21 +261,21 @@ export declare const NotificationList: z.ZodObject<{
         }[] | undefined;
         sentAt?: string | undefined;
         readAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }>, "many">;
     nextCursor: z.ZodOptional<z.ZodString>;
     total: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     items: {
-        message: string;
         id: string;
-        priority: "low" | "normal" | "high" | "urgent";
         event: string;
-        channel: "telegram" | "email" | "webhook" | "desktop";
-        title: string;
+        channel: "desktop" | "email" | "telegram" | "webhook";
+        priority: "high" | "low" | "normal" | "urgent";
         workspaceId?: string | undefined;
         sessionId?: string | undefined;
         jobId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
+        title: string;
+        message: string;
         data?: Record<string, unknown> | undefined;
         buttons?: {
             text: string;
@@ -286,21 +285,21 @@ export declare const NotificationList: z.ZodObject<{
         }[] | undefined;
         sentAt?: string | undefined;
         readAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;
 }, {
     items: {
-        message: string;
         id: string;
         event: string;
-        channel: "telegram" | "email" | "webhook" | "desktop";
-        title: string;
+        channel: "desktop" | "email" | "telegram" | "webhook";
+        priority?: "high" | "low" | "normal" | "urgent" | undefined;
         workspaceId?: string | undefined;
         sessionId?: string | undefined;
         jobId?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-        priority?: "low" | "normal" | "high" | "urgent" | undefined;
+        title: string;
+        message: string;
         data?: Record<string, unknown> | undefined;
         buttons?: {
             text: string;
@@ -310,6 +309,7 @@ export declare const NotificationList: z.ZodObject<{
         }[] | undefined;
         sentAt?: string | undefined;
         readAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;

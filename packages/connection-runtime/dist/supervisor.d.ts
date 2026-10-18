@@ -57,7 +57,7 @@ export declare class ConnectionSupervisor {
     /**
      * Current connection state
      */
-    getState(): "connecting" | "connected" | "reconnecting" | "error" | "idle" | "stopped";
+    getState(): "connected" | "connecting" | "error" | "idle" | "reconnecting" | "stopped";
     /**
      * Number of retries attempted
      */

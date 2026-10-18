@@ -2396,6 +2396,61 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 	logToFile("[JobPipe]", "Watching for Telegram approval commands via API (polling every 60s)");
 }
 
+// --- LINE Voice Queue Watcher: Listen for LINE voice commands ---------
+// Watches the LINE voice queue file and injects transcribed prompts into pi.
+//
+// Flow:
+//   User sends voice message in LINE
+//   → LINE sends webhook to our VPS
+//   → VPS transcribes via Whisper API
+//   → VPS writes command to line-voice-queue.jsonl
+//   → pi-harness polls this file
+//   → pi-harness injects prompt via steer
+function initLineVoiceQueue(pi: ExtensionAPI): void {
+	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const queueFile = join(homedir, ".pi-harness-runtime", "line-voice-queue.jsonl");
+
+	const processLineVoiceQueue = async () => {
+		try {
+			const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+
+			if (!existsSync(queueFile)) {
+				return;
+			}
+
+			const content = readFileSync(queueFile, "utf-8");
+			const lines = content.split("\n").filter((l) => l.trim());
+
+			if (lines.length === 0) {
+				return;
+			}
+
+			// Clear queue
+			writeFileSync(queueFile, "", "utf-8");
+
+			for (const line of lines) {
+				try {
+					const cmd = JSON.parse(line) as { type: string; text: string; userId: string; timestamp: string };
+
+					if (cmd.type === "voice-prompt" && cmd.text) {
+						logToFile("[LineVoice]", `Injecting voice prompt: "${cmd.text}"`);
+						pi.sendUserMessage(cmd.text, { deliverAs: "steer" });
+						logToFile("[LineVoice]", "Voice prompt injected via steer");
+					}
+				} catch {
+					// Skip malformed lines
+				}
+			}
+		} catch {
+			// Ignore errors
+		}
+	};
+
+	// Poll every 5 seconds for new voice commands (voice is more time-sensitive than approvals)
+	setInterval(processLineVoiceQueue, 5_000);
+	logToFile("[LineVoice]", `Watching LINE voice queue: ${queueFile} (polling every 5s)`);
+}
+
 export default async function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
@@ -2441,6 +2496,9 @@ export default async function (pi: ExtensionAPI) {
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	// Collect promise so we can wait for initialization before showing startup notification
 	asyncInitPromises.push(initTelegram(pi));
+
+	// --- line-voice-queue: Watch for LINE voice commands ----
+	void initLineVoiceQueue(pi);
 
 		// --- codex-watcher: Auto-trigger Pi when Codex finishes a plan ---
 		// Flow: detect plan -> settle timer -> file stability check -> cwd match -> trigger
