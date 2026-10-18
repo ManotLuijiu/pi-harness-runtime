@@ -292,6 +292,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (!msg || msg.role !== "assistant") return;
 
 			const content = extractAssistantText(msg);
+			
+			// Reset completion deduplication on new assistant output
+			// This allows fresh completion notifications for new work cycles
+			if (content && content.length > 0) {
+				_completedNotifiedFor = null;
+			}
+
 			const result = pqController.detectQuestion(content);
 
 			// Only trigger if: we found a question AND it's different from last notification
