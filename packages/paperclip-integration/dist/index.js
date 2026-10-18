@@ -230,7 +230,7 @@ export function getPaperclipConfig() {
         // Default to self-hosted server URL
         const baseUrl = existsSync(baseUrlPath)
             ? readFileSync(baseUrlPath, "utf8").trim()
-            : "https://paperclip.moo-vpn.online/api";
+            : "https://paperclip.example.com/api";
         return { apiKey, baseUrl };
     }
     catch {

@@ -21,25 +21,25 @@ export declare const Project: z.ZodObject<{
     lastAccessedAt: z.ZodOptional<z.ZodString>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
+    id: string;
+    name: string;
     path: string;
     status: "active" | "archived" | "deleted";
-    id: string;
     workspaceId: string;
     createdAt: string;
-    name: string;
     updatedAt: string;
-    metadata?: Record<string, unknown> | undefined;
     lastAccessedAt?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }, {
-    path: string;
     id: string;
+    name: string;
+    path: string;
+    status?: "active" | "archived" | "deleted" | undefined;
     workspaceId: string;
     createdAt: string;
-    name: string;
     updatedAt: string;
-    status?: "active" | "archived" | "deleted" | undefined;
-    metadata?: Record<string, unknown> | undefined;
     lastAccessedAt?: string | undefined;
+    metadata?: Record<string, unknown> | undefined;
 }>;
 export type Project = z.infer<typeof Project>;
 /**
@@ -51,14 +51,14 @@ export declare const ProjectCreate: z.ZodObject<{
     workspaceId: z.ZodString;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
+    name: string;
     path: string;
     workspaceId: string;
-    name: string;
     metadata?: Record<string, unknown> | undefined;
 }, {
+    name: string;
     path: string;
     workspaceId: string;
-    name: string;
     metadata?: Record<string, unknown> | undefined;
 }>;
 export type ProjectCreate = z.infer<typeof ProjectCreate>;
@@ -70,13 +70,13 @@ export declare const ProjectUpdate: z.ZodObject<{
     status: z.ZodOptional<z.ZodEnum<["active", "archived", "deleted"]>>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
+    name?: string | undefined;
     status?: "active" | "archived" | "deleted" | undefined;
     metadata?: Record<string, unknown> | undefined;
-    name?: string | undefined;
 }, {
+    name?: string | undefined;
     status?: "active" | "archived" | "deleted" | undefined;
     metadata?: Record<string, unknown> | undefined;
-    name?: string | undefined;
 }>;
 export type ProjectUpdate = z.infer<typeof ProjectUpdate>;
 /**
@@ -89,17 +89,17 @@ export declare const ProjectFilter: z.ZodObject<{
     limit: z.ZodDefault<z.ZodNumber>;
     cursor: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    limit: number;
-    status?: "active" | "archived" | "deleted" | undefined;
     workspaceId?: string | undefined;
-    cursor?: string | undefined;
+    status?: "active" | "archived" | "deleted" | undefined;
     search?: string | undefined;
+    limit: number;
+    cursor?: string | undefined;
 }, {
-    status?: "active" | "archived" | "deleted" | undefined;
     workspaceId?: string | undefined;
+    status?: "active" | "archived" | "deleted" | undefined;
+    search?: string | undefined;
     limit?: number | undefined;
     cursor?: string | undefined;
-    search?: string | undefined;
 }>;
 export type ProjectFilter = z.infer<typeof ProjectFilter>;
 /**
@@ -117,53 +117,53 @@ export declare const ProjectList: z.ZodObject<{
         lastAccessedAt: z.ZodOptional<z.ZodString>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
+        id: string;
+        name: string;
         path: string;
         status: "active" | "archived" | "deleted";
-        id: string;
         workspaceId: string;
         createdAt: string;
-        name: string;
         updatedAt: string;
-        metadata?: Record<string, unknown> | undefined;
         lastAccessedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }, {
-        path: string;
         id: string;
+        name: string;
+        path: string;
+        status?: "active" | "archived" | "deleted" | undefined;
         workspaceId: string;
         createdAt: string;
-        name: string;
         updatedAt: string;
-        status?: "active" | "archived" | "deleted" | undefined;
-        metadata?: Record<string, unknown> | undefined;
         lastAccessedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }>, "many">;
     nextCursor: z.ZodOptional<z.ZodString>;
     total: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     items: {
+        id: string;
+        name: string;
         path: string;
         status: "active" | "archived" | "deleted";
-        id: string;
         workspaceId: string;
         createdAt: string;
-        name: string;
         updatedAt: string;
-        metadata?: Record<string, unknown> | undefined;
         lastAccessedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;
 }, {
     items: {
-        path: string;
         id: string;
+        name: string;
+        path: string;
+        status?: "active" | "archived" | "deleted" | undefined;
         workspaceId: string;
         createdAt: string;
-        name: string;
         updatedAt: string;
-        status?: "active" | "archived" | "deleted" | undefined;
-        metadata?: Record<string, unknown> | undefined;
         lastAccessedAt?: string | undefined;
+        metadata?: Record<string, unknown> | undefined;
     }[];
     nextCursor?: string | undefined;
     total?: number | undefined;
