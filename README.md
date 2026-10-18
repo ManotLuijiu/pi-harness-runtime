@@ -30,9 +30,12 @@ pi install npm:pi-harness-runtime
 This runtime works best with these extensions (auto-installed by pi-harness-runtime):
 
 ```bash
+pi install npm:pi-subagents     # Sub-agent orchestration for large refactors
 pi install npm:pi-mcp-adapter    # MCP protocol adapter for external tools
 pi install npm:@juicesharp/rpiv-todo  # Task tracking with bd sync
 ```
+
+The `pi-subagents` extension enables delegation assessment and parallel task execution for large refactoring work (10+ files, 50+ call sites).
 
 Requires Pi v0.37.3+.
 
