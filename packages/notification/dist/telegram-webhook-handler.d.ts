@@ -16,6 +16,10 @@ export declare const CallbackActions: {
     readonly REJECT: "reject";
     /** View details action */
     readonly VIEW: "view";
+    /** Toggle Telegram notifications */
+    readonly TOGGLE_TELEGRAM: "toggle_telegram";
+    /** Toggle LINE notifications */
+    readonly TOGGLE_LINE: "toggle_line";
     /** Custom action prefix */
     readonly CUSTOM: "custom";
 };

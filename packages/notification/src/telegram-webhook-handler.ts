@@ -19,6 +19,10 @@ export const CallbackActions = {
 	REJECT: "reject",
 	/** View details action */
 	VIEW: "view",
+	/** Toggle Telegram notifications */
+	TOGGLE_TELEGRAM: "toggle_telegram",
+	/** Toggle LINE notifications */
+	TOGGLE_LINE: "toggle_line",
 	/** Custom action prefix */
 	CUSTOM: "custom",
 } as const;
