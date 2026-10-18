@@ -168,6 +168,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim();
 
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
+		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
+		const pqController = createPendingQuestionController();
 
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
@@ -176,6 +178,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let _inferenceInProgress = false; // Track for overlap prevention
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
 		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
+		let _completedNotifiedFor: string | null = null; // Track completion notification deduplication
 
 		// UI status for auto-continue (captured from session_start ctx)
 		let _setAutoContinueStatus: ((text: string | undefined) => void) | null = null;
@@ -271,50 +274,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		}
 
 		// Detect actual confirmation requests (questions, not progress statements)
-		// Must be a question ending with ? AND contain both a request word AND user intent
+		// Uses the pending question controller for detection with expanded patterns
 		function detectConfirmationRequest(text: string): string | null {
-			// Find questions ending with ? and check each
-			// Use regex to match question sentences (ending with ?)
-			const questionPattern = /([^?]*\?)/g;
-			const matches = text.matchAll(questionPattern);
-
-			for (const match of matches) {
-				const sentence = match[1].trim();
-				const lower = sentence.toLowerCase();
-
-				// Must contain request words AND user intent words
-				const hasRequest = /\b(continue|proceed|next|wait|pause|stop|hold|resume|repeat|rephrase|clarify|explain)\b/i.test(lower);
-				const hasUserIntent = /\b(should|would|could|shall|may i|do you|would you|should i|could we|can i|can we|would like)\b/i.test(lower);
-
-				if (hasRequest && hasUserIntent) {
-					// Return the question for deduplication (with the ? preserved)
-					return sentence;
-				}
+			const result = pqController.detectQuestion(text);
+			if (result.detected && result.questionText) {
+				return result.questionText;
 			}
-
 			return null;
 		}
 
 		// Detect routine continuation questions ("Should I continue?")
 		// These should NOT block immediate continuation - let Jev/todo controller decide
 		function isRoutineContinuation(question: string): boolean {
-			const lower = question.toLowerCase();
-			// Match ALL routine continuation patterns
-			const routinePatterns = [
-				/\b(should i|should we|should the|can i continue|can we continue)\b/,
-				/\b(would you like me to continue|shall i proceed)\b/,
-				/\b(can i proceed|may i continue)\b/,
-				/\b(continue|proceed)\s*(with|to|on|with the next|to the next)\b/,
-				/\bshall\s+(i|we)\s+(proceed|continue)\b/,
-				/\bshould\s+(i|we)\s+(continue|proceed|move on)\b/,
-				/\b(continue|proceed)\s+\?/,
-			];
-			for (const pattern of routinePatterns) {
-				if (pattern.test(lower)) {
-					return true;
-				}
-			}
-			return false;
+			const result = pqController.detectQuestion(question);
+			return result.isRoutine ?? false;
 		}
 
 		// Detect when agent asks for continuation
@@ -792,26 +765,50 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					if (result.action === "blocked") {
 						updateAutoContinueStatus("ERROR", "blocked");
 						logToFile("[auto-continue]", "Tasks blocked:", result.question ?? "unknown");
-				} else if (result.action === "stop") {
-					logToFile("[auto-continue]", "decide returned stop:", result.reason ?? "unknown");
-					// Get full todo list for notification
-					const snapshot = await todoContinuationController.getSnapshot();
-					const todoList = snapshot.items
-						.map((item) => {
-							const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
-						const subject = item.subject.length > 50 ? item.subject.slice(0, 47) + "..." : item.subject;
-							return `${status} ${subject}`;
-						})
-						.join("\n");
-						const message = todoList || "All tasks completed";
-						// Notify user that all work is complete with todo list
-						_nc?.notify("ReadyForClient", {
-							jobId: `done-${Date.now()}`,
-							requirement: message,
-						}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
+					} else if (result.action === "stop") {
+						const reason = result.reason ?? "unknown";
+						logToFile("[auto-continue]", "decide returned stop:", reason);
+
+						// Only send completion notification for "No pending tasks"
+						// Other stop reasons (paused, unavailable, max attempts) are not completion
+						const isNoPendingTasks = reason === "No pending tasks";
+
+						if (isNoPendingTasks) {
+							// Check if there's a pending question - suppress completion if so
+							if (pqController.hasPendingQuestion()) {
+								logToFile("[auto-continue]", "Suppressing completion - pending question exists");
+								updateAutoContinueStatus("WAITING", "pending");
+								return;
+							}
+
+							// Deduplication: only notify once per work generation
+							// Use a static flag for this session's settled cycle
+							const completionKey = `done-${reason}`;
+							if (_completedNotifiedFor === completionKey) {
+								logToFile("[auto-continue]", "Completion already notified for:", reason);
+								return;
+							}
+							_completedNotifiedFor = completionKey;
+
+							// Get full todo list for notification
+							const snapshot = await todoContinuationController.getSnapshot();
+							const todoList = snapshot.items
+								.map((item) => {
+									const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
+									const subject = item.subject.length > 50 ? item.subject.slice(0, 47) + "..." : item.subject;
+									return `${status} ${subject}`;
+								})
+								.join("\n");
+							const message = todoList || "All tasks completed";
+							// Notify user that all work is complete with todo list
+							_nc?.notify("ReadyForClient", {
+								jobId: `done-${reason.replace(/\s+/g, "-")}`,
+								requirement: message,
+							}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
 						}
-				}
-			} catch (err) {
+					}
+					}
+				} catch (err) {
 				logToFile("[auto-continue]", "agent_settled handler error:", String(err));
 				todoContinuationController?.clearQueue();
 			}
