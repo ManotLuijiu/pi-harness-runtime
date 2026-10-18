@@ -1231,30 +1231,29 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		// Register message handler to forward Telegram messages to Pi
 		center.setMessageHandler(async (text: string, _chatId: string) => {
-			// Parse /notify command for channel management
-			// Usage: /notify on telegram, /notify off line, /notify on all, /notify (show status)
-			const notifyRegex = /^\/notify(?:\s+(on|off)(?:\s+(telegram|line|all))?/i;
-			const notifyMatch = text.match(notifyRegex);
-			if (notifyMatch) {
-				const [, action, channel] = notifyMatch;
-				const isEnabled = action === "on";
-				const channels = channel === "all" ? ["telegram", "line"] : [channel || "telegram"];
+			// Parse /notify-settings command for channel management
+			// Usage: /notify-settings - show current status
+			//        /notify-settings telegram on - enable Telegram
+			//        /notify-settings line off - disable LINE
+			//        /notify-settings all on - enable all channels
+			const settingsMatch = text.match(/^\/notify-settings(?:\s+(\w+)\s+(on|off))?/i);
+			if (settingsMatch || text === "/notify-settings") {
+				const [, channel, action] = settingsMatch || [];
 
-				for (const ch of channels) {
-					(center as any).setChannelEnabled?.(ch, isEnabled);
-					logToFile("[NotifyCommand]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
+				if (action && channel) {
+					const isEnabled = action === "on";
+					const targetChannels = channel === "all" ? ["telegram", "line"] : [channel];
+					for (const ch of targetChannels) {
+						(center as any).setChannelEnabled?.(ch, isEnabled);
+						logToFile("[NotifySettings]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
+					}
 				}
-				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
-				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
-				logToFile("[NotifyCommand]", `Current: Telegram=${telegramStatus}, LINE=${lineStatus}`);
-				return;
-			}
 
-			// Show help for /notify without args
-			if (text === "/notify") {
+				// Show current status
 				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
 				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
-				logToFile("[NotifyCommand]", `Channel Status: Telegram=${telegramStatus}, LINE=${lineStatus}`);
+				logToFile("[NotifySettings]", `Current: Telegram=${telegramStatus}, LINE=${lineStatus}`);
+				logToFile("[NotifySettings]", `Commands: /notify-settings telegram on|off, /notify-settings line on|off, /notify-settings all on|off`);
 				return;
 			}
 
