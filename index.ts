@@ -304,9 +304,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 			const content = extractAssistantText(msg);
 			
-			// Reset completion deduplication on new assistant output
-			// This allows fresh completion notifications for new work cycles
-			if (content && content.length > 0) {
+			// Detect new work cycle: check if message contains tool usage
+			// Tool calls indicate actual work being done, not just status replies
+			const hasToolUsage = Array.isArray(msg.content) && 
+				msg.content.some((block) => block.type === "tool_use");
+			
+			// Only reset completion deduplication when new work is detected
+			// This prevents repeated notifications after informational replies
+			if (hasToolUsage) {
 				_completedNotifiedFor = null;
 			}
 
