@@ -38,6 +38,20 @@ export declare class WikiManager {
         existing: boolean;
     };
     /**
+     * Ingest a source and create a wiki page from it
+     * Combines snapshot capture with page creation for searchable knowledge
+     */
+    ingestAndCreatePage(sourcePath: string, requestId?: string): {
+        page: WikiPage;
+        snapshot: SourceSnapshot;
+        operation: WikiOperation;
+        existing: boolean;
+    };
+    /**
+     * Synthesize page body from source snapshot (faux synthesis for now)
+     */
+    private synthesizePageBody;
+    /**
      * Get source snapshot
      */
     getSnapshot(snapshotId: string): SourceSnapshot | null;

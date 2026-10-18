@@ -38,6 +38,8 @@ export declare class WikiStorage {
     private operations;
     private stagedChanges;
     private initialized;
+    private modifiedIds;
+    private deletedIds;
     constructor(config: WikiConfig);
     /**
      * Initialize storage (call before any read/write operations)
@@ -61,7 +63,9 @@ export declare class WikiStorage {
      */
     private loadIndex;
     /**
-     * Save page index to disk (atomic, merges with existing entries)
+     * Save page index to disk (atomic)
+     * Only applies changes from this manager instance (tracked via modifiedIds)
+     * Respects deletions tracked via deletedIds
      */
     private saveIndex;
     /**

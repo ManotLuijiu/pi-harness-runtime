@@ -122,6 +122,61 @@ export class WikiManager {
         }
     }
     /**
+     * Ingest a source and create a wiki page from it
+     * Combines snapshot capture with page creation for searchable knowledge
+     */
+    ingestAndCreatePage(sourcePath, requestId) {
+        const { snapshot, operation, existing } = this.ingestSource(sourcePath, requestId);
+        // If page already existed for this source, return it
+        if (existing) {
+            // Try to find existing page that cites this snapshot
+            const pages = this.getAllPages();
+            const existingPage = pages.find(p => p.frontmatter.sources.some(s => s.sourceId === snapshot.id));
+            if (existingPage) {
+                return { page: existingPage, snapshot, operation, existing: true };
+            }
+        }
+        // Create a page from the snapshot
+        // Title derived from source filename
+        const path = require("node:path");
+        const title = path.basename(sourcePath, path.extname(sourcePath))
+            .replace(/[-_]/g, " ")
+            .replace(/([a-z])([A-Z])/g, "$1 $2");
+        // Simple faux synthesis: summary from content
+        const body = this.synthesizePageBody(snapshot);
+        const page = this.createPage({
+            title,
+            kind: "reference",
+            body,
+            sources: [snapshot],
+        });
+        return { page, snapshot, operation, existing: false };
+    }
+    /**
+     * Synthesize page body from source snapshot (faux synthesis for now)
+     */
+    synthesizePageBody(snapshot) {
+        // Extract first meaningful lines as summary
+        const lines = snapshot.content.split("\n").filter(l => {
+            const trimmed = l.trim();
+            return trimmed && !trimmed.startsWith("//") && !trimmed.startsWith("#") && trimmed.length > 20;
+        });
+        const summary = lines.slice(0, 5).join("\n");
+        return `# ${snapshot.originalPath}
+
+Source: ${snapshot.originalPath}
+Captured: ${snapshot.capturedAt}
+
+## Summary
+
+${summary || "(No extractable content)"}
+
+## Notes
+
+This page was auto-generated from the ingested source. Edit to add analysis and context.
+`;
+    }
+    /**
      * Get source snapshot
      */
     getSnapshot(snapshotId) {
