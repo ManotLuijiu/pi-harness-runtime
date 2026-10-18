@@ -8,7 +8,7 @@
  * - Redact sensitive data before sending
  * - Notification failure does not crash runtime
  */
-import type { NotificationEvent, NotificationConfig, NotificationChannelConfig, NotificationResult, NotificationContext, TelegramCallbackHandler } from "./types.js";
+import type { InlineKeyboardButton, NotificationEvent, NotificationConfig, NotificationChannelConfig, NotificationResult, NotificationContext, TelegramCallbackHandler } from "./types.js";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
 /**
  * Pending approval request
@@ -69,6 +69,10 @@ export declare class NotificationCenter {
      * Toggle a channel's enabled state
      */
     toggleChannel(channelId: string): boolean;
+    /**
+     * Build channel toggle buttons for inline keyboard
+     */
+    buildToggleButtons(): InlineKeyboardButton[];
     /**
      * Set callback handler for Telegram adapters
      * Enables handling of inline keyboard button clicks (approve/reject)
