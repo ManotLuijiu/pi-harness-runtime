@@ -181,11 +181,21 @@ function parseValue(value: string): YamlValue {
   if (/^-?\d+(\.\d+)?$/.test(value)) {
     return parseFloat(value);
   }
-  if (value.startsWith("[") && value.endsWith("]")) {
-    const content = value.slice(1, -1);
+  // Handle JSON-serialized values (objects and arrays)
+  const trimmed = value.trim();
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Fall through to string parsing
+    }
+  }
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    const content = trimmed.slice(1, -1);
     return content ? content.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")) : [];
   }
-  return value.replace(/^["']|["']$/g, "");
+  return trimmed.replace(/^["']|["']$/g, "");
 }
 
 /**
@@ -200,8 +210,8 @@ export function serializeFrontmatter(
     if (value === undefined || value === null) continue;
 
 
-    // Special handling for sources array - use JSON for reliability
-    if (key === "sources" && Array.isArray(value)) {
+    // Special handling for sources and verification - use JSON for reliability
+    if ((key === "sources" || key === "verification") && (Array.isArray(value) || typeof value === "object")) {
       lines.push(`${key}: ${JSON.stringify(value)}`);
       continue;
     }
@@ -255,6 +265,10 @@ export class WikiStorage {
   private operations: WikiOperation[] = [];
   private stagedChanges: Map<string, StagedChange> = new Map();
   private initialized = false;
+  // Track explicitly modified entries to prevent stale data overwrites
+  private modifiedIds: Set<string> = new Set();
+  // Track explicitly deleted IDs to prevent resurrecting deletions
+  private deletedIds: Set<string> = new Set();
 
   constructor(config: WikiConfig) {
     this.config = config;
@@ -415,28 +429,38 @@ verification:
   }
 
   /**
-   * Save page index to disk (atomic, merges with existing entries)
+   * Save page index to disk (atomic)
+   * Only applies changes from this manager instance (tracked via modifiedIds)
+   * Respects deletions tracked via deletedIds
    */
   private saveIndex(): void {
-    // Reload from disk to handle concurrent writes from other processes
+    // Load current disk state
     const diskEntries = this.loadIndexFromDisk();
-
-    // Start with disk state, then apply current in-memory state
-    // This ensures deletions are persisted (not in this.index) and additions are included
     const merged = new Map<string, PageIndexEntry>();
 
-    // Add all disk entries first
+    // Start with disk entries, filtering out deleted ones
     for (const [id, entry] of diskEntries) {
-      // Only keep if still exists on disk
+      // Skip if explicitly deleted by this manager
+      if (this.deletedIds.has(id)) {
+        continue;
+      }
+      // Skip if page file no longer exists
       const pageFile = join(this.config.knowledgeDir, `${id}.md`);
-      if (existsSync(pageFile)) {
+      if (!existsSync(pageFile)) {
+        continue;
+      }
+      // Keep disk entry unless this manager modified it
+      if (!this.modifiedIds.has(id)) {
         merged.set(id, entry);
       }
     }
 
-    // Apply in-memory changes (adds/updates)
-    for (const [id, entry] of this.index) {
-      merged.set(id, entry);
+    // Apply only this manager's modifications
+    for (const id of this.modifiedIds) {
+      const entry = this.index.get(id);
+      if (entry) {
+        merged.set(id, entry);
+      }
     }
 
     const entries = Array.from(merged.values());
@@ -586,7 +610,9 @@ verification:
     const content = combinePage(page.frontmatter, page.body);
     const pageFile = join(this.config.knowledgeDir, `${page.frontmatter.id}.md`);
     this.ensureWithinDirectory(pageFile, this.config.knowledgeDir);
+    // Validate temp path to prevent symlink bypass
     const tmpFile = pageFile + ".tmp";
+    this.ensureWithinDirectory(tmpFile, this.config.knowledgeDir);
     writeFileSync(tmpFile, content, "utf8");
     renameSync(tmpFile, pageFile);
 
@@ -602,6 +628,10 @@ verification:
       codeVersion: page.frontmatter.codeVersion,
     };
     this.index.set(entry.id, entry);
+    // Track this entry as modified so saveIndex applies it
+    this.modifiedIds.add(entry.id);
+    // Clear from deleted set if it was previously deleted
+    this.deletedIds.delete(entry.id);
     this.saveIndex();
   }
 
@@ -693,6 +723,9 @@ verification:
       unlinkSync(pageFile);
     }
     this.index.delete(pageId);
+    // Track this ID as deleted so saveIndex excludes it
+    this.deletedIds.add(pageId);
+    this.modifiedIds.delete(pageId);
     this.saveIndex();
     this.stagedChanges.delete(pageId);
     this.saveStaged();
