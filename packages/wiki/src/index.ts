@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   WikiStorage,
@@ -13,7 +13,6 @@ import {
   computeHash,
   now,
   parseFrontmatter,
-  combinePage,
 } from "./storage.js";
 import type {
   WikiConfig,
@@ -43,11 +42,15 @@ export function isWikiEnabled(): boolean {
 }
 
 /**
- * Require wiki to be enabled
+ * Require wiki to be enabled and ensure storage is initialized
  */
-function requireWiki(): void {
+function requireWiki(storage: WikiStorage): void {
   if (!isWikiEnabled()) {
     throw new Error("Wiki feature is disabled. Set HARNESS_KNOWLEDGE_WIKI=1 to enable.");
+  }
+  // Lazy initialization: ensure storage is ready on first use
+  if (!storage.isInitialized()) {
+    storage.initialize();
   }
 }
 
@@ -82,7 +85,9 @@ export class WikiManager {
    * Initialize wiki structure
    */
   initialize(): WikiInitResult {
-    requireWiki();
+    // Initialize storage before checking readiness
+    this.storage.initialize();
+    requireWiki(this.storage);
     return this.storage.initialize();
   }
 
@@ -105,7 +110,7 @@ export class WikiManager {
     sourcePath: string,
     requestId?: string
   ): { snapshot: SourceSnapshot; operation: WikiOperation; existing: boolean } {
-    requireWiki();
+    requireWiki(this.storage);
 
     // Validate source path
     const resolvedPath = resolve(sourcePath);
@@ -120,8 +125,14 @@ export class WikiManager {
         (op) => op.requestId === requestId && op.status === "success"
       );
       if (existingOp) {
-        // Find the snapshot from the existing operation
-        const details = existingOp.details as { snapshotId?: string };
+        const details = existingOp.details as { snapshotId?: string; sourcePath?: string };
+        // Check if the source path matches (same requestId for different source = conflict)
+        if (details.sourcePath && details.sourcePath !== resolvedPath) {
+          throw new Error(
+            `Request ID ${requestId} was already used for a different source path. ` +
+            `Original: ${details.sourcePath}, Requested: ${sourcePath}`
+          );
+        }
         if (details.snapshotId) {
           const snapshot = this.storage.getSnapshot(details.snapshotId);
           if (snapshot) {
@@ -159,7 +170,7 @@ export class WikiManager {
    * Get source snapshot
    */
   getSnapshot(snapshotId: string): SourceSnapshot | null {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.getSnapshot(snapshotId);
   }
 
@@ -178,7 +189,7 @@ export class WikiManager {
     relatedPages?: string[];
     codeVersion?: string;
   }): WikiPage {
-    requireWiki();
+    requireWiki(this.storage);
 
     const id = `page-${randomUUID().slice(0, 8)}`;
     const timestamp = now();
@@ -221,7 +232,7 @@ export class WikiManager {
       verification: WikiPageFrontmatter["verification"];
     }>
   ): WikiPage {
-    requireWiki();
+    requireWiki(this.storage);
 
     const existing = this.storage.loadPage(pageId);
     if (!existing) {
@@ -249,7 +260,7 @@ export class WikiManager {
    * Load a wiki page
    */
   loadPage(pageId: string): WikiPage | null {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.loadPage(pageId);
   }
 
@@ -257,7 +268,7 @@ export class WikiManager {
    * Delete a wiki page
    */
   deletePage(pageId: string): void {
-    requireWiki();
+    requireWiki(this.storage);
     this.storage.deletePage(pageId);
   }
 
@@ -265,7 +276,7 @@ export class WikiManager {
    * Get all pages
    */
   getAllPages(): WikiPage[] {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.getAllPages();
   }
 
@@ -277,7 +288,7 @@ export class WikiManager {
    * Search wiki pages
    */
   search(query: string, filters?: WikiSearchFilters, limit = 10): WikiSearchResult[] {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.search(query, filters, limit);
   }
 
@@ -285,7 +296,7 @@ export class WikiManager {
    * Get page index
    */
   getIndex() {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.getIndex();
   }
 
@@ -297,7 +308,7 @@ export class WikiManager {
    * Stage a change for later application
    */
   stageChange(pageId: string, expectedRevision: string, newContent: string): StagedChange {
-    requireWiki();
+    requireWiki(this.storage);
 
     const existing = this.storage.loadPage(pageId);
     if (!existing) {
@@ -319,7 +330,7 @@ export class WikiManager {
    * Get staged change for a page
    */
   getStagedChange(pageId: string): StagedChange | undefined {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.getStagedChange(pageId);
   }
 
@@ -327,7 +338,7 @@ export class WikiManager {
    * Clear staged change
    */
   clearStagedChange(pageId: string): void {
-    requireWiki();
+    requireWiki(this.storage);
     this.storage.clearStagedChange(pageId);
   }
 
@@ -339,7 +350,7 @@ export class WikiManager {
    * Apply staged change with conflict detection
    */
   applyChange(pageId: string, _requestId?: string): WikiPage {
-    requireWiki();
+    requireWiki(this.storage);
 
     const staged = this.storage.getStagedChange(pageId);
     if (!staged) {
@@ -392,7 +403,7 @@ export class WikiManager {
    * Run lint checks on wiki
    */
   lint(scope?: "all" | "pages" | "links" | "freshness"): LintFinding[] {
-    requireWiki();
+    requireWiki(this.storage);
 
     const findings: LintFinding[] = [];
 
@@ -567,7 +578,7 @@ export class WikiManager {
    * Get recent operations
    */
   getRecentOperations(limit = 50): WikiOperation[] {
-    requireWiki();
+    requireWiki(this.storage);
     return this.storage.getRecentOperations(limit);
   }
 }
@@ -581,7 +592,14 @@ export class WikiManager {
  */
 export function createWikiManager(workspaceRoot: string, projectId: string): WikiManager {
   const storage = createWikiStorage(workspaceRoot, projectId);
-  return new WikiManager(storage);
+  const manager = new WikiManager(storage);
+
+  // Initialize storage if feature is enabled (may be called lazily later)
+  if (process.env.HARNESS_KNOWLEDGE_WIKI === "1") {
+    storage.initialize();
+  }
+
+  return manager;
 }
 
 // Re-export storage class
