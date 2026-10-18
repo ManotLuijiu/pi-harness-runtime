@@ -34,9 +34,9 @@ export declare function combinePage(frontmatter: WikiPageFrontmatter, body: stri
 export declare class WikiStorage {
     private config;
     private index;
+    private indexMtime;
     private operations;
     private stagedChanges;
-    private dirty;
     constructor(config: WikiConfig);
     /**
      * Get wiki configuration
@@ -51,7 +51,7 @@ export declare class WikiStorage {
      */
     private ensureStructure;
     /**
-     * Load page index from disk
+     * Load page index from disk (if changed since last load)
      */
     private loadIndex;
     /**
@@ -91,6 +91,10 @@ export declare class WikiStorage {
      */
     loadPage(pageId: string): WikiPage | null;
     /**
+     * Validate page ID to prevent path traversal attacks
+     */
+    private validatePageId;
+    /**
      * Delete a wiki page
      */
     deletePage(pageId: string): void;
@@ -122,6 +126,10 @@ export declare class WikiStorage {
      * Update operation status
      */
     completeOperation(opId: string, status: WikiOperation["status"], error?: string): void;
+    /**
+     * Update operation details (before completion)
+     */
+    updateOperationDetails(opId: string, details: Record<string, unknown>): void;
     /**
      * Get recent operations
      */

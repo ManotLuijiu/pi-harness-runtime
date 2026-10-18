@@ -65,6 +65,7 @@ export class WikiManager {
     // ========================================================================
     /**
      * Ingest a source file and create snapshot
+     * Returns existing snapshot if same requestId was already processed
      */
     ingestSource(sourcePath, requestId) {
         requireWiki();
@@ -73,6 +74,21 @@ export class WikiManager {
         if (!existsSync(resolvedPath)) {
             throw new Error(`Source file not found: ${sourcePath}`);
         }
+        // Check for duplicate request
+        if (requestId) {
+            const operations = this.storage.getRecentOperations(1000);
+            const existingOp = operations.find((op) => op.requestId === requestId && op.status === "success");
+            if (existingOp) {
+                // Find the snapshot from the existing operation
+                const details = existingOp.details;
+                if (details.snapshotId) {
+                    const snapshot = this.storage.getSnapshot(details.snapshotId);
+                    if (snapshot) {
+                        return { snapshot, operation: existingOp, existing: true };
+                    }
+                }
+            }
+        }
         // Read content
         const content = readFileSync(resolvedPath, "utf8");
         // Log operation
@@ -80,9 +96,11 @@ export class WikiManager {
         try {
             // Create snapshot
             const snapshot = this.storage.createSnapshot(resolvedPath, content, operation.id);
+            // Update operation with snapshot ID for future deduplication
+            this.storage.updateOperationDetails(operation.id, { snapshotId: snapshot.id });
             // Complete operation
             this.storage.completeOperation(operation.id, "success");
-            return { snapshot, operation };
+            return { snapshot, operation, existing: false };
         }
         catch (err) {
             const error = err instanceof Error ? err.message : String(err);
@@ -229,7 +247,7 @@ export class WikiManager {
     /**
      * Apply staged change with conflict detection
      */
-    applyChange(pageId, requestId) {
+    applyChange(pageId, _requestId) {
         requireWiki();
         const staged = this.storage.getStagedChange(pageId);
         if (!staged) {
@@ -239,8 +257,8 @@ export class WikiManager {
         if (!existing) {
             throw new Error(`Page not found: ${pageId}`);
         }
-        // Check for conflicts
-        const currentRevision = computeHash(existing.rawFrontmatter || "");
+        // Check for conflicts - hash entire page content to detect any changes
+        const currentRevision = computeHash((existing.rawFrontmatter || "") + "\n" + existing.body);
         if (staged.expectedRevision !== currentRevision) {
             throw new Error(`Conflict: page was modified. Expected revision ${staged.expectedRevision}, found ${currentRevision}`);
         }

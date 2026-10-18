@@ -66,7 +66,9 @@ export function parseFrontmatter(
   const frontmatter = parseYaml(yamlStr);
 
   return {
-    frontmatter: frontmatter as unknown as WikiPageFrontmatter | null,
+    // SAFETY: parseYaml returns Record<string, unknown>, cast through unknown to satisfy TS
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    frontmatter: frontmatter as any,
     body: body.trim(),
     raw: yamlStr,
   };
@@ -79,8 +81,6 @@ export function parseFrontmatter(
 function parseYaml(yamlStr: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = yamlStr.split("\n");
-  let currentKey = "";
-  let currentIndent = 0;
   const stack: Array<{ obj: Record<string, unknown>; indent: number }> = [];
 
   for (const line of lines) {
@@ -123,8 +123,6 @@ function parseYaml(yamlStr: string): Record<string, unknown> {
     }
 
     parent[key] = value;
-    currentKey = key;
-    currentIndent = indent;
   }
 
   return result;
@@ -144,11 +142,15 @@ export function serializeFrontmatter(
     if (Array.isArray(value)) {
       if (value.length === 0) {
         lines.push(`${key}: []`);
-      } else if (value.every((v) => typeof v === "object")) {
-        // Array of objects
+      } else if (value.every((v) => typeof v === "object" && v !== null)) {
+        // Array of objects - serialize as proper YAML
         lines.push(`${key}:`);
         for (const item of value) {
-          lines.push(`  - ${JSON.stringify(item)}`);
+          lines.push(`  - sourceId: ${(item as Record<string, unknown>).sourceId}`);
+          lines.push(`    path: ${(item as Record<string, unknown>).path}`);
+          lines.push(`    contentHash: ${(item as Record<string, unknown>).contentHash}`);
+          lines.push(`    capturedAt: ${(item as Record<string, unknown>).capturedAt}`);
+          lines.push(`    redacted: ${(item as Record<string, unknown>).redacted}`);
         }
       } else {
         lines.push(`${key}: [${value.join(", ")}]`);
@@ -195,9 +197,9 @@ export function combinePage(
 export class WikiStorage {
   private config: WikiConfig;
   private index: Map<string, PageIndexEntry> = new Map();
+  private indexMtime = 0; // Track when index was last loaded
   private operations: WikiOperation[] = [];
   private stagedChanges: Map<string, StagedChange> = new Map();
-  private dirty = false;
 
   constructor(config: WikiConfig) {
     this.config = config;
@@ -311,11 +313,26 @@ verification:
   }
 
   /**
-   * Load page index from disk
+   * Load page index from disk (if changed since last load)
    */
-  private loadIndex(): void {
+  private loadIndex(force = false): void {
+    if (!force) {
+      try {
+        const stat = statSync(this.config.indexFile);
+        // Only reload if file was modified since last load
+        if (stat.mtimeMs <= this.indexMtime) {
+          return;
+        }
+      } catch {
+        // File doesn't exist or can't be stat'd
+      }
+    }
+
     this.index.clear();
-    if (!existsSync(this.config.indexFile)) return;
+    if (!existsSync(this.config.indexFile)) {
+      this.indexMtime = 0;
+      return;
+    }
 
     try {
       const content = readFileSync(this.config.indexFile, "utf8");
@@ -323,8 +340,11 @@ verification:
       for (const entry of entries) {
         this.index.set(entry.id, entry);
       }
+      const stat = statSync(this.config.indexFile);
+      this.indexMtime = stat.mtimeMs;
     } catch {
       // Invalid index, rebuild
+      this.indexMtime = 0;
     }
   }
 
@@ -337,7 +357,6 @@ verification:
     const tmpFile = this.config.indexFile + ".tmp";
     writeFileSync(tmpFile, content, "utf8");
     renameSync(tmpFile, this.config.indexFile);
-    this.dirty = false;
   }
 
   /**
@@ -474,7 +493,6 @@ verification:
     };
     this.index.set(entry.id, entry);
     this.saveIndex();
-    this.dirty = true;
   }
 
   /**
@@ -493,9 +511,20 @@ verification:
   }
 
   /**
+   * Validate page ID to prevent path traversal attacks
+   */
+  private validatePageId(pageId: string): void {
+    // Reject paths with directory separators or parent references
+    if (pageId.includes("/") || pageId.includes("\\") || pageId.includes("..")) {
+      throw new Error(`Invalid page ID: ${pageId}`);
+    }
+  }
+
+  /**
    * Delete a wiki page
    */
   deletePage(pageId: string): void {
+    this.validatePageId(pageId);
     const pageFile = join(this.config.knowledgeDir, `${pageId}.md`);
     if (existsSync(pageFile)) {
       unlinkSync(pageFile);
@@ -510,6 +539,9 @@ verification:
    * Get all pages
    */
   getAllPages(): WikiPage[] {
+    // Reload index to get latest changes from other processes
+    this.loadIndex();
+
     const pages: WikiPage[] = [];
     if (!existsSync(this.config.knowledgeDir)) return pages;
 
@@ -555,6 +587,8 @@ verification:
    * Get all staged changes
    */
   getAllStagedChanges(): StagedChange[] {
+    // Reload staged changes to get latest from other processes
+    this.loadStaged();
     return Array.from(this.stagedChanges.values());
   }
 
@@ -604,6 +638,19 @@ verification:
   }
 
   /**
+   * Update operation details (before completion)
+   */
+  updateOperationDetails(opId: string, details: Record<string, unknown>): void {
+    const opIndex = this.operations.findIndex((o) => o.id === opId);
+    if (opIndex === -1) return;
+
+    this.operations[opIndex] = {
+      ...this.operations[opIndex],
+      details: { ...this.operations[opIndex].details, ...details },
+    };
+  }
+
+  /**
    * Get recent operations
    */
   getRecentOperations(limit = 50): WikiOperation[] {
@@ -621,7 +668,7 @@ verification:
     const queryLower = query.toLowerCase();
     const results: WikiSearchResult[] = [];
 
-    for (const [id, entry] of this.index) {
+    for (const [_id, entry] of this.index) {
       // Apply filters
       if (filters?.kinds?.length && !filters.kinds.includes(entry.kind)) continue;
       if (filters?.statuses?.length && !filters.statuses.includes(entry.status)) continue;
