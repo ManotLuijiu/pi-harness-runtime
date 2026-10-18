@@ -13,7 +13,13 @@ sample_github_workflows/
 
 # Open Knowledge Format (local knowledge base)
 OKF/
+
+# Wiki data directories (kept private, per-user)
+# Note: packages/wiki/ package IS committed via negation below
 wiki/
+
+# Exception: wiki package (code) is tracked
+!packages/wiki/
 .npmrc
 
 # Skills sync staging — private generated content (manifests/ IS committed)
