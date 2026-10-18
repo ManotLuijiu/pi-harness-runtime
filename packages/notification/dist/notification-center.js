@@ -17,6 +17,7 @@ import { EmailAdapter } from "./adapters/email-adapter.js";
 import { WebhookAdapter } from "./adapters/webhook-adapter.js";
 export class NotificationCenter {
     adapters = new Map();
+    channelEnabled = new Map();
     redactPatterns;
     /** Pending approval requests keyed by jobId */
     pendingApprovals = new Map();
@@ -103,6 +104,8 @@ export class NotificationCenter {
     async initialize() {
         const adapterEntries = Array.from(this.adapters.entries());
         for (const [id, adapter] of adapterEntries) {
+            // Initialize channel enabled state
+            this.channelEnabled.set(id, true);
             try {
                 const ok = await adapter.initialize();
                 if (!ok) {
@@ -113,6 +116,27 @@ export class NotificationCenter {
                 logWarn("[NotificationCenter]", `Adapter ${id} initialization error: ${error}`);
             }
         }
+    }
+    /**
+     * Check if a channel is enabled
+     */
+    isChannelEnabled(channelId) {
+        return this.channelEnabled.get(channelId) ?? false;
+    }
+    /**
+     * Set channel enabled/disabled state
+     */
+    setChannelEnabled(channelId, enabled) {
+        this.channelEnabled.set(channelId, enabled);
+        logWarn("[NotificationCenter]", `Channel ${channelId} ${enabled ? "enabled" : "disabled"}`);
+    }
+    /**
+     * Toggle a channel's enabled state
+     */
+    toggleChannel(channelId) {
+        const current = this.isChannelEnabled(channelId);
+        this.setChannelEnabled(channelId, !current);
+        return !current;
     }
     /**
      * Set callback handler for Telegram adapters

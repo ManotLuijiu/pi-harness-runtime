@@ -23,6 +23,7 @@ export interface PendingApproval {
 }
 export declare class NotificationCenter {
     private adapters;
+    private channelEnabled;
     private redactPatterns;
     /** Pending approval requests keyed by jobId */
     private pendingApprovals;
@@ -56,6 +57,18 @@ export declare class NotificationCenter {
      * Initialize all registered adapters
      */
     initialize(): Promise<void>;
+    /**
+     * Check if a channel is enabled
+     */
+    isChannelEnabled(channelId: string): boolean;
+    /**
+     * Set channel enabled/disabled state
+     */
+    setChannelEnabled(channelId: string, enabled: boolean): void;
+    /**
+     * Toggle a channel's enabled state
+     */
+    toggleChannel(channelId: string): boolean;
     /**
      * Set callback handler for Telegram adapters
      * Enables handling of inline keyboard button clicks (approve/reject)

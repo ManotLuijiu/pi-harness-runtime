@@ -1212,9 +1212,22 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					(sharedState.todoContinuationController as any)?.explicitPause?.();
 					break;
 				default:
-					logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
-			}
-		});
+					// Check for channel toggle actions
+					if (parsed.action === "toggle_telegram") {
+						const telegramEnabled = (center as any).isChannelEnabled?.("telegram") ?? true;
+						(center as any).setChannelEnabled?.("telegram", !telegramEnabled);
+						logToFile("[TelegramCallback]", `Telegram ${!telegramEnabled ? "enabled" : "disabled"}`);
+						await acknowledge(`Telegram notifications ${!telegramEnabled ? "enabled" : "disabled"}`);
+					} else if (parsed.action === "toggle_line") {
+						const lineEnabled = (center as any).isChannelEnabled?.("line") ?? true;
+						(center as any).setChannelEnabled?.("line", !lineEnabled);
+						logToFile("[TelegramCallback]", `LINE ${!lineEnabled ? "enabled" : "disabled"}`);
+						await acknowledge(`LINE notifications ${!lineEnabled ? "enabled" : "disabled"}`);
+					} else {
+						logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
+					}
+				}
+			});
 
 		// Register message handler to forward Telegram messages to Pi
 		center.setMessageHandler(async (text: string, _chatId: string) => {

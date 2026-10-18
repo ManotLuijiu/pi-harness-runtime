@@ -43,6 +43,7 @@ export interface PendingApproval {
 
 export class NotificationCenter {
 	private adapters: Map<string, ChannelAdapter> = new Map();
+	private channelEnabled: Map<string, boolean> = new Map();
 	private redactPatterns: RegExp[];
 	/** Pending approval requests keyed by jobId */
 	private pendingApprovals: Map<string, PendingApproval> = new Map();
@@ -146,25 +147,51 @@ export class NotificationCenter {
 	/**
 	 * Initialize all registered adapters
 	 */
-	async initialize(): Promise<void> {
-		const adapterEntries = Array.from(this.adapters.entries());
-		for (const [id, adapter] of adapterEntries) {
-			try {
-				const ok = await adapter.initialize();
-				if (!ok) {
+		async initialize(): Promise<void> {
+			const adapterEntries = Array.from(this.adapters.entries());
+			for (const [id, adapter] of adapterEntries) {
+				// Initialize channel enabled state
+				this.channelEnabled.set(id, true);
+				try {
+					const ok = await adapter.initialize();
+					if (!ok) {
+						logWarn(
+							"[NotificationCenter]",
+							`Adapter ${id} initialization failed`,
+						);
+					}
+				} catch (error) {
 					logWarn(
 						"[NotificationCenter]",
-						`Adapter ${id} initialization failed`,
+						`Adapter ${id} initialization error: ${error}`,
 					);
 				}
-			} catch (error) {
-				logWarn(
-					"[NotificationCenter]",
-					`Adapter ${id} initialization error: ${error}`,
-				);
 			}
 		}
-	}
+
+		/**
+		 * Check if a channel is enabled
+		 */
+		isChannelEnabled(channelId: string): boolean {
+			return this.channelEnabled.get(channelId) ?? false;
+		}
+
+		/**
+		 * Set channel enabled/disabled state
+		 */
+		setChannelEnabled(channelId: string, enabled: boolean): void {
+			this.channelEnabled.set(channelId, enabled);
+			logWarn("[NotificationCenter]", `Channel ${channelId} ${enabled ? "enabled" : "disabled"}`);
+		}
+
+		/**
+		 * Toggle a channel's enabled state
+		 */
+		toggleChannel(channelId: string): boolean {
+			const current = this.isChannelEnabled(channelId);
+			this.setChannelEnabled(channelId, !current);
+			return !current;
+		}
 
 	/**
 	 * Set callback handler for Telegram adapters
