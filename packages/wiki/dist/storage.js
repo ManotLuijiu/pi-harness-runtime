@@ -3,7 +3,7 @@
  *
  * Handles atomic writes, transactions, and consistency.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, readdirSync, } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, readdirSync, statSync, } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 // ============================================================================
@@ -32,6 +32,8 @@ export function parseFrontmatter(content) {
     const [, yamlStr, body] = match;
     const frontmatter = parseYaml(yamlStr);
     return {
+        // SAFETY: parseYaml returns Record<string, unknown>, cast through unknown to satisfy TS
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         frontmatter: frontmatter,
         body: body.trim(),
         raw: yamlStr,
@@ -44,8 +46,6 @@ export function parseFrontmatter(content) {
 function parseYaml(yamlStr) {
     const result = {};
     const lines = yamlStr.split("\n");
-    let currentKey = "";
-    let currentIndent = 0;
     const stack = [];
     for (const line of lines) {
         const trimmed = line.trim();
@@ -87,8 +87,6 @@ function parseYaml(yamlStr) {
             value = value.replace(/^["']|["']$/g, "");
         }
         parent[key] = value;
-        currentKey = key;
-        currentIndent = indent;
     }
     return result;
 }
@@ -104,11 +102,15 @@ export function serializeFrontmatter(frontmatter) {
             if (value.length === 0) {
                 lines.push(`${key}: []`);
             }
-            else if (value.every((v) => typeof v === "object")) {
-                // Array of objects
+            else if (value.every((v) => typeof v === "object" && v !== null)) {
+                // Array of objects - serialize as proper YAML
                 lines.push(`${key}:`);
                 for (const item of value) {
-                    lines.push(`  - ${JSON.stringify(item)}`);
+                    lines.push(`  - sourceId: ${item.sourceId}`);
+                    lines.push(`    path: ${item.path}`);
+                    lines.push(`    contentHash: ${item.contentHash}`);
+                    lines.push(`    capturedAt: ${item.capturedAt}`);
+                    lines.push(`    redacted: ${item.redacted}`);
                 }
             }
             else {
@@ -153,9 +155,9 @@ export function combinePage(frontmatter, body) {
 export class WikiStorage {
     config;
     index = new Map();
+    indexMtime = 0; // Track when index was last loaded
     operations = [];
     stagedChanges = new Map();
-    dirty = false;
     constructor(config) {
         this.config = config;
         this.ensureStructure();
@@ -257,21 +259,38 @@ verification:
         }
     }
     /**
-     * Load page index from disk
+     * Load page index from disk (if changed since last load)
      */
-    loadIndex() {
+    loadIndex(force = false) {
+        if (!force) {
+            try {
+                const stat = statSync(this.config.indexFile);
+                // Only reload if file was modified since last load
+                if (stat.mtimeMs <= this.indexMtime) {
+                    return;
+                }
+            }
+            catch {
+                // File doesn't exist or can't be stat'd
+            }
+        }
         this.index.clear();
-        if (!existsSync(this.config.indexFile))
+        if (!existsSync(this.config.indexFile)) {
+            this.indexMtime = 0;
             return;
+        }
         try {
             const content = readFileSync(this.config.indexFile, "utf8");
             const entries = JSON.parse(content);
             for (const entry of entries) {
                 this.index.set(entry.id, entry);
             }
+            const stat = statSync(this.config.indexFile);
+            this.indexMtime = stat.mtimeMs;
         }
         catch {
             // Invalid index, rebuild
+            this.indexMtime = 0;
         }
     }
     /**
@@ -283,7 +302,6 @@ verification:
         const tmpFile = this.config.indexFile + ".tmp";
         writeFileSync(tmpFile, content, "utf8");
         renameSync(tmpFile, this.config.indexFile);
-        this.dirty = false;
     }
     /**
      * Load operations from log
@@ -408,7 +426,6 @@ verification:
         };
         this.index.set(entry.id, entry);
         this.saveIndex();
-        this.dirty = true;
     }
     /**
      * Load a wiki page
@@ -424,9 +441,19 @@ verification:
         return { frontmatter, body, rawFrontmatter: raw };
     }
     /**
+     * Validate page ID to prevent path traversal attacks
+     */
+    validatePageId(pageId) {
+        // Reject paths with directory separators or parent references
+        if (pageId.includes("/") || pageId.includes("\\") || pageId.includes("..")) {
+            throw new Error(`Invalid page ID: ${pageId}`);
+        }
+    }
+    /**
      * Delete a wiki page
      */
     deletePage(pageId) {
+        this.validatePageId(pageId);
         const pageFile = join(this.config.knowledgeDir, `${pageId}.md`);
         if (existsSync(pageFile)) {
             unlinkSync(pageFile);
@@ -440,6 +467,8 @@ verification:
      * Get all pages
      */
     getAllPages() {
+        // Reload index to get latest changes from other processes
+        this.loadIndex();
         const pages = [];
         if (!existsSync(this.config.knowledgeDir))
             return pages;
@@ -481,6 +510,8 @@ verification:
      * Get all staged changes
      */
     getAllStagedChanges() {
+        // Reload staged changes to get latest from other processes
+        this.loadStaged();
         return Array.from(this.stagedChanges.values());
     }
     // ========================================================================
@@ -521,6 +552,18 @@ verification:
         renameSync(tmpFile, this.config.logFile);
     }
     /**
+     * Update operation details (before completion)
+     */
+    updateOperationDetails(opId, details) {
+        const opIndex = this.operations.findIndex((o) => o.id === opId);
+        if (opIndex === -1)
+            return;
+        this.operations[opIndex] = {
+            ...this.operations[opIndex],
+            details: { ...this.operations[opIndex].details, ...details },
+        };
+    }
+    /**
      * Get recent operations
      */
     getRecentOperations(limit = 50) {
@@ -535,7 +578,7 @@ verification:
     search(query, filters, limit = 10) {
         const queryLower = query.toLowerCase();
         const results = [];
-        for (const [id, entry] of this.index) {
+        for (const [_id, entry] of this.index) {
             // Apply filters
             if (filters?.kinds?.length && !filters.kinds.includes(entry.kind))
                 continue;

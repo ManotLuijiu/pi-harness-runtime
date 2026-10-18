@@ -30,10 +30,12 @@ export declare class WikiManager {
     isInitialized(): boolean;
     /**
      * Ingest a source file and create snapshot
+     * Returns existing snapshot if same requestId was already processed
      */
     ingestSource(sourcePath: string, requestId?: string): {
         snapshot: SourceSnapshot;
         operation: WikiOperation;
+        existing: boolean;
     };
     /**
      * Get source snapshot
@@ -97,7 +99,7 @@ export declare class WikiManager {
     /**
      * Apply staged change with conflict detection
      */
-    applyChange(pageId: string, requestId?: string): WikiPage;
+    applyChange(pageId: string, _requestId?: string): WikiPage;
     /**
      * Run lint checks on wiki
      */
