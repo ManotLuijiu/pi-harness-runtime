@@ -767,6 +767,16 @@
       "name": "@pi-harness/types",
       "version": "1.1.71-1",
     },
+    "packages/voice-api": {
+      "name": "@pi-harness/voice-api",
+      "version": "1.1.337",
+      "dependencies": {
+        "openai": "^4.77.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.7.2",
+      },
+    },
     "packages/webmcp-tester": {
       "name": "@pi-harness/webmcp-tester",
       "version": "1.1.0",
@@ -1133,6 +1143,8 @@
     "@pi-harness/tui": ["@pi-harness/tui@workspace:packages/tui"],
 
     "@pi-harness/types": ["@pi-harness/types@workspace:packages/types"],
+
+    "@pi-harness/voice-api": ["@pi-harness/voice-api@workspace:packages/voice-api"],
 
     "@pi-harness/webmcp-tester": ["@pi-harness/webmcp-tester@workspace:packages/webmcp-tester"],
 
@@ -2207,6 +2219,8 @@
     "@pi-harness/trajectory/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
 
     "@pi-harness/trajectory/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "@pi-harness/voice-api/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@pi-harness/wiki/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
 
