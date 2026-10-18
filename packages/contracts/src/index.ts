@@ -19,3 +19,6 @@ export * from './sessions.js';
 export * from './projects.js';
 export * from './notifications.js';
 export * from './approvals.js';
+export * from './delegation.js';
+export * from './delegation-assessor.js';
+export * from './scope-discovery.js';
