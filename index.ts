@@ -281,16 +281,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Set up pending question callback to dispatch answers to Pi
 		pqController.onUserAnswer((question, answer) => {
 			logToFile("[PendingQuestion]", `User answered: ${answer} for question ${question.requestId}`);
-			// Dispatch answer to Pi if needed
-			if (answer === "yes") {
-				pi.sendUserMessage("yes", { deliverAs: "steer" }).catch((_e: unknown) =>
-					logToFile("[PendingQuestion]", "Failed to send yes to Pi")
-				);
-			} else if (answer === "no") {
-				pi.sendUserMessage("not yet", { deliverAs: "steer" }).catch((_e: unknown) =>
-					logToFile("[PendingQuestion]", "Failed to send no to Pi")
-				);
-			}
+			// Dispatch answer to Pi
+			const message = answer === "yes" ? "yes" : "not yet";
+			pi.sendUserMessage(message, { deliverAs: "steer" });
 		});
 
 		// Detect when agent asks for continuation
@@ -538,20 +531,31 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				const decision = await judge.decide(taskState);
 
-				// Check session validity and user response before applying
-				if (checkSessionId !== _sessionId) {
-					// Session changed - cancel pending question
-					sharedState.pqController?.cancel("Session switched");
-					_inferenceInProgress = false;
-					updateAutoContinueStatus("IDLE");
-					return;
-				}
+					// Check session validity and user response before applying
+					if (checkSessionId !== _sessionId) {
+						// Session changed - cancel pending question
+						sharedState.pqController?.cancel("Session switched");
+						_inferenceInProgress = false;
+						updateAutoContinueStatus("IDLE");
+						return;
+					}
 
-				if (!waitingForUserSince) {
-					_inferenceInProgress = false;
-					updateAutoContinueStatus("IDLE");
-					return;
-				}
+					if (!waitingForUserSince) {
+						_inferenceInProgress = false;
+						updateAutoContinueStatus("IDLE");
+						return;
+					}
+
+					// Check if question was explicitly rejected - don't auto-continue after "Not yet"
+					if (sharedState.pqController?.isResolved()) {
+						const resolution = sharedState.pqController?.getResolution();
+						if (resolution === "no") {
+							logToFile("[auto-continue]", "Question was rejected - not auto-continuing");
+							_inferenceInProgress = false;
+							updateAutoContinueStatus("IDLE");
+							return;
+						}
+					}
 
 				if (decision.action === "proceed" || decision.action === "proceed_with_caution") {
 					// Update status to continuing
