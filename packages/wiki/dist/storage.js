@@ -4,7 +4,7 @@
  * Handles atomic writes, transactions, and consistency.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, readdirSync, statSync, } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 // ============================================================================
 // Utilities
@@ -41,54 +41,100 @@ export function parseFrontmatter(content) {
 }
 /**
  * Simple YAML parser for frontmatter
- * Handles: strings, booleans, numbers, arrays, nested objects
+ * Handles: strings, booleans, numbers, arrays, nested objects, YAML list items
  */
 function parseYaml(yamlStr) {
     const result = {};
     const lines = yamlStr.split("\n");
     const stack = [];
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith("#"))
             continue;
         const indent = line.search(/\S/);
+        // Handle YAML list items (lines starting with '-')
+        if (trimmed.startsWith("-")) {
+            const itemContent = trimmed.slice(1).trim();
+            const colonIdx = itemContent.indexOf(":");
+            if (colonIdx !== -1) {
+                // This is a list item with key-value pairs on same line or next lines
+                const key = itemContent.slice(0, colonIdx).trim();
+                const value = itemContent.slice(colonIdx + 1).trim();
+                // Pop stack while indent decreases
+                while (stack.length > 0 && indent < stack[stack.length - 1].indent) {
+                    stack.pop();
+                }
+                // Find or create the array
+                const parent = stack.length > 0 ? stack[stack.length - 1].obj : result;
+                const arrayKey = parent ? Object.keys(parent).slice(-1)[0] : undefined;
+                let array;
+                if (arrayKey && Array.isArray(parent[arrayKey])) {
+                    array = parent[arrayKey];
+                }
+                else {
+                    // Start a new array
+                    const newArray = [];
+                    if (parent) {
+                        parent[arrayKey || key] = newArray;
+                    }
+                    else {
+                        result[key] = newArray;
+                    }
+                    array = newArray;
+                }
+                // Create new object for this list item
+                const item = {};
+                array.push(item);
+                // Parse the key-value on this line
+                const parsedValue = parseValue(value);
+                if (parsedValue !== undefined) {
+                    item[key] = parsedValue;
+                }
+                // Push this item to stack for nested properties
+                stack.push({ obj: item, indent });
+            }
+            continue;
+        }
+        // Regular key-value line
         const colonIdx = trimmed.indexOf(":");
         if (colonIdx === -1)
             continue;
         const key = trimmed.slice(0, colonIdx).trim();
-        let value = trimmed.slice(colonIdx + 1).trim();
+        const rawValue = trimmed.slice(colonIdx + 1).trim();
         // Pop stack while indent decreases
         while (stack.length > 0 && indent <= stack[stack.length - 1].indent) {
             stack.pop();
         }
         const parent = stack.length > 0 ? stack[stack.length - 1].obj : result;
-        // Parse value
-        if (value === "" || value === "null" || value === "~") {
-            value = null;
+        // Check if value is empty (nested content follows)
+        if (rawValue === "" || rawValue === "~" || rawValue === "null") {
+            // Nested content follows - create placeholder
+            const nested = {};
+            parent[key] = nested;
+            stack.push({ obj: nested, indent });
+            continue;
         }
-        else if (value === "true") {
-            value = true;
-        }
-        else if (value === "false") {
-            value = false;
-        }
-        else if (/^-?\d+(\.\d+)?$/.test(value)) {
-            value = parseFloat(value);
-        }
-        else if (value.startsWith("[") && value.endsWith("]")) {
-            // Array
-            const arrContent = value.slice(1, -1);
-            value = arrContent
-                ? arrContent.split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""))
-                : [];
-        }
-        else {
-            // String - remove quotes
-            value = value.replace(/^["']|["']$/g, "");
-        }
-        parent[key] = value;
+        parent[key] = parseValue(rawValue);
     }
     return result;
+}
+function parseValue(value) {
+    if (value === "" || value === "null" || value === "~") {
+        return null;
+    }
+    if (value === "true")
+        return true;
+    if (value === "false")
+        return false;
+    if (/^-?\d+(\.\d+)?$/.test(value)) {
+        return parseFloat(value);
+    }
+    if (value.startsWith("[") && value.endsWith("]")) {
+        const content = value.slice(1, -1);
+        return content ? content.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")) : [];
+    }
+    return value.replace(/^["']|["']$/g, "");
 }
 /**
  * Serialize frontmatter to YAML string
@@ -158,12 +204,33 @@ export class WikiStorage {
     indexMtime = 0; // Track when index was last loaded
     operations = [];
     stagedChanges = new Map();
+    initialized = false;
     constructor(config) {
         this.config = config;
-        this.ensureStructure();
+        // Don't create directories until explicitly initialized
+        // This prevents writes when the feature is disabled
+    }
+    /**
+     * Initialize storage (call before any read/write operations)
+     * This is called automatically by WikiManager when feature is enabled
+     */
+    /**
+     * Prepare storage for use (load indexes and operations)
+     * Called after directories are ensured by initialize()
+     */
+    prepareStorage() {
+        if (this.initialized)
+            return;
         this.loadIndex();
         this.loadOperations();
         this.loadStaged();
+        this.initialized = true;
+    }
+    /**
+     * Check if storage is initialized
+     */
+    isInitialized() {
+        return this.initialized;
     }
     /**
      * Get wiki configuration
@@ -251,14 +318,6 @@ verification:
         };
     }
     /**
-     * Ensure directory structure exists
-     */
-    ensureStructure() {
-        if (!existsSync(this.config.wikiRoot)) {
-            mkdirSync(this.config.wikiRoot, { recursive: true });
-        }
-    }
-    /**
      * Load page index from disk (if changed since last load)
      */
     loadIndex(force = false) {
@@ -294,14 +353,40 @@ verification:
         }
     }
     /**
-     * Save page index to disk (atomic)
+     * Save page index to disk (atomic, merges with existing entries)
      */
     saveIndex() {
-        const entries = Array.from(this.index.values());
+        // Reload from disk to merge (handles concurrent writes)
+        const diskEntries = this.loadIndexFromDisk();
+        const merged = new Map(diskEntries);
+        // Apply in-memory changes
+        for (const [id, entry] of this.index) {
+            merged.set(id, entry);
+        }
+        const entries = Array.from(merged.values());
         const content = JSON.stringify(entries, null, 2);
         const tmpFile = this.config.indexFile + ".tmp";
         writeFileSync(tmpFile, content, "utf8");
         renameSync(tmpFile, this.config.indexFile);
+    }
+    /**
+     * Load index from disk only (no cache)
+     */
+    loadIndexFromDisk() {
+        const result = new Map();
+        if (!existsSync(this.config.indexFile))
+            return result;
+        try {
+            const content = readFileSync(this.config.indexFile, "utf8");
+            const entries = JSON.parse(content);
+            for (const entry of entries) {
+                result.set(entry.id, entry);
+            }
+        }
+        catch {
+            // Invalid index, return empty
+        }
+        return result;
     }
     /**
      * Load operations from log
@@ -390,7 +475,9 @@ verification:
      * Get source snapshot by ID
      */
     getSnapshot(snapshotId) {
+        this.validateSnapshotId(snapshotId);
         const snapFile = join(this.config.rawDir, `${snapshotId}.json`);
+        this.ensureWithinDirectory(snapFile, this.config.rawDir);
         if (!existsSync(snapFile))
             return null;
         try {
@@ -408,8 +495,10 @@ verification:
      * Save a wiki page
      */
     savePage(page) {
+        this.validatePageId(page.frontmatter.id);
         const content = combinePage(page.frontmatter, page.body);
         const pageFile = join(this.config.knowledgeDir, `${page.frontmatter.id}.md`);
+        this.ensureWithinDirectory(pageFile, this.config.knowledgeDir);
         const tmpFile = pageFile + ".tmp";
         writeFileSync(tmpFile, content, "utf8");
         renameSync(tmpFile, pageFile);
@@ -431,7 +520,9 @@ verification:
      * Load a wiki page
      */
     loadPage(pageId) {
+        this.validatePageId(pageId);
         const pageFile = join(this.config.knowledgeDir, `${pageId}.md`);
+        this.ensureWithinDirectory(pageFile, this.config.knowledgeDir);
         if (!existsSync(pageFile))
             return null;
         const content = readFileSync(pageFile, "utf8");
@@ -447,6 +538,25 @@ verification:
         // Reject paths with directory separators or parent references
         if (pageId.includes("/") || pageId.includes("\\") || pageId.includes("..")) {
             throw new Error(`Invalid page ID: ${pageId}`);
+        }
+    }
+    /**
+     * Validate snapshot ID to prevent path traversal attacks
+     */
+    validateSnapshotId(snapshotId) {
+        // Reject paths with directory separators or parent references
+        if (snapshotId.includes("/") || snapshotId.includes("\\") || snapshotId.includes("..")) {
+            throw new Error(`Invalid snapshot ID: ${snapshotId}`);
+        }
+    }
+    /**
+     * Ensure a path is within the expected directory (defense in depth)
+     */
+    ensureWithinDirectory(filePath, expectedDir) {
+        const resolved = resolve(filePath);
+        const expected = resolve(expectedDir);
+        if (!resolved.startsWith(expected + "/") && resolved !== expected) {
+            throw new Error(`Path ${filePath} is outside expected directory ${expectedDir}`);
         }
     }
     /**

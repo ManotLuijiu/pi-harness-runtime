@@ -14,7 +14,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
-import { join, dirname, relative } from "node:path";
+import { join, dirname, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   WikiConfig,
@@ -76,24 +76,75 @@ export function parseFrontmatter(
 
 /**
  * Simple YAML parser for frontmatter
- * Handles: strings, booleans, numbers, arrays, nested objects
+ * Handles: strings, booleans, numbers, arrays, nested objects, YAML list items
  */
 function parseYaml(yamlStr: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = yamlStr.split("\n");
   const stack: Array<{ obj: Record<string, unknown>; indent: number }> = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
     const indent = line.search(/\S/);
-    const colonIdx = trimmed.indexOf(":");
 
+    // Handle YAML list items (lines starting with '-')
+    if (trimmed.startsWith("-")) {
+      const itemContent = trimmed.slice(1).trim();
+      const colonIdx = itemContent.indexOf(":");
+
+      if (colonIdx !== -1) {
+        // This is a list item with key-value pairs on same line or next lines
+        const key = itemContent.slice(0, colonIdx).trim();
+        const value = itemContent.slice(colonIdx + 1).trim();
+
+        // Pop stack while indent decreases
+        while (stack.length > 0 && indent < stack[stack.length - 1].indent) {
+          stack.pop();
+        }
+
+        // Find or create the array
+        const parent = stack.length > 0 ? stack[stack.length - 1].obj : result;
+        const arrayKey = parent ? Object.keys(parent).slice(-1)[0] : undefined;
+        let array: unknown[];
+
+        if (arrayKey && Array.isArray(parent[arrayKey])) {
+          array = parent[arrayKey] as unknown[];
+        } else {
+          // Start a new array
+          const newArray: unknown[] = [];
+          if (parent) {
+            parent[arrayKey || key] = newArray;
+          } else {
+            result[key] = newArray;
+          }
+          array = newArray;
+        }
+
+        // Create new object for this list item
+        const item: Record<string, unknown> = {};
+        array.push(item);
+
+        // Parse the key-value on this line
+        const parsedValue = parseValue(value);
+        if (parsedValue !== undefined) {
+          item[key] = parsedValue;
+        }
+
+        // Push this item to stack for nested properties
+        stack.push({ obj: item, indent });
+      }
+      continue;
+    }
+
+    // Regular key-value line
+    const colonIdx = trimmed.indexOf(":");
     if (colonIdx === -1) continue;
 
     const key = trimmed.slice(0, colonIdx).trim();
-    let value: unknown = trimmed.slice(colonIdx + 1).trim();
+    const rawValue = trimmed.slice(colonIdx + 1).trim();
 
     // Pop stack while indent decreases
     while (stack.length > 0 && indent <= stack[stack.length - 1].indent) {
@@ -102,30 +153,39 @@ function parseYaml(yamlStr: string): Record<string, unknown> {
 
     const parent = stack.length > 0 ? stack[stack.length - 1].obj : result;
 
-    // Parse value
-    if (value === "" || value === "null" || value === "~") {
-      value = null;
-    } else if (value === "true") {
-      value = true;
-    } else if (value === "false") {
-      value = false;
-    } else if (/^-?\d+(\.\d+)?$/.test(value as string)) {
-      value = parseFloat(value as string);
-    } else if ((value as string).startsWith("[") && (value as string).endsWith("]")) {
-      // Array
-      const arrContent = (value as string).slice(1, -1);
-      value = arrContent
-        ? arrContent.split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""))
-        : [];
-    } else {
-      // String - remove quotes
-      value = (value as string).replace(/^["']|["']$/g, "");
+    // Check if value is empty (nested content follows)
+    if (rawValue === "" || rawValue === "~" || rawValue === "null") {
+      // Nested content follows - create placeholder
+      const nested: Record<string, unknown> = {};
+      parent[key] = nested;
+      stack.push({ obj: nested, indent });
+      continue;
     }
 
-    parent[key] = value;
+    parent[key] = parseValue(rawValue);
   }
 
   return result;
+}
+
+/**
+ * Parse a YAML scalar value or array
+ */
+type YamlValue = string | number | boolean | null | string[];
+function parseValue(value: string): YamlValue {
+  if (value === "" || value === "null" || value === "~") {
+    return null;
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(value)) {
+    return parseFloat(value);
+  }
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const content = value.slice(1, -1);
+    return content ? content.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")) : [];
+  }
+  return value.replace(/^["']|["']$/g, "");
 }
 
 /**
@@ -200,13 +260,35 @@ export class WikiStorage {
   private indexMtime = 0; // Track when index was last loaded
   private operations: WikiOperation[] = [];
   private stagedChanges: Map<string, StagedChange> = new Map();
+  private initialized = false;
 
   constructor(config: WikiConfig) {
     this.config = config;
-    this.ensureStructure();
+    // Don't create directories until explicitly initialized
+    // This prevents writes when the feature is disabled
+  }
+
+  /**
+   * Initialize storage (call before any read/write operations)
+   * This is called automatically by WikiManager when feature is enabled
+   */
+  /**
+   * Prepare storage for use (load indexes and operations)
+   * Called after directories are ensured by initialize()
+   */
+  private prepareStorage(): void {
+    if (this.initialized) return;
     this.loadIndex();
     this.loadOperations();
     this.loadStaged();
+    this.initialized = true;
+  }
+
+  /**
+   * Check if storage is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   /**
@@ -304,15 +386,6 @@ verification:
   }
 
   /**
-   * Ensure directory structure exists
-   */
-  private ensureStructure(): void {
-    if (!existsSync(this.config.wikiRoot)) {
-      mkdirSync(this.config.wikiRoot, { recursive: true });
-    }
-  }
-
-  /**
    * Load page index from disk (if changed since last load)
    */
   private loadIndex(force = false): void {
@@ -349,14 +422,42 @@ verification:
   }
 
   /**
-   * Save page index to disk (atomic)
+   * Save page index to disk (atomic, merges with existing entries)
    */
   private saveIndex(): void {
-    const entries = Array.from(this.index.values());
+    // Reload from disk to merge (handles concurrent writes)
+    const diskEntries = this.loadIndexFromDisk();
+    const merged = new Map<string, PageIndexEntry>(diskEntries);
+
+    // Apply in-memory changes
+    for (const [id, entry] of this.index) {
+      merged.set(id, entry);
+    }
+
+    const entries = Array.from(merged.values());
     const content = JSON.stringify(entries, null, 2);
     const tmpFile = this.config.indexFile + ".tmp";
     writeFileSync(tmpFile, content, "utf8");
     renameSync(tmpFile, this.config.indexFile);
+  }
+
+  /**
+   * Load index from disk only (no cache)
+   */
+  private loadIndexFromDisk(): Map<string, PageIndexEntry> {
+    const result = new Map<string, PageIndexEntry>();
+    if (!existsSync(this.config.indexFile)) return result;
+
+    try {
+      const content = readFileSync(this.config.indexFile, "utf8");
+      const entries: PageIndexEntry[] = JSON.parse(content);
+      for (const entry of entries) {
+        result.set(entry.id, entry);
+      }
+    } catch {
+      // Invalid index, return empty
+    }
+    return result;
   }
 
   /**
@@ -455,7 +556,9 @@ verification:
    * Get source snapshot by ID
    */
   getSnapshot(snapshotId: string): SourceSnapshot | null {
+    this.validateSnapshotId(snapshotId);
     const snapFile = join(this.config.rawDir, `${snapshotId}.json`);
+    this.ensureWithinDirectory(snapFile, this.config.rawDir);
     if (!existsSync(snapFile)) return null;
 
     try {
@@ -474,8 +577,10 @@ verification:
    * Save a wiki page
    */
   savePage(page: WikiPage): void {
+    this.validatePageId(page.frontmatter.id);
     const content = combinePage(page.frontmatter, page.body);
     const pageFile = join(this.config.knowledgeDir, `${page.frontmatter.id}.md`);
+    this.ensureWithinDirectory(pageFile, this.config.knowledgeDir);
     const tmpFile = pageFile + ".tmp";
     writeFileSync(tmpFile, content, "utf8");
     renameSync(tmpFile, pageFile);
@@ -499,7 +604,9 @@ verification:
    * Load a wiki page
    */
   loadPage(pageId: string): WikiPage | null {
+    this.validatePageId(pageId);
     const pageFile = join(this.config.knowledgeDir, `${pageId}.md`);
+    this.ensureWithinDirectory(pageFile, this.config.knowledgeDir);
     if (!existsSync(pageFile)) return null;
 
     const content = readFileSync(pageFile, "utf8");
@@ -517,6 +624,27 @@ verification:
     // Reject paths with directory separators or parent references
     if (pageId.includes("/") || pageId.includes("\\") || pageId.includes("..")) {
       throw new Error(`Invalid page ID: ${pageId}`);
+    }
+  }
+
+  /**
+   * Validate snapshot ID to prevent path traversal attacks
+   */
+  private validateSnapshotId(snapshotId: string): void {
+    // Reject paths with directory separators or parent references
+    if (snapshotId.includes("/") || snapshotId.includes("\\") || snapshotId.includes("..")) {
+      throw new Error(`Invalid snapshot ID: ${snapshotId}`);
+    }
+  }
+
+  /**
+   * Ensure a path is within the expected directory (defense in depth)
+   */
+  private ensureWithinDirectory(filePath: string, expectedDir: string): void {
+    const resolved = resolve(filePath);
+    const expected = resolve(expectedDir);
+    if (!resolved.startsWith(expected + "/") && resolved !== expected) {
+      throw new Error(`Path ${filePath} is outside expected directory ${expectedDir}`);
     }
   }
 

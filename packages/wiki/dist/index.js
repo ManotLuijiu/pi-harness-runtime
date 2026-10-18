@@ -18,11 +18,15 @@ export function isWikiEnabled() {
     return process.env.HARNESS_KNOWLEDGE_WIKI === "1";
 }
 /**
- * Require wiki to be enabled
+ * Require wiki to be enabled and ensure storage is initialized
  */
-function requireWiki() {
+function requireWiki(storage) {
     if (!isWikiEnabled()) {
         throw new Error("Wiki feature is disabled. Set HARNESS_KNOWLEDGE_WIKI=1 to enable.");
+    }
+    // Lazy initialization: ensure storage is ready on first use
+    if (!storage.isInitialized()) {
+        storage.initialize();
     }
 }
 // ============================================================================
@@ -51,7 +55,9 @@ export class WikiManager {
      * Initialize wiki structure
      */
     initialize() {
-        requireWiki();
+        // Initialize storage before checking readiness
+        this.storage.initialize();
+        requireWiki(this.storage);
         return this.storage.initialize();
     }
     /**
@@ -68,7 +74,7 @@ export class WikiManager {
      * Returns existing snapshot if same requestId was already processed
      */
     ingestSource(sourcePath, requestId) {
-        requireWiki();
+        requireWiki(this.storage);
         // Validate source path
         const resolvedPath = resolve(sourcePath);
         if (!existsSync(resolvedPath)) {
@@ -79,8 +85,12 @@ export class WikiManager {
             const operations = this.storage.getRecentOperations(1000);
             const existingOp = operations.find((op) => op.requestId === requestId && op.status === "success");
             if (existingOp) {
-                // Find the snapshot from the existing operation
                 const details = existingOp.details;
+                // Check if the source path matches (same requestId for different source = conflict)
+                if (details.sourcePath && details.sourcePath !== resolvedPath) {
+                    throw new Error(`Request ID ${requestId} was already used for a different source path. ` +
+                        `Original: ${details.sourcePath}, Requested: ${sourcePath}`);
+                }
                 if (details.snapshotId) {
                     const snapshot = this.storage.getSnapshot(details.snapshotId);
                     if (snapshot) {
@@ -112,7 +122,7 @@ export class WikiManager {
      * Get source snapshot
      */
     getSnapshot(snapshotId) {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.getSnapshot(snapshotId);
     }
     // ========================================================================
@@ -122,7 +132,7 @@ export class WikiManager {
      * Create a new wiki page
      */
     createPage(params) {
-        requireWiki();
+        requireWiki(this.storage);
         const id = `page-${randomUUID().slice(0, 8)}`;
         const timestamp = now();
         const frontmatter = {
@@ -149,7 +159,7 @@ export class WikiManager {
      * Update an existing page
      */
     updatePage(pageId, updates) {
-        requireWiki();
+        requireWiki(this.storage);
         const existing = this.storage.loadPage(pageId);
         if (!existing) {
             throw new Error(`Page not found: ${pageId}`);
@@ -172,21 +182,21 @@ export class WikiManager {
      * Load a wiki page
      */
     loadPage(pageId) {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.loadPage(pageId);
     }
     /**
      * Delete a wiki page
      */
     deletePage(pageId) {
-        requireWiki();
+        requireWiki(this.storage);
         this.storage.deletePage(pageId);
     }
     /**
      * Get all pages
      */
     getAllPages() {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.getAllPages();
     }
     // ========================================================================
@@ -196,14 +206,14 @@ export class WikiManager {
      * Search wiki pages
      */
     search(query, filters, limit = 10) {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.search(query, filters, limit);
     }
     /**
      * Get page index
      */
     getIndex() {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.getIndex();
     }
     // ========================================================================
@@ -213,7 +223,7 @@ export class WikiManager {
      * Stage a change for later application
      */
     stageChange(pageId, expectedRevision, newContent) {
-        requireWiki();
+        requireWiki(this.storage);
         const existing = this.storage.loadPage(pageId);
         if (!existing) {
             throw new Error(`Page not found: ${pageId}`);
@@ -231,14 +241,14 @@ export class WikiManager {
      * Get staged change for a page
      */
     getStagedChange(pageId) {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.getStagedChange(pageId);
     }
     /**
      * Clear staged change
      */
     clearStagedChange(pageId) {
-        requireWiki();
+        requireWiki(this.storage);
         this.storage.clearStagedChange(pageId);
     }
     // ========================================================================
@@ -248,7 +258,7 @@ export class WikiManager {
      * Apply staged change with conflict detection
      */
     applyChange(pageId, _requestId) {
-        requireWiki();
+        requireWiki(this.storage);
         const staged = this.storage.getStagedChange(pageId);
         if (!staged) {
             throw new Error(`No staged change for page: ${pageId}`);
@@ -288,7 +298,7 @@ export class WikiManager {
      * Run lint checks on wiki
      */
     lint(scope) {
-        requireWiki();
+        requireWiki(this.storage);
         const findings = [];
         if (scope === undefined || scope === "all" || scope === "pages") {
             findings.push(...this.lintPages());
@@ -436,7 +446,7 @@ export class WikiManager {
      * Get recent operations
      */
     getRecentOperations(limit = 50) {
-        requireWiki();
+        requireWiki(this.storage);
         return this.storage.getRecentOperations(limit);
     }
 }
@@ -448,7 +458,12 @@ export class WikiManager {
  */
 export function createWikiManager(workspaceRoot, projectId) {
     const storage = createWikiStorage(workspaceRoot, projectId);
-    return new WikiManager(storage);
+    const manager = new WikiManager(storage);
+    // Initialize storage if feature is enabled (may be called lazily later)
+    if (process.env.HARNESS_KNOWLEDGE_WIKI === "1") {
+        storage.initialize();
+    }
+    return manager;
 }
 // Re-export storage class
 export { WikiStorage, createWikiStorage } from "./storage.js";

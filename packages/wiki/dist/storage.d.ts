@@ -37,7 +37,21 @@ export declare class WikiStorage {
     private indexMtime;
     private operations;
     private stagedChanges;
+    private initialized;
     constructor(config: WikiConfig);
+    /**
+     * Initialize storage (call before any read/write operations)
+     * This is called automatically by WikiManager when feature is enabled
+     */
+    /**
+     * Prepare storage for use (load indexes and operations)
+     * Called after directories are ensured by initialize()
+     */
+    private prepareStorage;
+    /**
+     * Check if storage is initialized
+     */
+    isInitialized(): boolean;
     /**
      * Get wiki configuration
      */
@@ -47,17 +61,17 @@ export declare class WikiStorage {
      */
     initialize(): WikiInitResult;
     /**
-     * Ensure directory structure exists
-     */
-    private ensureStructure;
-    /**
      * Load page index from disk (if changed since last load)
      */
     private loadIndex;
     /**
-     * Save page index to disk (atomic)
+     * Save page index to disk (atomic, merges with existing entries)
      */
     private saveIndex;
+    /**
+     * Load index from disk only (no cache)
+     */
+    private loadIndexFromDisk;
     /**
      * Load operations from log
      */
@@ -94,6 +108,14 @@ export declare class WikiStorage {
      * Validate page ID to prevent path traversal attacks
      */
     private validatePageId;
+    /**
+     * Validate snapshot ID to prevent path traversal attacks
+     */
+    private validateSnapshotId;
+    /**
+     * Ensure a path is within the expected directory (defense in depth)
+     */
+    private ensureWithinDirectory;
     /**
      * Delete a wiki page
      */
