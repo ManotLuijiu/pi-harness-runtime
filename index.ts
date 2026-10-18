@@ -713,6 +713,39 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					return;
 				}
 
+				// Check for large refactor keywords and trigger delegation assessment
+				if (sharedState.delegationHarness) {
+					const lowerMsg = userMessage.toLowerCase();
+					const largeRefactorPatterns = [
+						/mass refactor|big refactor|large refactor|extensive refactor/i,
+						/refactor.*across|across.*refactor/i,
+						/migrate.*to|to.*migrate/i,
+						/restructure|reorganize.*codebase/i,
+						/update.*all|update.*many|change.*all|change.*many/i,
+					];
+					const isLargeRefactor = largeRefactorPatterns.some((p) => p.test(lowerMsg));
+					if (isLargeRefactor) {
+						logToFile("[Delegation]", "Large refactor request detected, triggering assessment");
+						// Trigger delegation assessment asynchronously
+						sharedState.delegationHarness.assess({
+							estimatedFiles: 10,
+							observedFiles: 10,
+							estimatedCallSites: 50,
+							observedCallSites: 50,
+							independentComponents: 2,
+							tightlyCoupled: false,
+							isMechanical: false,
+							isComplex: true,
+							fileTypes: {},
+							fingerprint: `user-msg-${Date.now()}`,
+						}, "user-request").then((decision: { strategy: string; reason: string } | null) => {
+						if (decision) {
+							logToFile("[Delegation]", `Assessment result: ${decision.strategy} - ${decision.reason}`);
+						}
+					}).catch((e: unknown) => logToFile("[Delegation]", "Assessment error:", String(e)));
+				}
+				}
+
 				// Temporary pause for user input processing (auto-clears on next decision)
 				if (todoContinuationController) {
 					todoContinuationController.tempPause();

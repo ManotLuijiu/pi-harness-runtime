@@ -314,11 +314,23 @@ export class PendingQuestionController {
     }
     /**
      * Resolve the current question
+     * @param params Resolution parameters including optional requestId to validate
+     * @returns true if resolved, false if rejected (no question or ID mismatch)
      */
     resolve(params) {
         if (!this.currentQuestion) {
-            logWarn("[PendingQuestion]", "No question to resolve");
-            return;
+            logWarn("[PendingQuestion]", "No question to resolve - no pending question");
+            return false;
+        }
+        // Validate requestId if provided (first-answer-wins enforcement)
+        if (params.requestId !== undefined && params.requestId !== this.currentQuestion.requestId) {
+            logWarn("[PendingQuestion]", `Request ID mismatch: callback=${params.requestId} current=${this.currentQuestion.requestId} - stale button ignored`);
+            return false;
+        }
+        // Check if already resolved (prevent duplicate resolution)
+        if (this.currentQuestion.state === "resolved") {
+            logWarn("[PendingQuestion]", `Question already resolved as ${this.currentQuestion.resolution} - duplicate callback ignored`);
+            return false;
         }
         this.currentQuestion.state = "resolved";
         this.currentQuestion.resolution = params.resolution;
@@ -329,6 +341,7 @@ export class PendingQuestionController {
         if (this.userAnswerCallback) {
             this.userAnswerCallback(this.currentQuestion, params.resolution);
         }
+        return true;
     }
     /**
      * Cancel the current question (e.g., on session switch)

@@ -152,11 +152,15 @@ export declare class PendingQuestionController {
     updateDeliveryState(channel: "telegram" | "line", delivered: boolean, error?: string): void;
     /**
      * Resolve the current question
+     * @param params Resolution parameters including optional requestId to validate
+     * @returns true if resolved, false if rejected (no question or ID mismatch)
      */
     resolve(params: {
         resolution: "yes" | "no" | "clarification";
         by: "user" | "jev" | "timeout";
-    }): void;
+        /** Optional requestId to validate (first-answer-wins) */
+        requestId?: string;
+    }): boolean;
     /**
      * Cancel the current question (e.g., on session switch)
      */
