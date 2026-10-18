@@ -55,8 +55,10 @@ export class WikiManager {
      * Initialize wiki structure
      */
     initialize() {
-        // Initialize storage before checking readiness
-        this.storage.initialize();
+        // Check if feature is enabled
+        if (!isWikiEnabled()) {
+            throw new Error("Wiki feature is disabled. Set HARNESS_KNOWLEDGE_WIKI=1 to enable.");
+        }
         requireWiki(this.storage);
         return this.storage.initialize();
     }
@@ -87,9 +89,10 @@ export class WikiManager {
             if (existingOp) {
                 const details = existingOp.details;
                 // Check if the source path matches (same requestId for different source = conflict)
-                if (details.sourcePath && details.sourcePath !== resolvedPath) {
+                // Compare resolved paths to handle relative vs absolute path variations
+                if (details.resolvedPath && details.resolvedPath !== resolvedPath) {
                     throw new Error(`Request ID ${requestId} was already used for a different source path. ` +
-                        `Original: ${details.sourcePath}, Requested: ${sourcePath}`);
+                        `Original: ${details.resolvedPath}, Requested: ${resolvedPath}`);
                 }
                 if (details.snapshotId) {
                     const snapshot = this.storage.getSnapshot(details.snapshotId);
@@ -102,7 +105,7 @@ export class WikiManager {
         // Read content
         const content = readFileSync(resolvedPath, "utf8");
         // Log operation
-        const operation = this.storage.logOperation("ingest", { sourcePath }, requestId);
+        const operation = this.storage.logOperation("ingest", { sourcePath, resolvedPath }, requestId);
         try {
             // Create snapshot
             const snapshot = this.storage.createSnapshot(resolvedPath, content, operation.id);

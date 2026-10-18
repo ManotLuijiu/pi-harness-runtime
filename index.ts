@@ -70,6 +70,7 @@ import {
 	createBlackboard,
 } from "./harness/blackboard.ts";
 import { scheduleAutoResume, cancelAutoResume, getGLMQuotaCountdown } from "./harness/index.js";
+import { initWiki } from "./harness/wiki-integration.js";
 import { startWatcher, classifyMessage, detectReviewMarker } from "./packages/codex-watcher/dist/src/index.js";
 import {
 	getPaperclipConfig,
@@ -1998,7 +1999,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync, realpathSync, statSync } from "node:fs";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
 
@@ -2411,6 +2412,9 @@ export default async function (pi: ExtensionAPI) {
 	// --- memory: Inject MEMORY.md and USER.md into system prompt -------------
 	void initMemory(pi);
 
+	// --- wiki: Knowledge wiki with search/ingest/lint commands ------------
+	void initWiki(pi);
+
 	// --- ssh-detach-interceptor: Auto-fix bare ssh & → nohup pattern ---------
 	void initSshDetachInterceptor(pi);
 
@@ -2553,7 +2557,7 @@ export default async function (pi: ExtensionAPI) {
 			// the first session to appear afterward is treated as new and greeted.
 			let firstPollDone = false;
 			try {
-				const { getLatestSession } = await import("./packages/codex-watcher/dist/index.js");
+				const { getLatestSession } = await import("./packages/codex-watcher/dist/src/index.js");
 				const baseline = getLatestSession();
 				if (baseline) {
 					codexSessionState.greetingBaselineSessionId = baseline.id;
@@ -2691,7 +2695,7 @@ export default async function (pi: ExtensionAPI) {
 					if (classification !== "plan" && classification !== "mixed" && !hasReviewMarker) continue;
 				
 				// Determine stage (for future use in event metadata)
-				const _stage = hasReviewMarker ? "review" : classification;
+				void classification; // used for classification only
 
 				// Only start settle timer for plans (not reviews)
 				// Reviews don't have a file to watch
