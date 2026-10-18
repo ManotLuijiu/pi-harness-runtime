@@ -157,12 +157,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			existsSync(`${keysDir}/jev-api-key.txt`) &&
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 0;
 
+		// Create pending question controller - works independently of Jev
+		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
+		const pqController = createPendingQuestionController();
+		sharedState.pqController = pqController;
+
 		if (!hasEnvKey && !hasFileKey) {
-			addHarnessMessage("Jev", "API key missing or empty; auto-continue unavailable", "warn", [
-				"Set TYPESAFE_API_KEY or ~/.pi-harness-runtime/keys/jev-api-key.txt, then reload Pi.",
+			addHarnessMessage("Jev", "API key missing; question detection active, auto-continue unavailable", "warn", [
+				"Set TYPESAFE_API_KEY or ~/.pi-harness-runtime/keys/jev-api-key.txt to enable auto-continue.",
 			]);
-			logToFile("[auto-continue]", "No Jev API key found. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
-			return;
+			logToFile("[auto-continue]", "No Jev API key found, but question detection is active. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
+			// Don't return - question handling still works without Jev
 		}
 
 		// Resolve the actual API key: env takes priority, file is fallback
@@ -170,9 +175,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim();
 
 		const mod = await import("./packages/jev-judge/src/auto-continue.js");
-		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
-		const pqController = createPendingQuestionController();
-		sharedState.pqController = pqController;
 
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
