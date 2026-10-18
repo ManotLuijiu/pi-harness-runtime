@@ -331,19 +331,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				
 				logToFile("[PendingQuestion]", `Question created: ${question.requestId} - ${result.questionText?.slice(0, 50)}`);
 
-				_lastNotifiedQuestion = result.questionText;
-				waitingForUserSince = new Date();
+					_lastNotifiedQuestion = result.questionText;
+					waitingForUserSince = new Date();
 
-				// Create stable jobId from question content hash (callback-safe: digits only)
-				const questionHash = Math.abs(
-					result.questionText.split("").reduce((a, c) => {
-						a = ((a << 5) - a) + c.charCodeAt(0);
-						return a & a;
-					}, 0)
-				).toString(36);
+					// Use question.requestId as the jobId for callback matching
+					const questionJobId = question.requestId;
 
-				// Update TUI status - use short ID for display
-				updateAutoContinueStatus("WAITING", questionHash);
+					// Update TUI status - use short ID for display
+					updateAutoContinueStatus("WAITING", questionJobId.slice(0, 8));
 
 				// Get task context for additional info
 				const taskContext = await getTaskContext().catch(() => ({ total: 0, completed: 0, remaining: [] as string[] }));
@@ -356,8 +351,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const contextInfo = `Waiting: ${waitMinutes}m | ${taskInfo}`;
 
 				// Emit WaitingForUserInput to Telegram with Yes/No buttons
+				// Uses question.requestId for callback matching
 				_nc?.notifyWithApproval("WaitingForUserInput", {
-					jobId: `waiting-user-${questionHash}`,
+					jobId: `waiting-user-${questionJobId}`,
 					requirement: result.questionText,
 				}, {
 					approveLabel: "Continue",
@@ -366,7 +362,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				// Also send context info as a follow-up message (not in error field)
 				_nc?.notify("Info", {
-					jobId: `info-${questionHash}`,
+					jobId: `info-${questionJobId}`,
 					requirement: contextInfo,
 				}).catch((e) => logToFile("[Notification]", "Info notification failed:", String(e)));
 			}
@@ -1235,24 +1231,44 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			}
 
 			switch (parsed.action) {
-				case CallbackActions.APPROVE:
+				case CallbackActions.APPROVE: {
 					// User clicked Continue - clear waiting state and resume continuation
 					logToFile("[TelegramCallback] Approved - user clicked Continue, resuming work");
 					sharedState.waitingForUserSince = null;
 					sharedState.updateAutoContinueStatus?.("IDLE");
-					// Resolve pending question with yes
-					sharedState.pqController?.resolve({ resolution: "yes", by: "user" });
+					// Resolve pending question with yes, validating request ID (first-answer-wins)
+					const approved = sharedState.pqController?.resolve({
+						resolution: "yes",
+						by: "user",
+						requestId: parsed.targetId,
+					});
+					if (!approved) {
+						logToFile("[TelegramCallback] WARNING: APPROVE button ignored - stale or mismatched request ID");
+						await acknowledge("Stale button - no pending question to approve");
+						break;
+					}
 					// Also resume continuation controller
 					(sharedState.todoContinuationController as any)?.resume?.();
 					break;
-				case CallbackActions.REJECT:
+				}
+				case CallbackActions.REJECT: {
 					// User clicked Not yet - just dismiss, don't resume
 					logToFile("[TelegramCallback] Rejected - user clicked Not yet, pausing");
-					// Resolve pending question with no
-					sharedState.pqController?.resolve({ resolution: "no", by: "user" });
+					// Resolve pending question with no, validating request ID (first-answer-wins)
+					const rejected = sharedState.pqController?.resolve({
+						resolution: "no",
+						by: "user",
+						requestId: parsed.targetId,
+					});
+					if (!rejected) {
+						logToFile("[TelegramCallback] WARNING: REJECT button ignored - stale or mismatched request ID");
+						await acknowledge("Stale button - no pending question to reject");
+						break;
+					}
 					// Explicitly pause the continuation
 					(sharedState.todoContinuationController as any)?.explicitPause?.();
 					break;
+				}
 				default:
 					// Check for channel toggle actions
 					if (parsed.action === "toggle_telegram") {
