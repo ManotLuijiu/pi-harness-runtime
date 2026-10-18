@@ -87,7 +87,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
           return { content: [{ type: "text", text: "Wiki feature is disabled." }], details: {} };
         }
         try {
-          const wiki = getWiki(getCurrentWorkspace(ctx));
+          const wiki = await getWiki(getCurrentWorkspace(ctx));
           const results = wiki.search(params.query, undefined, params.limit ?? 5);
           if (results.length === 0) {
             return { content: [{ type: "text", text: "No results found." }], details: {} };
@@ -115,7 +115,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
           return { content: [{ type: "text", text: "Wiki feature is disabled." }], details: {} };
         }
         try {
-          const wiki = getWiki(getCurrentWorkspace(ctx));
+          const wiki = await getWiki(getCurrentWorkspace(ctx));
           const page = wiki.loadPage(params.pageId);
           if (!page) {
             return { content: [{ type: "text", text: `Page not found: ${params.pageId}` }], details: {} };
@@ -150,7 +150,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
           return { content: [{ type: "text", text: "Wiki feature is disabled." }], details: {} };
         }
         try {
-          const wiki = getWiki(getCurrentWorkspace(ctx));
+          const wiki = await getWiki(getCurrentWorkspace(ctx));
           const { page, snapshot, existing } = wiki.ingestAndCreatePage(params.sourcePath);
           if (existing) {
             return { content: [{ type: "text", text: `Already ingested: ${snapshot.id}` }], details: {} };
@@ -179,7 +179,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
           return { content: [{ type: "text", text: "Wiki feature is disabled." }], details: {} };
         }
         try {
-          const wiki = getWiki(getCurrentWorkspace(ctx));
+          const wiki = await getWiki(getCurrentWorkspace(ctx));
           const findings = wiki.lint();
           if (findings.length === 0) {
             return { content: [{ type: "text", text: "No issues found." }], details: {} };
@@ -205,7 +205,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
           return { content: [{ type: "text", text: "Wiki feature is disabled." }], details: {} };
         }
         try {
-          const wiki = getWiki(getCurrentWorkspace(ctx));
+          const wiki = await getWiki(getCurrentWorkspace(ctx));
           const pages = wiki.getAllPages();
           const kinds: Record<string, number> = {};
           const statuses: Record<string, number> = {};
@@ -241,7 +241,7 @@ export async function initWiki(pi: ExtensionAPI): Promise<void> {
         // Get workspace from context
         const extCtx = ctx as ExtensionContext | undefined;
         const workspace = getCurrentWorkspace(extCtx);
-        const wiki = getWiki(workspace);
+        const wiki = await getWiki(workspace);
         const parts = args.trim().split(/\s+/);
         const subcommand = parts[0] || "help";
         const subargs = parts.slice(1).join(" ");

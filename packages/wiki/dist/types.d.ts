@@ -158,6 +158,7 @@ export interface LintFinding {
  */
 export interface WikiConfig {
     wikiRoot: string;
+    workspaceRoot: string;
     rawDir: string;
     knowledgeDir: string;
     harnessDir: string;

@@ -231,6 +231,7 @@ export interface LintFinding {
  */
 export interface WikiConfig {
   wikiRoot: string;               // Root wiki directory
+  workspaceRoot: string;          // Workspace root (parent of wikiRoot)
   rawDir: string;                // Source snapshots directory
   knowledgeDir: string;          // Generated pages directory
   harnessDir: string;           // Internal .harness directory

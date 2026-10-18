@@ -153,6 +153,10 @@ export declare class WikiStorage {
      */
     completeOperation(opId: string, status: WikiOperation["status"], error?: string): void;
     /**
+     * Load operations from disk only (no cache)
+     */
+    private loadOperationsFromDisk;
+    /**
      * Update operation details (before completion)
      */
     updateOperationDetails(opId: string, details: Record<string, unknown>): void;

@@ -78,13 +78,13 @@ export class WikiManager {
     ingestSource(sourcePath, requestId) {
         requireWiki(this.storage);
         // Validate source path
-        // Resolve relative paths against wiki root (workspace), not process cwd
+        // Resolve relative paths against workspace root, not wiki directory
         let resolvedPath;
         if (isAbsolute(sourcePath)) {
             resolvedPath = sourcePath;
         }
         else {
-            resolvedPath = resolve(this.config.wikiRoot, sourcePath);
+            resolvedPath = resolve(this.config.workspaceRoot, sourcePath);
         }
         if (!existsSync(resolvedPath)) {
             throw new Error(`Source file not found: ${sourcePath}`);

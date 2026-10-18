@@ -476,6 +476,7 @@ verification:
         const stagedFile = join(this.config.harnessDir, "staged.json");
         const content = JSON.stringify(changes, null, 2);
         const tmpFile = stagedFile + ".tmp";
+        this.ensureWithinDirectory(tmpFile, this.config.harnessDir);
         writeFileSync(tmpFile, content, "utf8");
         renameSync(tmpFile, stagedFile);
     }
@@ -724,11 +725,47 @@ verification:
             completedAt: now(),
             error,
         };
-        // Rewrite log with updated operation
+        // Reload from disk to merge with other managers' operations
+        const diskOps = this.loadOperationsFromDisk();
+        // Merge: update this operation, keep others
+        const opMap = new Map();
+        for (const op of diskOps) {
+            opMap.set(op.id, op);
+        }
+        opMap.set(opId, this.operations[opIndex]);
+        // Rewrite log with merged operations
         const tmpFile = this.config.logFile + ".tmp";
-        const content = this.operations.map((o) => JSON.stringify(o)).join("\n") + "\n";
+        this.ensureWithinDirectory(tmpFile, this.config.harnessDir);
+        const allOps = Array.from(opMap.values());
+        const content = allOps.map((o) => JSON.stringify(o)).join("\n") + "\n";
         writeFileSync(tmpFile, content, "utf8");
         renameSync(tmpFile, this.config.logFile);
+        // Update in-memory cache to match
+        this.operations = allOps;
+    }
+    /**
+     * Load operations from disk only (no cache)
+     */
+    loadOperationsFromDisk() {
+        const ops = [];
+        if (!existsSync(this.config.logFile))
+            return ops;
+        try {
+            const content = readFileSync(this.config.logFile, "utf8");
+            const lines = content.split("\n").filter((l) => l.trim());
+            for (const line of lines) {
+                try {
+                    ops.push(JSON.parse(line));
+                }
+                catch {
+                    // Skip invalid lines
+                }
+            }
+        }
+        catch {
+            // No log yet
+        }
+        return ops;
     }
     /**
      * Update operation details (before completion)
@@ -812,6 +849,7 @@ export function createWikiStorage(workspaceRoot, projectId) {
     const wikiRoot = join(workspaceRoot, "wiki");
     const config = {
         wikiRoot,
+        workspaceRoot,
         rawDir: join(wikiRoot, "raw"),
         knowledgeDir: join(wikiRoot, "knowledge"),
         harnessDir: join(wikiRoot, ".harness"),
