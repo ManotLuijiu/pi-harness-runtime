@@ -25,8 +25,21 @@ export declare class NotificationCenter {
     private adapters;
     private channelEnabled;
     private redactPatterns;
+    private db;
     /** Pending approval requests keyed by jobId */
     private pendingApprovals;
+    /**
+     * Get SQLite database path
+     */
+    private static getDatabasePath;
+    /**
+     * Initialize SQLite database
+     */
+    private initDatabase;
+    /**
+     * Save channel settings to SQLite
+     */
+    private saveChannelSettings;
     /**
      * Track a new pending approval request
      */

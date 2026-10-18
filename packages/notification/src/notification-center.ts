@@ -10,6 +10,9 @@
  */
 
 import { logError, logWarn } from "./file-logger.js";
+import { existsSync, mkdirSync } from "fs";
+import { join } from "path";
+import { DatabaseSync } from "node:sqlite";
 
 import type {
 	InlineKeyboardButton,
@@ -45,8 +48,68 @@ export class NotificationCenter {
 	private adapters: Map<string, ChannelAdapter> = new Map();
 	private channelEnabled: Map<string, boolean> = new Map();
 	private redactPatterns: RegExp[];
+	private db: DatabaseSync | null = null;
 	/** Pending approval requests keyed by jobId */
 	private pendingApprovals: Map<string, PendingApproval> = new Map();
+
+	/**
+	 * Get SQLite database path
+	 */
+	private static getDatabasePath(): string {
+		const home = process.env.HOME || process.env.USERPROFILE || "/home/user";
+		const dir = join(home, ".pi-harness-runtime");
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		return join(dir, "notification-settings.sqlite");
+	}
+
+	/**
+	 * Initialize SQLite database
+	 */
+	private initDatabase(): void {
+		try {
+			const dbPath = NotificationCenter.getDatabasePath();
+			this.db = new DatabaseSync(dbPath);
+
+			// Create tables
+			this.db.exec(`
+				CREATE TABLE IF NOT EXISTS channel_settings (
+					channel_id TEXT PRIMARY KEY,
+					enabled INTEGER NOT NULL DEFAULT 1,
+					updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+				);
+			`);
+
+			// Load existing settings
+			const stmt = this.db.prepare("SELECT channel_id, enabled FROM channel_settings");
+			const rows = stmt.all() as Array<{ channel_id: string; enabled: number }>;
+			for (const row of rows) {
+				this.channelEnabled.set(row.channel_id, row.enabled === 1);
+			}
+			logWarn("[NotificationCenter]", `Loaded ${rows.length} channel settings from SQLite`);
+		} catch (e) {
+			logError("[NotificationCenter]", `Failed to init database: ${e}`);
+		}
+	}
+
+	/**
+	 * Save channel settings to SQLite
+	 */
+	private saveChannelSettings(): void {
+		if (!this.db) return;
+		try {
+			const stmt = this.db.prepare(`
+				INSERT OR REPLACE INTO channel_settings (channel_id, enabled, updated_at)
+				VALUES (?, ?, CURRENT_TIMESTAMP)
+			`);
+			for (const [id, enabled] of this.channelEnabled.entries()) {
+				stmt.run(id, enabled ? 1 : 0);
+			}
+		} catch (e) {
+			logError("[NotificationCenter]", `Failed to save settings: ${e}`);
+		}
+	}
 
 	/**
 	 * Track a new pending approval request
@@ -116,10 +179,17 @@ export class NotificationCenter {
 		this.redactPatterns =
 			config?.redactPatterns ?? this.getDefaultRedactPatterns();
 
+		// Initialize SQLite database and load settings
+		this.initDatabase();
+
 		if (config?.channels) {
 			for (const channelConfig of config.channels) {
 				if (channelConfig.enabled) {
 					this.registerAdapter(channelConfig);
+					// Set default enabled state (will be overridden by loaded settings)
+					if (!this.channelEnabled.has(channelConfig.id)) {
+						this.channelEnabled.set(channelConfig.id, true);
+					}
 				}
 			}
 		}
@@ -181,6 +251,7 @@ export class NotificationCenter {
 		 */
 		setChannelEnabled(channelId: string, enabled: boolean): void {
 			this.channelEnabled.set(channelId, enabled);
+			this.saveChannelSettings();
 			logWarn("[NotificationCenter]", `Channel ${channelId} ${enabled ? "enabled" : "disabled"}`);
 		}
 
