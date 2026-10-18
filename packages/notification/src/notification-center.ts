@@ -251,8 +251,22 @@ export class NotificationCenter {
 	async notify(
 		event: NotificationEvent,
 		context: NotificationContext,
+		options?: {
+			/** Whether to include channel toggle buttons (default: true) */
+			includeToggles?: boolean;
+		},
 	): Promise<NotificationResult[]> {
+		const includeToggles = options?.includeToggles ?? true;
+		
+		// Build payload
 		const payload = this.buildPayload(event, context);
+		
+		// Add toggle buttons if enabled
+		if (includeToggles && (this.adapters.size > 1 || this.adapters.has("telegram"))) {
+			payload.actionButtons = this.buildToggleButtons();
+			payload.enableInlineKeyboard = true;
+		}
+		
 		const results: NotificationResult[] = [];
 
 		// Send to all adapters in parallel
@@ -260,6 +274,10 @@ export class NotificationCenter {
 		await Promise.all(
 			adapterEntries.map(async ([id, adapter]) => {
 				try {
+					// Check if channel is enabled
+					if (!this.isChannelEnabled(id)) {
+						return { success: true, channel: id, skipped: true };
+					}
 					// Redact sensitive data
 					const redactedPayload = this.redact(payload);
 					const result = await adapter.send(redactedPayload);

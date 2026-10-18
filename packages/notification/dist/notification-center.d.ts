@@ -85,7 +85,10 @@ export declare class NotificationCenter {
     /**
      * Send a notification to all configured channels
      */
-    notify(event: NotificationEvent, context: NotificationContext): Promise<NotificationResult[]>;
+    notify(event: NotificationEvent, context: NotificationContext, options?: {
+        /** Whether to include channel toggle buttons (default: true) */
+        includeToggles?: boolean;
+    }): Promise<NotificationResult[]>;
     /**
      * Send notification to a specific channel
      */

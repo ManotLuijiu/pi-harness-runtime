@@ -34,6 +34,9 @@ export interface NotificationPayload {
 	details?: Record<string, unknown>;
 	// Redacted fields for security
 	redacted?: string[];
+	// Inline keyboard buttons for Telegram
+	enableInlineKeyboard?: boolean;
+	actionButtons?: InlineKeyboardButton[];
 }
 
 export interface NotificationConfig {

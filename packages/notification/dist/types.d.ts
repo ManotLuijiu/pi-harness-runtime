@@ -12,6 +12,8 @@ export interface NotificationPayload {
     message: string;
     details?: Record<string, unknown>;
     redacted?: string[];
+    enableInlineKeyboard?: boolean;
+    actionButtons?: InlineKeyboardButton[];
 }
 export interface NotificationConfig {
     channels: NotificationChannelConfig[];
