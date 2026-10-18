@@ -136,6 +136,8 @@ const sharedState = {
 	updateAutoContinueStatus: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	pqController: null as any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	delegationHarness: null as any,
 };
 
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
@@ -161,6 +163,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
 		const pqController = createPendingQuestionController();
 		sharedState.pqController = pqController;
+
+		// Initialize delegation harness for large refactor assessment
+		const { createDelegationHarness } = await import("./packages/jev-judge/dist/delegation-harness.js");
+		sharedState.delegationHarness = createDelegationHarness(pi, {
+			minFiles: 10,
+			minCallSites: 50,
+			minComponents: 2,
+		});
+		logStartup("[pi-harness] Delegation harness initialized");
 
 		if (!hasEnvKey && !hasFileKey) {
 			addHarnessMessage("Jev", "API key missing; question detection active, auto-continue unavailable", "warn", [
