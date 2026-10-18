@@ -13,8 +13,9 @@ import {
   renameSync,
   readdirSync,
   statSync,
+  lstatSync,
 } from "node:fs";
-import { join, dirname, relative, resolve } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   WikiConfig,
@@ -27,9 +28,8 @@ import type {
   WikiOperationType,
   WikiSearchFilters,
   WikiSearchResult,
-  LintFinding,
   StagedChange,
-  WIKI_DIRS,
+
 } from "./types.js";
 
 // ============================================================================
@@ -199,28 +199,22 @@ export function serializeFrontmatter(
   for (const [key, value] of Object.entries(frontmatter)) {
     if (value === undefined || value === null) continue;
 
+
+    // Special handling for sources array - use JSON for reliability
+    if (key === "sources" && Array.isArray(value)) {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+      continue;
+    }
+
     if (Array.isArray(value)) {
       if (value.length === 0) {
         lines.push(`${key}: []`);
-      } else if (value.every((v) => typeof v === "object" && v !== null)) {
-        // Array of objects - serialize as proper YAML
-        lines.push(`${key}:`);
-        for (const item of value) {
-          lines.push(`  - sourceId: ${(item as Record<string, unknown>).sourceId}`);
-          lines.push(`    path: ${(item as Record<string, unknown>).path}`);
-          lines.push(`    contentHash: ${(item as Record<string, unknown>).contentHash}`);
-          lines.push(`    capturedAt: ${(item as Record<string, unknown>).capturedAt}`);
-          lines.push(`    redacted: ${(item as Record<string, unknown>).redacted}`);
-        }
       } else {
         lines.push(`${key}: [${value.join(", ")}]`);
       }
     } else if (typeof value === "object") {
-      // Nested object
-      lines.push(`${key}:`);
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        lines.push(`  ${k}: ${JSON.stringify(v)}`);
-      }
+      // Nested object - use JSON
+      lines.push(`${key}: ${JSON.stringify(value)}`);
     } else if (typeof value === "boolean" || typeof value === "number") {
       lines.push(`${key}: ${value}`);
     } else {
@@ -272,11 +266,7 @@ export class WikiStorage {
    * Initialize storage (call before any read/write operations)
    * This is called automatically by WikiManager when feature is enabled
    */
-  /**
-   * Prepare storage for use (load indexes and operations)
-   * Called after directories are ensured by initialize()
-   */
-  private prepareStorage(): void {
+  initializeStorage(): void {
     if (this.initialized) return;
     this.loadIndex();
     this.loadOperations();
@@ -378,6 +368,9 @@ verification:
       );
     }
 
+    // Initialize storage for reads/writes
+    this.initializeStorage();
+
     return {
       created: !existing,
       existing,
@@ -425,11 +418,23 @@ verification:
    * Save page index to disk (atomic, merges with existing entries)
    */
   private saveIndex(): void {
-    // Reload from disk to merge (handles concurrent writes)
+    // Reload from disk to handle concurrent writes from other processes
     const diskEntries = this.loadIndexFromDisk();
-    const merged = new Map<string, PageIndexEntry>(diskEntries);
 
-    // Apply in-memory changes
+    // Start with disk state, then apply current in-memory state
+    // This ensures deletions are persisted (not in this.index) and additions are included
+    const merged = new Map<string, PageIndexEntry>();
+
+    // Add all disk entries first
+    for (const [id, entry] of diskEntries) {
+      // Only keep if still exists on disk
+      const pageFile = join(this.config.knowledgeDir, `${id}.md`);
+      if (existsSync(pageFile)) {
+        merged.set(id, entry);
+      }
+    }
+
+    // Apply in-memory changes (adds/updates)
     for (const [id, entry] of this.index) {
       merged.set(id, entry);
     }
@@ -638,9 +643,39 @@ verification:
   }
 
   /**
+   * Check if a path or any of its parent directories is a symlink
+   */
+  private hasSymlinkComponent(filePath: string): boolean {
+    let current = filePath;
+    while (current !== "/" && current !== "") {
+      try {
+        const stat = lstatSync(current);
+        if (stat.isSymbolicLink()) {
+          return true;
+        }
+      } catch {
+        // File doesn't exist or can't be stat'd
+      }
+      const parent = dirname(current);
+      if (parent === current) break; // Reached root
+      current = parent;
+    }
+    return false;
+  }
+
+  /**
    * Ensure a path is within the expected directory (defense in depth)
    */
   private ensureWithinDirectory(filePath: string, expectedDir: string): void {
+    // Reject symlinks to prevent path escape via symlink traversal
+    if (this.hasSymlinkComponent(filePath)) {
+      throw new Error(`Path ${filePath} contains a symlink component`);
+    }
+    // Also check the expected directory itself
+    if (this.hasSymlinkComponent(expectedDir)) {
+      throw new Error(`Expected directory ${expectedDir} contains a symlink`);
+    }
+
     const resolved = resolve(filePath);
     const expected = resolve(expectedDir);
     if (!resolved.startsWith(expected + "/") && resolved !== expected) {

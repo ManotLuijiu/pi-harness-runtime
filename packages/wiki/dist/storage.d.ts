@@ -43,11 +43,7 @@ export declare class WikiStorage {
      * Initialize storage (call before any read/write operations)
      * This is called automatically by WikiManager when feature is enabled
      */
-    /**
-     * Prepare storage for use (load indexes and operations)
-     * Called after directories are ensured by initialize()
-     */
-    private prepareStorage;
+    initializeStorage(): void;
     /**
      * Check if storage is initialized
      */
@@ -112,6 +108,10 @@ export declare class WikiStorage {
      * Validate snapshot ID to prevent path traversal attacks
      */
     private validateSnapshotId;
+    /**
+     * Check if a path or any of its parent directories is a symlink
+     */
+    private hasSymlinkComponent;
     /**
      * Ensure a path is within the expected directory (defense in depth)
      */
