@@ -532,11 +532,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					maxWaitMinutes: 30,
 				});
 
-				// Get real task context from bd
-				const taskContext = await getTaskContext();
+				// Get task context from local todo controller (not bd)
+				const snapshot = await (todoContinuationController?.getSnapshot() ?? Promise.resolve({ items: [] }));
+				const taskContext = {
+					completed: snapshot.items
+					.filter((item: { status?: string; subject?: string }) => item.status === "completed")
+					.map((item: { status?: string; subject?: string }) => item.subject ?? ""),
+					remaining: snapshot.items
+					.filter((item: { status?: string; subject?: string }) => item.status !== "completed")
+					.map((item: { status?: string; subject?: string }) => item.subject ?? ""),
+					total: snapshot.items.length,
+				};
 
-				// Guard against empty task list
-				if (taskContext.total === 0) {
+				// Guard against empty task list AND no pending questions
+				const hasPendingQuestion = sharedState.pqController?.hasPendingQuestion() ?? false;
+				if (taskContext.total === 0 && !hasPendingQuestion) {
+					logToFile("[auto-continue]", "No tasks and no pending questions, skipping auto-continue check");
 					_inferenceInProgress = false;
 					return;
 				}
