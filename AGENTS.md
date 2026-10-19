@@ -423,3 +423,70 @@ Feature: UserDashboard
 ```
 
 **This prevents the "write big file, then extract" anti-pattern.**
+
+---
+
+## Dev PC vs Production Build Rules
+
+### 11. When to Build vs Run Dev
+
+**Dev PC (hot-reload available):**
+```bash
+# ✅ DO: Use bun run dev (hot reload, no build needed)
+bun run dev
+
+# ❌ DON'T: Run build unless specifically asked
+# bun run build   # Wasteful - dev server compiles on-demand
+```
+
+**Why?**
+- Hot-reload: Code changes reflect immediately
+- RAM savings: No parallel build + dev consuming memory
+- Speed: Faster iteration cycle
+
+**When on Dev PC with limited RAM (16GB or less):**
+- NEVER run both `build` AND `dev` simultaneously
+- Only run `dev` - it compiles on-demand
+- Explicitly asked to build only when needed
+
+**Production/CI/Server:**
+```bash
+# ✅ DO: Build before running
+bun run build
+bun run start
+
+# ✅ DO: Build in CI pipelines
+bun run build && bun run test
+```
+
+### 12. RAM-Aware Command Decision
+
+**Before running any command, consider:**
+
+| Scenario | Action |
+|----------|--------|
+| Dev PC, any RAM | `bun run dev` only (no build) |
+| Dev PC, 16GB RAM | Never run build + dev together |
+| CI/Production | Always build first |
+| Server deployment | Build, then run compiled |
+| Explicit "build" request | Build as requested |
+
+**Detection:**
+- Check for `bun run dev` or `npm run dev` in package.json scripts
+- If `dev` script exists, prefer it on Dev PC
+- If no `dev` script, fall back to build
+
+### 13. Quick Reference
+
+```bash
+# Dev PC (THIS IS THE DEFAULT for local development)
+bun run dev        # ✅ Correct - hot reload, saves RAM
+
+# Production/Server/CI
+bun run build      # ✅ Correct - pre-compile
+bun run start      # ✅ Correct - run compiled
+
+# Explicit workflows
+bun run build && bun run test    # CI pipeline
+bun run build && bun run start   # Server deployment
+```
