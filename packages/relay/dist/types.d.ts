@@ -98,6 +98,8 @@ export interface CallbackPayload {
     username?: string;
     messageId?: number;
     timestamp: string;
+    callbackQueryId?: string;
+    chatId?: number;
 }
 /**
  * Server -> Client: Live callback event (after synchronized)

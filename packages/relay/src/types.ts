@@ -117,6 +117,9 @@ export interface CallbackPayload {
   username?: string;
   messageId?: number;
   timestamp: string;
+  // Preserve Telegram-specific fields for proper greeting verification
+  callbackQueryId?: string;
+  chatId?: number;
 }
 
 /**
