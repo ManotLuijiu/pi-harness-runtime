@@ -4786,4 +4786,24 @@ function refreshFooterStatus(
 		"harness-runtime",
 		statusValue,
 	);
+
+	// Set workspace environment on separate row below quota
+	setWorkspaceEnvStatus(setStatus);
+}
+
+/**
+ * Set workspace environment status line
+ * This appears on a NEW LINE below the quota line
+ */
+async function setWorkspaceEnvStatus(setStatus: (key: string, value: string) => void) {
+	try {
+		const { getWorkspaceEnv, formatEnvStatusLine } = await import("./packages/contracts/dist/workspace-env.js");
+		const workspacePath = _piSessionCwd || process.cwd();
+		const env = getWorkspaceEnv(workspacePath);
+		const statusLine = formatEnvStatusLine(env);
+		setStatus("harness-workspace", statusLine);
+	} catch (err) {
+		// Workspace env detection failed - don't show status line
+		logToFile("[WorkspaceEnv]", "Status line failed:", String(err));
+	}
 }
