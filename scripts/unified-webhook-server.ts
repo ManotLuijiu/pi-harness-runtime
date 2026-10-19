@@ -1,6 +1,12 @@
 #!/usr/bin/env bun
 /**
  * Unified Webhook Server — Handles Telegram, LINE, and WebSocket relay
+ * 
+ * Two-way streaming implementation using relay package:
+ * - Snapshot + Live event pattern (t3code style)
+ * - Typed message protocol
+ * - Connection state machine
+ * - Stream coalescing for high-frequency events
  *
  * Routes:
  *   /telegram → Telegram webhook handler
@@ -11,12 +17,14 @@
  *   bun run scripts/unified-webhook-server.ts
  */
 
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { WebSocketServer, WebSocket } from "ws";
-import { randomUUID } from "node:crypto";
+import { createRelayServer } from "../packages/relay/src/server";
+import { generateMessageId } from "../packages/relay/src/types";
+import type { CallbackPayload } from "../packages/relay/src/types";
+import type { RelayServerOptions } from "../packages/relay/src/server";
 
 // --- Configuration ---
 interface Config {
@@ -33,7 +41,8 @@ interface Config {
 
 const PORT = parseInt(process.env.PORT || "8443", 10);
 const WS_PORT = parseInt(process.env.WS_PORT || "8444", 10);
-const RELAY_AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "b61940936a2625036d6faf7fe32c52b3"; // Same as webhook secret
+const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
+const SERVER_VERSION = process.env.SERVER_VERSION || "1.0.0";
 
 // --- Keys Loader ---
 function loadConfig(): Config {
@@ -76,17 +85,6 @@ function loadConfig(): Config {
   return config;
 }
 
-// --- Telegram HMAC Verification (for future use with secret hash) ---
-async function _verifyTelegramHmac(data: string, secret: string, hash: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(data));
-  const expected = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
-  return expected === hash;
-}
-
 // --- LINE Verification ---
 async function verifyLINE(body: string, channelSecret: string, xLineSignature: string): Promise<boolean> {
   const encoder = new TextEncoder();
@@ -98,58 +96,49 @@ async function verifyLINE(body: string, channelSecret: string, xLineSignature: s
   return expected === xLineSignature;
 }
 
-// --- Callback Queue (file-based fallback) ---
-const QUEUE_FILE = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "callback-queue.jsonl");
-function queueCallback(callback: Record<string, unknown>) {
-  appendFileSync(QUEUE_FILE, JSON.stringify({ ...callback, timestamp: new Date().toISOString() }) + "\n");
-}
-
-// --- WebSocket Relay ---
-const wsClients = new Map<string, WebSocket>();
-
-function broadcastCallback(callback: Record<string, unknown>) {
-  const msg = JSON.stringify({ type: "callback", payload: callback });
-  let count = 0;
-  for (const ws of wsClients.values()) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-      count++;
-    }
-  }
-  return count;
-}
-
-function startWebSocketServer() {
-  const wss = new WebSocketServer({ port: WS_PORT });
+// --- Parse Callback Data ---
+function parseCallbackData(data: string): { action: string; targetId: string } {
+  const colonIdx = data.indexOf(":");
+  const underscoreIdx = data.indexOf("_");
   
-  wss.on("connection", (ws: WebSocket) => {
-    const clientId = randomUUID();
-    wsClients.set(clientId, ws);
-    console.log(`[WS] Client connected: ${clientId}`);
+  if (colonIdx !== -1) {
+    return {
+      action: data.slice(0, colonIdx),
+      targetId: data.slice(colonIdx + 1).replace(/_+$/, ""),
+    };
+  } else if (underscoreIdx !== -1) {
+    return {
+      action: data.slice(0, underscoreIdx),
+      targetId: data.slice(underscoreIdx + 1).replace(/_+$/, ""),
+    };
+  }
+  
+  return { action: data, targetId: "" };
+}
 
-    ws.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg.type === "auth" && msg.payload === RELAY_AUTH_TOKEN) {
-          ws.send(JSON.stringify({ type: "auth", payload: { success: true } }));
-          console.log(`[WS] Client authenticated: ${clientId}`);
-        }
-      } catch (err) {
-        console.error(`[WS] Invalid message from ${clientId}:`, err);
-      }
-    });
-
-    ws.on("close", () => {
-      wsClients.delete(clientId);
-      console.log(`[WS] Client disconnected: ${clientId}`);
-    });
-  });
-
-  console.log(`[WS] WebSocket server started on port ${WS_PORT}`);
+// --- Create Callback Payload ---
+function createCallbackPayload(
+  type: "telegram_callback" | "line_callback",
+  action: string,
+  targetId: string,
+  userId: number | string,
+  username?: string,
+  messageId?: number
+): CallbackPayload {
+  return {
+    id: generateMessageId(),
+    type,
+    action,
+    targetId,
+    userId: typeof userId === "string" ? parseInt(userId, 10) || 0 : userId,
+    username,
+    messageId,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 // --- Telegram Handler ---
-async function handleTelegram(req: IncomingMessage, res: ServerResponse, config: Config) {
+async function handleTelegram(req: IncomingMessage, res: ServerResponse, config: Config, relayServer: ReturnType<typeof createRelayServer>) {
   if (!config.telegram) {
     res.writeHead(404);
     res.end("Telegram not configured");
@@ -185,37 +174,21 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
       }
 
       // Parse callback data
-      const data = query.data || "";
-      const colonIdx = data.indexOf(":");
-      const underscoreIdx = data.indexOf("_");
-      let action: string, targetId: string;
-      if (colonIdx !== -1) {
-        action = data.slice(0, colonIdx);
-        targetId = data.slice(colonIdx + 1).replace(/_+$/, "");
-      } else if (underscoreIdx !== -1) {
-        action = data.slice(0, underscoreIdx);
-        targetId = data.slice(underscoreIdx + 1).replace(/_+$/, "");
-      } else {
-        action = data;
-        targetId = "";
-      }
+      const { action, targetId } = parseCallbackData(query.data || "");
 
-      const callback = {
-        type: "telegram_callback",
+      // Create typed callback payload
+      const callback = createCallbackPayload(
+        "telegram_callback",
         action,
         targetId,
-        userId: from.id,
-        username: from.username,
-        messageId: query.message?.message_id,
-      };
+        from.id,
+        from.username,
+        query.message?.message_id
+      );
 
-      // Broadcast via WebSocket
-      const wsCount = broadcastCallback(callback);
-      if (wsCount === 0) {
-        // Fallback to file queue
-        queueCallback(callback);
-      }
-      console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id} (WS clients: ${wsCount})`);
+      // Broadcast via typed streaming relay
+      relayServer.broadcastCallback(callback);
+      console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id}`);
 
       // Acknowledge immediately
       await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/answerCallbackQuery`, {
@@ -235,7 +208,7 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
 }
 
 // --- LINE Handler ---
-async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Config) {
+async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Config, relayServer: ReturnType<typeof createRelayServer>) {
   if (!config.line) {
     res.writeHead(404);
     res.end("LINE not configured");
@@ -269,24 +242,19 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
     for (const event of events) {
       if (event.type === "postback") {
         const data = event.postback?.data || "";
-        const colonIdx = data.indexOf(":");
-        let action = data.slice(0, colonIdx !== -1 ? colonIdx : undefined);
-        let targetId = colonIdx !== -1 ? data.slice(colonIdx + 1) : "";
+        const { action, targetId } = parseCallbackData(data);
 
-        const callback = {
-          type: "line_callback",
+        // Create typed callback payload
+        const callback = createCallbackPayload(
+          "line_callback",
           action,
           targetId,
-          userId: event.source?.userId,
-          timestamp: new Date().toISOString(),
-        };
+          event.source?.userId || "unknown"
+        );
 
-        // Broadcast via WebSocket
-        const wsCount = broadcastCallback(callback);
-        if (wsCount === 0) {
-          queueCallback(callback);
-        }
-        console.log(`[LINE] Postback: ${action} ${targetId} (WS clients: ${wsCount})`);
+        // Broadcast via typed streaming relay
+        relayServer.broadcastCallback(callback);
+        console.log(`[LINE] Postback: ${action} ${targetId}`);
       }
     }
 
@@ -300,45 +268,79 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
 }
 
 // --- Main ---
-const config = loadConfig();
+async function main() {
+  const config = loadConfig();
 
-console.log("===========================================");
-console.log("Unified Webhook Server");
-console.log("===========================================");
-if (config.telegram) console.log("  /telegram - Telegram webhook");
-if (config.line) console.log("  /line     - LINE webhook");
-console.log("===========================================");
+  console.log("===========================================");
+  console.log("Unified Webhook Server - Streaming v2");
+  console.log("===========================================");
+  if (config.telegram) console.log("  /telegram - Telegram webhook");
+  if (config.line) console.log("  /line     - LINE webhook");
+  console.log(`  HTTP:      http://0.0.0.0:${PORT}`);
+  console.log(`  WebSocket: ws://0.0.0.0:${WS_PORT}`);
+  console.log("===========================================");
 
-// Start WebSocket relay
-startWebSocketServer();
+  // Create relay server with typed streaming
+  const relayOptions: RelayServerOptions = {
+    port: WS_PORT,
+    host: "0.0.0.0",
+    authToken: AUTH_TOKEN,
+    serverVersion: SERVER_VERSION,
+    onStateChange: (change: { previous: { state: string }; current: { state: string }; timestamp: string }) => {
+      console.log(`[Relay] State: ${change.previous.state} → ${change.current.state}`);
+    },
+  };
 
-// HTTP webhook server
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://localhost:${PORT}`);
+  const relayServer = createRelayServer(relayOptions);
 
-  try {
-    if (url.pathname === "/telegram" && req.method === "POST") {
-      await handleTelegram(req, res, config);
-    } else if (url.pathname === "/line" && req.method === "POST") {
-      await handleLINE(req, res, config);
-    } else if (url.pathname === "/health") {
-      res.writeHead(200);
-      res.end("OK");
-    } else {
-      res.writeHead(404);
-      res.end("Not Found");
+  // Start WebSocket relay
+  await relayServer.start();
+  console.log("[Relay] WebSocket server started on port", WS_PORT);
+
+  // HTTP webhook server
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || "/", `http://localhost:${PORT}`);
+
+    try {
+      if (url.pathname === "/telegram" && req.method === "POST") {
+        await handleTelegram(req, res, config, relayServer);
+      } else if (url.pathname === "/line" && req.method === "POST") {
+        await handleLINE(req, res, config, relayServer);
+      } else if (url.pathname === "/health") {
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          status: "ok",
+          clients: relayServer.getClientCount(),
+          running: relayServer.isRunning(),
+        }));
+      } else {
+        res.writeHead(404);
+        res.end("Not Found");
+      }
+    } catch (err) {
+      console.error("[Server] Error:", err);
+      res.writeHead(500);
+      res.end("Error");
     }
-  } catch (err) {
-    console.error("[Server] Error:", err);
-    res.writeHead(500);
-    res.end("Error");
-  }
-});
+  });
 
-server.listen(PORT, () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-  console.log(`WebSocket relay on ws://0.0.0.0:${WS_PORT}`);
-  console.log("Configure webhooks:");
-  if (config.telegram) console.log(`  Telegram: https://webhook.bunchee.online/telegram`);
-  if (config.line) console.log(`  LINE:     https://webhook.bunchee.online/line`);
-});
+  server.listen(PORT, () => {
+    console.log(`HTTP server running on http://0.0.0.0:${PORT}`);
+    console.log("Configure webhooks:");
+    if (config.telegram) console.log(`  Telegram: https://webhook.bunchee.online/telegram`);
+    if (config.line) console.log(`  LINE:     https://webhook.bunchee.online/line`);
+  });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log("\nShutting down...");
+    await relayServer.stop();
+    server.close();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+main().catch(console.error);
