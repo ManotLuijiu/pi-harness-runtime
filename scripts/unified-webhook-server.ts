@@ -17,7 +17,7 @@
  *   bun run scripts/unified-webhook-server.ts
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
@@ -43,6 +43,34 @@ const PORT = parseInt(process.env.PORT || "8443", 10);
 const WS_PORT = parseInt(process.env.WS_PORT || "8444", 10);
 const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
 const SERVER_VERSION = process.env.SERVER_VERSION || "1.0.0";
+
+// --- Job Commands (for pi-harness polling) ---
+const JOB_COMMANDS_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "job-commands.jsonl");
+
+interface JobCommand {
+  command: string;
+  jobId: string;
+  userId: number;
+  timestamp: string;
+}
+
+function readJobCommands(): JobCommand[] {
+  if (!existsSync(JOB_COMMANDS_FILE)) return [];
+  const content = readFileSync(JOB_COMMANDS_FILE, "utf-8");
+  if (!content.trim()) return [];
+  return content.trim().split("\n").map((line) => {
+    try { return JSON.parse(line); } catch { return null; }
+  }).filter(Boolean);
+}
+
+function acknowledgeCommands(): void {
+  writeFileSync(JOB_COMMANDS_FILE, "", "utf-8");
+}
+
+function writeJobCommand(cmd: Omit<JobCommand, "timestamp">): void {
+  const line = JSON.stringify({ ...cmd, timestamp: new Date().toISOString() }) + "\n";
+  writeFileSync(JOB_COMMANDS_FILE, line, { flag: "a" });
+}
 
 // --- Keys Loader ---
 function loadConfig(): Config {
@@ -186,8 +214,16 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
         query.message?.message_id
       );
 
-      // Broadcast via typed streaming relay
+      // Broadcast via typed streaming relay (for relay-client WebSocket)
       relayServer.broadcastCallback(callback);
+      
+      // Write to job commands file (for pi-harness HTTP polling)
+      writeJobCommand({
+        command: action,
+        jobId: targetId,
+        userId: from.id,
+      });
+      
       console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id}`);
 
       // Acknowledge immediately
@@ -252,8 +288,16 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
           event.source?.userId || "unknown"
         );
 
-        // Broadcast via typed streaming relay
+        // Broadcast via typed streaming relay (for relay-client WebSocket)
         relayServer.broadcastCallback(callback);
+        
+        // Write to job commands file (for pi-harness HTTP polling)
+        writeJobCommand({
+          command: action,
+          jobId: targetId,
+          userId: parseInt(event.source?.userId || "0", 10) || 0,
+        });
+        
         console.log(`[LINE] Postback: ${action} ${targetId}`);
       }
     }
@@ -306,6 +350,16 @@ async function main() {
         await handleTelegram(req, res, config, relayServer);
       } else if (url.pathname === "/line" && req.method === "POST") {
         await handleLINE(req, res, config, relayServer);
+      } else if (url.pathname === "/api/pending-commands" && req.method === "GET") {
+        // pi-harness polls this endpoint to get pending job commands
+        const commands = readJobCommands();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ commands }));
+      } else if (url.pathname === "/api/acknowledge-commands" && req.method === "POST") {
+        // pi-harness acknowledges commands after processing
+        acknowledgeCommands();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true }));
       } else if (url.pathname === "/health") {
         res.writeHead(200);
         res.end(JSON.stringify({
