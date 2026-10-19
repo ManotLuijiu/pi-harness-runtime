@@ -494,32 +494,38 @@ bun run build && bun run start   # Server deployment
 ### 14. Workspace Environment Auto-Detection
 
 **At session start, the harness auto-detects:**
-- `.env` file presence → Dev environment
-- `package.json` `dev` script → Hot reload available
-- `NODE_ENV` value → development/production
-- System RAM → Low RAM warning (<16GB)
+- `.env` file presence → Dev environment evidence
+- `package.json` `dev` script → Hot reload capability
+- `NODE_ENV` value → development/production/test
+- System RAM → Low RAM warning (<16GB total or <4GB available)
+- Running processes → dev/build server status
 
-**This info is stored in:**
+**This info is shown in UI and delivered to agent context:**
 ```
-~/.pi-harness-runtime/workspace-env.sqlite
+Workspace: DEV | dev server: running | build: explicit request only | RAM: 10/16
 ```
 
-**Agent should check workspace environment BEFORE running build commands:**
+**IMPORTANT Rules:**
 
-```
-On Dev PC with hot reload:
-  → DON'T: bun run build (unless explicitly asked)
-  → DO: bun run dev (compiles on-demand, saves RAM)
-
-On CI/Production:
-  → DO: bun run build (always build first)
-```
+| State | Action |
+|-------|--------|
+| `Workspace: UNKNOWN` | Explicitly ask user before build |
+| `Workspace: DEV` | Use `dev` mode, don't auto-build |
+| `Workspace: PROD` | Build allowed, but confirm with user |
+| `Low RAM` | Never run parallel build + dev |
+| `Dev server running` | Reuse it, don't restart |
 
 **Decision flow:**
 ```
-Is this a dev workspace? (.env, dev script exists?)
-  └─ YES + Has dev script?
-       └─ YES → Use bun run dev (no build needed)
-       └─ NO  → May need build
-  └─ NO → Build required (production/server)
+Check process.env.NODE_ENV first
+Check .env file NODE_ENV second
+Presence of dev script = capability, not proof of mode
+UNKNOWN requires investigation, not auto-build
+Production detection ≠ deployment authorization
+```
+
+
+**SQLite stored at:**
+```
+~/.pi-harness-runtime/workspace-env.sqlite
 ```
