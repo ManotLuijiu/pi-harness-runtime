@@ -37,6 +37,8 @@ pi install npm:@juicesharp/rpiv-todo  # Task tracking with bd sync
 
 The `pi-subagents` extension enables delegation assessment and parallel task execution for large refactoring work (10+ files, 50+ call sites).
 
+The `reverse-engineer-anything` skill (via `rea-agents`) enables reverse engineering of binaries, packages, firmware, and browser targets. See `.agents/skills/reverse-engineer-anything/SKILL.md`.
+
 Requires Pi v0.37.3+.
 
 ### Headless Server Setup (herdr clipboard bridge)
