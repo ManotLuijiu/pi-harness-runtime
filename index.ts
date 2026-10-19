@@ -507,7 +507,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 
 		// Periodic check for auto-continue decision
-		const AUTO_CONTINUE_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
+		const AUTO_CONTINUE_INTERVAL_MS = 60 * 1000; // Check every 1 minute
 		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
 
 		const checkAndAutoContinue = async () => {
