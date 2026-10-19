@@ -120,10 +120,16 @@ export class RelayClient {
     }
     /**
      * Send a message through the WebSocket
+     * Note: Messages can be sent even during authentication phase
      */
     send(message) {
-        if (this.isConnected()) {
+        // Allow sending if WebSocket is open, regardless of authentication state
+        // This is needed for auth message which is sent before state becomes 'connected'
+        if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(message));
+        }
+        else {
+            console.warn("[RelayClient] Cannot send: WebSocket not open");
         }
     }
     // ========================================================================
