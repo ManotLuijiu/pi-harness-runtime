@@ -138,6 +138,8 @@ const sharedState = {
 	pqController: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	delegationHarness: null as any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	workspaceEnvMessage: null as string | null,
 };
 
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
@@ -385,6 +387,16 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		try {
 			_piSessionCwd = realpathSync(process.cwd());
 			logToFile("[codex-trigger]", "Pi session cwd captured:", _piSessionCwd);
+
+			// --- Detect workspace environment ---
+			try {
+				const { formatEnvForAgent } = await import("./packages/contracts/dist/workspace-env.js");
+				const envMessage = formatEnvForAgent(_piSessionCwd);
+				logToFile("[WorkspaceEnv]", envMessage);
+				sharedState.workspaceEnvMessage = envMessage;
+			} catch (e) {
+				logToFile("[WorkspaceEnv]", "Detection failed:", String(e));
+			}
 
 			// --- Drain pending greeting when Pi becomes active ---
 			if (codexSessionState.pendingGreeting) {
