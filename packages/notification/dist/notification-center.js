@@ -375,7 +375,11 @@ export class NotificationCenter {
     async setupTelegramWebhook(webhookUrl) {
         const adapter = this.adapters.get("telegram");
         if (adapter instanceof TelegramAdapter) {
-            return await adapter.setupWebhook(webhookUrl);
+            const result = await adapter.setupWebhook(webhookUrl);
+            if (result) {
+                adapter.setWebhookActive(true);
+            }
+            return result;
         }
         return false;
     }

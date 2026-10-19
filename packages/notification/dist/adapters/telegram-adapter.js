@@ -19,6 +19,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
     _callbackHandler;
     _messageHandler;
     _webhookSecret;
+    _webhookActive = false;
     _pollInterval;
     _lastUpdateId = -1;
     _pollTimeoutMs = 30000; // Long polling timeout
@@ -57,6 +58,17 @@ export class TelegramAdapter extends BaseChannelAdapter {
     setWebhookSecret(secret) {
         this._webhookSecret = secret;
     }
+    /**
+     * Mark webhook as active (called by webhook setup)
+     */
+    setWebhookActive(active) {
+        this._webhookActive = active;
+        if (active && this._pollInterval) {
+            logInfo("[TelegramAdapter]", "Stopping polling - webhook now active");
+            clearInterval(this._pollInterval);
+            this._pollInterval = undefined;
+        }
+    }
     get botUsername() {
         return this._botUsername;
     }
@@ -76,9 +88,18 @@ export class TelegramAdapter extends BaseChannelAdapter {
             this._botUsername = data.result.username;
             this.markHealthy(); // Mark as healthy after successful getMe
             logInfo("[TelegramAdapter]", `Bot @${this._botUsername} verified successfully`);
-            // Start polling for callback queries if handler is registered
+            // Start polling ONLY if webhook is not configured (separate server handles webhooks)
             if (this._callbackHandler) {
-                this.startPolling();
+                // Check if webhook URL file exists (webhook server handles updates)
+                const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+                const webhookUrlPath = join(homedir, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt");
+                const hasWebhook = existsSync(webhookUrlPath);
+                if (hasWebhook) {
+                    logInfo("[TelegramAdapter]", "Webhook configured (separate server), skipping polling");
+                }
+                else {
+                    this.startPolling();
+                }
             }
             return true;
         }

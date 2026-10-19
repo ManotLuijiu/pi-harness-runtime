@@ -89,6 +89,22 @@ export async function processCallbacks(): Promise<number> {
           break;
         }
 
+        case "sayhi": {
+          console.log(`👋 SAYHI: ${item.targetId} from @${item.username || item.userId}`);
+          // Send greeting response via Telegram
+          const botToken = process.env.TELEGRAM_BOT_TOKEN || readFileSync(join(process.env.HOME || "", ".pi-harness-runtime", "keys", "telegram-bot-token.txt"), "utf-8").trim();
+          const chatId = item.userId;
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: "👋 Hi! Two-way communication is working! Click buttons to interact."
+            })
+          });
+          break;
+        }
+
         default: {
           console.log(`❓ UNKNOWN: ${item.action}_${item.targetId}`);
           if (onUnknown) {
