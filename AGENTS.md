@@ -490,3 +490,36 @@ bun run start      # ✅ Correct - run compiled
 bun run build && bun run test    # CI pipeline
 bun run build && bun run start   # Server deployment
 ```
+
+### 14. Workspace Environment Auto-Detection
+
+**At session start, the harness auto-detects:**
+- `.env` file presence → Dev environment
+- `package.json` `dev` script → Hot reload available
+- `NODE_ENV` value → development/production
+- System RAM → Low RAM warning (<16GB)
+
+**This info is stored in:**
+```
+~/.pi-harness-runtime/workspace-env.sqlite
+```
+
+**Agent should check workspace environment BEFORE running build commands:**
+
+```
+On Dev PC with hot reload:
+  → DON'T: bun run build (unless explicitly asked)
+  → DO: bun run dev (compiles on-demand, saves RAM)
+
+On CI/Production:
+  → DO: bun run build (always build first)
+```
+
+**Decision flow:**
+```
+Is this a dev workspace? (.env, dev script exists?)
+  └─ YES + Has dev script?
+       └─ YES → Use bun run dev (no build needed)
+       └─ NO  → May need build
+  └─ NO → Build required (production/server)
+```
