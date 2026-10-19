@@ -905,76 +905,105 @@ footer updates immediately and the data persists in `mirror.json`.
 - [ ] Production stress testing
 - [ ] RFC-0101: Autonomous Operations Runtime (background execution, task inbox, lease protocol)
 
-## Telegram 2-Way Communication
+## Unified Webhook Server (Telegram + LINE)
 
-Enable interactive Yes/No buttons in Telegram notifications for human approval.
+Single server handles both Telegram and LINE webhooks on one domain.
 
-> **Self-Hosting Required**: Telegram webhooks require your own server with HTTPS.
-> This is NOT a hosted service. You must **clone this repository** and deploy your own webhook server.
+> **Self-Hosting Required**: Webhooks require your own server with HTTPS.
+> This is NOT a hosted service. Deploy your own webhook server.
 
-### Architecture (Per-User Setup)
+### Architecture
 
 ```
-USER A (you):
 ┌─────────────────────────────────────────────────────┐
-│ Local Machine: ~/.pi-harness-runtime/                 │
-│   └── polls GET /api/pending-commands every 60s      │
-│   └── injects "resume" via steer on approval        │
-└─────────────────────────────────────────────────────┘
-                    ↕ (HTTPS polling)
-┌─────────────────────────────────────────────────────┐
-│ YOUR SERVER (e.g., your-vps.com)                    │
-│   ├── Telegram webhook (telegram.your-domain.com)  │
-│   ├── pi-harness API (GET /api/pending-commands)   │
-│   └── Callback processor                            │
+│ Your Domain: webhook.your-domain.com                  │
+│   ├── /telegram → Telegram webhook                  │
+│   ├── /line     → LINE webhook                    │
+│   └── /health   → Health check                   │
 └─────────────────────────────────────────────────────┘
                     ↕
 ┌─────────────────────────────────────────────────────┐
-│ Telegram Bot                                         │
-│   └── Sends messages with Yes/No buttons           │
+│ Unified Webhook Server (port 8443)                  │
+│   ├── Telegram callbacks (approve/reject)           │
+│   ├── LINE postbacks (approve/reject)              │
+│   └── Text messages → agent                       │
+└─────────────────────────────────────────────────────┘
+                    ↕
+┌─────────────────────────────────────────────────────┐
+│ Local Machine: ~/.pi-harness-runtime/               │
+│   └── Callback queue → injects to pi               │
 └─────────────────────────────────────────────────────┘
 ```
-
-**Each user needs their own server with:**
-1. Telegram bot token + chat ID
-2. Public HTTPS URL (for webhook)
-3. Running webhook server + callback processor
 
 ### Setup
 
 1. **Create Telegram Bot**
    ```bash
    # DM @BotFather → /newbot → get token
-   # DM @userinfobot → get your chat ID
    echo "YOUR_BOT_TOKEN" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt
-   echo "YOUR_CHAT_ID" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt
    ```
 
-2. **Start Webhook Server**
+2. **Configure LINE** (if using LINE)
    ```bash
-   TELEGRAM_BOT_TOKEN="xxx" \
-   TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 16)" \
-   TELEGRAM_WEBHOOK_URL="https://yourdomain.com/api/telegram/webhook" \
-   bun run scripts/telegram-webhook-server.ts
+   echo "YOUR_ACCESS_TOKEN" > ~/.pi-harness-runtime/keys/line-access-token.txt
+   echo "YOUR_CHANNEL_SECRET" > ~/.pi-harness-runtime/keys/line-channel-secret.txt
    ```
 
-3. **Start Callback Processor**
+3. **User Authorization**
    ```bash
-   bun run scripts/telegram-callback-processor.ts
+   echo "123456789" > ~/.pi-harness-runtime/keys/telegram-allowed-users.txt
    ```
 
-4. **Send Approval Requests**
-   ```typescript
-   import { NotificationCenter } from "@pi-harness/notification";
-
-   // Send with Yes/No buttons
-   await center.notifyWithApproval("HumanReviewNeeded", {
-     jobId: "job-123",
-     requirement: "Review code before deployment",
-   });
+4. **Start Unified Webhook Server**
+   ```bash
+   bun run scripts/unified-webhook-server.ts
    ```
 
-See [docs/Telegram-2-Way-Setup.md](docs/Telegram-2-Way-Setup.md) for full guide.
+5. **Set Webhook URLs**
+   - Telegram: `https://webhook.your-domain.com/telegram`
+   - LINE: `https://webhook.your-domain.com/line`
+
+6. **Systemd Service (auto-restart on reboot)**
+   ```ini
+   [Unit]
+   Description=Unified Webhook Server (Telegram + LINE)
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=frappe
+   ExecStart=/home/frappe/.bun/bin/bun run /home/frappe/unified-webhook-server.ts
+   Restart=always
+   RestartSec=5
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+### NGINX Configuration
+
+```nginx
+server {
+    server_name webhook.your-domain.com;
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/webhook.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/webhook.your-domain.com/privkey.pem;
+
+    location /telegram {
+        proxy_pass http://127.0.0.1:8443/telegram;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /line {
+        proxy_pass http://127.0.0.1:8443/line;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
 
 ### User Authorization
 

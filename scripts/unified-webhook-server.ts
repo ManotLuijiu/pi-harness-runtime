@@ -1,26 +1,22 @@
 #!/usr/bin/env bun
 /**
- * Unified Webhook Server — Handles both Telegram and LINE on single domain
+ * Unified Webhook Server — Handles Telegram, LINE, and WebSocket relay
  *
  * Routes:
  *   /telegram → Telegram webhook handler
  *   /line     → LINE webhook handler
+ *   /ws       → WebSocket relay (port 8444)
  *
  * Usage:
  *   bun run scripts/unified-webhook-server.ts
- *
- * Environment variables (or keys/*.txt files):
- *   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_ALLOWED_USERS
- *   LINE_CHANNEL_SECRET, LINE_ACCESS_TOKEN
- *
- * Webhook URLs to configure:
- *   Telegram: https://webhook.bunchee.online/telegram
- *   LINE:     https://webhook.bunchee.online/line
  */
 
 import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
 
 // --- Configuration ---
 interface Config {
@@ -30,68 +26,58 @@ interface Config {
     allowedUsers: Set<number>;
   };
   line?: {
-    channelSecret: string;
     accessToken: string;
+    channelSecret: string;
   };
 }
 
-function getConfig(): Config {
-  const homedir = process.env.HOME || "/home/frappe";
-  const keysDir = join(homedir, ".pi-harness-runtime", "keys");
+const PORT = parseInt(process.env.PORT || "8443", 10);
+const WS_PORT = parseInt(process.env.WS_PORT || "8444", 10);
+const RELAY_AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "b61940936a2625036d6faf7fe32c52b3"; // Same as webhook secret
+
+// --- Keys Loader ---
+function loadConfig(): Config {
+  const keysDir = join(homedir(), ".pi-harness-runtime", "keys");
   const config: Config = {};
 
-  // Telegram config
+  // Telegram
   const telegramTokenPath = join(keysDir, "telegram-bot-token.txt");
   const telegramSecretPath = join(keysDir, "telegram-webhook-secret.txt");
   const telegramUsersPath = join(keysDir, "telegram-allowed-users.txt");
 
   if (existsSync(telegramTokenPath)) {
-    const token = process.env.TELEGRAM_BOT_TOKEN || readFileSync(telegramTokenPath, "utf8").trim();
-    const secret = process.env.TELEGRAM_WEBHOOK_SECRET || (existsSync(telegramSecretPath) ? readFileSync(telegramSecretPath, "utf8").trim() : "");
+    const token = readFileSync(telegramTokenPath, "utf8").trim();
+    const secret = existsSync(telegramSecretPath)
+      ? readFileSync(telegramSecretPath, "utf8").trim()
+      : process.env.TELEGRAM_WEBHOOK_SECRET || "";
 
     const allowedUsers = new Set<number>();
-    const envUsers = process.env.TELEGRAM_ALLOWED_USERS;
-    if (envUsers) {
-      for (const part of envUsers.split(",")) {
-        const num = parseInt(part.trim(), 10);
-        if (!isNaN(num) && num > 0) allowedUsers.add(num);
-      }
-    }
     if (existsSync(telegramUsersPath)) {
-      const content = readFileSync(telegramUsersPath, "utf8").trim();
-      for (const part of content.split(",")) {
-        const num = parseInt(part.trim(), 10);
-        if (!isNaN(num) && num > 0) allowedUsers.add(num);
+      const users = readFileSync(telegramUsersPath, "utf8").trim();
+      for (const id of users.split(",").map((s) => parseInt(s.trim(), 10))) {
+        if (!isNaN(id) && id > 0) allowedUsers.add(id);
       }
     }
 
     config.telegram = { botToken: token, secret, allowedUsers };
   }
 
-  // LINE config
-  const lineSecretPath = join(keysDir, "line-channel-secret.txt");
+  // LINE
   const lineTokenPath = join(keysDir, "line-access-token.txt");
+  const lineSecretPath = join(keysDir, "line-channel-secret.txt");
 
-  if (existsSync(lineSecretPath) && existsSync(lineTokenPath)) {
-    const channelSecret = process.env.LINE_CHANNEL_SECRET || readFileSync(lineSecretPath, "utf8").trim();
-    const accessToken = process.env.LINE_ACCESS_TOKEN || readFileSync(lineTokenPath, "utf8").trim();
-    config.line = { channelSecret, accessToken };
+  if (existsSync(lineTokenPath) && existsSync(lineSecretPath)) {
+    config.line = {
+      accessToken: readFileSync(lineTokenPath, "utf8").trim(),
+      channelSecret: readFileSync(lineSecretPath, "utf8").trim(),
+    };
   }
 
   return config;
 }
 
-// --- Logging ---
-const LOG_FILE = "/tmp/unified-webhook.log";
-function log(prefix: string, ...args: unknown[]) {
-  const msg = args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
-  const line = `[${new Date().toISOString()}] [${prefix}] ${msg}\n`;
-  appendFileSync(LOG_FILE, line);
-  console.log(line.trim());
-}
-
-// --- Crypto utilities ---
-async function verifyTelegram(data: string, secret: string, hash: string): Promise<boolean> {
+// --- Telegram HMAC Verification (for future use with secret hash) ---
+async function _verifyTelegramHmac(data: string, secret: string, hash: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
@@ -101,6 +87,7 @@ async function verifyTelegram(data: string, secret: string, hash: string): Promi
   return expected === hash;
 }
 
+// --- LINE Verification ---
 async function verifyLINE(body: string, channelSecret: string, xLineSignature: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -111,13 +98,57 @@ async function verifyLINE(body: string, channelSecret: string, xLineSignature: s
   return expected === xLineSignature;
 }
 
-// --- Callback queue ---
+// --- Callback Queue (file-based fallback) ---
 const QUEUE_FILE = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "callback-queue.jsonl");
 function queueCallback(callback: Record<string, unknown>) {
   appendFileSync(QUEUE_FILE, JSON.stringify({ ...callback, timestamp: new Date().toISOString() }) + "\n");
 }
 
-// --- Telegram handler ---
+// --- WebSocket Relay ---
+const wsClients = new Map<string, WebSocket>();
+
+function broadcastCallback(callback: Record<string, unknown>) {
+  const msg = JSON.stringify({ type: "callback", payload: callback });
+  let count = 0;
+  for (const ws of wsClients.values()) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+      count++;
+    }
+  }
+  return count;
+}
+
+function startWebSocketServer() {
+  const wss = new WebSocketServer({ port: WS_PORT });
+  
+  wss.on("connection", (ws: WebSocket) => {
+    const clientId = randomUUID();
+    wsClients.set(clientId, ws);
+    console.log(`[WS] Client connected: ${clientId}`);
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "auth" && msg.payload === RELAY_AUTH_TOKEN) {
+          ws.send(JSON.stringify({ type: "auth", payload: { success: true } }));
+          console.log(`[WS] Client authenticated: ${clientId}`);
+        }
+      } catch (err) {
+        console.error(`[WS] Invalid message from ${clientId}:`, err);
+      }
+    });
+
+    ws.on("close", () => {
+      wsClients.delete(clientId);
+      console.log(`[WS] Client disconnected: ${clientId}`);
+    });
+  });
+
+  console.log(`[WS] WebSocket server started on port ${WS_PORT}`);
+}
+
+// --- Telegram Handler ---
 async function handleTelegram(req: IncomingMessage, res: ServerResponse, config: Config) {
   if (!config.telegram) {
     res.writeHead(404);
@@ -128,7 +159,6 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
   // Verify secret token
   const secretToken = req.headers["x-telegram-bot-api-secret-token"];
   if (secretToken !== config.telegram.secret) {
-    log("Telegram", "Unauthorized - secret mismatch");
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -149,7 +179,6 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
 
       // Check authorization
       if (config.telegram.allowedUsers.size > 0 && !config.telegram.allowedUsers.has(from.id)) {
-        log("Telegram", `Unauthorized user: ${from.id}`);
         res.writeHead(403);
         res.end("Forbidden");
         return;
@@ -171,15 +200,22 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
         targetId = "";
       }
 
-      // Queue the callback
-      queueCallback({
+      const callback = {
         type: "telegram_callback",
         action,
         targetId,
         userId: from.id,
         username: from.username,
         messageId: query.message?.message_id,
-      });
+      };
+
+      // Broadcast via WebSocket
+      const wsCount = broadcastCallback(callback);
+      if (wsCount === 0) {
+        // Fallback to file queue
+        queueCallback(callback);
+      }
+      console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id} (WS clients: ${wsCount})`);
 
       // Acknowledge immediately
       await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/answerCallbackQuery`, {
@@ -187,20 +223,18 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callback_query_id: query.id }),
       });
-
-      log("Telegram", `Callback: ${action} ${targetId} from @${from.username || from.id}`);
     }
 
     res.writeHead(200);
     res.end("OK");
   } catch (err) {
-    log("Telegram", "Error:", err);
+    console.error("[Telegram] Error:", err);
     res.writeHead(500);
     res.end("Error");
   }
 }
 
-// --- LINE handler ---
+// --- LINE Handler ---
 async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Config) {
   if (!config.line) {
     res.writeHead(404);
@@ -211,7 +245,6 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
   // Verify signature
   const signature = req.headers["x-line-signature"] as string;
   if (!signature) {
-    log("LINE", "Missing signature");
     res.writeHead(400);
     res.end("Bad Request");
     return;
@@ -224,108 +257,88 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
 
   // Verify
   if (!(await verifyLINE(body, config.line.channelSecret, signature))) {
-    log("LINE", "Invalid signature");
     res.writeHead(403);
     res.end("Forbidden");
     return;
   }
 
   try {
-    const events = JSON.parse(body).events || [];
+    const bodyJson = JSON.parse(body);
+    const events = bodyJson.events || [];
 
     for (const event of events) {
       if (event.type === "postback") {
-        // Parse postback data
         const data = event.postback?.data || "";
         const colonIdx = data.indexOf(":");
-        let action: string, targetId: string;
-        if (colonIdx !== -1) {
-          action = data.slice(0, colonIdx);
-          targetId = data.slice(colonIdx + 1);
-        } else {
-          action = data;
-          targetId = "";
-        }
+        let action = data.slice(0, colonIdx !== -1 ? colonIdx : undefined);
+        let targetId = colonIdx !== -1 ? data.slice(colonIdx + 1) : "";
 
-        queueCallback({
+        const callback = {
           type: "line_callback",
           action,
           targetId,
           userId: event.source?.userId,
-          replyToken: event.replyToken,
-        });
+          timestamp: new Date().toISOString(),
+        };
 
-        log("LINE", `Postback: ${action} ${targetId}`);
-      } else if (event.type === "message" && event.message?.type === "text") {
-        // Forward text messages to agent
-        queueCallback({
-          type: "line_message",
-          text: event.message.text,
-          userId: event.source?.userId,
-          replyToken: event.replyToken,
-        });
-
-        log("LINE", `Message: ${event.message.text}`);
+        // Broadcast via WebSocket
+        const wsCount = broadcastCallback(callback);
+        if (wsCount === 0) {
+          queueCallback(callback);
+        }
+        console.log(`[LINE] Postback: ${action} ${targetId} (WS clients: ${wsCount})`);
       }
     }
 
     res.writeHead(200);
-    res.end("OK");
+    res.end(JSON.stringify({ status: "ok" }));
   } catch (err) {
-    log("LINE", "Error:", err);
+    console.error("[LINE] Error:", err);
     res.writeHead(500);
     res.end("Error");
   }
 }
 
-// --- Main server ---
-const PORT = parseInt(process.env.PORT || "3000", 10);
+// --- Main ---
+const config = loadConfig();
 
-async function main() {
-  const config = getConfig();
+console.log("===========================================");
+console.log("Unified Webhook Server");
+console.log("===========================================");
+if (config.telegram) console.log("  /telegram - Telegram webhook");
+if (config.line) console.log("  /line     - LINE webhook");
+console.log("===========================================");
 
-  if (!config.telegram && !config.line) {
-    console.error("No webhooks configured. Set up Telegram and/or LINE keys.");
-    process.exit(1);
+// Start WebSocket relay
+startWebSocketServer();
+
+// HTTP webhook server
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url || "/", `http://localhost:${PORT}`);
+
+  try {
+    if (url.pathname === "/telegram" && req.method === "POST") {
+      await handleTelegram(req, res, config);
+    } else if (url.pathname === "/line" && req.method === "POST") {
+      await handleLINE(req, res, config);
+    } else if (url.pathname === "/health") {
+      res.writeHead(200);
+      res.end("OK");
+    } else {
+      res.writeHead(404);
+      res.end("Not Found");
+    }
+  } catch (err) {
+    console.error("[Server] Error:", err);
+    res.writeHead(500);
+    res.end("Error");
   }
+});
 
-  console.log("Unified Webhook Server");
-  console.log(`Listening on port ${PORT}`);
-  if (config.telegram) console.log("  /telegram - Telegram webhook");
-  if (config.line) console.log("  /line     - LINE webhook");
-
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url || "/", `http://localhost:${PORT}`);
-
-    try {
-      if (url.pathname === "/telegram" && req.method === "POST") {
-        await handleTelegram(req, res, config);
-      } else if (url.pathname === "/line" && req.method === "POST") {
-        await handleLINE(req, res, config);
-      } else if (url.pathname === "/health") {
-        res.writeHead(200);
-        res.end("OK");
-      } else {
-        res.writeHead(404);
-        res.end("Not Found");
-      }
-    } catch (err) {
-      log("Server", "Error:", err);
-      res.writeHead(500);
-      res.end("Error");
-    }
-  });
-
-  server.listen(PORT, () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    console.log(`Configure webhooks:`);
-    if (config.telegram) {
-      console.log(`  Telegram: https://webhook.bunchee.online/telegram`);
-    }
-    if (config.line) {
-      console.log(`  LINE:     https://webhook.bunchee.online/line`);
-    }
-  });
-}
-
-main();
+server.listen(PORT, () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
+  console.log(`WebSocket relay on ws://0.0.0.0:${WS_PORT}`);
+  console.log("Configure webhooks:");
+  if (config.telegram) console.log(`  Telegram: https://webhook.bunchee.online/telegram`);
+  if (config.line) console.log(`  LINE:     https://webhook.bunchee.online/line`);
+});

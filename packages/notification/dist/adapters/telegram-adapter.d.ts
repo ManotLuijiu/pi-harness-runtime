@@ -16,6 +16,7 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     private _callbackHandler;
     private _messageHandler;
     private _webhookSecret;
+    private _webhookActive;
     private _pollInterval;
     private _lastUpdateId;
     private _pollTimeoutMs;
@@ -42,6 +43,10 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      * Set webhook secret for verification
      */
     setWebhookSecret(secret: string): void;
+    /**
+     * Mark webhook as active (called by webhook setup)
+     */
+    setWebhookActive(active: boolean): void;
     get botUsername(): string | undefined;
     initialize(): Promise<boolean>;
     /**
