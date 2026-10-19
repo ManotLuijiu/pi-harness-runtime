@@ -99,8 +99,21 @@ export function registerAgentPolicy(
         policyText = renderSystemContract(manifest);
       }
 
-      // Build augmented system prompt
-      const augmentedPrompt = event.systemPrompt + "\n\n" + policyText;
+      // Build augmented system prompt with policy
+      let augmentedPrompt = event.systemPrompt + "\n\n" + policyText;
+
+      // Add workspace environment context if available
+      try {
+        // Dynamic import to avoid circular deps
+        const { formatEnvForAgent } = await import("../../contracts/dist/workspace-env.js");
+        const workspacePath = cwd || process.cwd();
+        const envContext = formatEnvForAgent(workspacePath);
+        if (envContext) {
+          augmentedPrompt += "\n\n" + envContext;
+        }
+      } catch {
+        // Workspace env detection failed - continue without it
+      }
 
       // Log for debugging
       logInfo("[agent-policy]", `Delivered policy ${manifest.revision} to session ${receipt.sessionId}`);

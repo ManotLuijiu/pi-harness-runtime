@@ -2,25 +2,24 @@
  * Workspace Environment Detector
  *
  * Detects if the workspace is a development environment by checking:
- * 1. .env file existence and NODE_ENV value
- * 2. package.json "dev" script presence
- * 3. .env.development or .env.local files
+ * 1. process.env.NODE_ENV (for build processes)
+ * 2. .env file existence and NODE_ENV value
+ * 3. package.json "dev" script presence
  *
  * Stores detected environment in SQLite for agent reference.
+ * Uses synchronous directory creation and exception-safe operations.
  */
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { existsSync, readFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { platform, totalmem, freemem } from "os";
 const STORE_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime");
 /**
- * Ensure store directory exists
+ * Ensure store directory exists synchronously
  */
 function ensureStoreDir() {
     if (!existsSync(STORE_DIR)) {
-        // mkdirSync is not available in all contexts, use fs promises or exec
-        import("fs").then((fs) => fs.mkdirSync(STORE_DIR, { recursive: true }));
+        mkdirSync(STORE_DIR, { recursive: true });
     }
 }
 /**
@@ -34,15 +33,23 @@ function getDbPath() {
  * Initialize workspace environment database
  */
 function initDatabase() {
+    ensureStoreDir();
     const db = new DatabaseSync(getDbPath());
     db.exec(`
 		CREATE TABLE IF NOT EXISTS workspace_env (
 			workspace_path TEXT PRIMARY KEY,
-			is_dev_env INTEGER NOT NULL DEFAULT 0,
+			mode TEXT NOT NULL DEFAULT 'unknown',
+			evidence TEXT NOT NULL DEFAULT '[]',
 			has_dev_script INTEGER NOT NULL DEFAULT 0,
-			node_env TEXT,
-			has_env_file INTEGER NOT NULL DEFAULT 0,
-			ram_gb REAL,
+			has_build_script INTEGER NOT NULL DEFAULT 0,
+			package_manager TEXT,
+			dev_server_running INTEGER NOT NULL DEFAULT 0,
+			build_server_running INTEGER NOT NULL DEFAULT 0,
+			ram_total_gb REAL,
+			ram_available_gb REAL,
+			ram_effective_limit_gb REAL,
+			low_ram_warning INTEGER NOT NULL DEFAULT 0,
+			build_allowed INTEGER NOT NULL DEFAULT -1,
 			detected_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)
@@ -50,107 +57,310 @@ function initDatabase() {
     return db;
 }
 /**
- * Detect RAM in GB
+ * Parse dotenv file without loading secrets
+ * Returns only NODE_ENV value, ignoring comments and other vars
  */
-function detectRamGb() {
-    try {
-        if (process.platform === "linux") {
-            const meminfo = readFileSync("/proc/meminfo", "utf8");
-            const match = meminfo.match(/MemTotal:\\s+(\\d+)\\s+kB/);
-            if (match) {
-                return Math.round((parseInt(match[1], 10) / 1024 / 1024) * 10) / 10;
-            }
+function parseNodeEnvFromDotenv(content) {
+    const lines = content.split("\n");
+    for (const line of lines) {
+        // Skip empty lines and comments
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#"))
+            continue;
+        // Match NODE_ENV= followed by value (handle quotes, spaces)
+        // Allow: NODE_ENV=development, NODE_ENV="production", NODE_ENV: development
+        const match = trimmed.match(/^NODE_ENV\s*[=:]\s*['"]?([^\s'";]+)['"]?/);
+        if (match) {
+            return match[1];
         }
-        else if (process.platform === "darwin") {
-            const out = require("child_process").execSync("sysctl hw.memsize", { encoding: "utf8" });
-            const match = out.match(/hw\\.memsize:\\s+(\\d+)/);
-            if (match) {
-                return Math.round((parseInt(match[1], 10) / 1024 / 1024 / 1024) * 10) / 10;
-            }
+    }
+    return null;
+}
+/**
+ * Detect RAM information
+ */
+function detectRamInfo() {
+    try {
+        const totalBytes = totalmem();
+        const freeBytes = freemem();
+        const totalGb = Math.round((totalBytes / (1024 ** 3)) * 10) / 10;
+        const availableGb = Math.round((freeBytes / (1024 ** 3)) * 10) / 10;
+        const LOW_RAM_GB = 16;
+        return {
+            total: totalGb,
+            available: availableGb,
+            lowWarning: totalGb < LOW_RAM_GB || availableGb < 4,
+        };
+    }
+    catch {
+        return { total: null, available: null, lowWarning: false };
+    }
+}
+/**
+ * Check if dev/build server is running
+ */
+function checkProcessRunning(pattern) {
+    try {
+        if (platform() === "linux") {
+            const { execSync } = require("child_process");
+            const out = execSync(`pgrep -f "${pattern}" 2>/dev/null || true`, {
+                encoding: "utf8",
+                timeout: 2000,
+            });
+            return out.trim().split("\n").filter(Boolean).length > 0;
+        }
+        else if (platform() === "darwin") {
+            const { execSync } = require("child_process");
+            const out = execSync(`pgrep -f "${pattern}" 2>/dev/null || true`, {
+                encoding: "utf8",
+                timeout: 2000,
+            });
+            return out.trim().split("\n").filter(Boolean).length > 0;
         }
     }
     catch {
-        // Fallback: return null
+        // Process check failed - assume unknown
     }
+    return false;
+}
+/**
+ * Detect package manager from lock file
+ */
+function detectPackageManager(workspacePath) {
+    if (existsSync(join(workspacePath, "pnpm-lock.yaml")))
+        return "pnpm";
+    if (existsSync(join(workspacePath, "yarn.lock")))
+        return "yarn";
+    if (existsSync(join(workspacePath, "package-lock.json")))
+        return "npm";
     return null;
+}
+/**
+ * Determine workspace mode with proper precedence
+ * Never assume production - unknown requires investigation
+ */
+function determineMode(processEnv, dotenvNodeEnv, evidence) {
+    // Explicit process.env takes highest priority (for build processes)
+    if (processEnv) {
+        const env = processEnv.toLowerCase();
+        if (env === "production") {
+            evidence.push({
+                source: "process.env",
+                key: "NODE_ENV",
+                value: env,
+                timestamp: Date.now(),
+            });
+            return "production";
+        }
+        if (env === "development" || env === "dev") {
+            evidence.push({
+                source: "process.env",
+                key: "NODE_ENV",
+                value: env,
+                timestamp: Date.now(),
+            });
+            return "development";
+        }
+        if (env === "test") {
+            evidence.push({
+                source: "process.env",
+                key: "NODE_ENV",
+                value: env,
+                timestamp: Date.now(),
+            });
+            return "test";
+        }
+    }
+    // Check dotenv file if present
+    if (dotenvNodeEnv) {
+        const env = dotenvNodeEnv.toLowerCase();
+        evidence.push({
+            source: ".env file",
+            key: "NODE_ENV",
+            value: env,
+            timestamp: Date.now(),
+        });
+        if (env === "production")
+            return "production";
+        if (env === "development" || env === "dev")
+            return "development";
+        if (env === "test")
+            return "test";
+    }
+    // Note: presence of dev script is a capability, not proof of mode
+    // Mode detection requires explicit NODE_ENV
+    return "unknown";
 }
 /**
  * Detect and store workspace environment
  */
 export function detectWorkspaceEnv(workspacePath) {
     const now = Date.now();
-    const ramGb = detectRamGb();
-    // Check for .env files
-    const hasEnvFile = existsSync(join(workspacePath, ".env")) ||
-        existsSync(join(workspacePath, ".env.development")) ||
-        existsSync(join(workspacePath, ".env.local")) ||
-        existsSync(join(workspacePath, ".env.dev"));
-    // Read NODE_ENV from .env file if present
-    let nodeEnv = null;
-    const envFile = join(workspacePath, ".env");
-    if (existsSync(envFile)) {
-        try {
-            const envContent = readFileSync(envFile, "utf8");
-            const match = envContent.match(/NODE_ENV=(.+)/);
-            if (match) {
-                nodeEnv = match[1].trim().replace(/['"]/g, "");
+    const evidence = [];
+    // Get process.env.NODE_ENV (for build process context)
+    const processNodeEnv = process.env.NODE_ENV;
+    // Detect RAM info
+    const ramInfo = detectRamInfo();
+    // Check for .env files and parse NODE_ENV
+    let dotenvNodeEnv = null;
+    const dotenvFiles = [
+        join(workspacePath, ".env"),
+        join(workspacePath, ".env.development"),
+        join(workspacePath, ".env.dev"),
+    ];
+    for (const envFile of dotenvFiles) {
+        if (existsSync(envFile)) {
+            try {
+                const content = readFileSync(envFile, "utf8");
+                dotenvNodeEnv = parseNodeEnvFromDotenv(content);
+                if (dotenvNodeEnv) {
+                    evidence.push({
+                        source: ".env file",
+                        key: "NODE_ENV",
+                        value: dotenvNodeEnv,
+                        timestamp: now,
+                    });
+                    break;
+                }
+            }
+            catch {
+                // Ignore read errors
             }
         }
-        catch {
-            // Ignore read errors
-        }
     }
-    // Check for dev script in package.json
+    // Check for dev/build scripts in package.json
     let hasDevScript = false;
+    let hasBuildScript = false;
     const pkgJsonPath = join(workspacePath, "package.json");
     if (existsSync(pkgJsonPath)) {
         try {
             const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
-            hasDevScript = !!(pkg.scripts && (pkg.scripts.dev || pkg.scripts.development));
+            hasDevScript = !!(pkg.scripts && (pkg.scripts.dev || pkg.scripts.development || pkg.scripts["dev:next"]));
+            hasBuildScript = !!(pkg.scripts && (pkg.scripts.build || pkg.scripts["build:next"]));
+            if (hasDevScript) {
+                evidence.push({
+                    source: "package.json",
+                    key: "scripts.dev",
+                    value: "present",
+                    timestamp: now,
+                });
+            }
         }
         catch {
             // Ignore parse errors
         }
     }
-    // Determine if this is a dev environment
-    // Dev env if: has .env file OR has dev script OR NODE_ENV=development
-    const isDevEnv = hasEnvFile || hasDevScript || nodeEnv === "development" || nodeEnv === "dev";
-    // Store in SQLite
-    const db = initDatabase();
-    db.prepare(`
-		INSERT OR REPLACE INTO workspace_env 
-		(workspace_path, is_dev_env, has_dev_script, node_env, has_env_file, ram_gb, detected_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`).run(workspacePath, isDevEnv ? 1 : 0, hasDevScript ? 1 : 0, nodeEnv, hasEnvFile ? 1 : 0, ramGb, now, now);
-    db.close();
-    return {
+    // Detect package manager
+    const packageManager = detectPackageManager(workspacePath);
+    // Check for running dev/build processes
+    const devServerRunning = checkProcessRunning("(next dev|nuxt| vite |webpack|remix dev)");
+    const buildServerRunning = checkProcessRunning("(next build|nuxt build|webpack build)");
+    // Determine mode - NEVER assume production
+    const mode = determineMode(processNodeEnv, dotenvNodeEnv, evidence);
+    // Determine build permission
+    let buildAllowed = false;
+    if (mode === "production") {
+        buildAllowed = true; // Production build is allowed
+    }
+    else if (mode === "development") {
+        buildAllowed = !ramInfo.lowWarning; // Allow if not low RAM
+    }
+    else {
+        buildAllowed = false; // Unknown requires investigation
+    }
+    // Determine low RAM warning
+    const lowRamWarning = ramInfo.lowWarning;
+    // Build result
+    const result = {
         workspacePath,
-        isDevEnv,
+        mode,
+        evidence,
         hasDevScript,
-        nodeEnv,
-        hasEnvFile,
-        ramGb,
+        hasBuildScript,
+        packageManager,
+        devServerRunning,
+        buildServerRunning,
+        ramTotalGb: ramInfo.total,
+        ramAvailableGb: ramInfo.available,
+        ramEffectiveLimitGb: ramInfo.total, // Could be enhanced with cgroup detection
+        lowRamWarning,
+        buildAllowed,
         detectedAt: now,
     };
+    // Store in SQLite (synchronously, exception-safe)
+    let db = null;
+    try {
+        db = initDatabase();
+        db.prepare(`
+			INSERT OR REPLACE INTO workspace_env 
+			(workspace_path, mode, evidence, has_dev_script, has_build_script, package_manager,
+			 dev_server_running, build_server_running, ram_total_gb, ram_available_gb,
+			 ram_effective_limit_gb, low_ram_warning, build_allowed, detected_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(workspacePath, mode, JSON.stringify(evidence), hasDevScript ? 1 : 0, hasBuildScript ? 1 : 0, packageManager, devServerRunning ? 1 : 0, buildServerRunning ? 1 : 0, ramInfo.total, ramInfo.available, ramInfo.total, lowRamWarning ? 1 : 0, buildAllowed ? 1 : 0, now, now);
+    }
+    catch (err) {
+        // SQLite failure - continue with in-memory result
+        console.error("[WorkspaceEnv] SQLite persistence failed:", err);
+    }
+    finally {
+        if (db) {
+            try {
+                db.close();
+            }
+            catch {
+                // Ignore close errors
+            }
+        }
+    }
+    return result;
 }
 /**
  * Load cached workspace environment
  */
 export function loadWorkspaceEnv(workspacePath) {
-    const db = initDatabase();
-    const row = db.prepare("SELECT * FROM workspace_env WHERE workspace_path = ?").get(workspacePath);
-    db.close();
-    if (!row)
+    let db = null;
+    try {
+        db = initDatabase();
+        const row = db.prepare("SELECT * FROM workspace_env WHERE workspace_path = ?").get(workspacePath);
+        if (!row)
+            return null;
+        // Check cache freshness (5 minutes for dev workspaces)
+        const ageMs = Date.now() - row.detected_at;
+        const MAX_CACHE_AGE_MS = 5 * 60 * 1000; // 5 minutes
+        if (ageMs > MAX_CACHE_AGE_MS) {
+            return null; // Cache stale
+        }
+        return {
+            workspacePath: row.workspace_path,
+            mode: row.mode,
+            evidence: JSON.parse(row.evidence || "[]"),
+            hasDevScript: row.has_dev_script === 1,
+            hasBuildScript: row.has_build_script === 1,
+            packageManager: row.package_manager,
+            devServerRunning: row.dev_server_running === 1,
+            buildServerRunning: row.build_server_running === 1,
+            ramTotalGb: row.ram_total_gb,
+            ramAvailableGb: row.ram_available_gb,
+            ramEffectiveLimitGb: row.ram_effective_limit_gb,
+            lowRamWarning: row.low_ram_warning === 1,
+            buildAllowed: row.build_allowed === 1,
+            detectedAt: row.detected_at,
+        };
+    }
+    catch {
         return null;
-    return {
-        workspacePath: row.workspace_path,
-        isDevEnv: row.is_dev_env === 1,
-        hasDevScript: row.has_dev_script === 1,
-        nodeEnv: row.node_env,
-        hasEnvFile: row.has_env_file === 1,
-        ramGb: row.ram_gb,
-        detectedAt: row.detected_at,
-    };
+    }
+    finally {
+        if (db) {
+            try {
+                db.close();
+            }
+            catch {
+                // Ignore close errors
+            }
+        }
+    }
 }
 /**
  * Get or detect workspace environment
@@ -159,73 +369,64 @@ export function getWorkspaceEnv(workspacePath) {
     // Try to load cached result first
     const cached = loadWorkspaceEnv(workspacePath);
     if (cached) {
-        // Check if cache is recent (within 1 hour)
-        const ageMs = Date.now() - cached.detectedAt;
-        if (ageMs < 60 * 60 * 1000) {
-            return cached;
-        }
+        return cached;
     }
     // Detect fresh
     return detectWorkspaceEnv(workspacePath);
 }
 /**
- * Check if agent should prefer dev mode (no build)
+ * Revalidate workspace environment before impactful commands
  */
-export function shouldUseDevMode(workspacePath) {
-    const env = getWorkspaceEnv(workspacePath);
-    // Low RAM threshold
-    const LOW_RAM_GB = 16;
-    if (!env.isDevEnv) {
-        return {
-            preferDev: false,
-            reason: "Not detected as dev environment",
-            ramGb: env.ramGb,
-        };
-    }
-    if (env.ramGb !== null && env.ramGb < LOW_RAM_GB) {
-        return {
-            preferDev: true,
-            reason: `Low RAM (${env.ramGb}GB < ${LOW_RAM_GB}GB) - avoid parallel build + dev`,
-            ramGb: env.ramGb,
-        };
-    }
-    if (env.hasDevScript) {
-        return {
-            preferDev: true,
-            reason: `Dev script detected - hot reload available`,
-            ramGb: env.ramGb,
-        };
-    }
-    return {
-        preferDev: false,
-        reason: "Dev environment but no dev script found",
-        ramGb: env.ramGb,
-    };
+export function revalidateWorkspaceEnv(workspacePath) {
+    // Force fresh detection for command decisions
+    return detectWorkspaceEnv(workspacePath);
 }
 /**
  * Format workspace env as agent-readable message
  */
 export function formatEnvForAgent(workspacePath) {
-    const env = shouldUseDevMode(workspacePath);
-    const details = getWorkspaceEnv(workspacePath);
+    const env = getWorkspaceEnv(workspacePath);
     let message = `[Workspace Environment]\n`;
-    message += `- Path: ${workspacePath}\n`;
-    message += `- Detected: ${details.isDevEnv ? "Development" : "Production/Unknown"}\n`;
-    message += `- Has dev script: ${details.hasDevScript ? "Yes" : "No"}\n`;
-    message += `- NODE_ENV: ${details.nodeEnv || "not set"}\n`;
-    message += `- Has .env file: ${details.hasEnvFile ? "Yes" : "No"}\n`;
-    message += `- RAM: ${details.ramGb ? `${details.ramGb}GB` : "unknown"}\n`;
-    message += `\n`;
-    if (env.preferDev) {
-        message += `RECOMMENDATION: Use \`dev\` mode (no build needed)\n`;
-        message += `Reason: ${env.reason}\n`;
-        message += `→ Run: \`bun run dev\` (or \`npm run dev\`)\n`;
-        message += `→ DON'T: Run \`build\` unless explicitly requested\n`;
+    message += `Mode: ${env.mode.toUpperCase()}\n`;
+    if (env.evidence.length > 0) {
+        const sources = env.evidence.map((e) => `${e.source}:${e.value}`).join(", ");
+        message += `Evidence: ${sources}\n`;
     }
-    else {
-        message += `RECOMMENDATION: Build may be needed\n`;
-        message += `Reason: ${env.reason}\n`;
-        message += `→ Use: \`bun run build\` before running\n`;
+    message += `Dev script: ${env.hasDevScript ? "yes" : "no"}\n`;
+    message += `Build script: ${env.hasBuildScript ? "yes" : "no"}\n`;
+    if (env.devServerRunning) {
+        message += `Dev server: running\n`;
+    }
+    if (env.buildServerRunning) {
+        message += `Build server: running\n`;
+    }
+    if (env.ramTotalGb !== null) {
+        const ramStr = env.ramAvailableGb !== null
+            ? `${env.ramAvailableGb}/${env.ramTotalGb}GB available`
+            : `${env.ramTotalGb}GB total`;
+        message += `RAM: ${ramStr}\n`;
+        if (env.lowRamWarning) {
+            message += `WARNING: Low RAM - avoid parallel build + dev\n`;
+        }
+    }
+    message += `\n`;
+    message += `Build allowed: ${env.buildAllowed ? "yes" : "no - requires explicit request"}\n`;
+    if (env.mode === "unknown") {
+        message += `\nNOTE: Environment unknown. Explicitly ask user before build.\n`;
     }
     return message;
+}
+/**
+ * Format workspace env as compact status line for UI
+ */
+export function formatEnvStatusLine(env) {
+    const mode = env.mode.toUpperCase();
+    const devStatus = env.devServerRunning ? "running" : (env.hasDevScript ? "available" : "none");
+    const buildStatus = env.buildServerRunning ? "running" : (env.hasBuildScript ? "explicit request" : "none");
+    const ramStr = env.ramAvailableGb !== null ? `${env.ramAvailableGb}/${env.ramTotalGb}` : "";
+    let status = `Workspace: ${mode} | dev server: ${devStatus} | build: ${buildStatus}`;
+    if (ramStr) {
+        status += ` | RAM: ${ramStr}`;
+    }
+    return status;
 }
