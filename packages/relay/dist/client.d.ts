@@ -1,53 +1,74 @@
 /**
- * Relay Client - Connect to relay server for remote access
+ * Relay Client - Two-way streaming WebSocket client
+ *
+ * Implements t3code-style streaming with:
+ * - Connection state machine
+ * - Snapshot + live event handling
+ * - Typed message protocol
+ * - Automatic reconnection with backoff
  */
-import type { RelayConfig, RelayTunnel, RelayMessage } from './types.js';
-/**
- * Relay Client options
- */
-export interface RelayClientOptions {
-    /** Called when connected */
-    onConnected?: () => void;
+import { type RelayConfig, type ConnectionState, type ConnectionStateChange, type CallbackPayload, type ClientMessage, type SnapshotMessage, type StatusMessage } from './types.js';
+export interface RelayClientCallbacks {
+    /** Called when connected and authenticated */
+    onConnected?: (sessionId: string) => void;
     /** Called when disconnected */
     onDisconnected?: () => void;
-    /** Called when tunnel is established */
-    onTunnel?: (tunnel: RelayTunnel) => void;
+    /** Called when snapshot is received (initial state) */
+    onSnapshot?: (snapshot: SnapshotMessage['payload']) => void;
+    /** Called when synchronized marker received (live events start) */
+    onSynchronized?: () => void;
+    /** Called when a callback event is received */
+    onCallback?: (callback: CallbackPayload) => void;
+    /** Called when a status message is received */
+    onStatus?: (status: StatusMessage['payload']) => void;
     /** Called on error */
     onError?: (error: Error) => void;
+    /** Called when connection state changes */
+    onStateChange?: (change: ConnectionStateChange) => void;
 }
-/**
- * Relay Client
- *
- * Connects to a relay server and establishes tunnels for remote access.
- */
 export declare class RelayClient {
+    private ws;
     private config;
-    private options;
-    private connected;
-    private tunnel?;
-    constructor(config: RelayConfig, options: RelayClientOptions);
+    private callbacks;
+    private state;
+    private sessionId;
+    private clientId;
+    private reconnectAttempt;
+    private reconnectDelay;
+    private reconnectTimer;
+    private connectTimeoutTimer;
+    private heartbeatTimer;
+    private snapshotReceived;
+    private synchronizedReceived;
+    constructor(config: RelayConfig, callbacks?: RelayClientCallbacks);
+    private setState;
+    private isConnected;
     /**
-     * Connect to relay server
+     * Connect to relay server with automatic authentication
      */
     connect(): Promise<void>;
     /**
      * Disconnect from relay server
      */
-    disconnect(): Promise<void>;
+    disconnect(): void;
     /**
-     * Create a tunnel
+     * Send a message through the WebSocket
      */
-    createTunnel(localPort: number): Promise<RelayTunnel>;
-    /**
-     * Send a message through the tunnel
-     */
-    send(_message: RelayMessage): Promise<void>;
-    /**
-     * Check if connected
-     */
-    isConnected(): boolean;
-    /**
-     * Get current tunnel
-     */
-    getTunnel(): RelayTunnel | undefined;
+    send(message: ClientMessage): void;
+    private handleMessage;
+    private handleConnected;
+    private handleAuth;
+    private handleSnapshot;
+    private handleSynchronized;
+    private handleCallback;
+    private handleStatus;
+    private handleDisconnect;
+    private scheduleReconnect;
+    private startHeartbeat;
+    private stopHeartbeat;
+    private cleanup;
+    getState(): ConnectionState;
+    isReady(): boolean;
+    getSessionId(): string | null;
+    getClientId(): string | null;
 }
