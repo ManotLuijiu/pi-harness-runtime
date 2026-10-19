@@ -151,7 +151,9 @@ function createCallbackPayload(
   targetId: string,
   userId: number | string,
   username?: string,
-  messageId?: number
+  messageId?: number,
+  callbackQueryId?: string,
+  chatId?: number
 ): CallbackPayload {
   return {
     id: generateMessageId(),
@@ -161,6 +163,8 @@ function createCallbackPayload(
     userId: typeof userId === "string" ? parseInt(userId, 10) || 0 : userId,
     username,
     messageId,
+    callbackQueryId,
+    chatId,
     timestamp: new Date().toISOString(),
   };
 }
@@ -204,14 +208,16 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
       // Parse callback data
       const { action, targetId } = parseCallbackData(query.data || "");
 
-      // Create typed callback payload
+      // Create typed callback payload with Telegram identity fields
       const callback = createCallbackPayload(
         "telegram_callback",
         action,
         targetId,
         from.id,
         from.username,
-        query.message?.message_id
+        query.message?.message_id,
+        query.id,                    // callbackQueryId for Telegram acknowledgment
+        query.message?.chat?.id      // chatId for greeting verification
       );
 
       // Broadcast via typed streaming relay (for relay-client WebSocket)

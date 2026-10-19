@@ -54,6 +54,10 @@ import {
 	shouldTriggerProactiveCompact,
 } from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
+
+// Relay client for streaming callbacks (t3code-style two-way communication)
+import { RelayClient } from "./packages/relay/src/client.js";
+import type { CallbackPayload } from "./packages/relay/src/types.js";
 import { renderStatus } from "./renderer.ts";
 import {
 	JobStateMachine,
@@ -1449,7 +1453,24 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		telegram?.setGreetingVerifiedHandler(() => {
 			addHarnessMessage("Telegram", "ready (Hi reply received; two-way verified)", "ok");
 		});
-		pi.on("session_shutdown", () => telegram?.stopPolling());
+
+		// Set adapter for relay streaming (receives callbacks via WebSocket)
+		setRelayTelegramAdapter(telegram);
+
+		pi.on("session_shutdown", () => {
+			telegram?.stopPolling();
+			_relayClient?.disconnect();
+		});
+
+		// Check if webhook mode is configured
+		const homedir2 = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+		const webhookUrlPath = join(homedir2, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt");
+		const _hasWebhook = existsSync(webhookUrlPath);
+
+		// Initialize relay streaming (receives callbacks via WebSocket)
+		// In webhook mode, streaming delivers callbacks in real-time
+		await initRelayStream();
+
 		const greeting = await telegram?.sendStartupGreeting();
 		if (!greeting?.success) {
 			logStartup("[pi-harness] Telegram: startup greeting delivery failed");
@@ -1474,6 +1495,114 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			"How to fix: Check logs at /tmp/pi-harness.log for Telegram errors",
 			"Ensure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set correctly.",
 		]);
+	}
+}
+
+// ============================================================================
+// --- relay-stream: WebSocket streaming for real-time Telegram callbacks -------
+// ============================================================================
+// Wires RelayClient to the Telegram adapter for two-way streaming communication.
+// When callbacks arrive via WebSocket, they are forwarded to the adapter's
+// handleWebhookUpdate() for proper greeting verification and callback handling.
+
+let _relayTelegramAdapter: any = null;
+let _relayClient: RelayClient | null = null;
+
+/**
+ * Set the Telegram adapter for relay streaming (called from initTelegram)
+ */
+function setRelayTelegramAdapter(adapter: any) {
+	_relayTelegramAdapter = adapter;
+}
+
+/**
+ * Initialize relay streaming for real-time callback delivery.
+ * Connects to the relay WebSocket server and forwards Telegram callbacks
+ * to the adapter for proper greeting verification and handling.
+ */
+async function initRelayStream(): Promise<void> {
+	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+	const keysDir = join(homedir, ".pi-harness-runtime", "keys");
+
+	// Check for relay WebSocket URL
+	const relayWsUrlPath = join(keysDir, "relay-ws-url.txt");
+	const relayTokenPath = join(keysDir, "relay-auth-token.txt");
+
+	if (!existsSync(relayWsUrlPath) || !existsSync(relayTokenPath)) {
+		logToFile("[RelayStream]", "Relay WebSocket URL or token not configured - skipping streaming");
+		return;
+	}
+
+	const relayWsUrl = readFileSync(relayWsUrlPath, "utf-8").trim();
+	const relayToken = readFileSync(relayTokenPath, "utf-8").trim();
+
+	if (!relayWsUrl || !relayToken) {
+		logToFile("[RelayStream]", "Relay URL or token is empty - skipping streaming");
+		return;
+	}
+
+	logToFile("[RelayStream]", `Connecting to relay at ${relayWsUrl}`);
+
+	_relayClient = new RelayClient(
+		{
+			serverUrl: relayWsUrl,
+			token: relayToken,
+		},
+		{
+			onConnected: (sessionId) => {
+				logToFile("[RelayStream]", `Connected to relay, session: ${sessionId}`);
+			},
+			onDisconnected: () => {
+				logToFile("[RelayStream]", "Disconnected from relay");
+			},
+			onSnapshot: (snapshot) => {
+				logToFile("[RelayStream]", `Snapshot: ${snapshot.recentCallbacks.length} recent callbacks`);
+			},
+			onSynchronized: () => {
+				logToFile("[RelayStream]", "Synchronized - receiving live events");
+			},
+			onCallback: async (callback: CallbackPayload) => {
+				logToFile("[RelayStream]", `Callback: ${callback.action} ${callback.targetId}`);
+
+				// Forward Telegram callbacks to the adapter
+				if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
+					// Convert relay callback to Telegram update format
+					const update = {
+						callback_query: {
+							id: callback.callbackQueryId || String(callback.id),
+							from: {
+								id: callback.userId,
+								is_bot: false,
+								first_name: callback.username || "User",
+								username: callback.username,
+							},
+							data: `${callback.action}:${callback.targetId}`,
+							message: {
+								chat: { id: callback.chatId || callback.userId },
+								message_id: callback.messageId || 0,
+							},
+						},
+					};
+
+					try {
+						await _relayTelegramAdapter.handleWebhookUpdate(update);
+						logToFile("[RelayStream]", "Callback processed by Telegram adapter");
+					} catch (err) {
+						logToFile("[RelayStream]", `Adapter error: ${err}`);
+					}
+				}
+			},
+			onError: (error) => {
+				logToFile("[RelayStream]", `Error: ${error.message}`);
+			},
+		}
+	);
+
+	try {
+		await _relayClient.connect();
+		logToFile("[RelayStream]", "Relay stream initialized successfully");
+	} catch (err) {
+		logToFile("[RelayStream]", `Failed to connect: ${err}`);
 	}
 }
 
@@ -2483,6 +2612,7 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 	// Get webhook server URL and API key from config
 	const getWebhookConfig = () => {
 		const webhookUrlPath = join(keysDir, "telegram-webhook-url.txt");
+		const apiUrlPath = join(keysDir, "relay-api-url.txt"); // Separate API base URL
 		const secretPath = join(keysDir, "telegram-webhook-secret.txt");
 
 		if (!existsSync(webhookUrlPath) || !existsSync(secretPath)) {
@@ -2492,11 +2622,25 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 		const webhookUrl = readFileSync(webhookUrlPath, "utf-8").trim();
 		const secret = readFileSync(secretPath, "utf-8").trim();
 
+		// Use separate API URL if configured, otherwise extract origin from webhook URL
+		let apiBaseUrl: string;
+		if (existsSync(apiUrlPath)) {
+			apiBaseUrl = readFileSync(apiUrlPath, "utf-8").trim().replace(/\/$/, "");
+		} else {
+			// Extract origin from webhook URL (e.g., https://example.com from https://example.com/telegram)
+			try {
+				const url = new URL(webhookUrl);
+				apiBaseUrl = `${url.protocol}//${url.host}`;
+			} catch {
+				apiBaseUrl = webhookUrl;
+			}
+		}
+
 		if (!webhookUrl || !secret) {
 			return null;
 		}
 
-		return { webhookUrl: webhookUrl.replace(/\/$/, ""), secret };
+		return { webhookUrl: webhookUrl.replace(/\/$/, ""), apiBaseUrl, secret };
 	};
 
 	const processCommand = (cmd: { command: string; jobId: string; userId: number }) => {
@@ -2521,9 +2665,9 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 	};
 
 	// Acknowledge processed commands
-	const acknowledgeCommands = async (jobIds: string[], config: { webhookUrl: string; secret: string }) => {
+	const acknowledgeCommands = async (jobIds: string[], config: { webhookUrl: string; apiBaseUrl: string; secret: string }) => {
 		try {
-			await fetch(`${config.webhookUrl}/api/acknowledge-commands`, {
+			await fetch(`${config.apiBaseUrl}/api/acknowledge-commands`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -2543,7 +2687,7 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 		}
 
 		try {
-			const response = await fetch(`${config.webhookUrl}/api/pending-commands`, {
+			const response = await fetch(`${config.apiBaseUrl}/api/pending-commands`, {
 				headers: {
 					"Authorization": `Bearer ${config.secret}`,
 				},
