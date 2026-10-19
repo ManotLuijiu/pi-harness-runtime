@@ -102,9 +102,8 @@ export class RelayServer {
                 },
                 timestamp: createTimestamp(),
             });
-            // Auto-auth for now (can be changed to require explicit auth)
-            this.updateState(session, { state: 'authenticating' });
-            this.handleAuth(clientId, this.options.authToken);
+            // Client will send auth message - wait for it
+            // Auth is validated in handleMessage -> handleAuth
         });
         return new Promise((resolve, reject) => {
             this.server.listen(this.options.port, this.options.host, () => {
