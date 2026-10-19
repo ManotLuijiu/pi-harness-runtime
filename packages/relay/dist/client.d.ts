@@ -53,6 +53,7 @@ export declare class RelayClient {
     disconnect(): void;
     /**
      * Send a message through the WebSocket
+     * Note: Messages can be sent even during authentication phase
      */
     send(message: ClientMessage): void;
     private handleMessage;
