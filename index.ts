@@ -1242,7 +1242,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				enabled: true,
 				config: { channelAccessToken: lineAccessToken, userId: lineUserId },
 			});
-			addHarnessMessage("LINE", "configured and enabled", "ok");
+			addHarnessMessage("LINE", "configured and enabled (tap Toggle LINE to disable)", "ok");
+		} else {
+			addHarnessMessage("LINE", "not configured", "warn", [
+				"Configure LINE in ~/.pi-harness-runtime/keys/",
+			]);
 		}
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1451,7 +1455,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const botUsername = center.getTelegramBotUsername();
 		const telegram = center.getTelegramAdapter();
 		telegram?.setGreetingVerifiedHandler(() => {
-			addHarnessMessage("Telegram", "ready (Hi reply received; two-way verified)", "ok");
+			addHarnessMessage("Telegram", "ready (tap Toggle Telegram to disable)", "ok");
 		});
 
 		// Set adapter for relay streaming (receives callbacks via WebSocket)
@@ -1462,18 +1466,14 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			_relayClient?.disconnect();
 		});
 
-		// Check if webhook mode is configured
-		const homedir2 = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-		const webhookUrlPath = join(homedir2, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt");
-		const _hasWebhook = existsSync(webhookUrlPath);
-
 		// Initialize relay streaming (receives callbacks via WebSocket)
 		// In webhook mode, streaming delivers callbacks in real-time
 		await initRelayStream();
 
 		const greeting = await telegram?.sendStartupGreeting();
+		logStartup(`[pi-harness] Telegram greeting result: ${JSON.stringify(greeting)}`);
 		if (!greeting?.success) {
-			logStartup("[pi-harness] Telegram: startup greeting delivery failed");
+			logStartup("[pi-harness] Telegram: startup greeting delivery failed - see logs");
 			addHarnessMessage("Telegram", "bot verified; Hi delivery failed", "err", [
 				"Open your bot in Telegram and press Start; unblock it if necessary.",
 				"Verify telegram-chat-id.txt in ~/.pi-harness-runtime/keys/ and network access, then reload Pi.",
@@ -1482,7 +1482,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		}
 		telegram?.startPolling();
 		if (!telegram?.isGreetingVerified()) {
-			addHarnessMessage("Telegram", "Hi sent; tap Say Hi back to verify inbound", "wait");
+			addHarnessMessage("Telegram", "Hi sent; tap Say Hi to verify inbound (tap Toggle Telegram to disable)", "wait");
 		}
 		if (botUsername) {
 			logStartup(`[pi-harness] Telegram (@${botUsername}) ready — DM the bot to receive alerts`);
