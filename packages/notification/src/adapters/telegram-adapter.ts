@@ -310,15 +310,51 @@ return this._botUsername;
 
 	/** A greeting callback is a transport check, not new agent work or approval. */
 	private async handleGreetingReply(query: TelegramCallbackQuery): Promise<boolean> {
-		if (!query.data?.startsWith("hi:")) return false;
+		// DEBUG: Log all incoming callback data
+		logInfo("[TelegramAdapter][DEBUG]", `handleGreetingReply called`);
+		logInfo("[TelegramAdapter][DEBUG]", `  query.data: ${query.data}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  query.id: ${query.id}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  query.from?.id: ${query.from?.id}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  query.message?.message_id: ${query.message?.message_id}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  query.message?.chat?.id: ${query.message?.chat?.id}`);
+
+		if (!query.data?.startsWith("hi:")) {
+			logInfo("[TelegramAdapter][DEBUG]", `  -> Not a greeting callback (data doesn't start with 'hi:')`);
+			return false;
+		}
+
 		const cfg = this.config.config as TelegramConfig;
+		logInfo("[TelegramAdapter][DEBUG]", `  this._greetingToken: ${this._greetingToken}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  this._greetingMessageId: ${this._greetingMessageId}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  this._greetingVerified: ${this._greetingVerified}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  this._greetingReplyInFlight: ${this._greetingReplyInFlight}`);
+		logInfo("[TelegramAdapter][DEBUG]", `  cfg.chatId: ${cfg.chatId}`);
+
+		// Check all conditions
+		const checks = {
+			dataMatches: query.data === this._greetingToken,
+			messageIdMatches: query.message?.message_id === this._greetingMessageId,
+			chatIdMatches: String(query.message?.chat?.id) === String(cfg.chatId),
+			notBot: !query.from?.is_bot,
+			userIdMatches: !(Number(cfg.chatId) > 0) || String(query.from?.id) === String(cfg.chatId),
+			notVerified: !this._greetingVerified,
+			notInFlight: !this._greetingReplyInFlight,
+		};
+		logInfo("[TelegramAdapter][DEBUG]", `  checks: ${JSON.stringify(checks)}`);
+
 		if (query.data !== this._greetingToken || this._greetingMessageId === undefined ||
 			query.message?.message_id !== this._greetingMessageId ||
 			String(query.message?.chat.id) !== String(cfg.chatId) || query.from?.is_bot ||
 			(Number(cfg.chatId) > 0 && String(query.from?.id) !== String(cfg.chatId)) ||
-			this._greetingVerified || this._greetingReplyInFlight) return true;
+			this._greetingVerified || this._greetingReplyInFlight) {
+			logInfo("[TelegramAdapter][DEBUG]", `  -> Callback rejected by condition check`);
+			return true;
+		}
+
 		this._greetingReplyInFlight = true;
 		const token = this._greetingToken;
+		logInfo("[TelegramAdapter][DEBUG]", `  -> Processing greeting reply...`);
+
 		try {
 			const response = await fetch(`https://api.telegram.org/bot${cfg.botToken}/editMessageText`, {
 				method: "POST",
@@ -331,12 +367,17 @@ return this._botUsername;
 				signal: AbortSignal.timeout(10000),
 			});
 			const data = await response.json() as { ok?: boolean };
+			logInfo("[TelegramAdapter][DEBUG]", `  editMessageText response: ok=${data.ok}, status=${response.status}`);
+
 			if (response.ok && data.ok === true && token === this._greetingToken) {
 				this._greetingVerified = true;
+				logInfo("[TelegramAdapter][DEBUG]", `  -> Greeting verified! Calling _greetingHandler`);
 				this._greetingHandler?.();
+			} else {
+				logWarn("[TelegramAdapter][DEBUG]", `  -> Edit failed: ${JSON.stringify(data)}`);
 			}
-		} catch {
-			logWarn("[TelegramAdapter]", "Hi reply acknowledgment failed; tap again to retry");
+		} catch (err) {
+			logWarn("[TelegramAdapter]", `Hi reply acknowledgment failed: ${err}`);
 		} finally {
 			this._greetingReplyInFlight = false;
 		}
