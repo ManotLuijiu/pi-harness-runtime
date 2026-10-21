@@ -391,7 +391,7 @@ export class RelayServer {
    * Broadcast callback to all connected clients
    * Uses stream batching for high-frequency events
    */
-  broadcastCallback(callback: CallbackPayload, batch = true): void {
+  broadcastCallback(callback: CallbackPayload, batch = true): number {
     // Add to recent callbacks (circular buffer)
     this.recentCallbacks.push(callback);
     if (this.recentCallbacks.length > MAX_RECENT_CALLBACKS) {
@@ -409,7 +409,7 @@ export class RelayServer {
     if (batch) {
       // Add to buffer for coalescing
       this.eventBuffer.callbacks.push(callback);
-      
+
       if (!this.eventBuffer.timer) {
         this.eventBuffer.timer = setTimeout(() => {
           this.flushEventBuffer();
@@ -419,6 +419,10 @@ export class RelayServer {
       // Send immediately
       this.broadcast(message);
     }
+
+    // Number of connected clients that will receive this callback.
+    // Callers use 0 to detect "no relay client attached" and fall back to disk.
+    return this.getClientCount();
   }
 
   /**
@@ -439,7 +443,7 @@ export class RelayServer {
   /**
    * Broadcast to all subscribed clients
    */
-  private broadcast(message: ServerMessage): void {
+  private broadcast(message: ServerMessage): number {
     let count = 0;
 
     for (const session of this.clients.values()) {
@@ -450,6 +454,8 @@ export class RelayServer {
     }
 
     console.log(`[RelayServer] Broadcast ${message.type} to ${count} client(s)`);
+
+    return count;
   }
 
   /**

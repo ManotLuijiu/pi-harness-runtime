@@ -17,7 +17,7 @@
  *   bun run scripts/unified-webhook-server.ts
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
@@ -37,15 +37,55 @@ interface Config {
     accessToken: string;
     channelSecret: string;
   };
+  /** Relay auth token used by WebSocket clients. */
+  relayAuthToken: string;
 }
 
 const PORT = parseInt(process.env.PORT || "8443", 10);
 const WS_PORT = parseInt(process.env.WS_PORT || "8444", 10);
-const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
+/**
+ * Resolve the relay auth token.
+ *
+ * Priority: RELAY_AUTH_TOKEN env -> keys/relay-auth-token.txt ->
+ * keys/telegram-webhook-secret.txt -> placeholder.
+ *
+ * Never hardcode a real token here; secrets live in key files.
+ */
+function resolveAuthToken(keysDir: string): string {
+  const fromEnv = process.env.RELAY_AUTH_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+
+  for (const name of ["relay-auth-token.txt", "telegram-webhook-secret.txt"]) {
+    const path = join(keysDir, name);
+    if (existsSync(path)) {
+      const value = readFileSync(path, "utf-8").trim();
+      if (value) return value;
+    }
+  }
+
+  return "change-me-in-production";
+}
 const SERVER_VERSION = process.env.SERVER_VERSION || "1.0.0";
 
 // --- Job Commands (for pi-harness polling) ---
 const JOB_COMMANDS_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "job-commands.jsonl");
+
+// --- Callback Queue (fallback when no relay client is connected) ---
+const CALLBACK_QUEUE_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "callback-queue.jsonl");
+
+/**
+ * Persist a callback to disk when no WebSocket client is connected.
+ * Without this, a click that lands while the relay client is offline is lost.
+ */
+function queueCallback(payload: CallbackPayload): void {
+  try {
+    const dir = join(CALLBACK_QUEUE_FILE, "..");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    appendFileSync(CALLBACK_QUEUE_FILE, JSON.stringify(payload) + "\n");
+  } catch (err) {
+    console.error("[Queue] Failed to persist callback:", err);
+  }
+}
 
 interface JobCommand {
   command: string;
@@ -75,7 +115,7 @@ function writeJobCommand(cmd: Omit<JobCommand, "timestamp">): void {
 // --- Keys Loader ---
 function loadConfig(): Config {
   const keysDir = join(homedir(), ".pi-harness-runtime", "keys");
-  const config: Config = {};
+  const config: Config = { relayAuthToken: resolveAuthToken(keysDir) };
 
   // Telegram
   const telegramTokenPath = join(keysDir, "telegram-bot-token.txt");
@@ -221,16 +261,21 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
       );
 
       // Broadcast via typed streaming relay (for relay-client WebSocket)
-      relayServer.broadcastCallback(callback);
-      
+      const wsCount = relayServer.broadcastCallback(callback);
+
+      // Fallback to file queue when no relay client is connected
+      if (wsCount === 0) {
+        queueCallback(callback);
+      }
+
       // Write to job commands file (for pi-harness HTTP polling)
       writeJobCommand({
         command: action,
         jobId: targetId,
         userId: from.id,
       });
-      
-      console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id}`);
+
+      console.log(`[Telegram] Callback: ${action} ${targetId} from @${from.username || from.id} (WS clients: ${wsCount})`);
 
       // Acknowledge immediately
       await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/answerCallbackQuery`, {
@@ -295,16 +340,21 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
         );
 
         // Broadcast via typed streaming relay (for relay-client WebSocket)
-        relayServer.broadcastCallback(callback);
-        
+        const wsCount = relayServer.broadcastCallback(callback);
+
+        // Fallback to file queue when no relay client is connected
+        if (wsCount === 0) {
+          queueCallback(callback);
+        }
+
         // Write to job commands file (for pi-harness HTTP polling)
         writeJobCommand({
           command: action,
           jobId: targetId,
           userId: parseInt(event.source?.userId || "0", 10) || 0,
         });
-        
-        console.log(`[LINE] Postback: ${action} ${targetId}`);
+
+        console.log(`[LINE] Postback: ${action} ${targetId} (WS clients: ${wsCount})`);
       }
     }
 
@@ -334,7 +384,7 @@ async function main() {
   const relayOptions: RelayServerOptions = {
     port: WS_PORT,
     host: "0.0.0.0",
-    authToken: AUTH_TOKEN,
+    authToken: config.relayAuthToken,
     serverVersion: SERVER_VERSION,
     onStateChange: (change: { previous: { state: string }; current: { state: string }; timestamp: string }) => {
       console.log(`[Relay] State: ${change.previous.state} → ${change.current.state}`);
@@ -367,11 +417,18 @@ async function main() {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true }));
       } else if (url.pathname === "/health") {
-        res.writeHead(200);
+        // Keep the plain-text contract that external monitors check for "OK".
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("OK");
+      } else if (url.pathname === "/api/relay-status") {
+        res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           status: "ok",
           clients: relayServer.getClientCount(),
           running: relayServer.isRunning(),
+          queued: existsSync(CALLBACK_QUEUE_FILE)
+            ? readFileSync(CALLBACK_QUEUE_FILE, "utf-8").trim().split("\n").filter(Boolean).length
+            : 0,
         }));
       } else {
         res.writeHead(404);
