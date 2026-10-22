@@ -8,7 +8,10 @@
  * 3. Route callbacks to appropriate actions
  *
  * Run:
- *   bun run e2e/telegram-interactive.example.ts
+ *   PI_HARNESS_E2E=1 bun run e2e/telegram-interactive.example.ts
+ *
+ * This example sends REAL Telegram messages, so it is opt-in: it exits
+ * immediately unless PI_HARNESS_E2E=1 is set.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -338,6 +341,15 @@ async function main(): Promise<void> {
 	console.log("\n" + "=".repeat(60));
 	console.log("All examples completed!");
 	console.log("=".repeat(60));
+}
+
+// This example sends REAL Telegram messages. Keep it opt-in so an accidental
+// run can never post to the configured chat.
+if (process.env.PI_HARNESS_E2E !== "1") {
+	console.log(
+		"SKIP: set PI_HARNESS_E2E=1 to run the Telegram 2-way communication example",
+	);
+	process.exit(0);
 }
 
 main().catch(console.error);

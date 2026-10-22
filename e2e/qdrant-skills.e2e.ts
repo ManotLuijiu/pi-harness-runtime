@@ -5,11 +5,24 @@
  * Tests the Qdrant integration for skill storage and search.
  * 
  * Usage:
- *   bun e2e/qdrant-skills.test.ts
+ *   PI_HARNESS_E2E=1 bun e2e/qdrant-skills.e2e.ts
+ *
+ * This test talks to a real Qdrant cluster, so it is opt-in.
+ *
+ * It is a standalone script (not a `bun:test` spec), so it is named
+ * `*.e2e.ts`: a `*.test.ts` name would let `bun test e2e/` abort the whole
+ * runner on this early exit.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+if (process.env.PI_HARNESS_E2E !== "1") {
+	console.error(
+		"SKIP: set PI_HARNESS_E2E=1 to run the Qdrant skills E2E test",
+	);
+	process.exit(0);
+}
 
 // Load env from .env.test
 const envPath = join(process.cwd(), ".env.test");

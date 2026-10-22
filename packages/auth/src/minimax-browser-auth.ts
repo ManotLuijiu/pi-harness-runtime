@@ -200,7 +200,7 @@ function hasProfileData(profileDir: string): boolean {
 	}
 }
 
-function getChromeExecutablePath(
+export function getChromeExecutablePath(
 	config: MinimaxBrowserAuthConfig = {},
 ): string {
 	const configuredPath =
@@ -218,8 +218,20 @@ function getChromeExecutablePath(
 			break;
 		case "win32":
 			candidates.push(
-				"C:Program FilesGoogleChromeApplicationchrome.exe",
-				"C:Program Files (x86)GoogleChromeApplicationchrome.exe",
+				path.join(
+					process.env["ProgramFiles"] ?? "C:\\Program Files",
+					"Google",
+					"Chrome",
+					"Application",
+					"chrome.exe",
+				),
+				path.join(
+					process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+					"Google",
+					"Chrome",
+					"Application",
+					"chrome.exe",
+				),
 				path.join(
 					process.env.LOCALAPPDATA ?? "",
 					"Google",

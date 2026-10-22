@@ -4,7 +4,8 @@
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.mjs\" \"packages/clipboard/test/*.test.mjs\"",
+    "typecheck": "node scripts/typecheck-packages.mjs",
     "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies && node scripts/copy-plugins.js && ([ -f ~/.config/herdr/config.toml ] || mkdir -p ~/.config/herdr && cp config.toml.example ~/.config/herdr/config.toml)",
     "release": "bun scripts/release-all.ts",
     "release:patch": "bun scripts/release-all.ts --release-as patch",
@@ -18,8 +19,11 @@
     "skills:sync:check": "bun scripts/skills-sync.ts --check-only",
     "build": "for pkg in packages/*/; do [ -f \"${pkg}tsconfig.json\" ] && [ \"$pkg\" != \"packages/provider-router/\" ] && node_modules/.bin/tsc -p \"${pkg}tsconfig.json\" --skipLibCheck > /dev/null 2>&1 || true; done",
     "prepublishOnly": "bun run build",
-    "test:harness": "bun test harness/langchain/",
-    "test:all": "node --test && bun test harness/langchain/",
+    "test:harness": "node scripts/run-langchain-tests.mjs",
+    "test:packages": "bun test packages/",
+    "test:e2e": "PI_HARNESS_E2E=1 bun test e2e/",
+    "test:e2e:scripts": "node scripts/run-e2e-scripts.mjs",
+    "test:all": "npm run test && npm run test:harness",
     "prepublish": "bun run build"
   },
   "bin": {

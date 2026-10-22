@@ -4,6 +4,9 @@
  * @deprecated Use CheckpointEngine instead
  */
 export class JsonCheckpointManager {
+    // NOTE: an explicit field (not a constructor parameter property) so the
+    // module can be loaded by Node's type-stripping loader, which rejects
+    // parameter properties ("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX").
     rootDir;
     constructor(rootDir) {
         this.rootDir = rootDir;

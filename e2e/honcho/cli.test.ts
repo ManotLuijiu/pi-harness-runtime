@@ -4,7 +4,9 @@
  * Tests the honcho CLI commands used by pi-harness-runtime.
  * 
  * Usage:
- *   bun test e2e/honcho/cli.test.ts
+ *   PI_HARNESS_E2E=1 bun test e2e/honcho/cli.test.ts
+ *
+ * These tests talk to the real Honcho CLI, so they are opt-in.
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
@@ -12,6 +14,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+
+// Real Honcho CLI calls: opt-in via PI_HARNESS_E2E=1.
+const describeE2E = process.env.PI_HARNESS_E2E === "1" ? describe : describe.skip;
 
 // Test configuration
 const TEST_WORKSPACE_PREFIX = "pi-harness-test";
@@ -44,7 +49,7 @@ function execHoncho(args: string[]): string {
   });
 }
 
-describe("Honcho CLI E2E Tests", () => {
+describeE2E("Honcho CLI E2E Tests", () => {
   let ctx: TestContext;
   
   beforeAll(() => {

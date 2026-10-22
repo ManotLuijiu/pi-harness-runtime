@@ -11,6 +11,9 @@
  * created -> planning -> queued -> running -> testing -> e2e_testing ->
  * reviewing -> repairing -> paused_quota -> waiting_human -> ready_for_client -> archived
  */
+import { createHash } from "node:crypto";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 // Valid transitions map
 const VALID_TRANSITIONS = {
     created: ["planning"],
@@ -64,9 +67,12 @@ const VALID_TRANSITIONS = {
     archived: [],
 };
 export class JobStateMachine {
-    options;
     currentCheckpoint = null;
     eventLog = [];
+    // NOTE: an explicit field (not a constructor parameter property) so the
+    // module can be loaded by Node's type-stripping loader, which rejects
+    // parameter properties ("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX").
+    options;
     constructor(options) {
         this.options = options;
     }
@@ -259,19 +265,90 @@ export class JobStateMachine {
     }
 }
 /**
- * Factory to create a state machine with a JsonCheckpointManager
+ * File-backed checkpoint manager.
+ *
+ * The previous implementation wrapped the deprecated JsonCheckpointManager,
+ * whose save()/load() ALWAYS throw ("Legacy JsonCheckpointManager is
+ * deprecated. Use CheckpointEngine instead."), so every state transition that
+ * persisted failed and the runtime event log was silently dropped. This
+ * manager persists a real checkpoint file plus an append-only event log per
+ * job, so the state machine actually works.
+ */
+/**
+ * The on-disk directory name for a job id.
+ *
+ * The id is sanitised so it can never contain a path separator, and a hash
+ * of the ORIGINAL id is appended. The hash makes the mapping injective:
+ * without it two different job ids ("a/b" and "a_b") would share one
+ * checkpoint directory and could overwrite each other's checkpoint.
+ */
+export function checkpointDirName(jobId) {
+    const sanitized = jobId.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const digest = createHash("sha256").update(jobId).digest("hex").slice(0, 8);
+    if (sanitized === "" || sanitized === "." || sanitized === "..") {
+        return `_${sanitized}${digest}`;
+    }
+    return `${sanitized}-${digest}`;
+}
+export class FileCheckpointManager {
+    rootDir;
+    constructor(rootDir) {
+        this.rootDir = rootDir;
+    }
+    /**
+     * Job ids are used as directory names, so strip path separators and
+     * other characters that are not safe in a file name. "." and ".." would
+     * still escape the checkpoints directory, so they are escaped as well.
+     */
+    jobDir(jobId) {
+        return join(this.rootDir, "checkpoints", checkpointDirName(jobId));
+    }
+    async save(checkpoint) {
+        const dir = this.jobDir(checkpoint.jobId);
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, "checkpoint.json"), `${JSON.stringify(checkpoint, null, 2)}\n`, "utf8");
+    }
+    async load(jobId) {
+        let raw;
+        try {
+            raw = await readFile(join(this.jobDir(jobId), "checkpoint.json"), "utf8");
+        }
+        catch (error) {
+            if (error?.code === "ENOENT") {
+                return null;
+            }
+            throw error;
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        }
+        catch {
+            // A corrupted checkpoint file must not crash the resume path:
+            // it is reported as "no checkpoint to resume".
+            return null;
+        }
+        return parsed && typeof parsed === "object" ? parsed : null;
+    }
+    async appendEvent(jobId, event) {
+        const dir = this.jobDir(jobId);
+        await mkdir(dir, { recursive: true });
+        await appendFile(join(dir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+    }
+}
+/**
+ * Factory to create a state machine with a file-backed checkpoint manager
  */
 export async function createJobStateMachine(rootDir, jobId) {
-    const { JsonCheckpointManager } = await import("../packages/checkpoint/src/checkpoint-manager.ts");
-    const manager = new JsonCheckpointManager(rootDir);
+    const checkpointManager = new FileCheckpointManager(rootDir);
     if (jobId) {
-        const checkpoint = await manager.load(jobId);
-        const machine = new JobStateMachine({ checkpointManager: manager });
+        const checkpoint = await checkpointManager.load(jobId);
+        const machine = new JobStateMachine({ checkpointManager });
         if (checkpoint) {
             machine.resumeJob(jobId);
         }
         return { machine, checkpoint };
     }
-    const machine = new JobStateMachine({ checkpointManager: manager });
+    const machine = new JobStateMachine({ checkpointManager });
     return { machine, checkpoint: null };
 }

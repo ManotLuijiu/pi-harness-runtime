@@ -11,6 +11,9 @@ const outputText = stripTypeScriptTypes(source)
   .replace(/import\s+\{([^}]+)\}\s+from\s+"([^"]+)";/g,
     (_, names, id) => `const {${names}} = require(${JSON.stringify(id)});`)
   .replace(/\bexport\s+(?=(?:async\s+)?(?:function|class|const|let)\b)/g, "")
+  // Export lists ("export { redactSecrets };") are not covered by the rule
+  // above and survive the type strip, so drop them explicitly.
+  .replace(/\bexport\s*\{[^}]*\};?/g, "")
   + "\nObject.assign(exports, { startHonchoHealthCheck, stopHonchoHealthCheck });";
 
 for (const hasKey of [false, true]) {
@@ -21,7 +24,11 @@ for (const hasKey of [false, true]) {
     runInNewContext(outputText, {
       exports,
       require(id) {
-        if (id === "./service-diagnostics.js") return {};
+        if (id === "./service-diagnostics.js") return {
+          logServiceEvent: () => {},
+          honchoStatus: { setConnected: () => {}, setStatus: () => {}, setDetail: () => {} },
+        };
+        if (id === "./honcho-init.js") return { honchoToolCall: async () => ({ success: false, error: "stub" }) };
         if (id === "node:os") return { homedir: () => "/test-home" };
         if (id === "node:fs") return {
           existsSync: (path) => path.endsWith("honcho-api-key.txt") ? hasKey : true,
@@ -45,15 +52,25 @@ for (const hasKey of [false, true]) {
       clearInterval: (handle) => timers.delete(handle),
     });
 
+    // The module no longer auto-starts the health check at import time
+    // (the import-time side effect was removed deliberately in 844182df),
+    // so nothing runs until startHonchoHealthCheck() is called.
+    assert.equal(timers.size, 0);
+    assert.equal(requests.length, 0);
+
+    exports.startHonchoHealthCheck();
     assert.equal(timers.size, 1);
     assert.equal([...timers.values()][0].delay, 300_000);
+    assert.equal(requests.length, hasKey ? 1 : 0);
+    // The health check is idempotent: a second start must not create a
+    // second interval (that would double the health-check traffic).
+    exports.startHonchoHealthCheck();
+    assert.equal(timers.size, 1);
     assert.equal(requests.length, hasKey ? 1 : 0);
     if (hasKey) {
       assert.equal(requests[0].url, "https://api.honcho.dev/v1/health");
       assert.equal(requests[0].options.headers.Authorization, "Bearer test-key");
     }
-    exports.startHonchoHealthCheck();
-    assert.equal(timers.size, 1);
     await [...timers.values()][0].callback();
     assert.equal(requests.length, hasKey ? 2 : 0);
     exports.stopHonchoHealthCheck();

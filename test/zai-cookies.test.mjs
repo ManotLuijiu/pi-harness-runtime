@@ -10,6 +10,16 @@ const COOKIE_FILE = join(homedir(), ".pi-harness-runtime", "cookies", "z.ai_cook
 
 console.log("=== Z.ai Cookie Test ===\n");
 
+// This is a manual diagnostic: it needs the local cookie jar, a browser and
+// network access. Keep it opt-in so the default suite stays hermetic and
+// fast.
+if (process.env.PI_HARNESS_NETWORK_TESTS !== "1") {
+	console.log(
+		"SKIP: set PI_HARNESS_NETWORK_TESTS=1 to run the Z.ai cookie diagnostic",
+	);
+	process.exit(0);
+}
+
 // Load cookies
 function loadNetscapeCookies(path) {
 	const cookies = [];

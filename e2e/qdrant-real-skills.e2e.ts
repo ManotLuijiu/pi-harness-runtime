@@ -1,11 +1,21 @@
 #!/usr/bin/env bun
 /**
  * Qdrant Real Skills E2E Test
+ *
+ * This test talks to a REAL Qdrant cluster and creates/deletes collections.
+ * It is opt-in: it exits immediately unless PI_HARNESS_E2E=1 is set.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { QdrantClient } from "@qdrant/js-client-rest";
+
+if (process.env.PI_HARNESS_E2E !== "1") {
+	console.error(
+		"SKIP: set PI_HARNESS_E2E=1 to run the Qdrant real-skills E2E test",
+	);
+	process.exit(0);
+}
 
 // Load env
 const envPath = join(process.cwd(), ".env.test");
