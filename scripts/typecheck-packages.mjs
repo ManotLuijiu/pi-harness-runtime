@@ -74,6 +74,7 @@ function ownerOf(projectPath) {
 const failures = [];
 const baselined = [];
 const improved = [];
+const skipped = [];
 let checked = 0;
 
 // `tsc --noEmit` still writes the .tsbuildinfo of an incremental or
@@ -105,9 +106,19 @@ for (const project of projects) {
 		output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
 		timedOut = Boolean(error.killed) || error.signal === "SIGTERM";
 	}
-	const count = output.split("\n").filter((line) => /error TS/.test(line)).length;
+		const errorLines = output.split("\n").filter((line) => /error TS/.test(line));
+		// TS18003: "No inputs were found in config file". A package whose
+		// sources are compiled output only (packages/*/src/*.js and *.d.ts
+		// are gitignored) has no TypeScript input in a fresh checkout, so
+		// there is nothing to check - that is not a type error.
+		const noInputs = errorLines.some((line) => /error TS18003/.test(line));
+		const count = errorLines.length;
 
-	if (timedOut) {
+		if (noInputs) {
+			skipped.push(`${owner} (no TypeScript sources in this checkout)`);
+			continue;
+		}
+		if (timedOut) {
 		// A timeout is not a pass and not an error count - fail closed.
 		failures.push({
 			owner,
@@ -144,6 +155,9 @@ for (const owner of BASELINES.keys()) {
 }
 
 console.log(`typecheck: ${checked} projects checked`);
+if (skipped.length > 0) {
+	console.log(`typecheck: ${skipped.length} project(s) skipped: ${skipped.join(", ")}`);
+}
 if (baselined.length > 0) {
 	console.log(
 		`typecheck: ${baselined.length} project(s) with known pre-existing errors: ${baselined.join(", ")}`,
