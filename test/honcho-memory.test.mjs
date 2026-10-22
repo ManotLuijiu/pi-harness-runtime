@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createRequire, stripTypeScriptTypes } from "node:module";
+import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
+import { stripTypeScriptTypes } from "./helpers/strip-types.mjs";
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../harness/honcho-memory.ts", import.meta.url), "utf8");
 // Evaluate the whole module with isolated I/O and timers, preserving declaration order.
-const outputText = stripTypeScriptTypes(source)
+const outputText = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\{([^}]+)\}\s+from\s+"([^"]+)";/g,
     (_, names, id) => `const {${names}} = require(${JSON.stringify(id)});`)
   .replace(/\bexport\s+(?=(?:async\s+)?(?:function|class|const|let)\b)/g, "")
