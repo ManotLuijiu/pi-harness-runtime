@@ -260,49 +260,63 @@ describe("T8 — loop deps surviving a mid-graph 529", () => {
 import { classifyGLMQuota, invokeWithGLMRetry } from "./surge.js";
 
 describe("classifyGLMQuota", () => {
-	// The dates in the error messages are in the past (2026-09-04).
-	// classifyGLMQuota shifts them to the NEXT occurrence (+1 day).
-	// The tests verify: shift happened + time preserved verbatim.
+	// The reset timestamps are computed RELATIVE to now. A hardcoded date
+	// is a time bomb: it was "in the past by < 1 day" when this test was
+	// written and is now far in the past, which makes the +1 day shift
+	// land in the past as well.
+	const stamp = (date: Date): string => date.toISOString().slice(0, 19);
+	const inDays = (days: number): Date =>
+		new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
 	it("parses GLM 1308 error with reset timestamp", () => {
+		const reset = inDays(2);
 		const err = new Error(
-			'429: {"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-09-04 20:29:24"}',
+			`429: {"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at ${stamp(reset)}"}`,
 		);
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
-		// 2026-09-04 is past → shifted to 2026-09-05; epoch must be in the future
+		// A reset time in the future is used verbatim.
 		assert.ok(sig!.resetAtEpoch > Date.now(), "resetAtEpoch is in the future");
 		assert.ok(
-			sig!.resetAt.includes("2026-09-05"),
-			"date shifted to next occurrence",
+			sig!.resetAt.includes(stamp(reset).slice(0, 10)),
+			"date preserved verbatim",
 		);
-		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
+		assert.ok(
+			sig!.resetAt.includes(stamp(reset).slice(11)),
+			"time preserved verbatim",
+		);
 	});
 
 	it("parses 1308 from plain string error", () => {
-		const err =
-			'{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04 20:29:24"}';
+		// A reset time in the past is shifted to the NEXT occurrence (+1 day).
+		const reset = inDays(-0.5);
+		const err = `{"code":"1308","message":"Usage limit reached. Your limit will reset at ${stamp(reset)}"}`;
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
-		// space separator → normalised to T; past date → shifted to next occurrence
+		const shifted = stamp(new Date(reset.getTime() + 24 * 60 * 60 * 1000));
 		assert.ok(
-			sig!.resetAt.includes("2026-09-05"),
-			"space normalised and date shifted",
+			sig!.resetAt.includes(shifted.slice(0, 10)),
+			"space normalised and date shifted to the next occurrence",
 		);
+		assert.ok(sig!.resetAtEpoch > Date.now(), "shifted epoch is in the future");
 	});
 
 	it("parses reset time with T separator", () => {
+		const reset = inDays(2);
 		const err = new Error(
-			'{"code":"1308","message":"Usage limit reached. Your limit will reset at 2026-09-04T20:29:24"}',
+			`{"code":"1308","message":"Usage limit reached. Your limit will reset at ${stamp(reset)}"}`,
 		);
 		const sig = classifyGLMQuota(err);
 		assert.ok(sig, "should be classified as GLM quota");
-		// past date → next occurrence (2026-09-05); T separator preserved verbatim
 		assert.ok(
-			sig!.resetAt.includes("2026-09-05"),
-			"date shifted to next occurrence",
+			sig!.resetAt.includes(stamp(reset).slice(0, 10)),
+			"date preserved verbatim",
 		);
 		assert.ok(sig!.resetAt.includes("T"), "T separator preserved verbatim");
-		assert.ok(sig!.resetAt.includes("20:29:24"), "time preserved verbatim");
+		assert.ok(
+			sig!.resetAt.includes(stamp(reset).slice(11)),
+			"time preserved verbatim",
+		);
 	});
 
 	it("returns null for non-GLM errors", () => {
@@ -343,9 +357,18 @@ describe("invokeWithGLMRetry", () => {
 
 	it("waits until reset time before retry", async () => {
 		const sleeps: number[] = [];
-		const sleep = async (ms: number) => void sleeps.push(ms);
-		// Use a reset time 100ms in the future
-		const resetIn = 100;
+		// The fake sleep must yield to the event loop: the countdown loop
+		// waits for the WALL CLOCK, so a sleep that returns immediately
+		// turns the countdown into a busy loop.
+		const sleep = async (ms: number) => {
+			sleeps.push(ms);
+			await new Promise((resolve) => setTimeout(resolve, 1));
+		};
+		// Use a reset time in the future. The reset time is parsed with
+		// SECOND precision, so it has to be far enough in the future that
+		// the truncation cannot push it into the past (a past reset time is
+		// shifted by a whole day).
+		const resetIn = 1500;
 		const resetAt = new Date(Date.now() + resetIn).toISOString();
 
 		let attempts = 0;
@@ -373,8 +396,14 @@ describe("invokeWithGLMRetry", () => {
 
 	it("fires onGLMQuota callback during countdown", async () => {
 		const ticks: string[] = [];
-		const sleep = async (ms: number) => void ticks.push(`sleep:${ms}`);
-		const resetAt = new Date(Date.now() + 50).toISOString();
+		const sleep = async (ms: number) => {
+			ticks.push(`sleep:${ms}`);
+			await new Promise((resolve) => setTimeout(resolve, 1));
+		};
+		// The reset time is parsed with SECOND precision, so it has to be
+		// far enough in the future that the truncation cannot push it into
+		// the past (a past reset time is shifted by a whole day).
+		const resetAt = new Date(Date.now() + 1500).toISOString();
 
 		let attempts = 0;
 		await invokeWithGLMRetry(
@@ -402,8 +431,11 @@ describe("invokeWithGLMRetry", () => {
 
 	it("fires onGLMRetry callback after countdown expires", async () => {
 		const events: string[] = [];
-		const sleep = async (_ms: number) => void null;
-		const resetAt = new Date(Date.now() + 20).toISOString();
+		const sleep = async (_ms: number) => {
+			await new Promise((resolve) => setTimeout(resolve, 1));
+		};
+		// Same as above: second precision, so stay safely in the future.
+		const resetAt = new Date(Date.now() + 1200).toISOString();
 
 		let attempts = 0;
 		await invokeWithGLMRetry(

@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
 
 jobs:
   test:
@@ -27,14 +26,33 @@ jobs:
           # No cache: project uses bun.lock (setup-node only
           # supports package-lock.json / yarn.lock).
 
+      # Pinned: the harness test runner is validated against this version
+      # (bun 1.3.14 has no node:sqlite, which the langchain daemon test needs).
       - name: Install bun
-        run: npm install -g bun
+        run: npm install -g bun@1.3.14
 
+      # The project uses bun.lock, not package-lock.json.
       - name: Install dependencies
-        run: bun install # Project uses bun.lock, not package-lock.json
+        run: bun install --frozen-lockfile
 
       - name: Type check
-        run: npm run typecheck 2>/dev/null || echo "No typecheck script"
+        run: npm run typecheck
 
       - name: Run tests
-        run: npm test || true # Allow test failures in CI
+        run: npm test
+
+      - name: Run harness tests
+        run: npm run test:harness
+
+      # This suite resolves its TypeScript sources through bun, so it cannot
+      # run under the node test runner.
+      - name: Run autonomous-runtime inbox tests
+        run: bun test packages/autonomous-runtime/test/inbox.test.mjs
+
+      # The package suite still has pre-existing failures in packages that are
+      # unrelated to this repository's core loop, so it is reported but does
+      # not block the build.
+      - name: Run package tests
+        run: |
+          bun test packages/ \
+            || echo "package tests reported failures (non-blocking)"

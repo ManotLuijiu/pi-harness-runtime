@@ -50,6 +50,7 @@ export declare function detectUsagePage(bodyText: string): {
     detected: boolean;
     sample: string | null;
 };
+export declare function getChromeExecutablePath(config?: MinimaxBrowserAuthConfig): string;
 /**
  * Manual authentication flow: launches real Chrome so Google login works,
  * waits for user to sign in, then confirms at the TTY.

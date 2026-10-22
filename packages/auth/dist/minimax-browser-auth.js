@@ -131,7 +131,7 @@ function hasProfileData(profileDir) {
         return false;
     }
 }
-function getChromeExecutablePath(config = {}) {
+export function getChromeExecutablePath(config = {}) {
     const configuredPath = config.chromeExecutablePath ??
         process.env.PI_HARNESS_CHROME_PATH ??
         process.env.GOOGLE_CHROME_BIN ??
@@ -142,7 +142,7 @@ function getChromeExecutablePath(config = {}) {
             candidates.push("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta");
             break;
         case "win32":
-            candidates.push("C:Program FilesGoogleChromeApplicationchrome.exe", "C:Program Files (x86)GoogleChromeApplicationchrome.exe", path.join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"));
+            candidates.push(path.join(process.env["ProgramFiles"] ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"), path.join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"), path.join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"));
             break;
         default:
             candidates.push("/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/snap/bin/google-chrome");

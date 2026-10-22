@@ -37,7 +37,12 @@ test("buildFooterStatusValue prefers quota mirror data for footer badge", () => 
 		false,
 	);
 
-	assert.equal(status, "MiniMax: 5h: 100% left · week: 26% left");
+	// The status line carries the reset countdown per window (see
+	// footer-status.ts: "5h: ... (resets soon) - week: ... (resets soon)").
+	assert.equal(
+		status,
+		"MiniMax: 5h: 100% left (resets soon) - week: 26% left (resets soon)",
+	);
 });
 
 test("buildFooterStatusValue falls back to local today summary when mirror is missing", () => {
@@ -64,7 +69,10 @@ test("buildFooterStatusValue marks stale quota mirror data", () => {
 		false,
 	);
 
-	assert.equal(status, "MiniMax: 5h: 80% left · week: 20% left · stale");
+	assert.equal(
+		status,
+		"MiniMax: 5h: 80% left (resets soon) - week: 20% left (resets soon) · stale",
+	);
 });
 
 test("buildFooterStatusValue ignores expired mirror data and falls back to local today summary", () => {

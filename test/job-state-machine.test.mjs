@@ -2,8 +2,12 @@
  * Tests for Job State Machine — RFC-0015
  */
 
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const checkpoints = new Map();
 const events = [];
@@ -21,7 +25,9 @@ const mockManager = {
 };
 
 // Import after setting up mocks
-const { JobStateMachine } = await import("../harness/job-state-machine.ts");
+const { JobStateMachine, FileCheckpointManager, checkpointDirName } = await import(
+	"../harness/job-state-machine.ts",
+);
 
 describe("JobStateMachine", () => {
 	let machine;
@@ -220,5 +226,89 @@ describe("JobStateMachine", () => {
 		const checkpoint = machine.getCheckpoint();
 		assert.ok(checkpoint);
 		assert.strictEqual(checkpoint?.jobId, "job-001");
+	});
+});
+
+describe("FileCheckpointManager", () => {
+	let rootDir;
+	let manager;
+
+	beforeEach(async () => {
+		rootDir = await mkdtemp(join(tmpdir(), "job-state-machine-"));
+		manager = new FileCheckpointManager(rootDir);
+	});
+
+	afterEach(async () => {
+		await rm(rootDir, { recursive: true, force: true });
+	});
+
+	it("saves and loads a checkpoint", async () => {
+		await manager.save({ jobId: "job-001", status: "created" });
+		const loaded = await manager.load("job-001");
+		assert.strictEqual(loaded?.jobId, "job-001");
+		assert.strictEqual(loaded?.status, "created");
+	});
+
+	it("returns null for an unknown job", async () => {
+		assert.strictEqual(await manager.load("does-not-exist"), null);
+	});
+
+	it("returns null for a corrupted checkpoint file", async () => {
+		const dir = join(rootDir, "checkpoints", checkpointDirName("job-001"));
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "checkpoint.json"), "{not json", "utf8");
+		assert.strictEqual(await manager.load("job-001"), null);
+	});
+
+	it("appends events instead of overwriting them", async () => {
+		await manager.appendEvent("job-001", { type: "started" });
+		await manager.appendEvent("job-001", { type: "finished" });
+		const raw = await readFile(
+			join(rootDir, "checkpoints", checkpointDirName("job-001"), "events.jsonl"),
+			"utf8",
+		);
+		const lines = raw.trim().split("\n");
+		assert.strictEqual(lines.length, 2);
+		assert.strictEqual(JSON.parse(lines[0]).type, "started");
+	});
+
+	it("keeps a traversal job id inside the checkpoints directory", async () => {
+		await manager.save({ jobId: "..", status: "created" });
+		// ".." must not resolve to the root directory itself.
+		assert.strictEqual(
+			existsSync(join(rootDir, "checkpoint.json")),
+			false,
+			"the checkpoint escaped the checkpoints directory",
+		);
+		const entries = await readdir(join(rootDir, "checkpoints"));
+		assert.strictEqual(entries.length, 1);
+		assert.ok(!entries.includes(".."));
+	});
+
+	it("keeps the dot and empty job ids inside the checkpoints directory", async () => {
+		await manager.save({ jobId: ".", status: "created" });
+		await manager.save({ jobId: "", status: "created" });
+		assert.strictEqual(
+			existsSync(join(rootDir, "checkpoint.json")),
+			false,
+			"the checkpoint escaped the checkpoints directory",
+		);
+		const entries = await readdir(join(rootDir, "checkpoints"));
+		assert.strictEqual(entries.length, 2);
+		for (const entry of entries) {
+			assert.ok(!entry.includes("/"));
+			assert.notStrictEqual(entry, ".");
+			assert.notStrictEqual(entry, "..");
+		}
+	});
+
+	it("gives two similar job ids separate directories", async () => {
+		await manager.save({ jobId: "a/b", status: "created" });
+		await manager.save({ jobId: "a_b", status: "created" });
+		const entries = await readdir(join(rootDir, "checkpoints"));
+		assert.strictEqual(entries.length, 2);
+		// Both checkpoints must still be loadable and keep their own id.
+		assert.strictEqual((await manager.load("a/b"))?.jobId, "a/b");
+		assert.strictEqual((await manager.load("a_b"))?.jobId, "a_b");
 	});
 });

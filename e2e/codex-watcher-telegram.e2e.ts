@@ -13,10 +13,17 @@
  * This test finds the MOST ACTIVE session by file SIZE, not just recency.
  *
  * Usage:
- *   bun run e2e/codex-watcher-telegram.test.ts
+ *   PI_HARNESS_E2E=1 bun run e2e/codex-watcher-telegram.e2e.ts
+ *
+ * This test sends REAL Telegram messages, so it is opt-in: it exits
+ * immediately unless PI_HARNESS_E2E=1 is set.
+ *
+ * It is a standalone script (not a `bun:test` spec), so it is named
+ * `*.e2e.ts`: a `*.test.ts` name would let `bun test e2e/` abort the whole
+ * runner on this early exit.
  *
  * Send real Telegram messages:
- *   TEST_TELEGRAM_SEND=true bun run e2e/codex-watcher-telegram.test.ts
+ *   PI_HARNESS_E2E=1 TEST_TELEGRAM_SEND=true bun run e2e/codex-watcher-telegram.e2e.ts
  *
  * Keys required:
  *   ~/.pi-harness-runtime/keys/telegram-bot-token.txt
@@ -26,6 +33,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+// This test talks to the real Telegram bot API. Keep it opt-in so a stray
+// `bun test e2e/` can never send messages.
+if (process.env.PI_HARNESS_E2E !== "1") {
+	console.log(
+		"SKIP: set PI_HARNESS_E2E=1 to run the Codex watcher Telegram E2E test",
+	);
+	process.exit(0);
+}
 
 // ---------------------------------------------------------------------------
 // Config

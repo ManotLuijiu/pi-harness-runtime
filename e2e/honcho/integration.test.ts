@@ -9,7 +9,9 @@
  * 5. MCP: Retrieve context (memory recall)
  * 
  * Usage:
- *   bun test e2e/honcho/integration.test.ts
+ *   PI_HARNESS_E2E=1 bun test e2e/honcho/integration.test.ts
+ *
+ * These tests talk to the real Honcho MCP server, so they are opt-in.
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
@@ -17,6 +19,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+
+// Real Honcho MCP calls: opt-in via PI_HARNESS_E2E=1.
+const describeE2E = process.env.PI_HARNESS_E2E === "1" ? describe : describe.skip;
 
 // Configuration
 const HONCHO_MCP_URL = "https://mcp.honcho.dev";
@@ -99,7 +104,7 @@ function execCli(args: string[]): string {
   });
 }
 
-describe("Honcho Integration E2E Tests", () => {
+describeE2E("Honcho Integration E2E Tests", () => {
   beforeAll(async () => {
     console.log("\n[Test Setup] Creating test workspace via CLI...");
     

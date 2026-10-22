@@ -8,12 +8,17 @@
  * 4. Verify uploaded content is accessible via presigned URL
  * 
  * Run:
- *   HARNESS_KEYS_DIR=~/.pi-harness-runtime/keys bun test e2e/r2-storage.test.ts
+ *   PI_HARNESS_E2E=1 HARNESS_KEYS_DIR=~/.pi-harness-runtime/keys bun test e2e/r2-storage.test.ts
+ *
+ * This test uploads real objects to R2, so it is opt-in.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 
-describe("@e2e R2 Storage", () => {
+// Real R2 uploads: opt-in via PI_HARNESS_E2E=1.
+const describeE2E = process.env.PI_HARNESS_E2E === "1" ? describe : describe.skip;
+
+describeE2E("@e2e R2 Storage", () => {
   // Test configuration
   const keysDir = process.env.HARNESS_KEYS_DIR || join(process.env.HOME || "/home/frappe", ".pi-harness-runtime", "keys");
   

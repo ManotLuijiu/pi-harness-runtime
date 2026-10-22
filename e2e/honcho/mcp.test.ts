@@ -7,13 +7,18 @@
  * Note: MCP uses SSE streaming. This test uses fetch with text/event-stream.
  * 
  * Usage:
- *   bun test e2e/honcho/mcp.test.ts
+ *   PI_HARNESS_E2E=1 bun test e2e/honcho/mcp.test.ts
+ *
+ * These tests talk to the real Honcho MCP server, so they are opt-in.
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+// Real Honcho MCP calls: opt-in via PI_HARNESS_E2E=1.
+const describeE2E = process.env.PI_HARNESS_E2E === "1" ? describe : describe.skip;
 
 // MCP Configuration
 const HONCHO_MCP_URL = "https://mcp.honcho.dev";
@@ -97,7 +102,7 @@ async function sendMcpRequest(body: object): Promise<unknown> {
   throw new Error("No result in MCP response");
 }
 
-describe("Honcho MCP E2E Tests", () => {
+describeE2E("Honcho MCP E2E Tests", () => {
   let sessionId = "";
   
   beforeAll(async () => {
