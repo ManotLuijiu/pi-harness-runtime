@@ -14,6 +14,13 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { platform, totalmem, freemem } from "os";
+import {
+	describeServerState,
+	describeWorkspaceMode,
+	formatEnvForAgentResult,
+	formatEnvStatusLine as formatStatusLine,
+} from "./workspace-env-format.js";
+import type { EnvEvidence, WorkspaceEnvResult, WorkspaceMode } from "./workspace-env-format.js";
 
 const STORE_DIR = join(process.env.HOME || "/home/frappe", ".pi-harness-runtime");
 
@@ -63,39 +70,16 @@ function initDatabase(): DatabaseSync {
 }
 
 /**
- * Workspace mode with explicit states
+ * The mode/evidence types and every human readable rendering of the workspace
+ * environment live in workspace-env-format.ts. They are re-exported here so
+ * the existing import paths keep working.
  */
-export type WorkspaceMode = "development" | "production" | "test" | "unknown";
-
-/**
- * Evidence source for mode detection
- */
-export interface EnvEvidence {
-	source: "process.env" | ".env file" | "package.json" | "command" | "detection";
-	key: string;
-	value: string;
-	timestamp: number;
-}
-
-/**
- * Workspace environment result
- */
-export interface WorkspaceEnvResult {
-	workspacePath: string;
-	mode: WorkspaceMode;
-	evidence: EnvEvidence[];
-	hasDevScript: boolean;
-	hasBuildScript: boolean;
-	packageManager: string | null;
-	devServerRunning: boolean;
-	buildServerRunning: boolean;
-	ramTotalGb: number | null;
-	ramAvailableGb: number | null;
-	ramEffectiveLimitGb: number | null;
-	lowRamWarning: boolean;
-	buildAllowed: boolean;
-	detectedAt: number;
-}
+export {
+	describeServerState,
+	describeWorkspaceMode,
+	formatEnvForAgentResult,
+};
+export type { EnvEvidence, WorkspaceEnvResult, WorkspaceMode };
 
 /**
  * Parse dotenv file without loading secrets
@@ -191,31 +175,22 @@ function determineMode(
 	// Explicit process.env takes highest priority (for build processes)
 	if (processEnv) {
 		const env = processEnv.toLowerCase();
+		// The evidence is recorded for EVERY value, including one that names
+		// no known mode ("staging"): the label then says which NODE_ENV could
+		// not be interpreted instead of claiming there is none.
+		evidence.push({
+			source: "process.env",
+			key: "NODE_ENV",
+			value: env,
+			timestamp: Date.now(),
+		});
 		if (env === "production") {
-			evidence.push({
-				source: "process.env",
-				key: "NODE_ENV",
-				value: env,
-				timestamp: Date.now(),
-			});
 			return "production";
 		}
 		if (env === "development" || env === "dev") {
-			evidence.push({
-				source: "process.env",
-				key: "NODE_ENV",
-				value: env,
-				timestamp: Date.now(),
-			});
 			return "development";
 		}
 		if (env === "test") {
-			evidence.push({
-				source: "process.env",
-				key: "NODE_ENV",
-				value: env,
-				timestamp: Date.now(),
-			});
 			return "test";
 		}
 	}
@@ -474,59 +449,12 @@ export function revalidateWorkspaceEnv(workspacePath: string): WorkspaceEnvResul
  * Format workspace env as agent-readable message
  */
 export function formatEnvForAgent(workspacePath: string): string {
-	const env = getWorkspaceEnv(workspacePath);
-
-	let message = `[Workspace Environment]\n`;
-	message += `Mode: ${env.mode.toUpperCase()}\n`;
-
-	if (env.evidence.length > 0) {
-		const sources = env.evidence.map((e) => `${e.source}:${e.value}`).join(", ");
-		message += `Evidence: ${sources}\n`;
-	}
-
-	message += `Dev script: ${env.hasDevScript ? "yes" : "no"}\n`;
-	message += `Build script: ${env.hasBuildScript ? "yes" : "no"}\n`;
-
-	if (env.devServerRunning) {
-		message += `Dev server: running\n`;
-	}
-	if (env.buildServerRunning) {
-		message += `Build server: running\n`;
-	}
-
-	if (env.ramTotalGb !== null) {
-		const ramStr = env.ramAvailableGb !== null
-			? `${env.ramAvailableGb}/${env.ramTotalGb}GB available`
-			: `${env.ramTotalGb}GB total`;
-		message += `RAM: ${ramStr}\n`;
-		if (env.lowRamWarning) {
-			message += `WARNING: Low RAM - avoid parallel build + dev\n`;
-		}
-	}
-
-	message += `\n`;
-	message += `Build allowed: ${env.buildAllowed ? "yes" : "no - requires explicit request"}\n`;
-
-	if (env.mode === "unknown") {
-		message += `\nNOTE: Environment unknown. Explicitly ask user before build.\n`;
-	}
-
-	return message;
+	return formatEnvForAgentResult(getWorkspaceEnv(workspacePath));
 }
 
 /**
  * Format workspace env as compact status line for UI
  */
 export function formatEnvStatusLine(env: WorkspaceEnvResult): string {
-	const mode = env.mode.toUpperCase();
-	const devStatus = env.devServerRunning ? "running" : (env.hasDevScript ? "available" : "none");
-	const buildStatus = env.buildServerRunning ? "running" : (env.hasBuildScript ? "explicit request" : "none");
-	const ramStr = env.ramAvailableGb !== null ? `${env.ramAvailableGb}/${env.ramTotalGb}` : "";
-
-	let status = `Workspace: ${mode} | dev server: ${devStatus} | build: ${buildStatus}`;
-	if (ramStr) {
-		status += ` | RAM: ${ramStr}`;
-	}
-
-	return status;
+	return formatStatusLine(env);
 }

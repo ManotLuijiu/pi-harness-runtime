@@ -9,38 +9,15 @@
  * Stores detected environment in SQLite for agent reference.
  * Uses synchronous directory creation and exception-safe operations.
  */
+import { describeServerState, describeWorkspaceMode, formatEnvForAgentResult } from "./workspace-env-format.js";
+import type { EnvEvidence, WorkspaceEnvResult, WorkspaceMode } from "./workspace-env-format.js";
 /**
- * Workspace mode with explicit states
+ * The mode/evidence types and every human readable rendering of the workspace
+ * environment live in workspace-env-format.ts. They are re-exported here so
+ * the existing import paths keep working.
  */
-export type WorkspaceMode = "development" | "production" | "test" | "unknown";
-/**
- * Evidence source for mode detection
- */
-export interface EnvEvidence {
-    source: "process.env" | ".env file" | "package.json" | "command" | "detection";
-    key: string;
-    value: string;
-    timestamp: number;
-}
-/**
- * Workspace environment result
- */
-export interface WorkspaceEnvResult {
-    workspacePath: string;
-    mode: WorkspaceMode;
-    evidence: EnvEvidence[];
-    hasDevScript: boolean;
-    hasBuildScript: boolean;
-    packageManager: string | null;
-    devServerRunning: boolean;
-    buildServerRunning: boolean;
-    ramTotalGb: number | null;
-    ramAvailableGb: number | null;
-    ramEffectiveLimitGb: number | null;
-    lowRamWarning: boolean;
-    buildAllowed: boolean;
-    detectedAt: number;
-}
+export { describeServerState, describeWorkspaceMode, formatEnvForAgentResult, };
+export type { EnvEvidence, WorkspaceEnvResult, WorkspaceMode };
 /**
  * Detect and store workspace environment
  */

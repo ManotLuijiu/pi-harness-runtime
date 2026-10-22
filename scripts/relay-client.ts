@@ -8,20 +8,31 @@
  * - Typed message handling
  * 
  * Usage:
- *   RELAY_WS_URL=wss://webhook.bunchee.online:8444 \
- *   RELAY_AUTH_TOKEN=change-me-in-production \
  *   bun run scripts/relay-client.ts
+ *
+ * The endpoint and the token are resolved from the environment and the key
+ * files (see resolveRelayEndpoint); no URL or token has to be passed in.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { RelayClient } from "../packages/relay/src/client";
+import { describeRelayEndpoint, resolveRelayEndpoint } from "../packages/relay/src/relay-endpoint";
 import type { CallbackPayload, SnapshotMessage } from "../packages/relay/src/types";
 
 // Configuration
-const RELAY_WS_URL = process.env.RELAY_WS_URL || "wss://webhook.bunchee.online:8444";
-const RELAY_AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
+// The relay endpoint is resolved from the SAME sources the relay server uses
+// (env -> dedicated key file -> the telegram webhook url/secret), so the
+// client and the server always agree on the URL and the token.
+// The token value is never logged - only the source it came from.
+const KEYS_DIR = join(homedir(), ".pi-harness-runtime", "keys");
+const RELAY_ENDPOINT = resolveRelayEndpoint({ keysDir: KEYS_DIR });
+// The resolver already consulted the environment - a value it rejected must
+// NOT be re-used here, otherwise the client would connect to an endpoint the
+// resolver deliberately skipped.
+const RELAY_WS_URL = RELAY_ENDPOINT.url ?? "";
+const RELAY_AUTH_TOKEN = RELAY_ENDPOINT.token ?? "";
 const JOB_PIPE_FILE = join(homedir(), ".pi-harness-runtime", "job-commands.jsonl");
 
 // ============================================================================
@@ -96,10 +107,19 @@ async function processCallback(callback: CallbackPayload): Promise<void> {
 // ============================================================================
 
 async function main() {
+  // Validate BEFORE printing the banner - an unconfigured run must not print
+  // an empty "Server:" line.
+  if (!RELAY_WS_URL || !RELAY_AUTH_TOKEN) {
+    console.error("[Client] Relay endpoint not configured");
+    console.error(`[Client] ${RELAY_ENDPOINT.missing.join("; ")}`);
+    process.exit(1);
+  }
+
   console.log("===========================================");
   console.log("Real-time Callback Relay Client - Streaming v2");
   console.log("===========================================");
   console.log(`Server: ${RELAY_WS_URL}`);
+  console.log(`Endpoint: ${describeRelayEndpoint(RELAY_ENDPOINT)}`);
   console.log("===========================================");
 
   // Create client with typed callbacks

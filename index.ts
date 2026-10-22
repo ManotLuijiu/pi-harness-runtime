@@ -58,6 +58,7 @@ import { aggregateWindows } from "./windows.ts";
 // Relay client for streaming callbacks (t3code-style two-way communication)
 import { RelayClient } from "./packages/relay/src/client.js";
 import type { CallbackPayload } from "./packages/relay/src/types.js";
+import { describeRelayEndpoint, resolveRelayEndpoint } from "./packages/relay/src/relay-endpoint.js";
 import { renderStatus } from "./renderer.ts";
 import {
 	JobStateMachine,
@@ -1559,32 +1560,33 @@ function setRelayTelegramAdapter(adapter: any) {
  * to the adapter for proper greeting verification and handling.
  */
 async function initRelayStream(): Promise<void> {
-	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-	const keysDir = join(homedir, ".pi-harness-runtime", "keys");
+	// Use the OS home directory - the relay server resolves its key files
+	// the same way, so both sides always look in the same place.
+	const keysDir = join(homedir(), ".pi-harness-runtime", "keys");
 
-	// Check for relay WebSocket URL
-	const relayWsUrlPath = join(keysDir, "relay-ws-url.txt");
-	const relayTokenPath = join(keysDir, "relay-auth-token.txt");
+	// Resolve the relay endpoint from the SAME sources the relay server uses
+	// (env -> dedicated key file -> the telegram webhook url/secret), so the
+	// client and the server always agree on the URL and the token.
+	// The token value is never logged - only the source it came from.
+	const endpoint = resolveRelayEndpoint({ keysDir });
 
-	if (!existsSync(relayWsUrlPath) || !existsSync(relayTokenPath)) {
-		logToFile("[RelayStream]", "Relay WebSocket URL or token not configured - skipping streaming");
+	if (!endpoint.url || !endpoint.token) {
+		logToFile(
+			"[RelayStream]",
+			`Relay endpoint not configured - skipping streaming (${endpoint.missing.join("; ")})`,
+		);
 		return;
 	}
 
-	const relayWsUrl = readFileSync(relayWsUrlPath, "utf-8").trim();
-	const relayToken = readFileSync(relayTokenPath, "utf-8").trim();
-
-	if (!relayWsUrl || !relayToken) {
-		logToFile("[RelayStream]", "Relay URL or token is empty - skipping streaming");
-		return;
-	}
-
-	logToFile("[RelayStream]", `Connecting to relay at ${relayWsUrl}`);
+	logToFile(
+		"[RelayStream]",
+		`Connecting to relay at ${endpoint.url} (${describeRelayEndpoint(endpoint)})`,
+	);
 
 	_relayClient = new RelayClient(
 		{
-			serverUrl: relayWsUrl,
-			token: relayToken,
+			serverUrl: endpoint.url,
+			token: endpoint.token,
 			// Keep retrying in the background: the relay server may not be up
 			// yet when the harness starts.
 			retryOnConnectFailure: true,
