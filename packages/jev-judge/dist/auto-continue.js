@@ -50,16 +50,35 @@ export class AutoContinueJudge {
                     instructions: "Risk level if agent proceeds without user confirmation",
                     min: 1,
                     max: 5,
+                    criteria: [
+                        "1 - minimal risk, nothing can go wrong",
+                        "2 - low risk, easily reversible",
+                        "3 - moderate risk, partly reversible",
+                        "4 - high risk, hard to reverse",
+                        "5 - severe risk, irreversible damage possible",
+                    ],
                 },
                 urgency: {
                     type: "choice",
                     instructions: "How urgent are the remaining tasks?",
                     options: ["critical", "high", "normal", "low"],
+                    optionDescriptions: {
+                        critical: "must be handled right now, everything else waits",
+                        high: "should be handled today",
+                        normal: "should be handled within the current work cycle",
+                        low: "can wait until the current work cycle is done",
+                    },
                 },
                 estimatedImpact: {
                     type: "choice",
                     instructions: "Impact if the agent makes wrong decision by proceeding",
                     options: ["minimal", "moderate", "significant", "major"],
+                    optionDescriptions: {
+                        minimal: "a small amount of extra work",
+                        moderate: "noticeable rework, still contained",
+                        significant: "substantial rework or lost work",
+                        major: "irreversible loss, data loss or a broken system",
+                    },
                 },
                 waitBenefit: {
                     type: "noul",
@@ -70,6 +89,13 @@ export class AutoContinueJudge {
                     instructions: "How complex are the remaining tasks compared to completed ones?",
                     min: 1,
                     max: 5,
+                    criteria: [
+                        "1 - trivial, a single mechanical step",
+                        "2 - simple, a few well known steps",
+                        "3 - moderate, some design decisions needed",
+                        "4 - complex, many interacting parts",
+                        "5 - very complex, unknown territory",
+                    ],
                 },
             });
             return this.buildDecision(result, taskState);

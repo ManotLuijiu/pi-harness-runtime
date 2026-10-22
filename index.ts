@@ -152,18 +152,18 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Check if Jev API key is available (env var or keys file)
 		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
 		const keysDir = `${homedir}/.pi-harness-runtime/keys`;
-		const { readFileSync, existsSync, mkdirSync } = await import("fs");
+		const { existsSync, mkdirSync } = await import("fs");
 
 		// Auto-create directory if doesn't exist
 		if (!existsSync(keysDir)) {
 			mkdirSync(keysDir, { recursive: true });
 		}
 
-		const hasEnvKey =
-			process.env.TYPESAFE_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
-		const hasFileKey =
-			existsSync(`${keysDir}/jev-api-key.txt`) &&
-			readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim().length > 0;
+		// Resolve the provider chain. Every credential stays bound to its own
+		// provider: a TypeSafe key is never sent to OpenRouter and an OpenRouter
+		// key is never sent to the TypeSafe API.
+		const { resolveJevProviders } = await import("./packages/jev-judge/dist/index.js");
+		const jevProviders = resolveJevProviders({ keysDir });
 
 		// Create pending question controller - works independently of Jev
 		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
@@ -179,19 +179,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 		logStartup("[pi-harness] Delegation harness initialized");
 
-		if (!hasEnvKey && !hasFileKey) {
+		if (jevProviders.length === 0) {
 			addHarnessMessage("Jev", "API key missing; question detection active, auto-continue unavailable", "warn", [
-				"Set TYPESAFE_API_KEY or ~/.pi-harness-runtime/keys/jev-api-key.txt to enable auto-continue.",
+				"Set TYPESAFE_API_KEY (or OPENROUTER_API_KEY), or write the key to ~/.pi-harness-runtime/keys/typesafe-api-key.txt (or openrouter-api-key.txt), to enable auto-continue.",
 			]);
-			logToFile("[auto-continue]", "No Jev API key found, but question detection is active. Set TYPESAFE_API_KEY run: echo \"{api_key}\" > ~/.pi-harness-runtime/keys/jev-api-key.txt");
+			logToFile("[auto-continue]", "No Jev API key found, but question detection is active. Set TYPESAFE_API_KEY or write the key to ~/.pi-harness-runtime/keys/typesafe-api-key.txt");
 			// Don't return - question handling still works without Jev
 		}
 
-		// Resolve the actual API key: env takes priority, file is fallback
-		const resolvedApiKey = hasEnvKey ||
-			(hasFileKey ? readFileSync(`${keysDir}/jev-api-key.txt`, "utf8").trim() : "");
-
-		const mod = await import("./packages/jev-judge/src/auto-continue.js");
+		// The dist build is used on purpose: it is the published build output
+		// of the package. The source tree is not shipped as compiled
+		// JavaScript, so importing "src/auto-continue.js" would depend on
+		// build artifacts that are not part of the package.
+		const mod = await import("./packages/jev-judge/dist/auto-continue.js");
 
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
@@ -543,7 +543,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				_inferenceInProgress = true;
 
 				const judge = new mod.AutoContinueJudge({
-					apiKey: resolvedApiKey,
+					providers: jevProviders,
 					proceedThreshold: 0.7,
 					maxWaitMinutes: 30,
 				});
@@ -669,12 +669,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// --- task-intake: Automatic todo capture from user requests -----------
 		let taskIntakeController: import("./packages/jev-judge/dist/task-intake.js").TaskIntakeController | null = null;
 
-		// Create task intake controller if Jev API key is available
-		if (resolvedApiKey) {
+		// Create task intake controller if a Jev provider is available
+		if (jevProviders.length > 0) {
 			try {
 				const { TaskIntakeController } = await import("./packages/jev-judge/dist/task-intake.js");
 				taskIntakeController = new TaskIntakeController({
-					apiKey: resolvedApiKey,
+					providers: jevProviders,
 					dispatch: async (content: string) => {
 						// Queue for next turn so agent processes after current work completes
 						await pi.sendUserMessage(content, { deliverAs: "followUp" });
@@ -940,15 +940,33 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
 		addHarnessMessage("Jev", "auto-continue configured (verifying API...)", "ok");
 
-		// Verify API key works with a lightweight health check
+		// Verify the API works with a health check that exercises every
+		// question type the auto-continue judge uses. A noul only check would
+		// pass while the choice and score questions of the real decision were
+		// rejected by the API.
 		try {
 			const { JevJudge } = await import("./packages/jev-judge/dist/index.js");
-			const judge = new JevJudge({ apiKey: resolvedApiKey });
-			// Lightweight verification - ask a simple question
-			await judge.evaluate("health check", {
-				test: { type: "noul" as const, instructions: "Is this a test?" }
+			const judge = new JevJudge({ providers: jevProviders });
+			const health = await judge.evaluate("health check", {
+				noul: { type: "noul" as const, instructions: "Is this a test?" },
+				choice: {
+					type: "choice" as const,
+					instructions: "Pick one",
+					options: ["yes", "no"],
+				},
+				score: {
+					type: "score" as const,
+					instructions: "How confident is the test?",
+					min: 1,
+					max: 5,
+					criteria: ["1 - no", "2 - low", "3 - medium", "4 - high", "5 - certain"],
+				},
 			});
-			addHarnessMessage("Jev", "auto-continue ready (API verified)", "ok");
+			addHarnessMessage(
+				"Jev",
+				`auto-continue ready (API verified, model ${health.model} via ${health.provider})`,
+				"ok"
+			);
 		} catch (verifyErr) {
 			addHarnessMessage("Jev", "auto-continue ready (API verification failed)", "warn", [
 				`Error: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`,

@@ -6,12 +6,17 @@
  * - Primary: TypeSafe direct API (https://api.typesafe.ai/v1/systemone)
  * - Fallback: OpenRouter API (https://openrouter.ai/api/v1)
  *
+ * Every credential is bound to its own provider: a TypeSafe key is only ever
+ * sent to the TypeSafe API and an OpenRouter key only to OpenRouter. The
+ * fallback is explicit - the next provider is only used when the previous one
+ * failed with a retryable error.
+ *
  * @example
  * ```typescript
- * import { JevJudge } from "@pi-harness/jev-judge";
+ * import { JevJudge, resolveJevProviders } from "@pi-harness/jev-judge";
  *
- * // Auto-detects TypeSafe vs OpenRouter based on API key and baseUrl
- * const judge = new JevJudge({ apiKey: process.env.TYPESAFE_API_KEY! });
+ * // Provider chain built from the environment / key files
+ * const judge = new JevJudge({ providers: resolveJevProviders() });
  *
  * // Ask multiple questions at once
  * const result = await judge.evaluate(
@@ -29,7 +34,7 @@
  * console.log(result.decisions.isUrgent.noul); // 0.92
  * ```
  */
-import type { JevJudgeConfig, JevQuestions, JevEvaluationResult, ThresholdDecision } from "./types.js";
+import type { JevJudgeConfig, JevQuestions, JevEvaluationResult, ThresholdDecision, JevProviderConfig } from "./types.js";
 /**
  * Environment variable keys for API keys
  */
@@ -37,17 +42,57 @@ export declare const ENV_KEYS: {
     readonly TYPESAFE_API_KEY: "TYPESAFE_API_KEY";
     readonly OPENROUTER_API_KEY: "OPENROUTER_API_KEY";
 };
+/** Default TypeSafe endpoint. */
+export declare const TYPESAFE_BASE_URL = "https://api.typesafe.ai";
+/** Default TypeSafe model (an alias served by the System One models). */
+export declare const TYPESAFE_DEFAULT_MODEL = "jev-latest";
+/** Default OpenRouter endpoint. */
+export declare const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /**
- * Get API key from environment or keys file
- * Priority: TYPESAFE_API_KEY env > OPENROUTER_API_KEY env > keys file
+ * Default OpenRouter model.
+ *
+ * `typesafe/jev-router` is the only TypeSafe model published on OpenRouter;
+ * the previous default ("typesafe/systemone") is not in the catalog.
+ */
+export declare const OPENROUTER_DEFAULT_MODEL = "typesafe/jev-router";
+/**
+ * True when the key looks like an OpenRouter key.
+ */
+export declare function looksLikeOpenRouterKey(apiKey: string): boolean;
+/**
+ * Get the API key of the FIRST configured provider.
+ *
+ * The order is TypeSafe first, then OpenRouter. The returned key is NOT
+ * bound to a provider by this function - use `resolveJevProviders()` to get
+ * a provider chain where every credential belongs to its own endpoint.
+ *
+ * @deprecated Prefer `resolveJevProviders()`.
  */
 export declare function getApiKeyFromEnv(): string | undefined;
 /**
- * Check if Jev API key is available
+ * Resolve the provider chain from the environment and the key files.
+ *
+ * A provider is only included when its OWN credential is available:
+ * - TypeSafe: TYPESAFE_API_KEY, or the key file typesafe-api-key.txt
+ * - OpenRouter: OPENROUTER_API_KEY, or the key file openrouter-api-key.txt
+ *
+ * The legacy key file jev-api-key.txt is bound by the shape of the key it
+ * holds: an "sk-or-" key is an OpenRouter key, everything else is treated as
+ * a TypeSafe key. It is never sent to the wrong endpoint.
+ *
+ * The credentials are never crossed: the TypeSafe key is never sent to
+ * OpenRouter and the OpenRouter key is never sent to TypeSafe.
+ */
+export declare function resolveJevProviders(options?: {
+    env?: Record<string, string | undefined>;
+    keysDir?: string;
+}): JevProviderConfig[];
+/**
+ * Check if a Jev API key is available
  */
 export declare function hasJevApiKey(): boolean;
 /**
- * Create JevJudge with auto-detected API key from environment
+ * Create JevJudge with the provider chain resolved from the environment
  */
 export declare function createJevJudge(config?: Partial<JevJudgeConfig>): JevJudge;
 /**
@@ -58,19 +103,41 @@ export declare function createJevJudge(config?: Partial<JevJudgeConfig>): JevJud
  * - OpenRouter API (fallback for backwards compatibility)
  */
 export declare class JevJudge {
-    private typesafeJudge?;
-    private openrouterClient?;
     private config;
-    private provider;
+    private providers;
+    private typesafeJudges;
+    private openrouterClients;
     constructor(config: JevJudgeConfig);
     /**
+     * Build the provider chain.
+     *
+     * An explicit chain is used as-is. Otherwise the legacy single provider
+     * configuration is turned into a one element chain; the credential then
+     * belongs to the caller, who has to pass the matching baseUrl.
+     */
+    private resolveProviders;
+    /**
      * Evaluate state against questions
+     *
+     * The provider chain is tried in order. The next provider is only used
+     * when the previous one failed with a retryable error (network, timeout,
+     * rate limit, auth, 5xx). A request contract error is never retried on
+     * another provider: it is a bug that has to stay visible.
      *
      * @param state - The context/situation to evaluate (text or structured)
      * @param questions - Map of question_id -> question definition
      * @returns Evaluation result with decisions
      */
     evaluate<T extends string>(state: string | object, questions: JevQuestions<T>): Promise<JevEvaluationResult<T>>;
+    private evaluateWithTypeSafe;
+    /**
+     * Evaluate through OpenRouter.
+     *
+     * OpenRouter is an OpenAI compatible endpoint, so the questions are
+     * asked as a prompt and the answer is parsed as JSON. This path has its
+     * own contract and does not use the TypeSafe request format.
+     */
+    private evaluateWithOpenRouter;
     /**
      * Quick noul (yes/no) evaluation
      */
@@ -95,10 +162,16 @@ export declare class JevJudge {
     batchEvaluate<T extends string>(states: (string | object)[], questions: JevQuestions<T>, options?: {
         concurrency?: number;
     }): Promise<JevEvaluationResult<T>[]>;
+    /**
+     * The provider chain in use.
+     */
+    getProviders(): JevProviderConfig[];
     private buildDecision;
     private getConfidence;
 }
 export * from "./types.js";
+export { JevProviderError, isRetryableStatus, toProviderError } from "./provider-error.js";
+export type { JevProviderErrorOptions } from "./provider-error.js";
 export { E2EJudge } from "./e2e-judge.js";
 export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
@@ -108,8 +181,10 @@ export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { WrapUpResult } from "./wrap-up-judge.js";
 export { EnvironmentJudge } from "./environment-judge.js";
 export type { EnvironmentContext, EnvironmentDecision, SafetyCheck, EnvironmentConfig } from "./environment-judge.js";
-export { TypeSafeJudge, detectProvider } from "./typesafe-provider.js";
+export { TypeSafeJudge, detectProvider, providerForBaseUrl } from "./typesafe-provider.js";
 export type { TypeSafeConfig } from "./typesafe-provider.js";
+export { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, scorePositionToValue, validateQuestion, MAX_SCORE_LEVELS, } from "./typesafe-request.js";
+export type { ScoreScale, TypeSafeChoiceCriteria } from "./typesafe-request.js";
 export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
 export { createTodoProvider } from "./todo-provider.js";

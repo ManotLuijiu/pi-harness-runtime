@@ -6,7 +6,13 @@
  *
  * API: POST https://api.typesafe.ai/v1/systemone
  * Auth: Bearer token (TYPESAFE_API_KEY)
+ *
+ * The request contract (choice criteria as a dictionary, score questions with
+ * a mandatory rubric) is implemented in ./typesafe-request.ts; the mapping was
+ * verified against the live endpoint.
  */
+import { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, scorePositionToValue, validateQuestion, } from "./typesafe-request.js";
+import { JevProviderError, isRetryableStatus, isTransportError } from "./provider-error.js";
 /**
  * Default configuration
  */
@@ -36,42 +42,38 @@ export class TypeSafeJudge {
         const startTime = Date.now();
         // Convert state to string if object
         const stateStr = typeof state === "string" ? state : JSON.stringify(state);
-        // Build TypeSafe question format as a map (not array)
-        const questionsMap = {};
-        for (const [id, q] of Object.entries(questions)) {
-            const questionObj = q;
-            questionsMap[id] = {
-                type: questionObj.type,
-                instructions: questionObj.instructions,
-            };
-            if (questionObj.type === "choice") {
-                questionsMap[id].options = questionObj.options;
-                // For choice questions, criteria defines ordered preference levels
-                questionsMap[id].criteria = questionObj.options;
-            }
-            else if (questionObj.type === "score") {
-                questionsMap[id].min = questionObj.min ?? 0;
-                questionsMap[id].max = questionObj.max ?? 100;
-            }
-        }
+        // Build and validate the request. One invalid question fails the whole
+        // request on the API side, so contract problems are caught locally.
+        const { request, scoreScales } = this.buildRequest(stateStr, questions);
         // Call TypeSafe API directly
-        const response = await fetch(`${this.config.baseUrl}/v1/systemone`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${this.config.apiKey}`,
-            },
-            body: JSON.stringify({
-                model: this.config.model,
-                questions: questionsMap,
-                state: stateStr,
-            }),
-            signal: AbortSignal.timeout(this.config.timeoutMs),
-        });
+        let response;
+        try {
+            response = await fetch(`${this.config.baseUrl}/v1/systemone`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${this.config.apiKey}`,
+                },
+                // Only the wire format is sent: the API rejects unknown fields.
+                body: JSON.stringify(request),
+                signal: AbortSignal.timeout(this.config.timeoutMs),
+            });
+        }
+        catch (error) {
+            // A network failure, a timeout or an abort never reached a server
+            // that rejected the request: another provider can still serve it.
+            // Anything else (a malformed URL, a bug in our own code) is NOT
+            // retryable - it must not disappear behind a fallback.
+            throw new JevProviderError(`TypeSafe request failed: ${error instanceof Error ? error.message : String(error)}`, { provider: "typesafe", retryable: isTransportError(error), cause: error });
+        }
         const latencyMs = Date.now() - startTime;
         if (!response.ok) {
             const errorText = await response.text().catch(() => "Unknown error");
-            throw new Error(`TypeSafe API error ${response.status}: ${errorText}`);
+            throw new JevProviderError(`TypeSafe API error ${response.status}: ${errorText}`, {
+                provider: "typesafe",
+                status: response.status,
+                retryable: isRetryableStatus(response.status),
+            });
         }
         const data = await response.json();
         // Build decisions map
@@ -81,16 +83,67 @@ export class TypeSafeJudge {
             const answer = data.answers?.[questionId];
             // Reject missing required answers
             if (!answer) {
-                throw new Error(`TypeSafe API: missing answer for required question "${questionId}"`);
+                throw new JevProviderError(`TypeSafe API: missing answer for required question "${questionId}"`, { provider: "typesafe", retryable: false });
             }
-            const decision = this.buildDecision(questionId, questionData, answer);
+            const decision = this.buildDecision(questionId, questionData, answer, scoreScales[questionId]);
             decisions[questionId] = decision;
         }
         return {
             decisions,
             state: stateStr,
             latencyMs,
-            model: data.model ?? "typesafe/systemone",
+            model: data.model ?? this.config.model,
+        };
+    }
+    /**
+     * Build the API request and validate it against the API contract.
+     *
+     * The returned `request` is the wire format; `scoreScales` is local
+     * bookkeeping and is never sent to the API (it rejects unknown fields).
+     */
+    buildRequest(stateStr, questions) {
+        const questionsMap = {};
+        const scoreScales = {};
+        for (const [id, raw] of Object.entries(questions)) {
+            const questionObj = raw;
+            const scoreScale = validateQuestion(id, questionObj);
+            if (questionObj.type === "choice") {
+                questionsMap[id] = {
+                    type: "choice",
+                    instructions: questionObj.instructions,
+                    criteria: buildChoiceCriteria(id, questionObj),
+                };
+            }
+            else if (questionObj.type === "score") {
+                const { criteria } = buildScoreScale(id, questionObj);
+                questionsMap[id] = {
+                    type: "score",
+                    instructions: questionObj.instructions,
+                    criteria,
+                };
+                if (scoreScale)
+                    scoreScales[id] = scoreScale;
+            }
+            else {
+                questionsMap[id] = {
+                    type: "noul",
+                    instructions: questionObj.instructions,
+                };
+            }
+        }
+        if (Object.keys(questionsMap).length === 0) {
+            throw new JevProviderError("TypeSafe request invalid: no questions to ask", {
+                provider: "typesafe",
+                retryable: false,
+            });
+        }
+        return {
+            request: {
+                model: this.config.model,
+                state: stateStr,
+                questions: questionsMap,
+            },
+            scoreScales,
         };
     }
     /**
@@ -138,20 +191,20 @@ export class TypeSafeJudge {
     /**
      * Build JevDecision from TypeSafe answer
      */
-    buildDecision(questionId, question, answer) {
+    buildDecision(questionId, question, answer, scoreScale) {
         let response;
         let probability;
         switch (answer.type) {
             case "noul":
                 // FIX: Validate noul value is present and in range [0, 1]
                 if (answer.noul === undefined || answer.noul === null) {
-                    throw new Error(`TypeSafe API: missing noul value for question "${questionId}"`);
+                    throw new JevProviderError(`TypeSafe API: missing noul value for question "${questionId}"`, { provider: "typesafe", retryable: false });
                 }
                 if (typeof answer.noul !== "number" || isNaN(answer.noul)) {
-                    throw new Error(`TypeSafe API: invalid noul value for question "${questionId}": ${JSON.stringify(answer.noul)}`);
+                    throw new JevProviderError(`TypeSafe API: invalid noul value for question "${questionId}": ${JSON.stringify(answer.noul)}`, { provider: "typesafe", retryable: false });
                 }
                 if (answer.noul < 0 || answer.noul > 1) {
-                    throw new Error(`TypeSafe API: noul value out of range [0,1] for question "${questionId}": ${answer.noul}`);
+                    throw new JevProviderError(`TypeSafe API: noul value out of range [0,1] for question "${questionId}": ${answer.noul}`, { provider: "typesafe", retryable: false });
                 }
                 response = {
                     type: "noul",
@@ -160,9 +213,7 @@ export class TypeSafeJudge {
                 probability = answer.noul;
                 break;
             case "choice": {
-                const options = question.type === "choice"
-                    ? (question.options ?? [])
-                    : [];
+                const options = choiceCandidates(question);
                 // The model's choice MUST win. The previous expression
                 // (`answer.choice ?? question.type === "choice" ? options[0] : ""`)
                 // was parsed as `(answer.choice ?? (question.type === "choice")) ? options[0] : ""`,
@@ -194,17 +245,29 @@ export class TypeSafeJudge {
                 probability = answer.confidence ?? 0.5;
                 break;
             }
-            case "score":
-                const min = question.type === "score" ? question.min ?? 0 : 0;
-                const max = question.type === "score" ? question.max ?? 100 : 100;
+            case "score": {
+                if (answer.score === undefined || answer.score === null) {
+                    throw new JevProviderError(`TypeSafe API: missing score value for question "${questionId}"`, { provider: "typesafe", retryable: false });
+                }
+                if (typeof answer.score !== "number" || isNaN(answer.score)) {
+                    throw new JevProviderError(`TypeSafe API: invalid score value for question "${questionId}": ${JSON.stringify(answer.score)}`, { provider: "typesafe", retryable: false });
+                }
+                // The API answers with the probability-weighted POSITION in the
+                // rubric (0 .. levels-1), not with a value on the min/max scale.
+                const scale = scoreScale ?? {
+                    levels: 2,
+                    min: question.type === "score" ? question.min ?? 0 : 0,
+                    max: question.type === "score" ? question.max ?? 100 : 100,
+                };
+                const value = scorePositionToValue(answer.score, scale);
                 response = {
                     type: "score",
-                    score: answer.score ?? (min + max) / 2,
+                    score: value,
                     confidence: answer.confidence ?? 0.5,
                 };
-                // Normalize score to 0-1
-                probability = ((answer.score ?? (min + max) / 2) - min) / (max - min);
+                probability = scorePositionToProbability(answer.score, scale);
                 break;
+            }
             default:
                 // Fallback for unknown types
                 response = {
@@ -236,23 +299,51 @@ export class TypeSafeJudge {
     }
 }
 /**
- * Detect which provider to use based on API key or config
+ * The candidate names of a choice question.
+ *
+ * `options` is the ergonomic way to name the candidates; a question that only
+ * carries `criteria` is read from the criteria itself.
  */
-export function detectProvider(apiKey, baseUrl) {
-    // If baseUrl is explicitly set to TypeSafe, use TypeSafe
-    if (baseUrl?.includes("typesafe.ai")) {
+function choiceCandidates(question) {
+    if (question.type !== "choice")
+        return [];
+    const options = question.options;
+    if (options && options.length > 0)
+        return [...options];
+    const criteria = question.criteria;
+    if (Array.isArray(criteria))
+        return [...criteria];
+    if (criteria)
+        return Object.keys(criteria);
+    return [];
+}
+/**
+ * Determine the provider that owns a base URL.
+ *
+ * The provider is derived from the ENDPOINT, never from the shape of a key:
+ * guessing from a key is how an OpenRouter key ended up being sent to the
+ * TypeSafe API.
+ */
+export function providerForBaseUrl(baseUrl) {
+    if (baseUrl.includes("typesafe.ai"))
         return "typesafe";
-    }
-    // If using OpenRouter URL, use OpenRouter
-    if (baseUrl?.includes("openrouter")) {
+    if (baseUrl.includes("openrouter"))
         return "openrouter";
+    throw new Error(`Jev: unknown provider base URL "${baseUrl}". Use resolveJevProviders() or pass an explicit provider chain.`);
+}
+/**
+ * Detect which provider to use based on API key or config
+ *
+ * @deprecated The provider cannot be derived from a key - a bare key says
+ * nothing about the endpoint it belongs to, and guessing from its length is
+ * how an OpenRouter key ended up being sent to the TypeSafe API. Pass the
+ * `baseUrl` of the provider, or use `resolveJevProviders()` (see ./index.ts),
+ * which binds every credential to its own provider.
+ */
+export function detectProvider(_apiKey, baseUrl) {
+    if (!baseUrl) {
+        throw new Error("Jev: detectProvider() cannot guess the provider from the key. Pass the baseUrl of the provider or use resolveJevProviders().");
     }
-    // If key looks like TypeSafe (no specific pattern known), prefer TypeSafe
-    // TypeSafe keys are typically longer than OpenAI-compatible keys
-    if (apiKey.length > 50) {
-        return "typesafe";
-    }
-    // Default to OpenRouter for short keys (OpenAI-compatible)
-    return "openrouter";
+    return providerForBaseUrl(baseUrl);
 }
 //# sourceMappingURL=typesafe-provider.js.map

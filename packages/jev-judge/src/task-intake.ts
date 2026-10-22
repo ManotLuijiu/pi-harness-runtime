@@ -62,8 +62,9 @@ export class TaskIntakeController {
 			...config,
 		} as Required<TaskIntakeConfig>;
 
-		// Initialize Jev if API key is available
-		if (config.apiKey) {
+		// Initialize Jev when a provider is available (an explicit provider
+		// chain or a legacy single key)
+		if ((config.providers && config.providers.length > 0) || config.apiKey) {
 			this.jev = new JevJudge(config as JevJudgeConfig);
 		}
 	}
