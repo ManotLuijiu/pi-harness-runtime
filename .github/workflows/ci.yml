@@ -38,8 +38,21 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # The root suite runs with bun (see scripts/run-root-tests.mjs): the
+      # harness sources import each other with ".js" specifiers, and only bun
+      # resolves those to the TypeScript sources. Node would need the
+      # gitignored build artifacts, so a clean checkout cannot run it.
       - name: Run tests
         run: npm test
+
+      # These two files also run under node, which exercises the node branch
+      # of the TypeScript stripper (test/helpers/strip-types.mjs). The rest of
+      # the suite needs the compiled artifacts, so it cannot run under node in
+      # a clean checkout.
+      - name: Run the node-compatible test files
+        run: >
+          node --test test/extension-syntax.test.mjs
+          test/honcho-memory.test.mjs
 
       - name: Run harness tests
         run: npm run test:harness

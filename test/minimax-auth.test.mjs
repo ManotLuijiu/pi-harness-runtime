@@ -87,14 +87,16 @@ test("Chrome resolver returns an existing executable or fails with the documente
  * opt-in: it is slow (up to 90s) and needs a real browser. Run it with
  * PI_HARNESS_MINIMAX_AUTH_E2E=1 npm test
  */
-test({
-	name: "MiniMax auth can launch a persistent Chrome context and persist status",
-	timeout: 90_000,
-	skip:
-		process.env.PI_HARNESS_MINIMAX_AUTH_E2E === "1"
-			? false
-			: "opt-in: set PI_HARNESS_MINIMAX_AUTH_E2E=1 to run the browser flow",
-	async fn() {
+test(
+	"MiniMax auth can launch a persistent Chrome context and persist status",
+	{
+		timeout: 90_000,
+		skip:
+			process.env.PI_HARNESS_MINIMAX_AUTH_E2E === "1"
+				? false
+				: "opt-in: set PI_HARNESS_MINIMAX_AUTH_E2E=1 to run the browser flow",
+	},
+	async () => {
 		if (!chromeExecutable) {
 			throw new Error(
 				"Google Chrome is not installed - set PI_HARNESS_CHROME_PATH to run this test",
@@ -150,4 +152,4 @@ test({
 			}
 		}
 	},
-});
+);
