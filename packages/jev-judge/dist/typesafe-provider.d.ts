@@ -6,6 +6,10 @@
  *
  * API: POST https://api.typesafe.ai/v1/systemone
  * Auth: Bearer token (TYPESAFE_API_KEY)
+ *
+ * The request contract (choice criteria as a dictionary, score questions with
+ * a mandatory rubric) is implemented in ./typesafe-request.ts; the mapping was
+ * verified against the live endpoint.
  */
 import type { JevQuestions, JevEvaluationResult } from "./types.js";
 /**
@@ -30,6 +34,13 @@ export declare class TypeSafeJudge {
      * Evaluate state against questions using TypeSafe API
      */
     evaluate<T extends string>(state: string | object, questions: JevQuestions<T>): Promise<JevEvaluationResult<T>>;
+    /**
+     * Build the API request and validate it against the API contract.
+     *
+     * The returned `request` is the wire format; `scoreScales` is local
+     * bookkeeping and is never sent to the API (it rejects unknown fields).
+     */
+    private buildRequest;
     /**
      * Quick noul (yes/no) evaluation
      */
@@ -61,7 +72,21 @@ export declare class TypeSafeJudge {
     private getConfidence;
 }
 /**
- * Detect which provider to use based on API key or config
+ * Determine the provider that owns a base URL.
+ *
+ * The provider is derived from the ENDPOINT, never from the shape of a key:
+ * guessing from a key is how an OpenRouter key ended up being sent to the
+ * TypeSafe API.
  */
-export declare function detectProvider(apiKey: string, baseUrl?: string): "typesafe" | "openrouter";
+export declare function providerForBaseUrl(baseUrl: string): "typesafe" | "openrouter";
+/**
+ * Detect which provider to use based on API key or config
+ *
+ * @deprecated The provider cannot be derived from a key - a bare key says
+ * nothing about the endpoint it belongs to, and guessing from its length is
+ * how an OpenRouter key ended up being sent to the TypeSafe API. Pass the
+ * `baseUrl` of the provider, or use `resolveJevProviders()` (see ./index.ts),
+ * which binds every credential to its own provider.
+ */
+export declare function detectProvider(_apiKey: string, baseUrl?: string): "typesafe" | "openrouter";
 //# sourceMappingURL=typesafe-provider.d.ts.map

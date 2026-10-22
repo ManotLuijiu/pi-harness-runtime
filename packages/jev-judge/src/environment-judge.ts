@@ -8,7 +8,7 @@
  * Solution: Jev analyzes environment context to guide safe operations.
  */
 
-import { JevJudge, getApiKeyFromEnv } from "./index.js";
+import { JevJudge, resolveJevProviders } from "./index.js";
 import { logError } from "./file-logger.js";
 
 /**
@@ -71,10 +71,13 @@ export class EnvironmentJudge {
       prodPatterns: config.prodPatterns ?? DEFAULT_CONFIG.prodPatterns,
     } as Required<EnvironmentConfig>;
 
-    const apiKey = getApiKeyFromEnv();
-    if (apiKey) {
+    // Bind every credential to its own provider: a bare key cannot be
+    // attributed to an endpoint, which is how an OpenRouter key used to be
+    // sent to the TypeSafe API.
+    const providers = resolveJevProviders();
+    if (providers.length > 0) {
       try {
-        this.jev = new JevJudge({ apiKey });
+        this.jev = new JevJudge({ providers });
       } catch {
         // Jev not available
       }
