@@ -45,6 +45,10 @@ export declare class RelayServer {
      * Stop the relay server
      */
     stop(): Promise<void>;
+    /**
+     * Close the WebSocket server (if any) so it never keeps the process alive.
+     */
+    private closeWebSocketServer;
     private updateState;
     private handleMessage;
     private handleAuth;
@@ -63,7 +67,7 @@ export declare class RelayServer {
      * Broadcast callback to all connected clients
      * Uses stream batching for high-frequency events
      */
-    broadcastCallback(callback: CallbackPayload, batch?: boolean): void;
+    broadcastCallback(callback: CallbackPayload, batch?: boolean): number;
     /**
      * Send status to all clients
      */

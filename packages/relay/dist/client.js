@@ -32,6 +32,13 @@ export class RelayClient {
     reconnectDelay = DEFAULT_RECONNECT_DELAY_MS;
     reconnectTimer = null;
     connectTimeoutTimer = null;
+    // Pending connect() settlement - resolve/reject handed to the caller
+    pendingConnect = null;
+    connectPromise = null;
+    connectAttempt = 0; // Monotonic id of the current connect attempt
+    connectPromiseAttempt = 0; // Attempt id the current connectPromise belongs to
+    // Intentional shutdown - suppresses reconnect scheduling (deliberate stop, not network loss)
+    shuttingDown = false;
     // Heartbeat
     heartbeatTimer = null;
     // Snapshot tracking (t3code pattern)
@@ -61,26 +68,77 @@ export class RelayClient {
     // Lifecycle
     // ========================================================================
     /**
-     * Connect to relay server with automatic authentication
+     * Connect to relay server with automatic authentication.
+     *
+     * The returned Promise settles exactly once:
+     * - resolves when the server confirms authentication (the readiness milestone)
+     * - rejects on websocket error, authentication failure, close-before-ready,
+     *   an explicit disconnect(), or the connect deadline
      */
     async connect() {
         if (this.isConnected())
             return;
-        // Clear any existing connection
+        // Reuse only a LIVE connect attempt. Returning a settled promise would
+        // make `disconnect(); connect();` resolve with the previous rejection and
+        // open no socket at all.
+        if (this.connectPromise && this.pendingConnect) {
+            return this.connectPromise;
+        }
+        const promise = this.startConnect();
+        this.connectPromise = promise;
+        this.connectPromiseAttempt = this.connectAttempt;
+        try {
+            await promise;
+        }
+        finally {
+            if (this.connectPromise === promise)
+                this.connectPromise = null;
+        }
+    }
+    /**
+     * Open the socket and drive the connect/auth handshake.
+     * The promise settles via settleConnect() from the handshake handlers.
+     */
+    startConnect() {
+        // Close any stale socket without triggering reconnect handling
         this.cleanup();
+        this.shuttingDown = false;
         this.setState({ state: 'connecting' });
         const url = this.config.serverUrl;
+        const timeoutMs = this.config.connectTimeout ?? CONNECT_TIMEOUT_MS;
         console.log(`[RelayClient] Connecting to ${url}...`);
         return new Promise((resolve, reject) => {
-            // Set connect timeout
+            const attempt = ++this.connectAttempt;
+            this.pendingConnect = { resolve, reject, attempt };
+            // Deadline covers connection AND authentication (one timer for the whole handshake)
             this.connectTimeoutTimer = setTimeout(() => {
-                if (this.state.state === 'connecting') {
-                    this.ws?.close();
-                    reject(new Error('Connection timeout'));
-                }
-            }, CONNECT_TIMEOUT_MS);
-            this.ws = new WebSocket(url);
-            this.ws.on("open", () => {
+                if (!this.pendingConnect)
+                    return;
+                console.error(`[RelayClient] Connection timeout after ${timeoutMs}ms`);
+                this.settleConnect(new Error(`Connection timeout after ${timeoutMs}ms`));
+                this.closeSocket();
+                this.setState({ state: 'disconnected' });
+                this.scheduleReconnectAfterFailure();
+            }, timeoutMs);
+            let ws;
+            try {
+                ws = new WebSocket(url);
+            }
+            catch (err) {
+                // An invalid URL throws synchronously. The attempt must not be left
+                // pending: settle it, disarm the deadline and retry like any other
+                // failed connect.
+                const error = err instanceof Error ? err : new Error(String(err));
+                console.error("[RelayClient] WebSocket construction failed:", error.message);
+                this.settleConnect(error);
+                this.setState({ state: 'disconnected' });
+                this.scheduleReconnectAfterFailure();
+                return;
+            }
+            this.ws = ws;
+            ws.on("open", () => {
+                if (this.ws !== ws)
+                    return;
                 console.log("[RelayClient] WebSocket opened");
                 this.setState({ state: 'authenticating' });
                 // Send authentication
@@ -91,32 +149,85 @@ export class RelayClient {
                     timestamp: createTimestamp(),
                 });
             });
-            this.ws.on("message", (data) => {
+            ws.on("message", (data) => {
+                if (this.ws !== ws)
+                    return;
                 this.handleMessage(data.toString());
             });
-            this.ws.on("close", () => {
+            ws.on("close", (code) => {
+                // Ignore events from a socket that is no longer the active one: they
+                // would otherwise corrupt the live connection (state, heartbeat) and
+                // schedule a spurious reconnect.
+                if (this.ws !== ws)
+                    return;
                 console.log("[RelayClient] WebSocket closed");
+                this.ws = null;
+                const wasPending = this.pendingConnect !== null;
                 this.handleDisconnect();
+                if (wasPending) {
+                    this.settleConnect(new Error(`Connection closed before ready (code ${code})`));
+                    this.scheduleReconnectAfterFailure();
+                }
             });
-            this.ws.on("error", (err) => {
+            ws.on("error", (err) => {
+                if (this.ws !== ws)
+                    return;
                 console.error("[RelayClient] WebSocket error:", err.message);
                 this.callbacks.onError?.(err);
-                if (this.state.state === 'connecting' || this.state.state === 'authenticating') {
-                    clearTimeout(this.connectTimeoutTimer);
-                    reject(err);
-                }
+                const wasPending = this.pendingConnect !== null;
+                this.ws = null;
                 this.handleDisconnect();
+                if (wasPending) {
+                    this.settleConnect(err instanceof Error ? err : new Error(String(err)));
+                    this.scheduleReconnectAfterFailure();
+                }
             });
         });
+    }
+    /**
+     * Settle the pending connect() promise exactly once.
+     * Passing an error rejects; calling without an error resolves.
+     */
+    settleConnect(error) {
+        const pending = this.pendingConnect;
+        if (!pending)
+            return;
+        this.pendingConnect = null;
+        if (this.connectTimeoutTimer) {
+            clearTimeout(this.connectTimeoutTimer);
+            this.connectTimeoutTimer = null;
+        }
+        // The attempt is over: a later connect() must start a NEW attempt instead
+        // of handing out the settled promise. Only clear the promise when it
+        // belongs to THIS attempt - a late settle must not clobber a newer one.
+        if (this.connectPromiseAttempt === pending.attempt) {
+            this.connectPromise = null;
+            this.connectPromiseAttempt = 0;
+        }
+        if (error)
+            pending.reject(error);
+        else
+            pending.resolve();
     }
     /**
      * Disconnect from relay server
      */
     disconnect() {
         console.log("[RelayClient] Disconnecting...");
+        // Deliberate stop: do not schedule a reconnect afterwards
+        this.shuttingDown = true;
+        // Never leave a caller awaiting connect() hanging
+        this.settleConnect(new Error('Disconnected before ready'));
+        const wasConnected = this.state.state === 'connected';
         this.cleanup();
+        this.sessionId = null;
+        this.clientId = null;
+        this.snapshotReceived = false;
+        this.synchronizedReceived = false;
         this.setState({ state: 'disconnected' });
-        this.callbacks.onDisconnected?.();
+        // Only report a disconnect for a connection that was actually established.
+        if (wasConnected)
+            this.callbacks.onDisconnected?.();
     }
     /**
      * Send a message through the WebSocket
@@ -187,11 +298,21 @@ export class RelayClient {
             // Notify callback
             this.callbacks.onConnected?.(this.sessionId || '');
             console.log(`[RelayClient] Authenticated, sessionId: ${this.sessionId}`);
+            // Readiness milestone reached - settle the connect() promise
+            this.settleConnect();
         }
         else {
-            console.error(`[RelayClient] Auth failed: ${msg.payload.error}`);
-            this.callbacks.onError?.(new Error(msg.payload.error || 'Authentication failed'));
+            const message = msg.payload.error || 'Authentication failed';
+            console.error(`[RelayClient] Auth failed: ${message}`);
+            const error = new Error(message);
+            this.callbacks.onError?.(error);
+            // Reject the caller before tearing the socket down
+            this.settleConnect(error);
             this.disconnect();
+            // A rejected auth can be transient (a server restart with a rotated
+            // token, a temporarily misconfigured server) - retry it like any other
+            // failed connect.
+            this.scheduleReconnectAfterFailure();
         }
     }
     handleSnapshot(msg) {
@@ -225,10 +346,30 @@ export class RelayClient {
         this.stopHeartbeat();
         const wasConnected = this.state.state === 'connected';
         this.setState({ state: 'disconnected' });
+        // A deliberate stop must not trigger a reconnect
+        if (this.shuttingDown) {
+            console.log("[RelayClient] Disconnected (intentional stop, no reconnect)");
+            return;
+        }
         if (wasConnected) {
             this.callbacks.onDisconnected?.();
             this.scheduleReconnect();
         }
+    }
+    /**
+     * Schedule a reconnect after a FAILED connect attempt.
+     *
+     * The backoff loop only survives the loss of an established connection, so a
+     * refused server or a failed handshake would otherwise leave the client
+     * permanently disconnected. Opt-in via `config.retryOnConnectFailure`:
+     * an endless background retry loop is not always what the caller wants.
+     */
+    scheduleReconnectAfterFailure() {
+        if (this.shuttingDown)
+            return;
+        if (!this.config.retryOnConnectFailure)
+            return;
+        this.scheduleReconnect();
     }
     scheduleReconnect() {
         if (this.reconnectTimer)
@@ -250,6 +391,7 @@ export class RelayClient {
     // ========================================================================
     startHeartbeat() {
         this.stopHeartbeat();
+        const interval = this.config.keepAlive ?? HEARTBEAT_INTERVAL_MS;
         this.heartbeatTimer = setInterval(() => {
             if (this.isConnected()) {
                 this.send({
@@ -259,7 +401,7 @@ export class RelayClient {
                     timestamp: createTimestamp(),
                 });
             }
-        }, HEARTBEAT_INTERVAL_MS);
+        }, interval);
     }
     stopHeartbeat() {
         if (this.heartbeatTimer) {
@@ -284,10 +426,34 @@ export class RelayClient {
         // Reset snapshot state
         this.snapshotReceived = false;
         this.synchronizedReceived = false;
-        // Close WebSocket
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        // Close WebSocket (handlers detached so our own cleanup does not trigger
+        // disconnect/reconnect handling)
+        this.closeSocket();
+    }
+    /**
+     * Close the active socket without firing our own close/error handlers.
+     */
+    closeSocket() {
+        const ws = this.ws;
+        if (!ws)
+            return;
+        this.ws = null;
+        // Detach only OUR handlers so the own cleanup never triggers the
+        // disconnect/reconnect path.
+        ws.removeAllListeners("open");
+        ws.removeAllListeners("message");
+        ws.removeAllListeners("close");
+        ws.removeAllListeners("error");
+        // An 'error' without a listener throws inside the ws implementation.
+        ws.on("error", (err) => {
+            console.warn("[RelayClient] Socket error while closing:", err.message);
+        });
+        ws.on("close", () => { });
+        try {
+            ws.close();
+        }
+        catch (err) {
+            console.warn("[RelayClient] Error while closing socket:", String(err));
         }
     }
     // ========================================================================
@@ -298,6 +464,10 @@ export class RelayClient {
     }
     isReady() {
         return this.isConnected() && this.synchronizedReceived;
+    }
+    /** True once the server has sent the callback snapshot for this session. */
+    hasSnapshot() {
+        return this.snapshotReceived;
     }
     getSessionId() {
         return this.sessionId;

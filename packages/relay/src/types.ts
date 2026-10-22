@@ -19,6 +19,13 @@ export interface RelayConfig {
   keepAlive?: number;
   /** Connect timeout in ms */
   connectTimeout?: number;
+  /**
+   * Retry a FAILED connect attempt in the background (exponential backoff).
+   *
+   * Off by default: an endless background retry loop is not always what the
+   * caller wants, and `connect()` already rejects with the real error.
+   */
+  retryOnConnectFailure?: boolean;
 }
 
 export interface RelayTunnel {

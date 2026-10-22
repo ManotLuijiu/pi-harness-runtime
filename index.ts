@@ -660,6 +660,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Clean up controller on session shutdown
 		pi.on("session_shutdown", () => {
+			// Release the guard timer and the queue: a stopped session must not
+			// keep a timer alive nor block a later continuation.
+			todoContinuationController?.dispose?.();
 			todoContinuationController = null;
 		});
 
@@ -830,6 +833,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// --- agent_settled: Check todos and continue work ---------------
 		pi.on("agent_settled", async (_event, ctx) => {
+			// The turn that a previous continuation triggered has now settled:
+			// release the dispatch guard so the next decision can dispatch again.
+			// Keeping it set would block every later dispatch while still
+			// consuming the retry budget.
+			todoContinuationController?.releaseContinuationGuard?.("agent_settled");
+
 			// Don't continue if user is waiting for response
 			if (waitingForUserSince) {
 				todoContinuationController?.clearQueue();
@@ -857,8 +866,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				if (result.action === "continue" && result.nextItemId) {
 					updateAutoContinueStatus("CONTINUING");
-					await todoContinuationController.steerToContinue(result.nextItemId);
-					// Queue remains set while agent processes, cleared on agent_end
+					const steer = await todoContinuationController.steerToContinue(result.nextItemId);
+					if (!steer?.dispatched) {
+						// Surface an explicit stall reason instead of silently doing nothing
+						logToFile(
+							"[auto-continue]",
+							"Continuation not dispatched:",
+							steer?.reason ?? "unknown reason",
+							`(attempts=${steer?.attempts ?? 0}, blocked=${steer?.blockedDispatches ?? 0})`,
+						);
+						updateAutoContinueStatus("IDLE");
+					}
+					// Guard stays set while the agent processes the continuation and is
+					// released by releaseContinuationGuard() on the next agent_settled.
 				} else {
 					// Not continuing - clear queue to allow future decisions
 					todoContinuationController.clearQueue();
@@ -1547,6 +1567,9 @@ async function initRelayStream(): Promise<void> {
 		{
 			serverUrl: relayWsUrl,
 			token: relayToken,
+			// Keep retrying in the background: the relay server may not be up
+			// yet when the harness starts.
+			retryOnConnectFailure: true,
 		},
 		{
 			onConnected: (sessionId) => {
@@ -3664,6 +3687,49 @@ Run \`bd ready\` to see current bd issues.
 	// Store only the setStatus function, NOT the ctx itself.
 	// Storing ctx causes stale-context errors after pi reload/restart.
 	let footerSetStatus: ((key: string, value: string) => void) | null = null;
+	// The custom footer needs live session data (cwd, model, usage, context).
+	// The ctx is stored here as well, but the footer guards every access and
+	// keeps the last known values when the ctx has gone stale, so a replaced
+	// session can never break the rendering.
+	let latestFooterCtx: ExtensionContext | null = null;
+	let harnessFooterEnabled = true;
+
+	/**
+	 * Install the harness footer.
+	 *
+	 * Pi's built-in footer renders ALL `setStatus()` values on ONE shared line,
+	 * so the quota and the workspace environment summary used to be appended to
+	 * each other (and the workspace summary was truncated away on narrow
+	 * terminals). The harness footer gives the workspace summary its own row
+	 * while keeping Pi's footer information (cwd/branch, token stats, cost,
+	 * context usage, model/thinking state, other extensions' statuses).
+	 *
+	 * This function never rejects: every access to the (possibly stale) ctx is
+	 * guarded and failures are logged.
+	 */
+	async function installHarnessFooter(ctx: ExtensionContext): Promise<void> {
+		try {
+			if (!harnessFooterEnabled) return;
+			// A stale ctx throws on property access - read it defensively.
+			let mode: string | undefined;
+			try {
+				mode = ctx.mode;
+			} catch {
+				mode = undefined;
+			}
+			if (mode !== "tui") return;
+			const { createHarnessFooter } = await import(
+				"./packages/tui/src/harness-footer.js"
+			);
+			ctx.ui.setFooter((tui, theme, footerData) =>
+				createHarnessFooter(tui, theme, footerData, {
+					getContext: () => latestFooterCtx,
+				}),
+			);
+		} catch (e) {
+			logToFile("[pi-harness] harness footer install failed:", String(e));
+		}
+	}
 	let quotaAutoFetchInFlight = false;
 	let proactiveCompactInFlight = false;
 	let lastProactiveCompactAt = 0;
@@ -4577,6 +4643,49 @@ Run \`bd ready\` to see current bd issues.
 		},
 	});
 
+	// --- /harness-footer — Toggle harness custom footer vs built-in Pi footer ----
+	pi.registerCommand("harness-footer", {
+		description: "Toggle or restore footer: /harness-footer [harness|builtin]",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			// A stale ctx throws on property access - read it defensively.
+			let ctxMode: string | undefined;
+			try {
+				ctxMode = ctx.mode;
+			} catch {
+				ctxMode = undefined;
+			}
+			if (ctxMode !== "tui") {
+				ctx.ui.notify("Footer control is only available in TUI mode.", "info");
+				return;
+			}
+
+			const mode = args.trim().toLowerCase();
+			if (mode === "builtin" || mode === "pi") {
+				harnessFooterEnabled = false;
+				ctx.ui.setFooter(undefined);
+				ctx.ui.notify(
+					"Built-in Pi footer restored. The workspace summary shares the status line again.",
+					"info",
+				);
+			} else if (mode === "harness" || mode === "") {
+				harnessFooterEnabled = true;
+				latestFooterCtx = ctx;
+				await installHarnessFooter(ctx);
+				ctx.ui.notify(
+					"Harness custom footer installed. The workspace summary has its own row.",
+					"info",
+				);
+			} else {
+				ctx.ui.notify(
+					"Usage: /harness-footer [harness|builtin]\n" +
+					"  harness  — install the Harness footer (workspace summary on its own row)\n" +
+					"  builtin  — restore Pi's built-in footer",
+					"info",
+				);
+			}
+		},
+	});
+
 	// --- Harness widget state (like Todos extension) -----------------------
 	// Learn from Todos extension:
 	// - setWidget with placement: "aboveEditor" (fixed above input)
@@ -4652,6 +4761,7 @@ Run \`bd ready\` to see current bd issues.
 
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
+		latestFooterCtx = ctx;
 		refreshFooterStatus(
 			footerSetStatus,
 			tracker,
@@ -4659,6 +4769,9 @@ Run \`bd ready\` to see current bd issues.
 			hasCookieSource,
 			() => lastActiveProvider,
 		);
+
+		// Give the workspace environment summary its own footer row
+		void installHarnessFooter(ctx);
 
 		// Increment session generation to fence late callbacks
 		sessionGeneration++;
@@ -4722,6 +4835,7 @@ Run \`bd ready\` to see current bd issues.
 		noteActiveProvider(ctx.model?.id ?? null);
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
+		latestFooterCtx = ctx;
 		refreshFooterStatus(
 			footerSetStatus,
 			tracker,
@@ -4751,6 +4865,7 @@ Run \`bd ready\` to see current bd issues.
 	pi.on("session_compact", async (event, ctx) => {
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
+		latestFooterCtx = ctx;
 		proactiveCompactInFlight = false;
 		lastProactiveCompactAt = Date.now();
 		consecutiveCompactFailures = 0;
@@ -4931,13 +5046,18 @@ function refreshFooterStatus(
 		statusValue,
 	);
 
-	// Set workspace environment on separate row below quota
+	// The workspace environment summary is published under its own status key.
+	// Pi renders every status value on ONE shared line, so the harness footer
+	// (see installHarnessFooter) renders it on a dedicated row instead.
 	setWorkspaceEnvStatus(setStatus);
 }
 
 /**
  * Set workspace environment status line
- * This appears on a NEW LINE below the quota line
+ *
+ * Published under the `harness-workspace` status key. The harness footer
+ * renders it on its own row (Pi's built-in footer joins all status values
+ * into a single line).
  */
 async function setWorkspaceEnvStatus(setStatus: (key: string, value: string) => void) {
 	try {
