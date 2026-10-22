@@ -76,7 +76,7 @@ function makeSessionInfo(overrides: Partial<FooterSessionInfo> = {}): FooterSess
 }
 
 const QUOTA = "MiniMax: 5h: 98% left (resets 3 hr 15 min) - week: 85% left";
-const WORKSPACE = "Workspace: DEV | dev server: running | build: explicit request | RAM: 6.4/15";
+const WORKSPACE = "Workspace: DEVELOPMENT | dev server: running | build: not running (script available) | RAM: 6.4/15";
 
 // ---------------------------------------------------------------------------
 // Tests

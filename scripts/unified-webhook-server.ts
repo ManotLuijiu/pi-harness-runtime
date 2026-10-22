@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createRelayServer } from "../packages/relay/src/server";
+import { resolveRelayEndpoint } from "../packages/relay/src/relay-endpoint";
 import { generateMessageId } from "../packages/relay/src/types";
 import type { CallbackPayload } from "../packages/relay/src/types";
 import type { RelayServerOptions } from "../packages/relay/src/server";
@@ -37,8 +38,8 @@ interface Config {
     accessToken: string;
     channelSecret: string;
   };
-  /** Relay auth token used by WebSocket clients. */
-  relayAuthToken: string;
+  /** Relay auth token used by WebSocket clients (null = relay stays off). */
+  relayAuthToken: string | null;
 }
 
 const PORT = parseInt(process.env.PORT || "8443", 10);
@@ -46,24 +47,17 @@ const WS_PORT = parseInt(process.env.WS_PORT || "8444", 10);
 /**
  * Resolve the relay auth token.
  *
- * Priority: RELAY_AUTH_TOKEN env -> keys/relay-auth-token.txt ->
- * keys/telegram-webhook-secret.txt -> placeholder.
+ * The chain lives in packages/relay/src/relay-endpoint.ts and is SHARED with
+ * the relay client, so the two sides can never disagree about the credential:
+ * RELAY_AUTH_TOKEN env -> keys/relay-auth-token.txt ->
+ * keys/telegram-webhook-secret.txt.
  *
- * Never hardcode a real token here; secrets live in key files.
+ * Never hardcode a real token here; secrets live in key files. When no token
+ * can be found the relay is NOT started at all - a placeholder token would
+ * let anyone who knows it connect to the relay.
  */
-function resolveAuthToken(keysDir: string): string {
-  const fromEnv = process.env.RELAY_AUTH_TOKEN?.trim();
-  if (fromEnv) return fromEnv;
-
-  for (const name of ["relay-auth-token.txt", "telegram-webhook-secret.txt"]) {
-    const path = join(keysDir, name);
-    if (existsSync(path)) {
-      const value = readFileSync(path, "utf-8").trim();
-      if (value) return value;
-    }
-  }
-
-  return "change-me-in-production";
+function resolveAuthToken(keysDir: string): string | null {
+  return resolveRelayEndpoint({ keysDir }).token;
 }
 const SERVER_VERSION = process.env.SERVER_VERSION || "1.0.0";
 
@@ -377,14 +371,19 @@ async function main() {
   if (config.telegram) console.log("  /telegram - Telegram webhook");
   if (config.line) console.log("  /line     - LINE webhook");
   console.log(`  HTTP:      http://0.0.0.0:${PORT}`);
-  console.log(`  WebSocket: ws://0.0.0.0:${WS_PORT}`);
+  console.log(
+    config.relayAuthToken
+      ? `  WebSocket: ws://0.0.0.0:${WS_PORT}`
+      : `  WebSocket: disabled (no relay auth token configured)`,
+  );
   console.log("===========================================");
 
   // Create relay server with typed streaming
   const relayOptions: RelayServerOptions = {
     port: WS_PORT,
     host: "0.0.0.0",
-    authToken: config.relayAuthToken,
+    // Without a configured token the relay is never started - see below.
+    authToken: config.relayAuthToken ?? "",
     serverVersion: SERVER_VERSION,
     onStateChange: (change: { previous: { state: string }; current: { state: string }; timestamp: string }) => {
       console.log(`[Relay] State: ${change.previous.state} → ${change.current.state}`);
@@ -394,8 +393,16 @@ async function main() {
   const relayServer = createRelayServer(relayOptions);
 
   // Start WebSocket relay
-  await relayServer.start();
-  console.log("[Relay] WebSocket server started on port", WS_PORT);
+  if (config.relayAuthToken) {
+    await relayServer.start();
+    console.log("[Relay] WebSocket server started on port", WS_PORT);
+  } else {
+    // Fail closed: without a secret no client may connect. The HTTP webhook
+    // keeps working and the callbacks are queued on disk instead.
+    console.error(
+      "[Relay] No relay auth token configured (RELAY_AUTH_TOKEN, keys/relay-auth-token.txt or keys/telegram-webhook-secret.txt) - the relay WebSocket server will NOT start; callbacks are queued on disk.",
+    );
+  }
 
   // HTTP webhook server
   const server = createServer(async (req, res) => {

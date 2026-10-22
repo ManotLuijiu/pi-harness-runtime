@@ -502,16 +502,21 @@ bun run build && bun run start   # Server deployment
 
 **This info is shown in UI and delivered to agent context:**
 ```
-Workspace: DEV | dev server: running | build: explicit request only | RAM: 10/16
+Workspace: DEVELOPMENT | dev server: running | build: not running (script available) | RAM: 10/16
 ```
+
+The mode words are exactly what the detector emits: `DEVELOPMENT`, `PRODUCTION`,
+`TEST` or `UNKNOWN` (with its reason, e.g. `UNKNOWN (no explicit NODE_ENV)`).
+A dev/build script is a CAPABILITY, not a state: `not running (script available)`
+means the script exists, not that a server runs.
 
 **IMPORTANT Rules:**
 
 | State | Action |
 |-------|--------|
-| `Workspace: UNKNOWN` | Explicitly ask user before build |
-| `Workspace: DEV` | Use `dev` mode, don't auto-build |
-| `Workspace: PROD` | Build allowed, but confirm with user |
+| `Workspace: UNKNOWN (…)` | Explicitly ask user before build |
+| `Workspace: DEVELOPMENT` | Use `dev` mode, don't auto-build |
+| `Workspace: PRODUCTION` | Build allowed, but confirm with user |
 | `Low RAM` | Never run parallel build + dev |
 | `Dev server running` | Reuse it, don't restart |
 
