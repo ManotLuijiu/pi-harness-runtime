@@ -209,26 +209,88 @@ export class RelayServer {
    * Stop the relay server
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
-
-    // Close all client connections
+    // Close all client connections. Use terminate() so the underlying TCP
+    // socket is dropped immediately - a graceful close() can leave the socket
+    // half-open and make the server shutdown below hang forever.
     for (const session of this.clients.values()) {
-      session.ws.close();
+      try {
+        session.ws.terminate();
+      } catch {
+        // ignore: socket may already be gone
+      }
     }
     this.clients.clear();
 
     // Close event buffer timer
     if (this.eventBuffer.timer) {
       clearTimeout(this.eventBuffer.timer);
+      this.eventBuffer.timer = null;
     }
 
-    return new Promise((resolve) => {
-      this.server!.close(() => {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        // Never leave the fallback timer behind: it would keep the process
+        // alive for a second after every shutdown.
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
         this.running = false;
         console.log("[RelayServer] Server stopped");
         resolve();
-      });
+      };
+
+      if (!this.server) {
+        this.closeWebSocketServer();
+        finish();
+        return;
+      }
+
+      try {
+        this.server.close(() => finish());
+        // Drop keep-alive / upgraded sockets so close() can complete
+        this.server.closeAllConnections?.();
+      } catch {
+        // Server was not listening - nothing to close
+        this.closeWebSocketServer();
+        finish();
+        return;
+      }
+
+      // Never let a stuck socket hang the shutdown
+      fallbackTimer = setTimeout(() => {
+        // The server is still listening: force the handle down so the port is
+        // released and the process can exit.
+        try {
+          this.server?.closeAllConnections?.();
+          this.server?.unref?.();
+        } catch {
+          // ignore
+        }
+        this.closeWebSocketServer();
+        finish();
+      }, 1000);
     });
+
+    this.closeWebSocketServer();
+  }
+
+  /**
+   * Close the WebSocket server (if any) so it never keeps the process alive.
+   */
+  private closeWebSocketServer(): void {
+    const wss = this.wss;
+    if (!wss) return;
+    this.wss = null;
+    try {
+      wss.close();
+    } catch {
+      // ignore: already closed
+    }
   }
 
   // ========================================================================

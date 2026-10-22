@@ -11,3 +11,20 @@ export {
 	stripAnsi,
 	visibleWidth,
 } from "./harness-header.js";
+
+export {
+	createHarnessFooter,
+	collectSessionInfo,
+	collectUsageTotals,
+	formatCwdForFooter,
+	formatTokens,
+	HARNESS_AUTO_CONTINUE_STATUS_KEY,
+	HARNESS_QUOTA_STATUS_KEY,
+	HARNESS_WORKSPACE_STATUS_KEY,
+	type FooterRow,
+	type FooterSessionInfo,
+	type FooterUsageTotals,
+	type HarnessFooterOptions,
+	renderFooterRows,
+	sanitizeStatusText,
+} from "./harness-footer.js";

@@ -159,14 +159,41 @@ export class TypeSafeJudge {
                 };
                 probability = answer.noul;
                 break;
-            case "choice":
+            case "choice": {
+                const options = question.type === "choice"
+                    ? (question.options ?? [])
+                    : [];
+                // The model's choice MUST win. The previous expression
+                // (`answer.choice ?? question.type === "choice" ? options[0] : ""`)
+                // was parsed as `(answer.choice ?? (question.type === "choice")) ? options[0] : ""`,
+                // so a non-empty returned choice was DISCARDED and the first option was
+                // always selected.
+                const returned = typeof answer.choice === "string" ? answer.choice.trim() : "";
+                let selected;
+                if (returned.length > 0) {
+                    if (options.includes(returned)) {
+                        selected = returned;
+                    }
+                    else {
+                        // Case-insensitive match: keep the canonical option spelling.
+                        const canonical = options.find((option) => option.toLowerCase() === returned.toLowerCase());
+                        // No match: pass the model's value through unchanged instead of
+                        // silently substituting a different option.
+                        selected = canonical ?? returned;
+                    }
+                }
+                else {
+                    // The model returned no usable choice: fall back to the first option.
+                    selected = options[0] ?? "";
+                }
                 response = {
                     type: "choice",
-                    choice: answer.choice ?? question.type === "choice" ? question.options[0] : "",
+                    choice: selected,
                     confidence: answer.confidence ?? 0.5,
                 };
                 probability = answer.confidence ?? 0.5;
                 break;
+            }
             case "score":
                 const min = question.type === "score" ? question.min ?? 0 : 0;
                 const max = question.type === "score" ? question.max ?? 100 : 100;

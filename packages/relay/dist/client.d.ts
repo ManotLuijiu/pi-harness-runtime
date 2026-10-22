@@ -37,6 +37,11 @@ export declare class RelayClient {
     private reconnectDelay;
     private reconnectTimer;
     private connectTimeoutTimer;
+    private pendingConnect;
+    private connectPromise;
+    private connectAttempt;
+    private connectPromiseAttempt;
+    private shuttingDown;
     private heartbeatTimer;
     private snapshotReceived;
     private synchronizedReceived;
@@ -44,9 +49,24 @@ export declare class RelayClient {
     private setState;
     private isConnected;
     /**
-     * Connect to relay server with automatic authentication
+     * Connect to relay server with automatic authentication.
+     *
+     * The returned Promise settles exactly once:
+     * - resolves when the server confirms authentication (the readiness milestone)
+     * - rejects on websocket error, authentication failure, close-before-ready,
+     *   an explicit disconnect(), or the connect deadline
      */
     connect(): Promise<void>;
+    /**
+     * Open the socket and drive the connect/auth handshake.
+     * The promise settles via settleConnect() from the handshake handlers.
+     */
+    private startConnect;
+    /**
+     * Settle the pending connect() promise exactly once.
+     * Passing an error rejects; calling without an error resolves.
+     */
+    private settleConnect;
     /**
      * Disconnect from relay server
      */
@@ -64,12 +84,27 @@ export declare class RelayClient {
     private handleCallback;
     private handleStatus;
     private handleDisconnect;
+    /**
+     * Schedule a reconnect after a FAILED connect attempt.
+     *
+     * The backoff loop only survives the loss of an established connection, so a
+     * refused server or a failed handshake would otherwise leave the client
+     * permanently disconnected. Opt-in via `config.retryOnConnectFailure`:
+     * an endless background retry loop is not always what the caller wants.
+     */
+    private scheduleReconnectAfterFailure;
     private scheduleReconnect;
     private startHeartbeat;
     private stopHeartbeat;
     private cleanup;
+    /**
+     * Close the active socket without firing our own close/error handlers.
+     */
+    private closeSocket;
     getState(): ConnectionState;
     isReady(): boolean;
+    /** True once the server has sent the callback snapshot for this session. */
+    hasSnapshot(): boolean;
     getSessionId(): string | null;
     getClientId(): string | null;
 }
