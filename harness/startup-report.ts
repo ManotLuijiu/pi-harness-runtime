@@ -59,7 +59,10 @@ export function oneLineError(error: unknown, maxLength = 160): string {
 			"$1<redacted>",
 		)
 		// A url path: "/bot123456:ABC-DEF/", "/token/abc12345".
-		.replace(/\bbot\d{4,}:[A-Za-z0-9_\-]{4,}/g, "<redacted>")
+		// The boundary is "not a digit" and not a word boundary, so a
+		// token that is glued to a word ("xbot123:ABC-DEF") is redacted
+		// as well.
+		.replace(/(^|[^0-9])\d{6,}:[A-Za-z0-9_\-]{4,}/g, "$1<redacted>")
 		.replace(
 			/(\/((?:access_token|api[-_]?key|token|secret)[=/]))[A-Za-z0-9_\-:]{4,}/gi,
 			"$1<redacted>",
@@ -177,6 +180,21 @@ export function lineConfigurationReport(options: {
 	telegramConfigured?: boolean;
 	/** The fix commands for the missing LINE credentials. */
 	fixes: string[];
+	/**
+	 * The fix commands for the channel access token only.
+	 *
+	 * The startup check validates the ACCESS TOKEN. The user id is only the
+	 * recipient of the messages, so a failed check must not point at
+	 * line-user-id.txt.
+	 */
+	accessTokenFixes?: string[];
+	/**
+	 * Why the channel did not start (from the adapter).
+	 *
+	 * It says WHICH problem it is - an invalid or revoked token, a LINE API
+	 * failure or a network failure - and it never contains a credential.
+	 */
+	channelDiagnostic?: string | null;
 }): StartupReport | null {
 	if (!options.clientKeyFilePresent) return null;
 	const channelState = options.channelState ?? "not-started";
@@ -204,15 +222,27 @@ export function lineConfigurationReport(options: {
 		}
 		if (channelState === "failed") {
 			// The credentials are there but the channel did not start - the
-			// credentials themselves are the likely cause.
+			// channel access token is what the startup check validates, so
+			// the user id must not be named as the cause.
+			const details = [
+				...(options.accessTokenFixes && options.accessTokenFixes.length > 0
+					? options.accessTokenFixes
+					: options.fixes),
+			];
+			if (options.channelDiagnostic) {
+				details.push(options.channelDiagnostic);
+			}
+			details.push(
+				"The startup check validates the channel access token - the user id is only the recipient of the messages.",
+			);
+			details.push(
+				"Fix the file, then reload Pi so the channel is checked again.",
+			);
 			return {
 				label: "LINE",
 				text: "configured but the LINE channel did not start",
 				status: "warn",
-				details: [
-					...options.fixes,
-					"Check the LINE credentials in ~/.pi-harness-runtime/keys/, then reload Pi.",
-				],
+				details,
 			};
 		}
 		// The credentials are there but the channel was never started in this

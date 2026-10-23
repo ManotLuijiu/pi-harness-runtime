@@ -27,4 +27,5 @@ export {
 	type HarnessFooterOptions,
 	renderFooterRows,
 	sanitizeStatusText,
+	wrapStatusText,
 } from "./harness-footer.js";

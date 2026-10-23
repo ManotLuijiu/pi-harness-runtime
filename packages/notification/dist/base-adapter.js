@@ -6,6 +6,7 @@
 export class BaseChannelAdapter {
     config;
     _healthy = false;
+    _diagnostic = null;
     constructor(config) {
         this.config = config;
     }
@@ -23,6 +24,22 @@ export class BaseChannelAdapter {
      */
     markHealthy() {
         this._healthy = true;
+        this._diagnostic = null;
+    }
+    /**
+     * Record why the adapter is not healthy.
+     *
+     * The reason is what the startup summary shows, so it must be short and
+     * must never contain a credential.
+     */
+    setDiagnostic(reason) {
+        this._diagnostic = reason;
+    }
+    /**
+     * Why the adapter is not healthy (null when healthy).
+     */
+    getDiagnostic() {
+        return this._healthy ? null : this._diagnostic;
     }
     /**
      * Redact sensitive data from payload before sending

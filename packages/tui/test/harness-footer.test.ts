@@ -29,6 +29,7 @@ import {
 	createHarnessFooter,
 	formatCwdForFooter,
 	renderFooterRows,
+	wrapStatusText,
 	type FooterSessionInfo,
 } from "../src/harness-footer.js";
 
@@ -76,7 +77,9 @@ function makeSessionInfo(overrides: Partial<FooterSessionInfo> = {}): FooterSess
 }
 
 const QUOTA = "MiniMax: 5h: 98% left (resets 3 hr 15 min) - week: 85% left";
-const WORKSPACE = "Workspace: DEVELOPMENT | dev server: running | build: not running (script available) | RAM: 6.4/15";
+const WORKSPACE =
+	"Workspace: ~/pi-harness-runtime | OS: Linux | mode: UNKNOWN (no explicit NODE_ENV)" +
+	" | dev server: not detected | dev script: unavailable | build script: available | RAM: 6.4/15";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -126,17 +129,20 @@ describe("harness footer rows", () => {
 
 		const lines = footer.render(120);
 		const quotaLine = lines.find((line) => line.includes("MiniMax: 5h:"));
-		const workspaceLine = lines.find((line) => line.includes("Workspace:"));
+		const workspaceIndex = lines.findIndex((line) => line.includes("Workspace:"));
+		// The workspace value can wrap over several lines - the fields must
+		// all be there.
+		const workspaceText = lines.slice(workspaceIndex).join(" ");
 
 		expect(quotaLine).toBeDefined();
-		expect(workspaceLine).toBeDefined();
-		expect(quotaLine).not.toBe(workspaceLine);
+		expect(workspaceIndex).toBeGreaterThanOrEqual(0);
 		expect(quotaLine).not.toContain("Workspace:");
-		expect(workspaceLine).not.toContain("MiniMax:");
-		expect(workspaceLine).toContain("Workspace:");
-		expect(workspaceLine).toContain("dev server:");
-		expect(workspaceLine).toContain("build:");
-		expect(workspaceLine).toContain("RAM:");
+		expect(workspaceText).not.toContain("MiniMax:");
+		expect(workspaceText).toContain("Workspace:");
+		expect(workspaceText).toContain("OS: Linux");
+		expect(workspaceText).toContain("dev server:");
+		expect(workspaceText).toContain("build script:");
+		expect(workspaceText).toContain("RAM:");
 	});
 
 	it("keeps Pi's footer information (cwd, branch, stats, model)", () => {
@@ -298,11 +304,40 @@ describe("harness footer rows", () => {
 		const lines = footer.render(40);
 		const workspaceLine = lines.find((line) => line.includes("Workspace:"));
 		expect(workspaceLine).toBeDefined();
-		// The quota row is truncated instead of eating the workspace row.
+		// The quota row is still there.
 		const quotaLine = lines.find((line) => line.includes("MiniMax:"));
 		expect(quotaLine).toBeDefined();
-		expect(quotaLine!.length).toBeGreaterThan(0);
-		expect(visibleWidth(quotaLine!)).toBeLessThanOrEqual(40);
+		expect(quotaLine?.length ?? 0).toBeGreaterThan(0);
+	});
+
+	it("wraps the workspace row instead of hiding the fields that do not fit", () => {
+		const footer = createHarnessFooter(
+			{} as never,
+			plainTheme,
+			makeFooterData({
+				"harness-runtime": QUOTA,
+				"harness-workspace": WORKSPACE,
+			}),
+		);
+
+		const lines = footer.render(40);
+		const start = lines.findIndex((line) => line.includes("Workspace:"));
+		expect(start).toBeGreaterThanOrEqual(0);
+		// The workspace value continues on the following lines until the
+		// quota row starts - no field may be cut away.
+		const workspaceLines: string[] = [];
+		for (let i = start; i < lines.length; i++) {
+			if (lines[i].includes("MiniMax:")) break;
+			workspaceLines.push(lines[i]);
+		}
+		const joined = workspaceLines.join(" ");
+		expect(joined).toContain("OS: Linux");
+		expect(joined).toContain("dev server: not detected");
+		expect(joined).toContain("RAM: 6.4/15");
+		// Every line stays inside the terminal width.
+		for (const line of workspaceLines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+		}
 	});
 
 	it("still shows other extensions' status values", () => {
@@ -386,20 +421,104 @@ describe("harness footer rows", () => {
 });
 
 describe("harness footer helpers", () => {
+	it("keeps a short status on one line", () => {
+		expect(wrapStatusText("Workspace: ~/app | OS: Linux", 120)).toEqual([
+			"Workspace: ~/app | OS: Linux",
+		]);
+	});
+
+	it("breaks a long status at the field borders and keeps every line inside the width", () => {
+		const lines = wrapStatusText("Workspace: ~/app | OS: Linux | RAM: 4/15", 24);
+
+		expect(lines.length).toBeGreaterThan(1);
+		expect(lines[0]).toContain("Workspace:");
+		expect(lines.slice(1).join(" ")).toContain("RAM: 4/15");
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(24);
+		}
+	});
+
+	it("breaks a word that is longer than the width", () => {
+		const lines = wrapStatusText(
+			"Workspace: /home/frappe/a-very-long-directory-name/pi-harness-runtime",
+			20,
+			0,
+		);
+
+		expect(lines.length).toBeGreaterThan(1);
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+		}
+		expect(lines.join("")).toContain("pi-harness-runtime");
+	});
+
+	it("caps the number of lines and truncates the last one", () => {
+		const lines = wrapStatusText(
+			"Workspace: ~/app | OS: Linux | mode: UNKNOWN (no explicit NODE_ENV) | RAM: 4/15",
+			24,
+			2,
+		);
+
+		expect(lines.length).toBe(2);
+		expect(visibleWidth(lines[1]!)).toBeLessThanOrEqual(24);
+	});
+
+	it("says that the summary is incomplete when lines are dropped", () => {
+		const lines = wrapStatusText(
+			"Workspace: ~/app | OS: Linux | mode: UNKNOWN (no explicit NODE_ENV) | dev server: not detected | RAM: 4/15",
+			24,
+			2,
+		);
+
+		expect(lines.length).toBe(2);
+		// The marker survives the truncation - the user must be able to see
+		// that the summary is incomplete.
+		expect(lines[1]).toContain("more)");
+		expect(visibleWidth(lines[1]!)).toBeLessThanOrEqual(24);
+	});
+
+	it("wraps a single field that is longer than the width", () => {
+		const lines = wrapStatusText("mode: UNKNOWN (no explicit NODE_ENV)", 20);
+
+		expect(lines.length).toBeGreaterThan(1);
+		expect(lines.join(" ")).toContain("NODE_ENV");
+	});
+
 	it("renders one row per harness status", () => {
 		const lines = renderFooterRows(
 			makeSessionInfo(),
 			[
 				{ label: "quota", text: QUOTA },
-				{ label: "workspace", text: WORKSPACE },
+				{ label: "workspace", text: WORKSPACE, maxLines: 8 },
 			],
 			120,
 			plainTheme,
 		);
 
-		expect(lines.length).toBe(4); // pwd + stats + quota + workspace
+		// pwd + stats + quota + workspace (the workspace value wraps when it
+		// does not fit into the width).
+		expect(lines.length).toBeGreaterThanOrEqual(4);
 		expect(lines[2]).toBe(QUOTA);
-		expect(lines[3]).toBe(WORKSPACE);
+		expect(lines[3]).toContain("Workspace:");
+		expect(lines.slice(3).join(" ")).toContain("RAM: 6.4/15");
+	});
+
+	it("keeps a short row on one line", () => {
+		const lines = renderFooterRows(
+			makeSessionInfo(),
+			[
+				{
+					label: "quota",
+					text: `${QUOTA} ${"x".repeat(200)}`,
+				},
+			],
+			40,
+			plainTheme,
+		);
+
+		// pwd + stats + ONE quota row (truncated, not wrapped).
+		expect(lines.length).toBe(3);
+		expect(visibleWidth(lines[2]!)).toBeLessThanOrEqual(40);
 	});
 
 	it("collapses the home directory to ~", () => {

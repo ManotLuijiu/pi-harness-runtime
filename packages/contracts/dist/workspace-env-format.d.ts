@@ -37,6 +37,16 @@ export interface WorkspaceEnvResult {
     packageManager: string | null;
     devServerRunning: boolean;
     buildServerRunning: boolean;
+    /**
+     * The tri-state state of the dev server.
+     *
+     * "not detected" means a check ran and found nothing; "not checked"
+     * means no check was possible (an unsupported platform or a failed
+     * check). Neither of them is evidence that a server is not running.
+     */
+    devServerState?: ServerState;
+    /** The tri-state state of the build server. */
+    buildServerState?: ServerState;
     ramTotalGb: number | null;
     ramAvailableGb: number | null;
     ramEffectiveLimitGb: number | null;
@@ -44,6 +54,47 @@ export interface WorkspaceEnvResult {
     buildAllowed: boolean;
     detectedAt: number;
 }
+/**
+ * The state of a dev/build server.
+ */
+/**
+ * Is this command line a package-manager launcher?
+ *
+ * A launcher ("npm run dev", "bun run start") only STARTS a server - the
+ * server is its child. Counting the launcher would report a running
+ * server for a script that does not start one at all ("sleep 300").
+ *
+ * The rule is pure, so it lives in the pure module and can be tested
+ * without the SQLite cache.
+ */
+export declare function isLauncherCommand(cmdline: string): boolean;
+export type ServerState = "running" | "not-detected" | "not-checked";
+/**
+ * The name of the operating system the harness runs on.
+ *
+ * The OS decides which command shows the working directory (pwd on
+ * POSIX, cd / echo %cd% on Windows), so the summary names it.
+ */
+export declare function describeOs(platformName?: string): string;
+/**
+ * The command that prints the working directory on this OS.
+ */
+export declare function describeCwdCommand(platformName?: string): string;
+/**
+ * Remove the pids of our own processes from a pgrep result.
+ *
+ * The shell that runs pgrep carries the search pattern in its own command
+ * line, so pgrep always reports it - a server would be claimed where none
+ * runs. The pids of our own processes are therefore dropped.
+ */
+export declare function filterOwnPids(pids: string[], ownPids: string[]): string[];
+/**
+ * Shorten the home directory to "~".
+ *
+ * The check is on a path boundary: "/home/frappe" is the home of
+ * "/home/frappe/app", but not of "/home/frappeX".
+ */
+export declare function formatWorkspacePath(workspacePath: string, home?: string): string;
 /**
  * Human readable mode label.
  *
@@ -56,10 +107,12 @@ export declare function describeWorkspaceMode(env: WorkspaceEnvResult): string;
 /**
  * Describe a dev/build server as a state.
  *
- * "not running (script available)" means the script EXISTS, i.e. a server
- * could be started. It is not evidence that a server is running and not
- * evidence about the workspace mode.
+ * "not detected" is what a check that found nothing says - it is NOT the
+ * same as "not running": on a platform where no check is possible the
+ * state is "not checked". Neither of them says anything about the
+ * workspace mode.
  */
+export declare function describeServerState(state: ServerState): string;
 export declare function describeServerState(running: boolean, hasScript: boolean): string;
 /**
  * One line status for the footer / status bar.

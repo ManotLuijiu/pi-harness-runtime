@@ -365,6 +365,138 @@ function renderStatsRow(info, width, theme, autoCompactEnabled) {
  *   5. auto-continue state (own row, when present)
  *   6. other extensions' status values (shared row, as in Pi)
  */
+/**
+ * Break a long text over several lines on word borders.
+ */
+function wrapWords(text, width) {
+    if (width <= 0)
+        return [text];
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0)
+        return [text];
+    const lines = [];
+    let current = "";
+    for (const word of words) {
+        // A single word that is wider than the line is broken, never kept
+        // as an over-long line.
+        if (visibleWidth(word) > width) {
+            if (current) {
+                lines.push(current);
+                current = "";
+            }
+            for (const chunk of breakLongWord(word, width)) {
+                if (current) {
+                    lines.push(current);
+                    current = "";
+                }
+                current = chunk;
+            }
+            continue;
+        }
+        const candidate = current ? `${current} ${word}` : word;
+        if (visibleWidth(candidate) <= width || current === "") {
+            current = candidate;
+            continue;
+        }
+        lines.push(current);
+        current = word;
+    }
+    if (current)
+        lines.push(current);
+    return lines;
+}
+/**
+ * Break a word that does not fit on one line into chunks.
+ *
+ * The chunks are cut by VISIBLE width, not by code units, so a wide
+ * character is never split in half. A word that carries an ANSI escape
+ * sequence is never broken - splitting it would cut the sequence itself.
+ */
+function breakLongWord(word, width) {
+    if (word.includes("\u001b"))
+        return [word];
+    const chunks = [];
+    let current = "";
+    let currentWidth = 0;
+    for (const char of word) {
+        const charWidth = visibleWidth(char);
+        if (current && currentWidth + charWidth > width) {
+            chunks.push(current);
+            current = "";
+            currentWidth = 0;
+        }
+        current += char;
+        currentWidth += charWidth;
+    }
+    if (current)
+        chunks.push(current);
+    return chunks;
+}
+/**
+ * Wrap a status value over several lines.
+ *
+ * A status value can be long - the workspace summary names the path, the
+ * OS, the mode, the server state, the scripts and the RAM. Truncating it
+ * would hide the parts that do not fit, so the value is broken at the
+ * " | " field borders (and at word borders inside a field).
+ *
+ * The continuation lines are NOT indented: the line stays within the
+ * terminal width and the original value can be read back by joining the
+ * lines with a space (the field separator " | " survives the break).
+ *
+ * `maxLines` caps how many lines the value may use. When the cap is hit
+ * the last line is truncated - a footer that grows without a bound pushes
+ * everything else off the screen.
+ */
+export function wrapStatusText(text, width, maxLines = 3) {
+    if (!text)
+        return [];
+    if (visibleWidth(text) <= width)
+        return [text];
+    const fields = text.split(" | ");
+    const lines = [];
+    let current = "";
+    const flush = () => {
+        if (current) {
+            lines.push(current);
+            current = "";
+        }
+    };
+    for (let i = 0; i < fields.length; i++) {
+        const isLast = i === fields.length - 1;
+        const piece = isLast ? fields[i] : `${fields[i]} |`;
+        const candidate = current ? `${current} ${piece}` : piece;
+        if (visibleWidth(candidate) <= width) {
+            current = candidate;
+            continue;
+        }
+        flush();
+        if (visibleWidth(piece) <= width) {
+            current = piece;
+            continue;
+        }
+        const wrapped = wrapWords(piece, width);
+        for (const line of wrapped.slice(0, -1))
+            lines.push(line);
+        current = wrapped.at(-1) ?? "";
+    }
+    flush();
+    if (maxLines > 0 && lines.length > maxLines) {
+        const kept = lines.slice(0, maxLines);
+        const last = kept.length - 1;
+        // The dropped lines are marked: the user must be able to see that
+        // the summary is incomplete. The room for the marker is reserved
+        // FIRST - a marker that is appended and then truncated away would
+        // lose the information it carries.
+        const marker = visibleWidth(` (+${lines.length - maxLines} more)`) + 1 <= width
+            ? ` (+${lines.length - maxLines} more)`
+            : "…";
+        const room = Math.max(1, width - visibleWidth(marker));
+        kept[last] = `${truncateToWidth(kept[last], room, "...")}${marker}`;
+        return kept;
+    }
+    return lines;
+}
 export function renderFooterRows(info, rows, width, theme, autoCompactEnabled = true) {
     const lines = [];
     if (info) {
@@ -375,7 +507,14 @@ export function renderFooterRows(info, rows, width, theme, autoCompactEnabled = 
         const text = sanitizeStatusText(row.text);
         if (!text)
             continue;
-        lines.push(truncateToWidth(text, width, safeFg(theme, "dim", "...")));
+        const maxLines = row.maxLines ?? 1;
+        if (maxLines > 1) {
+            for (const line of wrapStatusText(text, width, maxLines)) {
+                lines.push(line);
+            }
+            continue;
+        }
+        lines.push(truncateToWidth(text, width, "..."));
     }
     return lines;
 }
@@ -428,8 +567,11 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
             if (quota)
                 rows.push({ label: "quota", text: quota });
             const workspace = statuses.get(workspaceKey);
+            // The workspace summary is long - it wraps over several lines
+            // instead of being truncated (a truncated summary hides the
+            // fields that do not fit).
             if (workspace)
-                rows.push({ label: "workspace", text: workspace });
+                rows.push({ label: "workspace", text: workspace, maxLines: 8 });
             const autoContinue = statuses.get(autoContinueKey);
             if (autoContinue)
                 rows.push({ label: "auto-continue", text: autoContinue });

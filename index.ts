@@ -163,6 +163,15 @@ let keyFileAuditDone = false;
  * startup line must not claim a green "configured".
  */
 let lineChannelState: "started" | "failed" | "not-started" = "not-started";
+/**
+ * Why the LINE channel did not start (from the adapter).
+ *
+ * The adapter knows the difference between an invalid or revoked token
+ * (401/403), a LINE API failure and a network failure - the startup
+ * summary shows it so the user knows what to fix. It never contains a
+ * credential.
+ */
+let lineChannelDiagnostic: string | null = null;
 let telegramChannelState: "started" | "failed" | "not-started" = "not-started";
 /** Did the relay client connect at least once in this extension load? */
 let relayStreamConnected = false;
@@ -1398,9 +1407,13 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		if (lineChannelConfigured) {
 			if (center.isChannelHealthy("line")) {
 				lineChannelState = "started";
+				lineChannelDiagnostic = null;
 				addHarnessMessage("LINE", "configured and enabled (tap Toggle LINE to disable)", "ok");
 			} else {
 				lineChannelState = "failed";
+				// Keep the reason: "the token is wrong" and "LINE is down"
+				// need different actions.
+				lineChannelDiagnostic = center.getChannelDiagnostic("line");
 			}
 		}
 		if (telegramChannelState !== "started") {
@@ -1795,8 +1808,15 @@ function reportLineConfiguration(): void {
 		channelState: lineChannelState,
 		telegramConfigured: telegramIsConfigured(),
 		// The fallback makes sure that a warning always carries a command,
-		// even when the audit could not answer.
-		fixes: keyFileFixesOrFallback("LINE", ["channel access token", "user id"]),
+		// even when the audit could not answer. It names the ACCESS TOKEN
+		// only - the user id is the recipient of the messages, not the cause
+		// of a failed startup check.
+		fixes: keyFileFixesOrFallback("LINE", ["channel access token"]),
+		// The startup check validates the access token - the user id is only
+		// the recipient, so it must not be named as the cause.
+		accessTokenFixes: keyFileFixesOrFallback("LINE", ["channel access token"]),
+		// The reason the channel did not start (invalid token, LINE down, ...).
+		channelDiagnostic: lineChannelDiagnostic,
 		// Without Telegram the LINE channel cannot start - the user needs
 		// the Telegram commands, not only an explanation.
 		telegramFixes: keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]),

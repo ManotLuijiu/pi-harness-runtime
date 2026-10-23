@@ -24,10 +24,19 @@ export interface ChannelAdapter {
      * Returns true if initialized successfully, false otherwise
      */
     isHealthy(): boolean;
+    /**
+     * Why the adapter is not healthy (null when it is healthy or when the
+     * adapter has nothing to say).
+     *
+     * The message must be safe to show to a user: no token, no credential,
+     * no raw response body that could echo one back.
+     */
+    getDiagnostic?(): string | null;
 }
 export declare abstract class BaseChannelAdapter implements ChannelAdapter {
     protected config: NotificationChannelConfig;
     protected _healthy: boolean;
+    protected _diagnostic: string | null;
     abstract readonly id: string;
     abstract readonly type: string;
     constructor(config: NotificationChannelConfig);
@@ -42,6 +51,17 @@ export declare abstract class BaseChannelAdapter implements ChannelAdapter {
      * Mark adapter as healthy (called after successful initialize)
      */
     protected markHealthy(): void;
+    /**
+     * Record why the adapter is not healthy.
+     *
+     * The reason is what the startup summary shows, so it must be short and
+     * must never contain a credential.
+     */
+    protected setDiagnostic(reason: string | null): void;
+    /**
+     * Why the adapter is not healthy (null when healthy).
+     */
+    getDiagnostic(): string | null;
     /**
      * Redact sensitive data from payload before sending
      */

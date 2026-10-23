@@ -502,21 +502,27 @@ bun run build && bun run start   # Server deployment
 
 **This info is shown in UI and delivered to agent context:**
 ```
-Workspace: DEVELOPMENT | dev server: running | build: not running (script available) | RAM: 10/16
+Workspace: ~/pi-harness-runtime | OS: Linux | mode: DEVELOPMENT | dev server: running | dev script: available | build script: available | RAM: 10/16
 ```
 
 The mode words are exactly what the detector emits: `DEVELOPMENT`, `PRODUCTION`,
 `TEST` or `UNKNOWN` (with its reason, e.g. `UNKNOWN (no explicit NODE_ENV)`).
-A dev/build script is a CAPABILITY, not a state: `not running (script available)`
-means the script exists, not that a server runs.
+A dev/build script is a CAPABILITY, not a state: `dev script: available` means
+the script exists, not that a server runs. The server state is separate and
+never claims more than it knows: `running`, `not detected` (a check ran and
+found nothing) or `not checked` (no check was possible, e.g. no `pgrep`).
+
+The OS is part of the line because it decides which command prints the
+working directory: `pwd` on Linux/macOS, `cd` or `echo %cd%` on Windows.
+The agent context names the command to use.
 
 **IMPORTANT Rules:**
 
 | State | Action |
 |-------|--------|
-| `Workspace: UNKNOWN (…)` | Explicitly ask user before build |
-| `Workspace: DEVELOPMENT` | Use `dev` mode, don't auto-build |
-| `Workspace: PRODUCTION` | Build allowed, but confirm with user |
+| `mode: UNKNOWN (…)` | Explicitly ask user before build |
+| `mode: DEVELOPMENT` | Use `dev` mode, don't auto-build |
+| `mode: PRODUCTION` | Build allowed, but confirm with user |
 | `Low RAM` | Never run parallel build + dev |
 | `Dev server running` | Reuse it, don't restart |
 
