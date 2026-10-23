@@ -42,6 +42,19 @@ const CONNECT_TIMEOUT_MS = 10000;
 // Client Callbacks
 // ============================================================================
 
+/**
+ * Where the client writes its diagnostics.
+ *
+ * A TUI owns the terminal: a stray console write lands in the prompt input
+ * field. The harness therefore injects a logger that writes to the log file
+ * (the console stays the default for CLI scripts).
+ */
+export interface RelayLogger {
+  log?: (message: string) => void;
+  warn?: (message: string) => void;
+  error?: (message: string) => void;
+}
+
 export interface RelayClientCallbacks {
   /** Called when connected and authenticated */
   onConnected?: (sessionId: string) => void;
@@ -69,6 +82,7 @@ export class RelayClient {
   private ws: WebSocket | null = null;
   private config: RelayConfig;
   private callbacks: RelayClientCallbacks;
+  private logger: RelayLogger;
   
   // State machine
   private state: ConnectionState = { state: 'disconnected' };
@@ -97,9 +111,57 @@ export class RelayClient {
   private snapshotReceived = false;
   private synchronizedReceived = false;
 
-  constructor(config: RelayConfig, callbacks: RelayClientCallbacks = {}) {
+  constructor(config: RelayConfig, callbacks: RelayClientCallbacks = {}, logger: RelayLogger = {}) {
     this.config = config;
     this.callbacks = callbacks;
+    this.logger = logger;
+  }
+
+  // ========================================================================
+  // Diagnostics
+  // ========================================================================
+
+  /**
+   * Write a diagnostic.
+   *
+   * A TUI owns the terminal: the harness injects a logger so that nothing
+   * reaches the console. A partial logger must not reopen that hole - a
+   * missing level falls back to a level the logger does provide.
+   */
+  private log(message: string): void {
+    this.emit("log", message);
+  }
+
+  private logWarn(message: string): void {
+    this.emit("warn", message);
+  }
+
+  private logError(message: string): void {
+    this.emit("error", message);
+  }
+
+  private emit(level: "log" | "warn" | "error", message: string): void {
+    const logger = this.logger;
+    // A logger was injected: route the level to one the logger provides,
+    // never back to the console. The order keeps the severity as close as
+    // possible (error -> warn -> log).
+    const candidates: Array<"log" | "warn" | "error"> =
+      level === "error" ? ["error", "warn", "log"] : level === "warn" ? ["warn", "error", "log"] : ["log", "warn", "error"];
+
+    for (const candidate of candidates) {
+      const sink = candidate === "log" ? logger.log : candidate === "warn" ? logger.warn : logger.error;
+      if (!sink) continue;
+      try {
+        sink(message);
+      } catch {
+        // A broken logger must never break the relay client.
+      }
+      return;
+    }
+
+    if (level === "log") console.log(message);
+    else if (level === "warn") console.warn(message);
+    else console.error(message);
   }
 
   // ========================================================================
@@ -167,7 +229,7 @@ export class RelayClient {
 
     const url = this.config.serverUrl;
     const timeoutMs = this.config.connectTimeout ?? CONNECT_TIMEOUT_MS;
-    console.log(`[RelayClient] Connecting to ${url}...`);
+    this.log(`[RelayClient] Connecting to ${url}...`);
 
     return new Promise<void>((resolve, reject) => {
       const attempt = ++this.connectAttempt;
@@ -176,7 +238,7 @@ export class RelayClient {
       // Deadline covers connection AND authentication (one timer for the whole handshake)
       this.connectTimeoutTimer = setTimeout(() => {
         if (!this.pendingConnect) return;
-        console.error(`[RelayClient] Connection timeout after ${timeoutMs}ms`);
+        this.logError(`[RelayClient] Connection timeout after ${timeoutMs}ms`);
         this.settleConnect(new Error(`Connection timeout after ${timeoutMs}ms`));
         this.closeSocket();
         this.setState({ state: 'disconnected' });
@@ -191,7 +253,7 @@ export class RelayClient {
         // pending: settle it, disarm the deadline and retry like any other
         // failed connect.
         const error = err instanceof Error ? err : new Error(String(err));
-        console.error("[RelayClient] WebSocket construction failed:", error.message);
+        this.logError(`[RelayClient] WebSocket construction failed: ${error.message}`);
         this.settleConnect(error);
         this.setState({ state: 'disconnected' });
         this.scheduleReconnectAfterFailure();
@@ -201,7 +263,7 @@ export class RelayClient {
 
       ws.on("open", () => {
         if (this.ws !== ws) return;
-        console.log("[RelayClient] WebSocket opened");
+        this.log("[RelayClient] WebSocket opened");
         this.setState({ state: 'authenticating' });
 
         // Send authentication
@@ -223,7 +285,7 @@ export class RelayClient {
         // would otherwise corrupt the live connection (state, heartbeat) and
         // schedule a spurious reconnect.
         if (this.ws !== ws) return;
-        console.log("[RelayClient] WebSocket closed");
+        this.log("[RelayClient] WebSocket closed");
         this.ws = null;
         const wasPending = this.pendingConnect !== null;
         this.handleDisconnect();
@@ -235,7 +297,7 @@ export class RelayClient {
 
       ws.on("error", (err) => {
         if (this.ws !== ws) return;
-        console.error("[RelayClient] WebSocket error:", err.message);
+        this.logError(`[RelayClient] WebSocket error: ${err.message}`);
         this.callbacks.onError?.(err);
         const wasPending = this.pendingConnect !== null;
         this.ws = null;
@@ -275,7 +337,7 @@ export class RelayClient {
    * Disconnect from relay server
    */
   disconnect(): void {
-    console.log("[RelayClient] Disconnecting...");
+    this.log("[RelayClient] Disconnecting...");
     // Deliberate stop: do not schedule a reconnect afterwards
     this.shuttingDown = true;
     // Never leave a caller awaiting connect() hanging
@@ -301,7 +363,7 @@ export class RelayClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn("[RelayClient] Cannot send: WebSocket not open");
+      this.logWarn("[RelayClient] Cannot send: WebSocket not open");
     }
   }
 
@@ -344,18 +406,20 @@ export class RelayClient {
 
         default: {
           const unknownMsg = msg as { type: string };
-          console.warn(`[RelayClient] Unknown message type: ${unknownMsg.type}`);
+          this.logWarn(`[RelayClient] Unknown message type: ${unknownMsg.type}`);
         }
       }
     } catch (err) {
-      console.error("[RelayClient] Failed to parse message:", err);
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    // One line per log record: the stack must not break the format.
+    this.logError(`[RelayClient] Failed to parse message: ${detail.replace(/\s*\n\s*/g, " | ")}`);
       this.callbacks.onError?.(err as Error);
     }
   }
 
   private handleConnected(msg: ConnectedMessage): void {
     this.clientId = msg.payload.clientId;
-    console.log(`[RelayClient] Connected, clientId: ${this.clientId}`);
+    this.log(`[RelayClient] Connected, clientId: ${this.clientId}`);
   }
 
   private handleAuth(msg: AuthResponseMessage): void {
@@ -372,13 +436,13 @@ export class RelayClient {
       
       // Notify callback
       this.callbacks.onConnected?.(this.sessionId || '');
-      console.log(`[RelayClient] Authenticated, sessionId: ${this.sessionId}`);
+      this.log(`[RelayClient] Authenticated, sessionId: ${this.sessionId}`);
 
       // Readiness milestone reached - settle the connect() promise
       this.settleConnect();
     } else {
       const message = msg.payload.error || 'Authentication failed';
-      console.error(`[RelayClient] Auth failed: ${message}`);
+      this.logError(`[RelayClient] Auth failed: ${message}`);
       const error = new Error(message);
       this.callbacks.onError?.(error);
       // Reject the caller before tearing the socket down
@@ -392,7 +456,7 @@ export class RelayClient {
   }
 
   private handleSnapshot(msg: SnapshotMessage): void {
-    console.log(`[RelayClient] Snapshot received: ${msg.payload.recentCallbacks.length} recent callbacks`);
+    this.log(`[RelayClient] Snapshot received: ${msg.payload.recentCallbacks.length} recent callbacks`);
     this.snapshotReceived = true;
     
     // Notify callback
@@ -400,7 +464,7 @@ export class RelayClient {
   }
 
   private handleSynchronized(_msg: SynchronizedMessage): void {
-    console.log("[RelayClient] Synchronized - live events starting");
+    this.log("[RelayClient] Synchronized - live events starting");
     this.synchronizedReceived = true;
     
     // Notify callback
@@ -410,7 +474,7 @@ export class RelayClient {
   private handleCallback(msg: CallbackMessage): void {
     // Only process callbacks after synchronized
     if (!this.synchronizedReceived) {
-      console.warn("[RelayClient] Ignoring callback before synchronized");
+      this.logWarn("[RelayClient] Ignoring callback before synchronized");
       return;
     }
     
@@ -418,7 +482,7 @@ export class RelayClient {
   }
 
   private handleStatus(msg: StatusMessage): void {
-    console.log(`[RelayClient] Status [${msg.payload.kind}]: ${msg.payload.code} - ${msg.payload.message}`);
+    this.log(`[RelayClient] Status [${msg.payload.kind}]: ${msg.payload.code} - ${msg.payload.message}`);
     this.callbacks.onStatus?.(msg.payload);
   }
 
@@ -434,7 +498,7 @@ export class RelayClient {
 
     // A deliberate stop must not trigger a reconnect
     if (this.shuttingDown) {
-      console.log("[RelayClient] Disconnected (intentional stop, no reconnect)");
+      this.log("[RelayClient] Disconnected (intentional stop, no reconnect)");
       return;
     }
 
@@ -464,12 +528,12 @@ export class RelayClient {
     this.reconnectAttempt++;
     this.setState({ state: 'reconnecting', attempt: this.reconnectAttempt });
     
-    console.log(`[RelayClient] Scheduling reconnect attempt ${this.reconnectAttempt} in ${this.reconnectDelay}ms`);
+    this.log(`[RelayClient] Scheduling reconnect attempt ${this.reconnectAttempt} in ${this.reconnectDelay}ms`);
     
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch((err) => {
-        console.error(`[RelayClient] Reconnect failed: ${err.message}`);
+        this.logError(`[RelayClient] Reconnect failed: ${err.message}`);
       });
     }, this.reconnectDelay);
     
@@ -545,13 +609,13 @@ export class RelayClient {
     ws.removeAllListeners("error");
     // An 'error' without a listener throws inside the ws implementation.
     ws.on("error", (err: Error) => {
-      console.warn("[RelayClient] Socket error while closing:", err.message);
+      this.logWarn(`[RelayClient] Socket error while closing: ${err.message}`);
     });
     ws.on("close", () => {});
     try {
       ws.close();
     } catch (err) {
-      console.warn("[RelayClient] Error while closing socket:", String(err));
+      this.logWarn(`[RelayClient] Error while closing socket: ${String(err)}`);
     }
   }
 

@@ -135,6 +135,140 @@ describe("RelayClient.connect", () => {
 		await fixture.close();
 	});
 
+	it("writes its diagnostics to the injected logger, never to the console", async () => {
+		const fixture = await startFixture("ok");
+		const logged: string[] = [];
+		const consoleWrites: string[] = [];
+		const originalLog = console.log;
+		const originalWarn = console.warn;
+		const originalError = console.error;
+		console.log = (...args: unknown[]) => {
+			consoleWrites.push(args.map(String).join(" "));
+		};
+		console.warn = console.log;
+		console.error = console.log;
+
+		try {
+			const client = new RelayClient(
+				{ serverUrl: fixture.url, token: TEST_TOKEN, connectTimeout: 2000 },
+				{},
+				{
+					log: (message) => logged.push(message),
+					warn: (message) => logged.push(message),
+					error: (message) => logged.push(message),
+				},
+			);
+
+			await client.connect();
+			client.disconnect();
+			await fixture.close();
+		} finally {
+			console.log = originalLog;
+			console.warn = originalWarn;
+			console.error = originalError;
+		}
+
+		// The TUI owns the terminal: nothing may reach the console.
+		expect(consoleWrites.length).toBe(0);
+		expect(logged.some((message) => message.includes("[RelayClient]"))).toBe(true);
+	});
+
+	it("routes a partial logger to the levels it has, never to the console", async () => {
+		const fixture = await startFixture("ok");
+		const logged: string[] = [];
+		const consoleWrites: string[] = [];
+		const originalLog = console.log;
+		const originalWarn = console.warn;
+		const originalError = console.error;
+		console.log = (...args: unknown[]) => {
+			consoleWrites.push(args.map(String).join(" "));
+		};
+		console.warn = console.log;
+		console.error = console.log;
+
+		try {
+			// Only "log" is provided: a warning must NOT reach the console.
+			const client = new RelayClient(
+				{ serverUrl: fixture.url, token: TEST_TOKEN, connectTimeout: 2000 },
+				{},
+				{ log: (message) => logged.push(message) },
+			);
+
+			await client.connect();
+			client.disconnect();
+			await fixture.close();
+		} finally {
+			console.log = originalLog;
+			console.warn = originalWarn;
+			console.error = originalError;
+		}
+
+		expect(consoleWrites.length).toBe(0);
+		expect(logged.length).toBeGreaterThan(0);
+	});
+
+	it("never reaches the console for any partial logger shape", async () => {
+		const shapes: Array<{ name: string; logger: { log?: (m: string) => void; warn?: (m: string) => void; error?: (m: string) => void } }> = [
+			{ name: "only log", logger: { log: () => {} } },
+			{ name: "only warn", logger: { warn: () => {} } },
+			{ name: "only error", logger: { error: () => {} } },
+			{ name: "log + error", logger: { log: () => {}, error: () => {} } },
+		];
+
+		for (const shape of shapes) {
+			const fixture = await startFixture("ok");
+			const consoleWrites: string[] = [];
+			const originalLog = console.log;
+			const originalWarn = console.warn;
+			const originalError = console.error;
+			console.log = (...args: unknown[]) => {
+				consoleWrites.push(args.map(String).join(" "));
+			};
+			console.warn = console.log;
+			console.error = console.log;
+
+			try {
+				const client = new RelayClient(
+					{ serverUrl: fixture.url, token: TEST_TOKEN, connectTimeout: 2000 },
+					{},
+					shape.logger,
+				);
+
+				await client.connect();
+				client.disconnect();
+				await fixture.close();
+			} finally {
+				console.log = originalLog;
+				console.warn = originalWarn;
+				console.error = originalError;
+			}
+
+			expect(consoleWrites.length).toBe(0);
+		}
+	});
+
+	it("survives a logger that throws", async () => {
+		const fixture = await startFixture("ok");
+		let calls = 0;
+		const broken = (): void => {
+			calls++;
+			throw new Error("logger is broken");
+		};
+		const client = new RelayClient(
+			{ serverUrl: fixture.url, token: TEST_TOKEN, connectTimeout: 2000 },
+			{},
+			{ log: broken, warn: broken, error: broken },
+		);
+
+		await client.connect();
+		expect(client.getState().state).toBe("connected");
+		// The logger really ran (the test would be vacuous otherwise).
+		expect(calls).toBeGreaterThan(0);
+
+		client.disconnect();
+		await fixture.close();
+	});
+
 	it("rejects when the server never answers authentication", async () => {
 		const fixture = await startFixture("silent");
 		const client = new RelayClient({

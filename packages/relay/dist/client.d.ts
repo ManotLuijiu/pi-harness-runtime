@@ -8,6 +8,18 @@
  * - Automatic reconnection with backoff
  */
 import { type RelayConfig, type ConnectionState, type ConnectionStateChange, type CallbackPayload, type ClientMessage, type SnapshotMessage, type StatusMessage } from './types.js';
+/**
+ * Where the client writes its diagnostics.
+ *
+ * A TUI owns the terminal: a stray console write lands in the prompt input
+ * field. The harness therefore injects a logger that writes to the log file
+ * (the console stays the default for CLI scripts).
+ */
+export interface RelayLogger {
+    log?: (message: string) => void;
+    warn?: (message: string) => void;
+    error?: (message: string) => void;
+}
 export interface RelayClientCallbacks {
     /** Called when connected and authenticated */
     onConnected?: (sessionId: string) => void;
@@ -30,6 +42,7 @@ export declare class RelayClient {
     private ws;
     private config;
     private callbacks;
+    private logger;
     private state;
     private sessionId;
     private clientId;
@@ -45,7 +58,18 @@ export declare class RelayClient {
     private heartbeatTimer;
     private snapshotReceived;
     private synchronizedReceived;
-    constructor(config: RelayConfig, callbacks?: RelayClientCallbacks);
+    constructor(config: RelayConfig, callbacks?: RelayClientCallbacks, logger?: RelayLogger);
+    /**
+     * Write a diagnostic.
+     *
+     * A TUI owns the terminal: the harness injects a logger so that nothing
+     * reaches the console. A partial logger must not reopen that hole - a
+     * missing level falls back to a level the logger does provide.
+     */
+    private log;
+    private logWarn;
+    private logError;
+    private emit;
     private setState;
     private isConnected;
     /**

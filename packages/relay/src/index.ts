@@ -15,7 +15,7 @@ export type { RelayServerOptions } from './server.js';
 
 // Client
 export { RelayClient } from './client.js';
-export type { RelayClientCallbacks } from './client.js';
+export type { RelayClientCallbacks, RelayLogger } from './client.js';
 
 // Endpoint resolution (relay URL + auth token discovery)
 export {
