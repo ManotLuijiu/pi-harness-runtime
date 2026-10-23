@@ -168,6 +168,49 @@ export function isEnvShapedKey(key) {
     return /(^|_)(ENV|ENVIRONMENT|MODE|STAGE)$/i.test(key);
 }
 /**
+ * The namespaces of the desktop session variables.
+ *
+ * A session variable names the desktop session ("GNOME_SHELL_SESSION_MODE",
+ * "XDG_SESSION_TYPE"), never the environment of a workspace. Some of them
+ * end in "_MODE" or "_ENV", so without this list they look like an
+ * environment selector and decide the mode of a workspace that has no
+ * environment at all.
+ */
+const SESSION_VARIABLE_PREFIXES = [
+    "GNOME_",
+    "XDG_",
+    "DESKTOP_",
+    "DBUS_",
+    "GDM_",
+    "SDDM_",
+    "LIGHTDM_",
+    "GTK_",
+    "QT_",
+    "MATE_",
+    "KDE_",
+    "PLASMA_",
+    "UNITY_",
+    "XFCE_",
+    "CINNAMON_",
+    "WAYLAND_",
+    "MIR_",
+    "I3_",
+    "TERM_",
+    "SSH_",
+    "TMUX_",
+];
+/**
+ * True for a key that belongs to the desktop session, not to the workspace.
+ *
+ * The rule is a namespace list, not a value check: the value of a session
+ * variable ("ubuntu", "wayland", "user") says nothing about the environment
+ * of a workspace, so such a variable must never name the mode.
+ */
+export function isSessionVariableKey(key) {
+    const upper = key.toUpperCase();
+    return SESSION_VARIABLE_PREFIXES.some((prefix) => upper.startsWith(prefix));
+}
+/**
  * True for a key that may hold a secret.
  */
 export function isSecretLikeKey(key) {
@@ -212,6 +255,9 @@ export function detectModeHint(vars, options = {}) {
     const nodeEnv = vars.find((v) => v.key === "NODE_ENV");
     if (nodeEnv)
         return nodeEnv;
+    // A session variable is not an environment selector: it must never
+    // become the hint that names the mode.
+    const usableVars = vars.filter((v) => !isSessionVariableKey(v.key));
     // The value match is opt-in: a caller that passes the process env
     // variables must not let an unrelated variable that happens to hold the
     // word "development" decide the mode.
@@ -219,7 +265,7 @@ export function detectModeHint(vars, options = {}) {
         // An environment shaped key whose value names a known mode wins: an
         // earlier "APP_MODE=staging" or an empty "APP_ENV=" of the same file
         // must not shadow the "AMOS_ENV=development" of the same file.
-        const usable = vars.find((v) => v.key !== "NODE_ENV" &&
+        const usable = usableVars.find((v) => v.key !== "NODE_ENV" &&
             isEnvShapedKey(v.key) &&
             modeFromValue(v.value) !== null);
         if (usable)
@@ -227,7 +273,7 @@ export function detectModeHint(vars, options = {}) {
     }
     // No usable key: fall back to the first environment shaped key so that
     // the label can name it (it names no known mode).
-    return vars.find((v) => v.key !== "NODE_ENV" && isEnvShapedKey(v.key)) ?? null;
+    return (usableVars.find((v) => v.key !== "NODE_ENV" && isEnvShapedKey(v.key)) ?? null);
 }
 /**
  * The dotenv files of a workspace, in the order they are read.
@@ -289,11 +335,70 @@ export function collectProcessEnvVars(env = process.env) {
         const value = env[key];
         if (value === undefined)
             continue;
+        // A session variable of the desktop is never an environment
+        // selector, so it is not even collected as a candidate.
+        if (isSessionVariableKey(key))
+            continue;
         if (key === "NODE_ENV" || isEnvShapedKey(key)) {
             vars.push({ key, value });
         }
     }
     return vars;
+}
+/**
+ * The deployment configuration of a repository.
+ *
+ * A repository that carries one of these files is deployed somewhere: it
+ * has a runtime environment of its own, so the shape of the repository
+ * cannot prove that the workspace is a development checkout.
+ */
+export const DEPLOYMENT_MARKER_FILES = [
+    "Dockerfile",
+    "Containerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+    "Procfile",
+    "fly.toml",
+    "render.yaml",
+    "railway.json",
+    "vercel.json",
+    "netlify.toml",
+    "serverless.yml",
+    "serverless.yaml",
+    "app.yaml",
+    "ecosystem.config.cjs",
+    "ecosystem.config.js",
+];
+/**
+ * The branches that name a development line of work.
+ */
+const DEVELOPMENT_BRANCHES = new Set(["develop", "development"]);
+/**
+ * Name the mode of a workspace from the facts about its repository.
+ *
+ * This is the LAST tier of the mode detection: it runs only when no
+ * variable names the environment at all. It never claims production - a
+ * checkout of a production branch is not a production environment, and the
+ * deployment marker of the repository keeps the answer honest.
+ *
+ * Two sets of facts name a development workspace:
+ * 1. a published package without a deployment configuration and without a
+ *    running server: source code that the user runs on their own machine
+ * 2. a branch that names a development line of work ("develop")
+ */
+export function modeFromRepositoryFacts(facts) {
+    if (!facts.isGitRepository)
+        return null;
+    if (facts.isPublishedPackage && !facts.hasDeploymentMarker && !facts.hasRunningServer) {
+        return { mode: "development", key: "source-only repository" };
+    }
+    const branch = facts.branch.trim().toLowerCase();
+    if (DEVELOPMENT_BRANCHES.has(branch)) {
+        return { mode: "development", key: `git branch ${branch}` };
+    }
+    return null;
 }
 /**
  * Resolve the workspace mode from the variables that were found.
@@ -347,6 +452,16 @@ function findModeEvidence(env) {
     return candidates.find((e) => modeFromValue(e.value) !== null) ?? candidates[0];
 }
 /**
+ * The evidence entry that names the mode through the repository (if any).
+ *
+ * A detection is weaker than a variable: it is the shape of the checkout,
+ * not a declaration of the environment. It is therefore only used when no
+ * variable names the environment at all.
+ */
+function findDetectionEvidence(env) {
+    return env.evidence.find((e) => e.source === "detection");
+}
+/**
  * Human readable mode label.
  *
  * "unknown" always carries the reason: the mode can only be proven by an
@@ -361,9 +476,14 @@ export function describeWorkspaceMode(env) {
     const hint = findModeEvidence(env);
     const where = hint?.file ? ` in ${hint.file}` : "";
     if (env.mode !== "unknown") {
-        return hint
-            ? `${env.mode.toUpperCase()} (from ${hint.key}${where})`
-            : env.mode.toUpperCase();
+        if (hint)
+            return `${env.mode.toUpperCase()} (from ${hint.key}${where})`;
+        // The mode came from the repository, not from a variable: the label
+        // names the reason ("DEVELOPMENT (source-only repository)").
+        const detection = findDetectionEvidence(env);
+        if (detection)
+            return `${env.mode.toUpperCase()} (${detection.key})`;
+        return env.mode.toUpperCase();
     }
     if (hint) {
         // The stored mode and the evidence can disagree (a stale cache row):
@@ -381,6 +501,14 @@ export function describeWorkspaceMode(env) {
             return `UNKNOWN (${subject} names no known mode)`;
         }
         return `UNKNOWN (${hint.key}=${hint.value} is not a known mode${where})`;
+    }
+    // A stale cache row can carry a detection next to an unknown mode: the
+    // detection names a mode, so the mode is shown.
+    const detection = findDetectionEvidence(env);
+    if (detection) {
+        const named = modeFromValue(detection.value);
+        if (named)
+            return `${named.toUpperCase()} (${detection.key})`;
     }
     return "UNKNOWN (no NODE_ENV or environment variable found)";
 }

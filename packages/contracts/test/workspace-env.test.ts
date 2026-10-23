@@ -16,7 +16,9 @@ import {
 	formatEnvStatusLine,
 	formatWorkspacePath,
 	isLauncherCommand,
+	isSessionVariableKey,
 	MASKED_MODE_VALUE,
+	modeFromRepositoryFacts,
 	modeFromValue,
 	orderDotenvFileNames,
 	parseDotenvVars,
@@ -621,5 +623,132 @@ describe("the template files of a workspace", () => {
 		expect(isTemplateDotenvName(".env.example")).toBe(true);
 		expect(isTemplateDotenvName(".env.local")).toBe(false);
 		expect(isTemplateDotenvName(".env.production")).toBe(false);
+	});
+});
+
+describe("the session variables of a desktop", () => {
+	test("a session variable is not an environment selector", () => {
+		expect(isSessionVariableKey("GNOME_SHELL_SESSION_MODE")).toBe(true);
+		expect(isSessionVariableKey("XDG_SESSION_TYPE")).toBe(true);
+		expect(isSessionVariableKey("DESKTOP_SESSION")).toBe(true);
+		expect(isSessionVariableKey("DBUS_SESSION_BUS_ADDRESS")).toBe(true);
+	});
+
+	test("a real environment selector is not a session variable", () => {
+		expect(isSessionVariableKey("NODE_ENV")).toBe(false);
+		expect(isSessionVariableKey("AMOS_ENV")).toBe(false);
+		expect(isSessionVariableKey("APP_MODE")).toBe(false);
+		expect(isSessionVariableKey("RAILS_ENV")).toBe(false);
+	});
+
+	test("a session variable never decides the mode of a workspace", () => {
+		// The scenario of the user: GNOME_SHELL_SESSION_MODE=ubuntu is set in
+		// every GNOME shell and must not make a source repository unknown.
+		const processVars = collectProcessEnvVars({
+			GNOME_SHELL_SESSION_MODE: "ubuntu",
+		});
+
+		expect(processVars).toEqual([]);
+		expect(resolveWorkspaceMode(processVars, []).mode).toBe("unknown");
+		expect(resolveWorkspaceMode(processVars, []).hint).toBeNull();
+	});
+
+	test("a session variable in a dotenv file does not decide the mode either", () => {
+		const vars = collectDotenvVars([
+			{ name: ".env", content: "XDG_SESSION_TYPE=x11\n" },
+		]);
+
+		expect(resolveWorkspaceMode([], vars).hint).toBeNull();
+	});
+
+	test("a session variable does not shadow a real environment selector", () => {
+		const vars = collectDotenvVars([
+			{ name: ".env", content: "GNOME_SHELL_SESSION_MODE=ubuntu\nAMOS_ENV=production\n" },
+		]);
+		const resolved = resolveWorkspaceMode([], vars);
+
+		expect(resolved.mode).toBe("production");
+		expect(resolved.hint?.key).toBe("AMOS_ENV");
+	});
+});
+
+describe("the mode detection of a source repository", () => {
+	const published = {
+		isGitRepository: true,
+		branch: "main",
+		isPublishedPackage: true,
+		hasDeploymentMarker: false,
+		hasRunningServer: false,
+	};
+
+	test("a published package without a runtime is a development checkout", () => {
+		expect(modeFromRepositoryFacts(published)).toEqual({
+			mode: "development",
+			key: "source-only repository",
+		});
+	});
+
+	test("a deployment configuration keeps the mode unknown", () => {
+		const detection = modeFromRepositoryFacts({
+			...published,
+			hasDeploymentMarker: true,
+		});
+
+		expect(detection).toBeNull();
+	});
+
+	test("a development branch is the fallback", () => {
+		expect(
+			modeFromRepositoryFacts({
+				...published,
+				branch: "develop",
+				isPublishedPackage: false,
+			}),
+		).toEqual({ mode: "development", key: "git branch develop" });
+		expect(
+			modeFromRepositoryFacts({
+				...published,
+				branch: "development",
+				isPublishedPackage: false,
+			}),
+		).toEqual({ mode: "development", key: "git branch development" });
+	});
+
+	test("a production branch is never a development checkout", () => {
+		expect(
+			modeFromRepositoryFacts({
+				...published,
+				branch: "main",
+				isPublishedPackage: false,
+			}),
+		).toBeNull();
+		expect(
+			modeFromRepositoryFacts({
+				...published,
+				branch: "production",
+				isPublishedPackage: false,
+			}),
+		).toBeNull();
+	});
+
+	test("a directory that is not a repository names no mode", () => {
+		expect(
+			modeFromRepositoryFacts({
+				...published,
+				isGitRepository: false,
+			}),
+		).toBeNull();
+	});
+
+	test("the label names the reason of the detection", () => {
+		const env = makeEnv({
+			mode: "development",
+			buildAllowed: true,
+			evidence: [
+				{ source: "detection", key: "source-only repository", value: "development", timestamp: 0 },
+			],
+		});
+
+		expect(describeWorkspaceMode(env)).toBe("DEVELOPMENT (source-only repository)");
 	});
 });
