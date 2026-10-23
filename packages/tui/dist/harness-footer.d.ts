@@ -103,18 +103,33 @@ export interface FooterRow {
     label: string;
     /** Text rendered on the row. */
     text: string;
+    /**
+     * How many lines the row may use.
+     *
+     * 1 = the row is truncated to one line (the default for short values
+     * like the quota). A larger number lets a long value wrap - the
+     * workspace summary needs that, because truncating it would hide the
+     * fields that do not fit.
+     */
+    maxLines?: number;
 }
 /**
- * Build the footer rows.
+ * Wrap a status value over several lines.
  *
- * Row order:
- *   1. working directory (+ branch, session name)
- *   2. token/cost/context stats (+ model, thinking state)
- *   3. harness quota (own row)
- *   4. workspace environment (own row)
- *   5. auto-continue state (own row, when present)
- *   6. other extensions' status values (shared row, as in Pi)
+ * A status value can be long - the workspace summary names the path, the
+ * OS, the mode, the server state, the scripts and the RAM. Truncating it
+ * would hide the parts that do not fit, so the value is broken at the
+ * " | " field borders (and at word borders inside a field).
+ *
+ * The continuation lines are NOT indented: the line stays within the
+ * terminal width and the original value can be read back by joining the
+ * lines with a space (the field separator " | " survives the break).
+ *
+ * `maxLines` caps how many lines the value may use. When the cap is hit
+ * the last line is truncated - a footer that grows without a bound pushes
+ * everything else off the screen.
  */
+export declare function wrapStatusText(text: string, width: number, maxLines?: number): string[];
 export declare function renderFooterRows(info: FooterSessionInfo | null, rows: readonly FooterRow[], width: number, theme: Theme, autoCompactEnabled?: boolean): string[];
 /**
  * Create the harness footer component.

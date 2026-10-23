@@ -125,6 +125,14 @@ export declare class NotificationCenter {
      */
     isChannelHealthy(channelId: string): boolean;
     /**
+     * Why is a channel not healthy? (null when it is healthy)
+     *
+     * The startup summary needs the reason, not only the fact: an invalid
+     * token, a LINE outage and a network failure need different actions.
+     * The reason is produced by the adapter and is safe to show (no token).
+     */
+    getChannelDiagnostic(channelId: string): string | null;
+    /**
      * List all configured channels
      */
     listChannels(): string[];

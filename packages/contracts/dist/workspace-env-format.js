@@ -13,6 +13,88 @@
  *   server or for evidence about the workspace mode.
  */
 /**
+ * The state of a dev/build server.
+ */
+/**
+ * Is this command line a package-manager launcher?
+ *
+ * A launcher ("npm run dev", "bun run start") only STARTS a server - the
+ * server is its child. Counting the launcher would report a running
+ * server for a script that does not start one at all ("sleep 300").
+ *
+ * The rule is pure, so it lives in the pure module and can be tested
+ * without the SQLite cache.
+ */
+export function isLauncherCommand(cmdline) {
+    return /^(npm|bun|yarn|pnpm)\b.*\b(run\s+)?(dev|start)\b/.test(cmdline.trim());
+}
+/**
+ * The name of the operating system the harness runs on.
+ *
+ * The OS decides which command shows the working directory (pwd on
+ * POSIX, cd / echo %cd% on Windows), so the summary names it.
+ */
+export function describeOs(platformName) {
+    const name = platformName ?? process.platform;
+    switch (name) {
+        case "linux":
+            return "Linux";
+        case "darwin":
+            return "macOS";
+        case "win32":
+            return "Windows";
+        default:
+            return name;
+    }
+}
+/**
+ * The command that prints the working directory on this OS.
+ */
+export function describeCwdCommand(platformName) {
+    switch (platformName ?? process.platform) {
+        case "win32":
+            return "cd or echo %cd% (CMD), or (Get-Location).Path (PowerShell)";
+        case "linux":
+        case "darwin":
+            return "pwd";
+        default:
+            return "pwd (POSIX shells)";
+    }
+}
+/**
+ * Remove the pids of our own processes from a pgrep result.
+ *
+ * The shell that runs pgrep carries the search pattern in its own command
+ * line, so pgrep always reports it - a server would be claimed where none
+ * runs. The pids of our own processes are therefore dropped.
+ */
+export function filterOwnPids(pids, ownPids) {
+    const own = new Set(ownPids.map((pid) => pid.trim()));
+    return pids.map((pid) => pid.trim()).filter((pid) => pid.length > 0 && !own.has(pid));
+}
+/**
+ * Shorten the home directory to "~".
+ *
+ * The check is on a path boundary: "/home/user" is the home of
+ * "/home/user/app", but not of "/home/userX".
+ */
+export function formatWorkspacePath(workspacePath, home) {
+    if (!workspacePath)
+        return "";
+    // A trailing separator is not part of the path.
+    const path = workspacePath.replace(/[\\/]+$/, "") || workspacePath;
+    const homeDir = (home ?? process.env["HOME"] ?? process.env["USERPROFILE"] ?? "").replace(/[\\/]+$/, "");
+    // A root home ("/") shortens nothing - every path would look like "~".
+    if (homeDir && homeDir !== "/" && path.startsWith(homeDir)) {
+        const rest = path.slice(homeDir.length);
+        if (rest === "")
+            return "~";
+        if (rest.startsWith("/") || rest.startsWith("\\"))
+            return `~${rest}`;
+    }
+    return path;
+}
+/**
  * Human readable mode label.
  *
  * "unknown" always carries the reason: the mode can only be proven by an
@@ -30,28 +112,42 @@ export function describeWorkspaceMode(env) {
     }
     return "UNKNOWN (no explicit NODE_ENV)";
 }
-/**
- * Describe a dev/build server as a state.
- *
- * "not running (script available)" means the script EXISTS, i.e. a server
- * could be started. It is not evidence that a server is running and not
- * evidence about the workspace mode.
- */
-export function describeServerState(running, hasScript) {
-    if (running)
-        return "running";
-    if (hasScript)
-        return "not running (script available)";
-    return "no script";
+export function describeServerState(stateOrRunning, hasScript) {
+    // The legacy signature (a boolean plus the script flag) is kept so that
+    // published consumers keep working.
+    if (typeof stateOrRunning === "boolean") {
+        if (stateOrRunning)
+            return "running";
+        return hasScript ? "not running (script available)" : "no script";
+    }
+    switch (stateOrRunning) {
+        case "running":
+            return "running";
+        case "not-detected":
+            return "not detected";
+        case "not-checked":
+            return "not checked";
+        default:
+            // An unknown state is never reported as "not running".
+            return "not checked";
+    }
 }
 /**
  * One line status for the footer / status bar.
  */
 export function formatEnvStatusLine(env) {
     const mode = describeWorkspaceMode(env);
-    const devStatus = describeServerState(env.devServerRunning, env.hasDevScript);
-    const buildStatus = describeServerState(env.buildServerRunning, env.hasBuildScript);
-    let status = `Workspace: ${mode} | dev server: ${devStatus} | build: ${buildStatus}`;
+    // Without a stored state the honest answer is "not checked" - a legacy
+    // row that says "false" cannot tell a missing server from a platform
+    // where no check was possible.
+    const devState = env.devServerState ?? (env.devServerRunning ? "running" : "not-checked");
+    const buildState = env.buildServerState ?? (env.buildServerRunning ? "running" : "not-checked");
+    const path = formatWorkspacePath(env.workspacePath);
+    let status = `Workspace: ${path} | OS: ${describeOs()} | mode: ${mode}` +
+        ` | dev server: ${describeServerState(devState)}` +
+        ` | dev script: ${env.hasDevScript ? "available" : "unavailable"}` +
+        ` | build server: ${describeServerState(buildState)}` +
+        ` | build script: ${env.hasBuildScript ? "available" : "unavailable"}`;
     const ramStr = formatRam(env);
     if (ramStr) {
         status += ` | RAM: ${ramStr}`;
@@ -93,18 +189,19 @@ function formatRamForAgent(env) {
 export function formatEnvForAgentResult(env) {
     let message = `[Workspace Environment]\n`;
     message += `Mode: ${describeWorkspaceMode(env)}\n`;
+    message += `OS: ${describeOs()}\n`;
+    message += `Workspace path: ${formatWorkspacePath(env.workspacePath)}\n`;
+    message += `The workspace path was captured from the process working directory - to verify it in a shell: ${describeCwdCommand()}\n`;
     if (env.evidence.length > 0) {
         const sources = env.evidence.map((e) => `${e.source}:${e.value}`).join(", ");
         message += `Evidence: ${sources}\n`;
     }
     message += `Dev script: ${env.hasDevScript ? "yes" : "no"}\n`;
     message += `Build script: ${env.hasBuildScript ? "yes" : "no"}\n`;
-    if (env.devServerRunning) {
-        message += `Dev server: running\n`;
-    }
-    if (env.buildServerRunning) {
-        message += `Build server: running\n`;
-    }
+    const devState = env.devServerState ?? (env.devServerRunning ? "running" : "not-checked");
+    const buildState = env.buildServerState ?? (env.buildServerRunning ? "running" : "not-checked");
+    message += `Dev server: ${describeServerState(devState)}\n`;
+    message += `Build server: ${describeServerState(buildState)}\n`;
     if (env.ramTotalGb !== null || env.ramAvailableGb !== null) {
         message += `RAM: ${formatRamForAgent(env)}\n`;
         if (env.lowRamWarning) {
