@@ -371,6 +371,44 @@ All data stored locally in `~/.pi/`:
 +-- okf/               # (optional) Your custom OKF knowledge
 ```
 
+Credentials live in their own directory, `~/.pi-harness-runtime/keys/` — one file
+per secret, never in the repository. Common key files:
+
+```
+~/.pi-harness-runtime/keys/
++-- telegram-bot-token.txt       # Telegram bot token
++-- telegram-webhook-url.txt    # Public HTTPS URL of the Telegram webhook
++-- telegram-webhook-secret.txt # Webhook secret (x-telegram-bot-api-secret-token)
++-- telegram-allowed-users.txt  # Allowed Telegram user ids (comma-separated)
++-- telegram-chat-id.txt        # Legacy single allowed user id
++-- relay-auth-token.txt        # Relay WebSocket auth token
++-- relay-ws-url.txt            # Relay WebSocket URL (optional)
++-- line-access-token.txt       # LINE channel access token (LINE only)
++-- line-user-id.txt            # LINE user id (the extension only)
++-- line-channel-secret.txt     # LINE channel secret (webhook server only)
++-- typesafe-api-key.txt        # Jev / TypeSafe API key
++-- openrouter-api-key.txt      # Jev / OpenRouter API key (fallback provider)
++-- jev-api-key.txt             # Legacy Jev key (OpenRouter `sk-or-…` or TypeSafe)
+```
+
+This is a subset. The complete map is spread over the places the harness reads
+the credentials from: `harness/key-loader.ts` (KEY_FILE_MAP — the model and
+storage keys the langchain runner loads into the environment),
+`harness/telegram-auth.ts`, `index.ts` and `scripts/unified-webhook-server.ts`
+(the Telegram and LINE credentials the extension and the webhook server read
+from disk) and `packages/relay/src/relay-endpoint.ts` (RELAY_URL_SOURCES /
+RELAY_TOKEN_SOURCES — the relay endpoint and token).
+
+Two places can name the same credential with different files: the key-loader
+map is what the **langchain runner** loads into the environment, while the
+extension reads its own files (`qdrant-cluster-url.txt`, not
+`qdrant-cluster-endpoint.txt`; `telegram-bot-token.txt`, not a mapped
+variable). The startup fix commands always name the file the running code
+actually reads.
+
+See [Relay Setup](#relay-setup-two-way-telegram-stream) for the `echo` commands that
+create the relay and Telegram key files.
+
 ## Custom OKF Knowledge (Optional)
 
 Create `~/.pi/okf/` to add your custom knowledge that the runtime reads during context compilation:
@@ -546,6 +584,106 @@ echo "{coder-api-key}" > ~/.pi-harness-runtime/keys/coder-api-key.txt
 # optional: for LangSmith tracing
 echo "{langsmith-key}" > ~/.pi-harness-runtime/keys/langsmith-api-key.txt
 ```
+
+The startup summary scans `~/.pi-harness-runtime/keys/` and lists the missing
+credentials of every feature that has a startup line (Telegram, Relay, LINE,
+Jev, Qdrant, Honcho) together with the exact command that creates them — each
+command line is prefixed with `Fix:`:
+
+```text
+├─ [WARN] Relay: two-way streaming off; no relay endpoint configured
+│  Fix: echo "<TOKEN>" > ~/.pi-harness-runtime/keys/relay-auth-token.txt
+│  Fix: echo "<SECRET>" > ~/.pi-harness-runtime/keys/telegram-webhook-secret.txt
+│  Fix: echo "<WS_URL>" > ~/.pi-harness-runtime/keys/relay-ws-url.txt
+│  Fix: echo "<WEBHOOK_URL>" > ~/.pi-harness-runtime/keys/telegram-webhook-url.txt
+│  Then reload Pi.
+```
+
+A credential counts as present when its key file exists and is **not** empty,
+or when the environment variable it is read from is set (a credential the
+extension reads from a file only — the Telegram bot token and chat id — is
+not satisfied by an exported variable). A file that exists but is empty is
+reported with the same command plus an `# the file exists but is empty - the
+command replaces it` note (only the primary file carries that note — an
+alternative file that does not exist yet is simply missing). A value the
+reader would reject counts as
+missing as well: a key file with five characters or less is ignored by the
+skills loader, a Jev key with ten characters or less by the judge, and an
+allowed-user list without a single usable id is not a user list. Such a file
+is reported with an `# the file exists but the value is not accepted - the
+command replaces it` note.
+
+**Scope of the summary.** The audit covers the credentials of the features
+that have a startup line — Telegram, Relay, LINE, Jev, Qdrant and Honcho.
+The LINE channel secret (`line-channel-secret.txt`) is **not** part of it: it
+is only needed on the machine that runs the webhook server and no startup
+line owns it, so it is never reported as missing. Optional integrations
+without a startup line (for example Paperclip) are not part of the summary
+either; they write their own hint to the log file.
+
+**Narrow terminals.** A fix command that is too long for the terminal is
+split — the directory to create and the command itself — so that nothing
+is cut off in the middle of a path. The split form creates the key
+directory first (`mkdir -p`) and keeps the full path in the redirect, so it
+works whether or not the directory exists and it does not change the working
+directory of your shell. When even that does not fit, the redirect moves
+onto a line of its own (with a backslash continuation, so the shell still
+runs it as one command):
+
+```text
+├─ [WARN] Relay: two-way streaming off; no relay endpoint configured
+│  Fix: mkdir -p ~/.pi-harness-runtime/keys
+│       echo "<TOKEN>" > ~/.pi-harness-runtime/keys/relay-auth-token.txt
+│  Then reload Pi.
+```
+
+A command is never cut off: a broken path is worse than a long line.
+
+**A file that is already there is never overwritten silently.** When the
+summary shows a command for a file that exists, the command says that it
+replaces the file. When the audit cannot tell whether the value in the file
+is usable, the summary points at the file instead of offering an `echo`
+that would replace a working secret with a placeholder.
+
+The fix commands of each feature:
+
+| Feature | Key files the fix commands create | Environment variable |
+| --- | --- | --- |
+| Telegram | `telegram-bot-token.txt`, `telegram-chat-id.txt`, `telegram-allowed-users.txt` | — (bot token and chat id: files only; the allowlist also accepts `TELEGRAM_ALLOWED_USERS`) |
+| Relay | `relay-auth-token.txt` (or `telegram-webhook-secret.txt`), `relay-ws-url.txt` (or `telegram-webhook-url.txt`) | `RELAY_AUTH_TOKEN`, `RELAY_WS_URL` |
+| LINE | `line-access-token.txt`, `line-user-id.txt` | — (files only) |
+| Jev | `typesafe-api-key.txt` (or `openrouter-api-key.txt`, or the legacy `jev-api-key.txt`) | `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` |
+| Qdrant | `qdrant-cluster-url.txt`, `qdrant-api-key.txt`, `openai-api-key.txt` | `QDRANT_CLUSTER_ENDPOINT`, `QDRANT_API_KEY`, `OPENAI_API_KEY` |
+| Honcho | `honcho-api-key.txt` | — (file only) |
+
+Only the missing part is listed: a relay that has a URL but no token shows
+the token command alone. The Relay and the LINE line are optional features:
+they only appear when the user is actually using them — a relay key file
+(or the webhook url the relay url is derived from) exists, or the Telegram
+channel works. A user who never touches them sees no warning on every
+start. The LINE warning only appears once a
+`line-access-token.txt` or a `line-user-id.txt` file exists: a user who never
+touches LINE does not see a warning on every start. The LINE line only turns
+green when the channel was really started in that run — after you create the
+LINE key files, reload Pi once, otherwise the line says
+`configured; reload Pi to enable the channel` (or
+`configured; Telegram must be configured first` when the LINE channel cannot
+start because Telegram is not configured yet).
+
+The audit never prints a credential value — only the placeholder. Secrets
+managed by [Infisical](#3-infisical-secrets-optional--centralized-key-management)
+are not covered: the audit looks at the key files and the environment only.
+
+**When the summary refreshes.** The Relay and LINE lines are re-checked when
+a session starts, so they follow the key files immediately. The LINE
+*channel* is only started once per load — after you create the LINE key
+files, reload Pi once, otherwise the line says `configured; reload Pi to
+enable the channel` (or `configured; Telegram must be configured first` when
+a reload cannot help because Telegram is missing). The other lines
+(Telegram, Jev, Qdrant, Honcho) describe the state at load time — the
+features are initialised once per load, so a new key file needs a reload
+before the line changes. That is why every fix command ends with
+"Then reload Pi."
 
 ### 3. Infisical Secrets (Optional — Centralized Key Management)
 
@@ -937,6 +1075,9 @@ Single server handles both Telegram and LINE webhooks on one domain.
 
 ### Setup
 
+> For the two-way WebSocket stream (relay server + relay client) see
+> [Relay Setup](#relay-setup-two-way-telegram-stream).
+
 1. **Create Telegram Bot**
    ```bash
    # DM @BotFather → /newbot → get token
@@ -1002,6 +1143,15 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
+
+    # The relay WebSocket (two-way Telegram stream) - see "Relay Setup" below
+    location /ws {
+        proxy_pass http://127.0.0.1:8444/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
 }
 ```
 
@@ -1025,6 +1175,98 @@ echo "123456789" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt
 ```
 
 Unauthorized callback queries are rejected before processing.
+
+## Relay Setup (Two-Way Telegram Stream)
+
+The two-way Telegram stream has two halves:
+
+- **Server** — `scripts/unified-webhook-server.ts` receives the Telegram webhook and
+  broadcasts every callback to the connected WebSocket clients (relay on `WS_PORT`,
+  default `8444`).
+- **Client** — `scripts/relay-client.ts` connects to that relay and forwards the
+  callbacks into pi (job pipe, Telegram replies).
+
+Both halves resolve the credential from the same key chain
+(`packages/relay/src/relay-endpoint.ts`), so — with `RELAY_AUTH_TOKEN` exported in
+both shells — the client and the server use the same secret. Only the client
+resolves the URL:
+
+| Setting | Resolution order (first match wins) |
+| --- | --- |
+| WebSocket URL | `RELAY_WS_URL` env → `keys/relay-ws-url.txt` → derived from `keys/telegram-webhook-url.txt` (same host and port, path `/ws`, `https` → `wss`) |
+| Auth token | `RELAY_AUTH_TOKEN` env → `keys/relay-auth-token.txt` → `keys/telegram-webhook-secret.txt` |
+
+### 1. Create the key files
+
+Replace the placeholders with your own values — never commit real ones.
+
+```bash
+mkdir -p ~/.pi-harness-runtime/keys
+
+# Telegram bot token (from @BotFather)
+echo "YOUR_TELEGRAM_BOT_TOKEN" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt
+
+# Public HTTPS URL of your webhook (the reverse proxy in front of the relay)
+echo "https://webhook.your-domain.com/telegram" > ~/.pi-harness-runtime/keys/telegram-webhook-url.txt
+
+# The secret the webhook expects in the x-telegram-bot-api-secret-token header
+echo "YOUR_TELEGRAM_WEBHOOK_SECRET" > ~/.pi-harness-runtime/keys/telegram-webhook-secret.txt
+
+# Dedicated relay auth token (recommended - keeps it separate from the
+# Telegram webhook secret, so one leaked secret does not unlock both)
+echo "YOUR_RELAY_AUTH_TOKEN" > ~/.pi-harness-runtime/keys/relay-auth-token.txt
+
+# Allowed Telegram user ids (comma-separated)
+echo "123456789,987654321" > ~/.pi-harness-runtime/keys/telegram-allowed-users.txt
+
+# Optional: the relay WebSocket URL. Only needed when it cannot be derived
+# from the webhook URL (the relay runs on another host/port or a custom path).
+# It must be a plain ws:// or wss:// URL - no credentials, no query string.
+echo "wss://relay.your-domain.com:8444/ws" > ~/.pi-harness-runtime/keys/relay-ws-url.txt
+```
+
+### 2. Or use environment variables
+
+```bash
+# The CLIENT reads RELAY_WS_URL; the SERVER only needs RELAY_AUTH_TOKEN.
+# Both processes resolve the environment at startup, so export the token in
+# BOTH shells (the server and the client) - otherwise they disagree.
+export RELAY_WS_URL="wss://webhook.your-domain.com/ws"   # client only
+export RELAY_AUTH_TOKEN="YOUR_RELAY_AUTH_TOKEN"           # server AND client
+```
+
+`RELAY_WS_URL` / `keys/relay-ws-url.txt` must be a plain `ws://` or `wss://` URL —
+a URL with credentials (`wss://user:pass@host/ws`) or a query string is skipped
+with a warning instead of being used.
+
+### 3. Expose the relay through the reverse proxy
+
+The derived URL (`…/ws`) only works when the proxy maps `/ws` to the relay port.
+The `location /ws` block is already part of the NGINX `server` block shown in
+[NGINX Configuration](#nginx-configuration) — do **not** add it a second time
+(nginx rejects a duplicate location). If your NGINX config predates the relay,
+copy that block from the NGINX section into your `server` block exactly once.
+
+When the webhook URL addresses the application directly (no proxy in front), the
+resolver *warns* about a derived loopback URL (it still returns it) — the relay
+listens on `WS_PORT` (default `8444`), not on the HTTP port. Set `RELAY_WS_URL`
+or `keys/relay-ws-url.txt` for that setup.
+
+### 4. Start both halves
+
+```bash
+# Server: HTTP webhook + WebSocket relay (WS_PORT, default 8444)
+bun run scripts/unified-webhook-server.ts
+
+# Client: connects to the relay and forwards the callbacks into pi
+bun run scripts/relay-client.ts
+```
+
+Without a relay auth token the server does **not** start the WebSocket relay —
+callbacks are queued on disk instead.
+
+> **Note:** the token value is never logged, only the name of the source it came
+> from (`env RELAY_AUTH_TOKEN`, `keys/relay-auth-token.txt`, …).
 
 ## License
 

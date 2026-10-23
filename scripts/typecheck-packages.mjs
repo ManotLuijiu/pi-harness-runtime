@@ -37,6 +37,8 @@ const BASELINES = new Map([
 	["worktree", 2],
 	["harness", 35],
 	["scripts", 15],
+	["root", 2],
+	["new-modules", 0],
 ]);
 
 const TSC_TIMEOUT_MS = 300_000;
@@ -52,6 +54,15 @@ if (!existsSync(tsc)) {
 
 /** All projects to check, relative to the repo root. */
 const projects = [];
+/**
+ * Projects that were expected but are missing.
+ *
+ * A missing tsconfig means the code behind it is NOT type checked - a
+ * silent loss of coverage. The file may be absent on purpose (an installed
+ * copy of the package does not ship the tsconfigs), so this is reported as
+ * a note, not as a failure.
+ */
+const missingProjects = [];
 for (const name of readdirSync(packagesDir).sort()) {
 	const project = join(packagesDir, name, "tsconfig.json");
 	if (existsSync(project)) projects.push(relative(root, project));
@@ -61,10 +72,26 @@ for (const extra of ["harness", "scripts"]) {
 		projects.push(join(extra, "tsconfig.json"));
 	}
 }
+// The root extension (index.ts) has no project of its own - it is the entry
+// point of the extension and was never type checked.
+if (existsSync(join(root, "tsconfig.root.json"))) {
+	projects.push("tsconfig.root.json");
+} else {
+	missingProjects.push("tsconfig.root.json");
+}
+// The new startup modules are checked under `strict` - the root project
+// itself cannot be (it carries thousands of pre-existing loose typings).
+if (existsSync(join(root, "tsconfig.new-modules.json"))) {
+	projects.push("tsconfig.new-modules.json");
+} else {
+	missingProjects.push("tsconfig.new-modules.json");
+}
 
 /** Baseline owner for a project path ("packages/runtime" -> that package). */
 function ownerOf(projectPath) {
 	const normalized = projectPath.split("\\").join("/");
+	if (normalized === "tsconfig.root.json") return "root";
+	if (normalized === "tsconfig.new-modules.json") return "new-modules";
 	if (normalized.startsWith("packages/")) {
 		return normalized.split("/")[1];
 	}
@@ -107,12 +134,20 @@ for (const project of projects) {
 		timedOut = Boolean(error.killed) || error.signal === "SIGTERM";
 	}
 		const errorLines = output.split("\n").filter((line) => /error TS/.test(line));
+		// The root program pulls the harness files into its program, so their
+		// pre-existing errors would be counted a second time (the harness
+		// project has its own baseline). Only the errors of the root file
+		// count for the root project.
+		const projectErrors =
+			owner === "root"
+				? errorLines.filter((line) => /^index\.ts\(/.test(line))
+				: errorLines;
 		// TS18003: "No inputs were found in config file". A package whose
 		// sources are compiled output only (packages/*/src/*.js and *.d.ts
 		// are gitignored) has no TypeScript input in a fresh checkout, so
 		// there is nothing to check - that is not a type error.
-		const noInputs = errorLines.some((line) => /error TS18003/.test(line));
-		const count = errorLines.length;
+		const noInputs = projectErrors.some((line) => /error TS18003/.test(line));
+		const count = projectErrors.length;
 
 		if (noInputs) {
 			skipped.push(`${owner} (no TypeScript sources in this checkout)`);
@@ -179,3 +214,8 @@ if (failures.length > 0) {
 }
 
 console.log("typecheck: no unexpected type errors");
+if (missingProjects.length > 0) {
+	console.log(
+		`typecheck: note - ${missingProjects.length} project file(s) are missing, so their code is not type checked: ${missingProjects.join(", ")}`,
+	);
+}

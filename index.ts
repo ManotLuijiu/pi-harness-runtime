@@ -20,6 +20,21 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { HarnessStartupStatus, harnessStatusMarker } from "./harness-startup-status.ts";
+import {
+	auditKeyFiles,
+	fallbackKeyFileFixes,
+	formatKeyFileFixes,
+	selectKeyFileFixes,
+	type KeyFileAuditResult,
+} from "./harness/key-file-audit.ts";
+import { renderDetailLines } from "./harness/startup-lines.ts";
+import {
+	jevMissingKeyReport,
+	lineConfigurationReport,
+	oneLineError,
+	relayEndpointReport,
+	relayShouldBeReported,
+} from "./harness/startup-report.ts";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
@@ -133,6 +148,65 @@ const startupStatus = new HarnessStartupStatus();
 const harnessMessages = startupStatus.messages;
 const addHarnessMessage = startupStatus.update.bind(startupStatus);
 
+// --- Key file audit ---------------------------------------------------------
+// The startup summary must tell the user HOW to fix a missing key file, not
+// only that a credential is missing. The audit scans ~/.pi-harness-runtime/keys
+// once per session; the fix commands are attached to the startup line of the
+// feature that needs the credential.
+let keyFileAudit: KeyFileAuditResult | null = null;
+let keyFileAuditDone = false;
+/**
+ * What happened to the LINE channel in this run?
+ *
+ * The extension is initialised once per load - a session that starts after
+ * the user created the LINE key files still has no LINE channel, so the
+ * startup line must not claim a green "configured".
+ */
+let lineChannelState: "started" | "failed" | "not-started" = "not-started";
+let telegramChannelState: "started" | "failed" | "not-started" = "not-started";
+/** Did the relay client connect at least once in this extension load? */
+let relayStreamConnected = false;
+
+function harnessKeysDir(): string {
+	return join(homedir(), ".pi-harness-runtime", "keys");
+}
+
+function getKeyFileAudit(): KeyFileAuditResult | null {
+	if (keyFileAuditDone) return keyFileAudit;
+	keyFileAuditDone = true;
+	try {
+		keyFileAudit = auditKeyFiles({ keysDir: harnessKeysDir() });
+	} catch {
+		keyFileAudit = null;
+	}
+	return keyFileAudit;
+}
+
+/**
+ * The `echo` commands that create the missing key files of one feature.
+ *
+ * `labels` narrows the result to specific credentials (e.g. only the bot token
+ * and the chat id for a Telegram that is not configured yet).
+ */
+function keyFileFixes(feature: string, labels?: string[]): string[] {
+	const selected = selectKeyFileFixes(getKeyFileAudit(), feature, labels);
+	return formatKeyFileFixes(selected, harnessKeysDir());
+}
+
+/**
+ * The fix commands for a credential the runtime has already found missing.
+ *
+ * The audit can disagree with the runtime - a key file that exists but holds
+ * a value the reader rejects (too short) counts as present for the audit
+ * while the feature stays unconfigured. In that case the command is shown
+ * anyway, so a warning line never appears without a way to fix it.
+ */
+function keyFileFixesOrFallback(feature: string, labels: string[]): string[] {
+	const fixes = keyFileFixes(feature, labels);
+	if (fixes.length > 0) return fixes;
+	return fallbackKeyFileFixes(feature, labels, harnessKeysDir());
+}
+
 // Shared state for callback handlers (accessible across init functions)
 const sharedState = {
 	waitingForUserSince: null as Date | null,
@@ -180,10 +254,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 		logStartup("[pi-harness] Delegation harness initialized");
 
-		if (jevProviders.length === 0) {
-			addHarnessMessage("Jev", "API key missing; question detection active, auto-continue unavailable", "warn", [
-				"Set TYPESAFE_API_KEY (or OPENROUTER_API_KEY), or write the key to ~/.pi-harness-runtime/keys/typesafe-api-key.txt (or openrouter-api-key.txt), to enable auto-continue.",
-			]);
+		// The Jev key is missing: the fix commands must survive every later
+		// message with the same label - `HarnessStartupStatus.update` replaces
+		// a message by label, so a later "verifying API..." line would drop
+		// them.
+		const jevKeyMissing = jevProviders.length === 0;
+		if (jevKeyMissing) {
+			const report = jevMissingKeyReport(keyFileFixesOrFallback("Jev", ["API key"]));
+			addHarnessMessage(report.label, report.text, report.status, report.details);
 			logToFile("[auto-continue]", "No Jev API key found, but question detection is active. Set TYPESAFE_API_KEY or write the key to ~/.pi-harness-runtime/keys/typesafe-api-key.txt");
 			// Don't return - question handling still works without Jev
 		}
@@ -939,44 +1017,54 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Start periodic check
 		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
-		addHarnessMessage("Jev", "auto-continue configured (verifying API...)", "ok");
+		if (jevKeyMissing) {
+			// Without a provider the health check cannot run. The missing-key
+			// message (with its fix commands) stays the visible one.
+			logStartup("[pi-harness] Jev: no API key - auto-continue stays off until a key is configured");
+		} else {
+			addHarnessMessage("Jev", "auto-continue configured (verifying API...)", "ok");
 
-		// Verify the API works with a health check that exercises every
-		// question type the auto-continue judge uses. A noul only check would
-		// pass while the choice and score questions of the real decision were
-		// rejected by the API.
-		try {
-			const { JevJudge } = await import("./packages/jev-judge/dist/index.js");
-			const judge = new JevJudge({ providers: jevProviders });
-			const health = await judge.evaluate("health check", {
-				noul: { type: "noul" as const, instructions: "Is this a test?" },
-				choice: {
-					type: "choice" as const,
-					instructions: "Pick one",
-					options: ["yes", "no"],
-				},
-				score: {
-					type: "score" as const,
-					instructions: "How confident is the test?",
-					min: 1,
-					max: 5,
-					criteria: ["1 - no", "2 - low", "3 - medium", "4 - high", "5 - certain"],
-				},
-			});
-			addHarnessMessage(
-				"Jev",
-				`auto-continue ready (API verified, model ${health.model} via ${health.provider})`,
-				"ok"
-			);
-		} catch (verifyErr) {
-			addHarnessMessage("Jev", "auto-continue ready (API verification failed)", "warn", [
-				`Error: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`,
-				"Check API key and network access, then reload Pi.",
-			]);
+			// Verify the API works with a health check that exercises every
+			// question type the auto-continue judge uses. A noul only check would
+			// pass while the choice and score questions of the real decision were
+			// rejected by the API.
+			try {
+				const { JevJudge } = await import("./packages/jev-judge/dist/index.js");
+				const judge = new JevJudge({ providers: jevProviders });
+				const health = await judge.evaluate("health check", {
+					noul: { type: "noul" as const, instructions: "Is this a test?" },
+					choice: {
+						type: "choice" as const,
+						instructions: "Pick one",
+						options: ["yes", "no"],
+					},
+					score: {
+						type: "score" as const,
+						instructions: "How confident is the test?",
+						min: 1,
+						max: 5,
+						criteria: ["1 - no", "2 - low", "3 - medium", "4 - high", "5 - certain"],
+					},
+				});
+				addHarnessMessage(
+					"Jev",
+					`auto-continue ready (API verified, model ${health.model} via ${health.provider})`,
+					"ok"
+				);
+			} catch (verifyErr) {
+				addHarnessMessage("Jev", "auto-continue not ready (API verification failed)", "warn", [
+					`Error: ${oneLineError(verifyErr)}`,
+					"Check API key and network access, then reload Pi.",
+					"If the key is wrong or expired, replace it:",
+					...keyFileFixesOrFallback("Jev", ["API key"]),
+				]);
+			}
 		}
 	} catch (_err) {
 		addHarnessMessage("Jev", "auto-continue initialization failed", "err", [
 			"Check Jev package installation and key-file permissions, then reload Pi.",
+			"If the API key file is missing or unreadable, create it:",
+			...keyFileFixesOrFallback("Jev", ["API key"]),
 		]);
 	}
 }
@@ -1028,30 +1116,34 @@ async function initQdrant(): Promise<void> {
 					if (healthResponse.ok) {
 						addHarnessMessage("Qdrant", "ready (connection verified)", "ok");
 					} else {
-						addHarnessMessage("Qdrant", "ready (connection failed)", "warn", [
+						addHarnessMessage("Qdrant", "not ready (connection failed)", "warn", [
 							`Health check returned: ${healthResponse.status} ${healthResponse.statusText}`,
 							"Check cluster URL and network access, then reload Pi.",
+							"If the cluster URL or the key is wrong, replace it:",
+							...keyFileFixesOrFallback("Qdrant", ["cluster endpoint", "API key"]),
 						]);
 					}
 				} catch (healthErr) {
-					addHarnessMessage("Qdrant", "ready (connection failed)", "warn", [
+					addHarnessMessage("Qdrant", "not ready (connection failed)", "warn", [
 							`Error: ${healthErr instanceof Error ? healthErr.message : String(healthErr)}`,
 							"Check cluster URL and network access, then reload Pi.",
+							"If the cluster URL or the key is wrong, replace it:",
+							...keyFileFixesOrFallback("Qdrant", ["cluster endpoint", "API key"]),
 						]);
 				}
 			} else {
 				logStartup("[pi-harness] Qdrant ready (no embedding key — skills won't be vector-indexed)");
 				addHarnessMessage("Qdrant", "embedding key missing; vector indexing unavailable", "warn", [
-					"How to fix: Set OPENAI_API_KEY in ~/.pi-harness-runtime/keys/openai-api-key.txt",
-					"Or run: echo 'sk-your-key' > ~/.pi-harness-runtime/keys/openai-api-key.txt",
+					...keyFileFixesOrFallback("Qdrant", ["embedding key"]),
+					"Or set OPENAI_API_KEY in the environment, then reload Pi.",
 				]);
 				logStartup('[pi-harness] For vector search: echo "{openai-api-key}" > ~/.pi-harness-runtime/keys/openai-api-key.txt');
 			}
 		} else {
 			logStartup("[pi-harness] Qdrant not configured. Set keys to enable vector skill search:");
 			addHarnessMessage("Qdrant", "not configured", "warn", [
-				"How to fix: Set QDRANT_CLUSTER_ENDPOINT in ~/.pi-harness-runtime/keys/qdrant-cluster-endpoint.txt",
-				"Set QDRANT_API_KEY in ~/.pi-harness-runtime/keys/qdrant-api-key.txt",
+				...keyFileFixesOrFallback("Qdrant", ["cluster endpoint", "API key"]),
+				"Or set QDRANT_CLUSTER_ENDPOINT and QDRANT_API_KEY in the environment, then reload Pi.",
 			]);
 			logStartup(`  echo "{cluster-url}" > ~/.pi-harness-runtime/keys/qdrant-cluster-url.txt`);
 			logStartup(`  echo "{api-key}" > ~/.pi-harness-runtime/keys/qdrant-api-key.txt`);
@@ -1060,6 +1152,8 @@ async function initQdrant(): Promise<void> {
 			addHarnessMessage("Qdrant", "initialization failed", "err", [
 				"How to fix: Check Qdrant cluster is running and credentials are correct",
 				"Verify QDRANT_CLUSTER_ENDPOINT and QDRANT_API_KEY are set.",
+				"If the cluster URL or the key is wrong, replace it:",
+				...keyFileFixesOrFallback("Qdrant", ["cluster endpoint", "API key"]),
 			]);
 	}
 }
@@ -1235,9 +1329,9 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			logStartup("[pi-harness]   3. echo \"{token}\" > ~/.pi-harness-runtime/keys/telegram-bot-token.txt");
 			logStartup("[pi-harness]   4. echo \"{chat-id}\" > ~/.pi-harness-runtime/keys/telegram-chat-id.txt");
 			logStartup("[pi-harness]   5. Reload pi — then DM @PiHarnessRuntimeBot to verify");
+			const telegramFixes = keyFileFixesOrFallback("Telegram", ["bot token", "chat id", "allowed user ids"]);
 			addHarnessMessage("Telegram", "credentials missing; notifications unavailable", "warn", [
-				"echo \"<TOKEN>\" > keys/telegram-bot-token.txt",
-				"echo \"<CHAT_ID>\" > keys/telegram-chat-id.txt",
+				...telegramFixes,
 				"Then reload Pi.",
 			]);
 			return;
@@ -1253,8 +1347,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 		if (!botToken || !chatId) {
 			logStartup("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
+			const emptyFixes = keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]);
 			addHarnessMessage("Telegram", "bot token or chat ID is empty; notifications unavailable", "warn", [
-				"Fill telegram-bot-token.txt and telegram-chat-id.txt in ~/.pi-harness-runtime/keys/, then reload Pi.",
+				...emptyFixes,
+				"Fill the file(s) above, then reload Pi.",
 			]);
 			return;
 		}
@@ -1274,19 +1370,18 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		];
 
 		// Add LINE channel if credentials exist
-		if (hasLineCredentials && lineAccessToken && lineUserId) {
+		const lineChannelConfigured = Boolean(hasLineCredentials && lineAccessToken && lineUserId);
+		if (lineChannelConfigured) {
 			channels.push({
 				id: "line",
 				type: "line" as const,
 				enabled: true,
 				config: { channelAccessToken: lineAccessToken, userId: lineUserId },
 			});
-			addHarnessMessage("LINE", "configured and enabled (tap Toggle LINE to disable)", "ok");
-		} else {
-			addHarnessMessage("LINE", "not configured", "warn", [
-				"Configure LINE in ~/.pi-harness-runtime/keys/",
-			]);
 		}
+		// The "LINE: not configured" line (with the fix commands) is reported by
+		// reportLineConfiguration() from the top-level init - it must show up
+		// even when Telegram itself is not configured.
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const center = new NotificationCenter({
@@ -1295,12 +1390,27 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		});
 
 		await center.initialize();
-		if (!center.hasHealthyChannels()) {
+		// The channel states are only green when the channel really
+		// initialized - the credentials alone are not proof that it works.
+		telegramChannelState = center.isChannelHealthy("telegram") ? "started" : "failed";
+		// The LINE line is only green when the channel really initialized -
+		// the credentials alone are not proof that it works.
+		if (lineChannelConfigured) {
+			if (center.isChannelHealthy("line")) {
+				lineChannelState = "started";
+				addHarnessMessage("LINE", "configured and enabled (tap Toggle LINE to disable)", "ok");
+			} else {
+				lineChannelState = "failed";
+			}
+		}
+		if (telegramChannelState !== "started") {
 			logStartup("[pi-harness] Telegram: initialization failed — skipping");
 			addHarnessMessage("Telegram", "bot verification failed; notifications unavailable", "err", [
 				"How to fix: Verify bot token in ~/.pi-harness-runtime/keys/telegram-bot-token.txt",
 				"Check the bot exists and token is valid at @BotFather.",
 				"Check the bot token and network access, then reload Pi.",
+				"If the bot token or the chat id is wrong, replace it:",
+				...keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]),
 			]);
 			return;
 		}
@@ -1516,6 +1626,8 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			addHarnessMessage("Telegram", "bot verified; Hi delivery failed", "err", [
 				"Open your bot in Telegram and press Start; unblock it if necessary.",
 				"Verify telegram-chat-id.txt in ~/.pi-harness-runtime/keys/ and network access, then reload Pi.",
+				"If the chat id is wrong, replace it:",
+				...keyFileFixesOrFallback("Telegram", ["chat id"]),
 			]);
 			return;
 		}
@@ -1529,10 +1641,15 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			logStartup(`[pi-harness] Telegram notifications ready`);
 		}
 	} catch (err) {
+		// The channel did not come up: the state must say so - otherwise the
+		// LINE line blames Telegram for not being configured (it was).
+		telegramChannelState = "failed";
 		logStartup(`[pi-harness] Telegram: init failed - ${err instanceof Error ? err.message : String(err)}`);
 		addHarnessMessage("Telegram", "initialization failed; notifications unavailable", "err", [
 			"How to fix: Check logs at /tmp/pi-harness.log for Telegram errors",
 			"Ensure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set correctly.",
+			"If the bot token or the chat id is missing or wrong, replace it:",
+			...keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]),
 		]);
 	}
 }
@@ -1555,26 +1672,207 @@ function setRelayTelegramAdapter(adapter: any) {
 }
 
 /**
+ * Resolve the relay endpoint from the SAME sources the relay server uses
+ * (env -> dedicated key file -> the telegram webhook url/secret), so the
+ * client and the server always agree on the URL and the token.
+ * The token value is never logged - only the source it came from.
+ */
+function resolveRelayEndpointForHarness() {
+	return resolveRelayEndpoint({ keysDir: join(homedir(), ".pi-harness-runtime", "keys") });
+}
+
+/**
+ * The fix commands for the parts of the relay endpoint that are missing.
+ * Only the missing part is listed - a relay that has a URL but no token must
+ * not tell the user to create the URL file.
+ */
+function relayEndpointFixes(endpoint: {
+	url?: string | null;
+	token?: string | null;
+	missing?: string[] | null;
+}): string[] {
+	const fixes: string[] = [];
+	if (!endpoint.token) {
+		fixes.push(...keyFileFixesOrFallback("Relay", ["auth token"]));
+	}
+	if (!endpoint.url) {
+		// A rejected environment variable has the priority over the key file:
+		// creating relay-ws-url.txt would not help while RELAY_WS_URL is
+		// still set to the rejected value.
+		const rejectedEnv = Array.isArray(endpoint.missing)
+			? endpoint.missing.some(
+					(reason) =>
+						reason.startsWith("rejected source:") && reason.includes("env RELAY_WS_URL"),
+				)
+			: false;
+		if (rejectedEnv) {
+			fixes.push("Unset RELAY_WS_URL or set it to a ws:// or wss:// URL, then reload Pi.");
+		} else {
+			fixes.push(...keyFileFixesOrFallback("Relay", ["WebSocket URL"]));
+		}
+	}
+	return fixes;
+}
+
+/**
+ * The startup message of a label, if there is one.
+ */
+function harnessMessage(label: string): { label: string; text: string; status: string } | undefined {
+	return harnessMessages.find((m) => m.label === label);
+}
+
+/**
+ * Report the relay configuration in the startup summary.
+ *
+ * Called from the top-level init (not from initTelegram) so the line also
+ * shows up when Telegram itself is not configured - that is exactly the
+ * fresh-install case where the user needs the instructions.
+ */
+function reportRelayConfiguration(): void {
+	let endpoint: ReturnType<typeof resolveRelayEndpointForHarness>;
+	try {
+		endpoint = resolveRelayEndpointForHarness();
+	} catch {
+		return;
+	}
+	if (endpoint.url && endpoint.token) {
+		// The endpoint is configured. On the first report the connection path
+		// owns the line (it reports "connected"); a later report (a new
+		// session) refreshes a stale warning line.
+		const existing = harnessMessage("Relay");
+		if (existing && (existing.status === "warn" || existing.status === "ok")) {
+			if (relayStreamConnected) {
+				addHarnessMessage("Relay", "connected; live callbacks enabled", "ok");
+			} else {
+				addHarnessMessage("Relay", "endpoint configured; live stream not connected", "warn", [
+					"Check the relay server and the network, then reload Pi.",
+				]);
+			}
+		}
+		return;
+	}
+	// The relay is optional: a user who never set it up (and whose Telegram
+	// channel does not work either) must not see a permanent warning with
+	// fix commands. The Telegram line carries the instructions in that case.
+	if (!relayShouldBeReported({
+		hasRelayKeyFile: hasAnyRelayKeyFile(),
+		telegramConfigured: telegramIsConfigured(),
+	})) {
+		return;
+	}
+	// `missing` names the real cause - e.g. "rejected source: env RELAY_WS_URL
+	// (not a ws:// or wss:// URL)" - so the user does not create a key file
+	// for a problem that lives in the environment. It never holds a secret.
+	// The "not resolved (looked at ...)" entries are left out - the fix
+	// commands below already name the sources.
+	const reasons = Array.isArray(endpoint.missing)
+		? endpoint.missing.filter((reason) => reason.startsWith("rejected source:"))
+		: [];
+	const report = relayEndpointReport({
+		missingUrl: !endpoint.url,
+		missingToken: !endpoint.token,
+		reasons,
+		fixes: relayEndpointFixes(endpoint),
+	});
+	addHarnessMessage(report.label, report.text, report.status, report.details);
+}
+
+/**
+ * Report the LINE configuration in the startup summary.
+ *
+ * Like the relay line this is reported from the top-level init (not from
+ * initTelegram) so the line also shows up when Telegram itself is not
+ * configured - that is exactly the fresh-install case where the user needs
+ * the instructions. The "configured" line stays with initTelegram, which owns
+ * the channel.
+ */
+function reportLineConfiguration(): void {
+	// A user who never touched LINE must not see a warning on every start.
+	// The line appears as soon as a LINE client key file exists.
+	const report = lineConfigurationReport({
+		audit: getKeyFileAudit(),
+		clientKeyFilePresent: hasLineClientKeyFile(),
+		channelState: lineChannelState,
+		telegramConfigured: telegramIsConfigured(),
+		// The fallback makes sure that a warning always carries a command,
+		// even when the audit could not answer.
+		fixes: keyFileFixesOrFallback("LINE", ["channel access token", "user id"]),
+		// Without Telegram the LINE channel cannot start - the user needs
+		// the Telegram commands, not only an explanation.
+		telegramFixes: keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]),
+	});
+	if (!report) return;
+	addHarnessMessage(report.label, report.text, report.status, report.details);
+}
+
+/**
+ * Is Telegram configured and working?
+ *
+ * The LINE channel starts together with the Telegram channel - the startup
+ * summary names the real cause when the LINE channel did not start. The
+ * answer comes from the runtime (the channel really initialized), not from
+ * the presence of the key files: a token the API rejects is not a working
+ * Telegram.
+ */
+function telegramIsConfigured(): boolean {
+	return telegramChannelState === "started";
+}
+
+/**
+ * Does the key directory hold a relay credential (or the webhook url the
+ * relay url is derived from)?
+ *
+ * The relay is an optional feature: a user who never set it up must not see
+ * a permanent warning with fix commands. The line appears as soon as one of
+ * the relay key files exists or as soon as the Telegram channel works (the
+ * relay serves the Telegram callbacks).
+ */
+function hasAnyRelayKeyFile(): boolean {
+	try {
+		return readdirSync(harnessKeysDir()).some(
+			(entry) =>
+				entry === "relay-ws-url.txt" ||
+				entry === "relay-auth-token.txt" ||
+				entry === "telegram-webhook-url.txt",
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Does the key directory hold a LINE client credential?
+ *
+ * The LINE warning is only relevant for a user who started to set LINE up
+ * (a line-access-token.txt or a line-user-id.txt file exists) but did not
+ * finish. The channel secret (line-channel-secret.txt) does not count: it
+ * is only needed on the host that runs the webhook server.
+ */
+function hasLineClientKeyFile(): boolean {
+	try {
+		return readdirSync(harnessKeysDir()).some(
+			(entry) => entry === "line-access-token.txt" || entry === "line-user-id.txt",
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Initialize relay streaming for real-time callback delivery.
  * Connects to the relay WebSocket server and forwards Telegram callbacks
  * to the adapter for proper greeting verification and handling.
  */
 async function initRelayStream(): Promise<void> {
-	// Use the OS home directory - the relay server resolves its key files
-	// the same way, so both sides always look in the same place.
-	const keysDir = join(homedir(), ".pi-harness-runtime", "keys");
-
-	// Resolve the relay endpoint from the SAME sources the relay server uses
-	// (env -> dedicated key file -> the telegram webhook url/secret), so the
-	// client and the server always agree on the URL and the token.
-	// The token value is never logged - only the source it came from.
-	const endpoint = resolveRelayEndpoint({ keysDir });
+	const endpoint = resolveRelayEndpointForHarness();
 
 	if (!endpoint.url || !endpoint.token) {
 		logToFile(
 			"[RelayStream]",
 			`Relay endpoint not configured - skipping streaming (${endpoint.missing.join("; ")})`,
 		);
+		// The startup summary already carries the fix commands (see
+		// reportRelayConfiguration) - do not repeat the message here.
 		return;
 	}
 
@@ -1594,9 +1892,17 @@ async function initRelayStream(): Promise<void> {
 		{
 			onConnected: (sessionId) => {
 				logToFile("[RelayStream]", `Connected to relay, session: ${sessionId}`);
+				relayStreamConnected = true;
+				addHarnessMessage("Relay", "connected; live callbacks enabled", "ok");
 			},
 			onDisconnected: () => {
 				logToFile("[RelayStream]", "Disconnected from relay");
+				// A dropped connection must not leave a green "connected"
+				// claim in the summary.
+				relayStreamConnected = false;
+				addHarnessMessage("Relay", "live stream disconnected; reconnecting", "warn", [
+					"Check the relay server and the network, then reload Pi.",
+				]);
 			},
 			onSnapshot: (snapshot) => {
 				logToFile("[RelayStream]", `Snapshot: ${snapshot.recentCallbacks.length} recent callbacks`);
@@ -1636,7 +1942,16 @@ async function initRelayStream(): Promise<void> {
 				}
 			},
 			onError: (error) => {
-				logToFile("[RelayStream]", `Error: ${error.message}`);
+				logToFile("[RelayStream]", `Error: ${oneLineError(error)}`);
+				// The client keeps retrying in the background, so the stream
+				// may still come up - but the user must see that the live
+				// callbacks are not running yet.
+				if (!relayStreamConnected) {
+					addHarnessMessage("Relay", "endpoint configured; live stream not connected", "warn", [
+						`Error: ${oneLineError(error)}`,
+						"Check the relay server and the network, then reload Pi.",
+					]);
+				}
 			},
 		}
 	);
@@ -1672,8 +1987,7 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
 		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
 		addHarnessMessage("Honcho", "API key missing", "warn", [
-			"Get key: https://app.honcho.dev/api-keys",
-			"echo \"<KEY>\" > keys/honcho-api-key.txt",
+			...keyFileFixesOrFallback("Honcho", ["API key"]),
 			"Then reload Pi.",
 		]);
 		return;
@@ -1683,7 +1997,7 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 	if (!apiKey) {
 		logStartup("[pi-harness] Honcho: API key is empty — skipping");
 		addHarnessMessage("Honcho", "API key empty", "warn", [
-			"echo \"<KEY>\" > keys/honcho-api-key.txt",
+			...keyFileFixesOrFallback("Honcho", ["API key"]),
 			"Then reload Pi.",
 		]);
 		return;
@@ -2360,7 +2674,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, appendFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, appendFileSync, realpathSync, statSync } from "node:fs";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
 
@@ -2865,7 +3179,27 @@ export default async function (pi: ExtensionAPI) {
 
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	// Collect promise so we can wait for initialization before showing startup notification
-	asyncInitPromises.push(initTelegram(pi));
+	asyncInitPromises.push(
+		initTelegram(pi).then(() => {
+			// --- line-notifications: report the LINE configuration --------------
+			// The LINE channel is started by initTelegram() (it needs the LINE
+			// adapter), so the line can only be judged after it ran: the
+			// credentials may be in place while the channel was never started.
+			// The report must also run when Telegram itself is not configured -
+			// that is the fresh-install case where the instructions are needed.
+			reportLineConfiguration();
+			// The relay line needs the Telegram channel state (a user who only
+			// uses Telegram wants the relay - the relay serves the Telegram
+			// callbacks), so it is reported after the channel init too.
+			reportRelayConfiguration();
+		}),
+	);
+
+	// --- relay-stream: report the relay configuration ------------------------
+	// The relay client itself is started by initTelegram() (it needs the
+	// Telegram adapter), but the CONFIGURATION must be reported even when
+	// Telegram is not configured at all - that is the fresh-install case.
+	reportRelayConfiguration();
 
 	// --- line-voice-queue: Watch for LINE voice commands ----
 	void initLineVoiceQueue(pi);
@@ -4761,11 +5095,13 @@ Run \`bd ready\` to see current bd issues.
 			text = truncateToWidth(text, width);
 			lines.push(text);
 
-			// Add fix instructions for errors (indented)
-			if ((msg.status === "err" || msg.status === "warn") && msg.details && msg.details.length > 0) {
+			// Add fix instructions (indented). Every status can carry them -
+			// a "[WAIT]" line that waits for the user must still say what to
+			// do.
+			if (msg.details && msg.details.length > 0) {
+				const indent = isLast ? "   " : "│  ";
 				for (const detail of msg.details) {
-					const detailLine = `${isLast ? "   " : "│  "} Fix: ${detail}`;
-					lines.push(truncateToWidth(detailLine, width));
+					lines.push(...renderDetailLines(detail, indent, width));
 				}
 			}
 		}
@@ -4776,9 +5112,9 @@ Run \`bd ready\` to see current bd issues.
 		return lines;
 	}
 
+
 	// --- Footer status (persistent badge) --------------------------------
 	pi.on("session_start", async (_event, ctx) => {
-
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
 		latestFooterCtx = ctx;
@@ -4797,6 +5133,15 @@ Run \`bd ready\` to see current bd issues.
 		sessionGeneration++;
 		const mySession = sessionGeneration;
 		startupVisible = true;
+		// A new session re-scans the key directory: the user may have created
+		// the missing files in the meantime. The relay and LINE lines are
+		// owned by the top-level init (not by a channel init), so they can be
+		// refreshed here; the lines of the other features are set once per
+		// extension load.
+		keyFileAudit = null;
+		keyFileAuditDone = false;
+		reportRelayConfiguration();
+		reportLineConfiguration();
 		// Service states survive session changes; initialization runs once per extension load.
 		harnessWidgetRegistered = false; // Reset for new session
 

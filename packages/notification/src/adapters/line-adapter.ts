@@ -31,7 +31,11 @@ export class LineAdapter extends BaseChannelAdapter {
 					},
 				},
 			);
-			return response.ok;
+			if (!response.ok) return false;
+			// The token works - mark the channel healthy so the startup
+			// summary can report the LINE channel as started.
+			this.markHealthy();
+			return true;
 		} catch {
 			return false;
 		}

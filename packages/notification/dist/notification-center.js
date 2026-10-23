@@ -326,6 +326,18 @@ export class NotificationCenter {
         return false;
     }
     /**
+     * Is one specific channel healthy (initialized and working)?
+     *
+     * `hasHealthyChannels()` cannot tell WHICH channel works - a Telegram
+     * adapter that is healthy says nothing about a LINE adapter that failed
+     * to initialize. The startup summary needs the per-channel answer to
+     * report a channel as "enabled" only when it really is.
+     */
+    isChannelHealthy(channelId) {
+        const adapter = this.adapters.get(channelId);
+        return adapter ? adapter.isHealthy() : false;
+    }
+    /**
      * List all configured channels
      */
     listChannels() {
