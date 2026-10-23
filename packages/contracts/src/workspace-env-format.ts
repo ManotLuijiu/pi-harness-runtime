@@ -5,9 +5,12 @@
  * node:sqlite dependency (bun 1.3.x has no node:sqlite module).
  *
  * Wording rules:
- * - The mode is only reported when it is EXPLICIT (NODE_ENV). An unknown mode
- *   is always shown with its reason, never as a bare word next to a dev
- *   server state that could be read as proof of the mode.
+ * - The mode is only reported when it is EXPLICIT: the NODE_ENV of the
+ *   process env, or a variable of the dotenv files of the workspace -
+ *   NODE_ENV, an environment shaped key whose value names a known mode
+ *   (e.g. AMOS_ENV=development) or any other environment shaped key. An
+ *   unknown mode is always shown with its reason, never as a bare word next
+ *   to a dev server state that could be read as proof of the mode.
  * - A dev/build script is a CAPABILITY, not a state. The status line says
  *   "not running (script available)" so it cannot be mistaken for a running
  *   server or for evidence about the workspace mode.
@@ -26,6 +29,18 @@ export interface EnvEvidence {
 	key: string;
 	value: string;
 	timestamp: number;
+	/** The dotenv file a value came from (".env", ".env.local", ...). */
+	file?: string;
+}
+
+/**
+ * A variable found in a dotenv file.
+ */
+export interface DotenvVar {
+	key: string;
+	value: string;
+	/** The file the variable came from ("" for the process env). */
+	file?: string;
 }
 
 /**
@@ -148,24 +163,314 @@ export function formatWorkspacePath(workspacePath: string, home?: string): strin
 }
 
 /**
+ * Map a raw value to a workspace mode.
+ *
+ * Returns null for a value that names no known mode ("staging", ""): the
+ * caller then reports the mode as unknown and names the value.
+ */
+export function modeFromValue(value: string): WorkspaceMode | null {
+	const v = value.trim().toLowerCase();
+	if (v === "production" || v === "prod") return "production";
+	if (v === "development" || v === "dev") return "development";
+	if (v === "test" || v === "testing") return "test";
+	return null;
+}
+
+/**
+ * Read the value of one dotenv line.
+ *
+ * Handles: KEY=value, KEY: value, export KEY=value, quoted values and a
+ * trailing comment. A quoted value keeps everything up to the closing quote
+ * (a "#" inside the quotes is part of the value). An inline comment of an
+ * unquoted value needs the space (" #"), like npm dotenv: a "#" inside a
+ * value ("abc#123") stays part of the value.
+ */
+function parseDotenvValue(raw: string): string {
+	const value = raw.trim();
+	if (value.startsWith('"') || value.startsWith("'")) {
+		const quote = value[0];
+		const end = value.indexOf(quote, 1);
+		return end === -1 ? value.slice(1) : value.slice(1, end);
+	}
+	const hash = value.indexOf(" #");
+	if (hash !== -1) return value.slice(0, hash).trim();
+	return value;
+}
+
+/**
+ * Parse a dotenv file into its variables.
+ *
+ * Only the name and the value are kept. A dotenv file holds secrets, so the
+ * detector must not copy more than it needs.
+ */
+export function parseDotenvVars(content: string): DotenvVar[] {
+	const vars: DotenvVar[] = [];
+	for (const rawLine of content.split("\n")) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) continue;
+		const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[=:]\s*(.*)$/);
+		if (!match) continue;
+		vars.push({ key: match[1], value: parseDotenvValue(match[2]) });
+	}
+	return vars;
+}
+
+/**
+ * The placeholder for a value that must not be shown.
+ */
+export const MASKED_MODE_VALUE = "<set>";
+
+/**
+ * True for a key that names the environment.
+ *
+ * "NODE_ENV", "AMOS_ENV", "RAILS_ENV", "APP_ENVIRONMENT", "APP_MODE",
+ * "APP_STAGE" - but not "BRANCH" or "DEBUG": a key must look like it holds
+ * the name of an environment before its value may decide the mode.
+ */
+export function isEnvShapedKey(key: string): boolean {
+	return /(^|_)(ENV|ENVIRONMENT|MODE|STAGE)$/i.test(key);
+}
+
+/**
+ * True for a key that may hold a secret.
+ */
+export function isSecretLikeKey(key: string): boolean {
+	return /(SECRET|TOKEN|PASSWORD|PASSWD|PWD|KEY|CREDENTIAL|AUTH)/i.test(key);
+}
+
+/**
+ * True when the value of the variable may be shown.
+ *
+ * The value ends up in the agent context and in the SQLite cache, so it is
+ * only shown when it is provably not a secret: the NODE_ENV of the process
+ * env, or a value that IS the name of the mode.
+ */
+export function canShowModeValue(
+	key: string,
+	value: string,
+	source: "process.env" | ".env file",
+): boolean {
+	if (isSecretLikeKey(key)) return false;
+	if (source === "process.env" && key === "NODE_ENV") return true;
+	return modeFromValue(value) !== null;
+}
+
+/**
+ * Find the variable that names the environment.
+ *
+ * The search order is the priority the user described:
+ * 1. NODE_ENV
+ * 2. an environment shaped key whose value names a known mode
+ *    (development, production, test) - e.g. AMOS_ENV=development
+ * 3. any other environment shaped key (e.g. AMOS_ENV, RAILS_ENV) - it may
+ *    be empty or name a mode this detector does not know
+ *
+ * A usable key wins over an unusable one: an earlier "APP_MODE=staging" or
+ * an empty "APP_ENV=" of the same file must not shadow the
+ * "AMOS_ENV=development" of that file. The value match is switched off for
+ * the process env (an unrelated variable that happens to hold the word
+ * "development" says nothing about the environment) and it is restricted to
+ * environment shaped keys: "BRANCH=production" does not make a production
+ * workspace.
+ *
+ * The value match is OPT-IN: a caller has to ask for it
+ * (`allowValueMatch: true`).
+ */
+export function detectModeHint(
+	vars: DotenvVar[],
+	options: { allowValueMatch?: boolean } = {},
+): DotenvVar | null {
+	const nodeEnv = vars.find((v) => v.key === "NODE_ENV");
+	if (nodeEnv) return nodeEnv;
+	// The value match is opt-in: a caller that passes the process env
+	// variables must not let an unrelated variable that happens to hold the
+	// word "development" decide the mode.
+	if (options.allowValueMatch === true) {
+		// An environment shaped key whose value names a known mode wins: an
+		// earlier "APP_MODE=staging" or an empty "APP_ENV=" of the same file
+		// must not shadow the "AMOS_ENV=development" of the same file.
+		const usable = vars.find(
+			(v) =>
+				v.key !== "NODE_ENV" &&
+				isEnvShapedKey(v.key) &&
+				modeFromValue(v.value) !== null,
+		);
+		if (usable) return usable;
+	}
+	// No usable key: fall back to the first environment shaped key so that
+	// the label can name it (it names no known mode).
+	return vars.find((v) => v.key !== "NODE_ENV" && isEnvShapedKey(v.key)) ?? null;
+}
+
+/**
+ * The dotenv files of a workspace, in the order they are read.
+ *
+ * ".env" comes first, then the well known variants, then every other
+ * ".env.*" file. The first file that defines A KEY wins: the base ".env" is
+ * the checked in default, so a key that is only defined in a variant is
+ * read from the variant (the precedence is per key, not per mode).
+ */
+const DOTENV_FILE_ORDER = [
+	".env",
+	".env.local",
+	".env.development",
+	".env.dev",
+	".env.production",
+	".env.test",
+];
+
+/**
+ * Order the dotenv file names of a workspace.
+ *
+ * The base ".env" wins over the variants, the well known variants come in a
+ * fixed order and every other ".env.*" file follows alphabetically.
+ */
+export function orderDotenvFileNames(names: string[]): string[] {
+	const known = DOTENV_FILE_ORDER.filter((name) => names.includes(name));
+	const rest = names
+		.filter((name) => name.startsWith(".env.") && !DOTENV_FILE_ORDER.includes(name))
+		.sort();
+	return [...known, ...rest];
+}
+
+/**
+ * Read the variables of the dotenv files of a workspace.
+ *
+ * The first file that defines a key wins (see orderDotenvFileNames).
+ */
+export function collectDotenvVars(files: { name: string; content: string }[]): DotenvVar[] {
+	const vars: DotenvVar[] = [];
+	const seen = new Set<string>();
+	for (const file of orderDotenvFileNames(files.map((f) => f.name))) {
+		const content = files.find((f) => f.name === file)?.content ?? "";
+		for (const variable of parseDotenvVars(content)) {
+			if (seen.has(variable.key)) continue;
+			seen.add(variable.key);
+			vars.push({ key: variable.key, value: variable.value, file });
+		}
+	}
+	return vars;
+}
+
+/**
+ * The variables of the process env that can name the environment.
+ *
+ * Only NODE_ENV and the environment shaped keys are collected: an unrelated
+ * variable of the process env must not outrank the workspace files.
+ */
+export function collectProcessEnvVars(env: NodeJS.ProcessEnv = process.env): DotenvVar[] {
+	const vars: DotenvVar[] = [];
+	for (const key of Object.keys(env)) {
+		const value = env[key];
+		if (value === undefined) continue;
+		if (key === "NODE_ENV" || isEnvShapedKey(key)) {
+			vars.push({ key, value });
+		}
+	}
+	return vars;
+}
+
+/**
+ * The result of the mode detection: the mode plus the variable it came from.
+ */
+export interface ModeResolution {
+	mode: WorkspaceMode;
+	hint: DotenvVar | null;
+	source: "process.env" | ".env file" | null;
+}
+
+/**
+ * Resolve the workspace mode from the variables that were found.
+ *
+ * The order is:
+ * 1. the NODE_ENV of the process env - it decides, also when it names no
+ *    known mode (then the mode stays unknown and the label names it: an
+ *    explicit "staging" must not be overwritten by a file)
+ * 2. the dotenv files of the workspace: NODE_ENV, then an environment
+ *    shaped key WHOSE VALUE names a known mode (e.g. AMOS_ENV=development),
+ *    then any other environment shaped key (so that the label can name it)
+ * 3. an environment shaped key of the process env (the files are silent)
+ */
+export function resolveWorkspaceMode(
+	processVars: DotenvVar[],
+	dotenvVars: DotenvVar[]
+): ModeResolution {
+	const processNodeEnv = processVars.find((v) => v.key === "NODE_ENV");
+	if (processNodeEnv) {
+		const mode = modeFromValue(processNodeEnv.value);
+		if (mode) return { mode, hint: processNodeEnv, source: "process.env" };
+		// An explicit NODE_ENV that names no known mode decides: the mode
+		// stays unknown instead of falling through to the files.
+		return { mode: "unknown", hint: processNodeEnv, source: "process.env" };
+	}
+	const dotenvHint = detectModeHint(dotenvVars, { allowValueMatch: true });
+	if (dotenvHint) {
+		const mode = modeFromValue(dotenvHint.value);
+		if (mode) return { mode, hint: dotenvHint, source: ".env file" };
+		// The workspace file is explicit - even when its value names no known
+		// mode ("APP_MODE=staging"). It must not be replaced by an unrelated
+		// variable of the process env.
+		return { mode: "unknown", hint: dotenvHint, source: ".env file" };
+	}
+	// Last resort: an environment shaped key of the process env (the files
+	// are silent).
+	const processEnvHint = processVars.find(
+		(v) => v.key !== "NODE_ENV" && isEnvShapedKey(v.key),
+	);
+	if (processEnvHint) {
+		const mode = modeFromValue(processEnvHint.value);
+		if (mode) return { mode, hint: processEnvHint, source: "process.env" };
+		return { mode: "unknown", hint: processEnvHint, source: "process.env" };
+	}
+	return { mode: "unknown", hint: null, source: null };
+}
+
+/**
+ * The evidence entry that names the environment (if any).
+ */
+function findModeEvidence(env: WorkspaceEnvResult): EnvEvidence | undefined {
+	const candidates = env.evidence.filter(
+		(e) => e.source === "process.env" || e.source === ".env file",
+	);
+	// A value that names a known mode wins over a value that cannot be read.
+	return candidates.find((e) => modeFromValue(e.value) !== null) ?? candidates[0];
+}
+
+/**
  * Human readable mode label.
  *
  * "unknown" always carries the reason: the mode can only be proven by an
- * explicit NODE_ENV (process env or .env file). When a NODE_ENV IS present
- * but names a mode this detector does not know ("staging"), the label says
- * exactly that instead of claiming there is no NODE_ENV at all.
+ * explicit variable - NODE_ENV, another *_ENV key (e.g. AMOS_ENV) or a
+ * value that names a known mode. When such a variable IS present but names
+ * a mode this detector does not know ("staging"), the label says exactly
+ * that instead of claiming there is no variable at all.
+ *
+ * A known mode names its source: "DEVELOPMENT (from AMOS_ENV in .env)".
  */
 export function describeWorkspaceMode(env: WorkspaceEnvResult): string {
+	const hint = findModeEvidence(env);
+	const where = hint?.file ? ` in ${hint.file}` : "";
 	if (env.mode !== "unknown") {
-		return env.mode.toUpperCase();
+		return hint
+			? `${env.mode.toUpperCase()} (from ${hint.key}${where})`
+			: env.mode.toUpperCase();
 	}
-	const nodeEnv = env.evidence.find(
-		(e) => e.key === "NODE_ENV" && (e.source === "process.env" || e.source === ".env file"),
-	);
-	if (nodeEnv) {
-		return `UNKNOWN (NODE_ENV=${nodeEnv.value} is not a known mode)`;
+	if (hint) {
+		// The stored mode and the evidence can disagree (a stale cache row):
+		// when the value names a mode, that mode is shown - the label must
+		// never claim that a known mode is unknown.
+		const named = modeFromValue(hint.value);
+		if (named) return `${named.toUpperCase()} (from ${hint.key}${where})`;
+		if (!hint.value) return `UNKNOWN (${hint.key} is empty${where})`;
+		// A value that was masked (a secret or a dotenv value that names no
+		// known mode) is not shown - only the key and the file are.
+		if (hint.value === MASKED_MODE_VALUE) {
+			const subject = where ? `${hint.key}${where}` : `${hint.key} is set and`;
+			return `UNKNOWN (${subject} names no known mode)`;
+		}
+		return `UNKNOWN (${hint.key}=${hint.value} is not a known mode${where})`;
 	}
-	return "UNKNOWN (no explicit NODE_ENV)";
+	return "UNKNOWN (no NODE_ENV or environment variable found)";
 }
 
 /**

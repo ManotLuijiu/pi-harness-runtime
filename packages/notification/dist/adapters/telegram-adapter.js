@@ -9,9 +9,21 @@ import { join } from "node:path";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { logError, logInfo, logWarn } from "../file-logger.js";
+import { isAuthorizedTelegramSender } from "../telegram-auth.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
 import { filterTelegramContent, getSafeNotificationLog } from "../telegram-content-filter.js";
+/**
+ * Bounded retry for a rejected getUpdates call (409).
+ *
+ * Telegram answers 409 when a webhook or another poller owns the bot. A
+ * rejected poll ALSO terminates the getUpdates stream of that other poller,
+ * so the retries must be rare and grow - the inbound path has to survive
+ * without killing its neighbour every few seconds.
+ */
+const POLL_RETRY_MAX_ATTEMPTS = 5;
+const POLL_RETRY_BASE_DELAY_MS = 10_000;
+const POLL_RETRY_MAX_DELAY_MS = 120_000;
 export class TelegramAdapter extends BaseChannelAdapter {
     id = "telegram";
     type = "telegram";
@@ -31,6 +43,38 @@ export class TelegramAdapter extends BaseChannelAdapter {
     _greetingVerified = false;
     _greetingReplyInFlight = false;
     _greetingHandler;
+    /** Why the poll loop is not running (null = running, or never needed). */
+    _pollStopReason = null;
+    /** How many 409 retries have been scheduled. */
+    _pollRetryCount = 0;
+    /** Timer of the scheduled 409 retry. */
+    _pollRetryTimer;
+    /**
+     * True when polling was stopped on purpose (stopPolling). A pending
+     * 409 retry must not fire afterwards.
+     */
+    _pollStopped = false;
+    /**
+     * True when the 409 retry chain gave up. The reason is reported
+     * exactly once.
+     */
+    _pollGaveUp = false;
+    /**
+     * True when the poll stop reason was already reported. The report is
+     * one shot: a later startPolling() must not produce a second
+     * "retries exhausted" with the same reason.
+     */
+    _pollStopReported = false;
+    /**
+     * Called when the poll loop stops because Telegram answered 409.
+     * The harness uses it to tell the user that the inbound path degraded.
+     */
+    onPollStopped;
+    /**
+     * The backoff of the 409 retries. Public so a test can shorten it.
+     */
+    pollRetryBaseDelayMs = POLL_RETRY_BASE_DELAY_MS;
+    pollRetryMaxAttempts = POLL_RETRY_MAX_ATTEMPTS;
     setGreetingVerifiedHandler(handler) {
         this._greetingHandler = handler;
     }
@@ -90,11 +134,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             logInfo("[TelegramAdapter]", `Bot @${this._botUsername} verified successfully`);
             // Start polling ONLY if webhook is not configured (separate server handles webhooks)
             if (this._callbackHandler) {
-                // Check if webhook URL file exists (webhook server handles updates)
-                const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
-                const webhookUrlPath = join(homedir, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt");
-                const hasWebhook = existsSync(webhookUrlPath);
-                if (hasWebhook) {
+                if (this.isWebhookConfigured()) {
                     logInfo("[TelegramAdapter]", "Webhook configured (separate server), skipping polling");
                 }
                 else {
@@ -109,11 +149,113 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
     }
     /**
+     * True when a separate webhook server owns the Telegram updates.
+     *
+     * Polling and a webhook are mutually exclusive: Telegram rejects
+     * getUpdates while a webhook is active, and every rejected poll also
+     * terminates the getUpdates stream of the OTHER poller of the same bot.
+     * That is how an inbound text message got delayed by seconds.
+     */
+    isWebhookConfigured() {
+        const homedir = process.env.HOME || process.env.USERPROFILE || "/home/frappe";
+        return existsSync(join(homedir, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt"));
+    }
+    /**
+     * True while the getUpdates poll loop is running.
+     */
+    isPolling() {
+        return this._pollInterval !== undefined;
+    }
+    /**
+     * True when a webhook was registered for this bot. A webhook and polling
+     * are mutually exclusive: Telegram rejects getUpdates while a webhook is
+     * active.
+     */
+    isWebhookActive() {
+        return this._webhookActive;
+    }
+    /**
+     * Why the poll loop is not running (null = it runs, or was never needed).
+     *
+     * The harness shows this in the startup summary: a silent 409 would look
+     * like a working inbound path.
+     */
+    getPollStopReason() {
+        return this._pollStopReason;
+    }
+    /**
+     * Report that the inbound path stopped - exactly once.
+     *
+     * A report that is repeated would show the same warning twice; a
+     * report that is lost would hide a broken inbound path.
+     */
+    reportPollStopped(reason) {
+        if (this._pollStopReported)
+            return;
+        if (this._pollStopped)
+            return; // Polling was stopped on purpose.
+        this._pollStopReported = true;
+        this.onPollStopped?.(reason);
+    }
+    /**
+     * Schedule a bounded retry after a 409.
+     *
+     * Only used when no webhook is configured: there the harness poll is the
+     * only inbound path, so it must survive a competing poller instead of
+     * giving up after the first rejection.
+     */
+    schedulePollRetry() {
+        if (this._pollStopped)
+            return; // Polling was stopped on purpose.
+        if (this._pollRetryTimer)
+            return;
+        if (this._pollGaveUp)
+            return; // The chain already gave up.
+        if (this._pollRetryCount >= this.pollRetryMaxAttempts) {
+            this._pollGaveUp = true;
+            this._pollStopReason = `Telegram rejected getUpdates with 409 (${this.pollRetryMaxAttempts} retries exhausted)`;
+            logWarn("[TelegramAdapter]", `Giving up on polling: ${this._pollStopReason}`);
+            this.reportPollStopped(this._pollStopReason);
+            return;
+        }
+        const delay = Math.min(this.pollRetryBaseDelayMs * 2 ** this._pollRetryCount, POLL_RETRY_MAX_DELAY_MS);
+        this._pollRetryCount += 1;
+        this._pollRetryTimer = setTimeout(() => {
+            this._pollRetryTimer = undefined;
+            if (this._pollStopped)
+                return; // Polling was stopped on purpose.
+            logInfo("[TelegramAdapter]", `Retrying getUpdates after 409 (attempt ${this._pollRetryCount}/${this.pollRetryMaxAttempts})`);
+            this.poll()
+                .then((ok) => {
+                if (this._pollStopped)
+                    return;
+                if (ok) {
+                    // The bot is free again - resume the regular poll loop.
+                    if (!this._pollInterval)
+                        this.startPolling();
+                    return;
+                }
+                // Still rejected - keep the chain alive until the bound is hit.
+                this.schedulePollRetry();
+            })
+                .catch((err) => {
+                logError("[TelegramAdapter] Poll retry error", err);
+                if (!this._pollStopped)
+                    this.schedulePollRetry();
+            });
+        }, delay);
+        this._pollRetryTimer.unref?.();
+    }
+    /**
      * Start polling for Telegram updates (callback queries, etc.)
      */
     startPolling() {
         if (this._pollInterval)
             return; // Already polling
+        this._pollStopped = false;
+        this._pollGaveUp = false;
+        this._pollStopReported = false;
+        this._pollStopReason = null;
         logInfo("[TelegramAdapter]", "Starting polling for callback queries...");
         // Poll immediately, then on interval
         this.poll().catch((err) => logError("[TelegramAdapter] Poll error", err));
@@ -123,8 +265,22 @@ export class TelegramAdapter extends BaseChannelAdapter {
     }
     /**
      * Stop polling
+     *
+     * The stop reason is kept: it is the diagnosis of a broken inbound path
+     * (a 409 by another poller) and the startup summary reads it.
      */
     stopPolling() {
+        this._pollStopped = true;
+        this.clearPollInterval();
+        if (this._pollRetryTimer) {
+            clearTimeout(this._pollRetryTimer);
+            this._pollRetryTimer = undefined;
+        }
+    }
+    /**
+     * Stop the poll loop but keep the 409 retry chain alive.
+     */
+    clearPollInterval() {
         this._pollAbort?.abort();
         if (this._pollInterval) {
             clearInterval(this._pollInterval);
@@ -137,7 +293,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
      */
     async poll() {
         if (this._pollInFlight)
-            return;
+            return false;
         this._pollInFlight = true;
         const abort = new AbortController();
         this._pollAbort = abort;
@@ -158,26 +314,65 @@ export class TelegramAdapter extends BaseChannelAdapter {
             });
             if (!response.ok) {
                 const error = await response.text();
+                if (response.status === 409) {
+                    // A webhook is active for this bot, or another poller owns it.
+                    // Hammering getUpdates is useless, and every rejected poll
+                    // also terminates the other poller's stream - so stop and
+                    // retry with a bounded backoff (the retry is skipped when a
+                    // webhook owns the bot: then polling can never work).
+                    const webhookOwnsBot = this.isWebhookConfigured();
+                    this.clearPollInterval();
+                    this._pollGaveUp = false;
+                    this._pollStopReason = webhookOwnsBot
+                        ? "Telegram rejected getUpdates with 409 (a webhook owns this bot)"
+                        : "Telegram rejected getUpdates with 409 (another poller owns this bot)";
+                    logWarn("[TelegramAdapter]", `${this._pollStopReason} - stopping polling`);
+                    if (webhookOwnsBot) {
+                        // Polling can never work here - report it once.
+                        this.reportPollStopped(this._pollStopReason);
+                    }
+                    else {
+                        // A bounded retry chain takes over; it reports the final
+                        // reason when it gives up (no double reporting).
+                        this.schedulePollRetry();
+                    }
+                    return false;
+                }
                 logWarn("[TelegramAdapter]", `getUpdates failed: ${error}`);
-                return;
+                return false;
             }
             const data = (await response.json());
-            if (!data.ok || !data.result?.length)
-                return;
+            if (!data.ok)
+                return true;
+            // The bot accepted the call - a previous 409 is over and the retry
+            // budget is restored (an empty result is still a success).
+            this._pollStopReason = null;
+            this._pollRetryCount = 0;
+            if (!data.result?.length)
+                return true;
             // Process updates
             for (const update of data.result) {
                 if (abort.signal.aborted)
                     break;
-                await this.processUpdate(update);
+                // The offset must advance even when the handler throws: a
+                // failing handler would otherwise get the same update again
+                // on every poll (the same user text injected again and
+                // again).
+                try {
+                    await this.processUpdate(update);
+                }
+                catch (err) {
+                    logError("[TelegramAdapter]", `Update ${update.update_id} failed: ${err}`);
+                }
                 this._lastUpdateId = update.update_id;
             }
         }
         catch (err) {
             if (abort.signal.aborted)
-                return;
+                return false;
             if (err instanceof Error && err.name === "TimeoutError") {
                 // Timeout is expected for long polling, not an error
-                return;
+                return false;
             }
             logError("[TelegramAdapter] Poll error", err);
         }
@@ -186,6 +381,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
             if (this._pollAbort === abort)
                 this._pollAbort = undefined;
         }
+        return true;
     }
     /**
      * Process a single Telegram update
@@ -195,7 +391,16 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Handle callback query
         if (update.callback_query) {
             const query = update.callback_query;
-            if (String(query.message?.chat.id) !== String(cfg.chatId) || query.from?.is_bot)
+            // A bot may not press a button.
+            if (query.from?.is_bot)
+                return;
+            // Only an authorized sender may act on a button.
+            if (!this.isAuthorizedSender(cfg, query.from?.id))
+                return;
+            // When a chat is configured, the button must come from that chat.
+            // The sender rule above stays authoritative (an allow-listed user
+            // may write in a group chat).
+            if (cfg.chatId && String(query.message?.chat.id) !== String(cfg.chatId))
                 return;
             logInfo("[TelegramAdapter]", `Callback query: ${query.data} from user ${query.from?.id}`);
             // NOTE: Acknowledgment is now controlled by the handler via acknowledgeCallback()
@@ -210,10 +415,13 @@ export class TelegramAdapter extends BaseChannelAdapter {
         // Handle regular message
         if (update.message && this._messageHandler) {
             const msg = update.message;
-            // Only forward text messages from non-bot users
-            if (msg.text && (!msg.from || !msg.from.is_bot)) {
+            // Only forward text messages from a known, non-bot sender: an
+            // update without a sender (a channel post, an anonymous admin)
+            // has no identity and must never reach Pi.
+            if (msg.text && msg.from && !msg.from.is_bot) {
                 const chatId = msg.chat?.id?.toString() || "";
-                if (chatId !== String(cfg.chatId))
+                const fromId = typeof msg.from.id === "number" ? msg.from.id : undefined;
+                if (!this.isAuthorizedSender(cfg, fromId))
                     return;
                 await this._messageHandler(msg.text, chatId);
             }
@@ -485,6 +693,18 @@ export class TelegramAdapter extends BaseChannelAdapter {
         if (callbackQuery) {
             const query = this.parseCallbackQuery(callbackQuery);
             if (query) {
+                // A bot may not press a button: the real bot flag travels over
+                // the relay, so a bot cannot approve a code review.
+                if (query.from?.is_bot)
+                    return;
+                // Only an authorized sender may act on a button, and when a
+                // chat is configured the button must come from that chat
+                // (same rule as the polling path).
+                const cfg = this.config.config;
+                if (!this.isAuthorizedSender(cfg, query.from?.id))
+                    return;
+                if (cfg.chatId && String(query.message?.chat?.id) !== String(cfg.chatId))
+                    return;
                 if (await this.handleGreetingReply(query)) {
                     await this.answerCallbackQuery(query.id);
                     return;
@@ -493,11 +713,57 @@ export class TelegramAdapter extends BaseChannelAdapter {
                 await this.answerCallbackQuery(query.id);
             }
         }
-        // Handle regular messages (future: user can type commands)
+        // Handle regular messages (the user typed something)
         const message = update.message;
         if (message) {
-            logInfo("[TelegramAdapter]", `Received message: ${message.text}`);
+            const text = typeof message.text === "string" ? message.text : "";
+            if (text) {
+                // The text itself is user content: it must not end up in a log
+                // file. The length is enough to see that a message arrived.
+                logInfo("[TelegramAdapter]", `Received message (${text.length} chars)`);
+                await this.forwardWebhookMessage(message, text);
+            }
         }
+    }
+    /**
+     * Forward a text message that arrived through the webhook to the
+     * registered message handler. Same rules as the polling path: no bots and
+     * only the configured chat.
+     */
+    async forwardWebhookMessage(message, text) {
+        if (!this._messageHandler)
+            return;
+        const cfg = this.config.config;
+        const from = message.from;
+        // An update without a sender has no identity: nobody may write in.
+        if (!from)
+            return;
+        if (from.is_bot)
+            return;
+        const chat = message.chat;
+        const chatId = chat?.id?.toString() || "";
+        if (!chatId)
+            return;
+        const fromId = typeof from?.id === "number" ? from.id : undefined;
+        // Fail closed: without a configured chat id or allow-list nobody may
+        // write into Pi.
+        if (!this.isAuthorizedSender(cfg, fromId))
+            return;
+        await this._messageHandler(text, chatId);
+    }
+    /**
+     * True when the sender may write into Pi.
+     *
+     * ONE rule, shared with the remote webhook server
+     * (packages/notification/src/telegram-auth.ts): the SENDER decides, an
+     * allow-list is authoritative, otherwise the configured chat id
+     * identifies the sender. With neither configured nobody may.
+     */
+    isAuthorizedSender(cfg, fromId) {
+        const chatId = cfg.chatId !== undefined && cfg.chatId !== ""
+            ? Number(cfg.chatId)
+            : undefined;
+        return isAuthorizedTelegramSender(cfg.allowedUserIds ?? [], chatId, fromId);
     }
     /**
      * Parse callback query from webhook update

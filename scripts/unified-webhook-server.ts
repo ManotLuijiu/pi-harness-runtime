@@ -26,6 +26,9 @@ import { resolveRelayEndpoint } from "../packages/relay/src/relay-endpoint";
 import { generateMessageId } from "../packages/relay/src/types";
 import type { CallbackPayload } from "../packages/relay/src/types";
 import type { RelayServerOptions } from "../packages/relay/src/server";
+// One implementation of the Telegram allow-list (env var, key file, legacy
+// chat id) - the harness and this server must agree on who may write in.
+import { getAllowedUserIds, isAuthorizedTelegramSender } from "../harness/telegram-auth";
 
 // --- Configuration ---
 interface Config {
@@ -33,6 +36,8 @@ interface Config {
     botToken: string;
     secret: string;
     allowedUsers: Set<number>;
+    /** The configured chat id (used as the identity when no allow-list exists). */
+    chatId?: number;
   };
   line?: {
     accessToken: string;
@@ -114,7 +119,7 @@ function loadConfig(): Config {
   // Telegram
   const telegramTokenPath = join(keysDir, "telegram-bot-token.txt");
   const telegramSecretPath = join(keysDir, "telegram-webhook-secret.txt");
-  const telegramUsersPath = join(keysDir, "telegram-allowed-users.txt");
+  const telegramChatIdPath = join(keysDir, "telegram-chat-id.txt");
 
   if (existsSync(telegramTokenPath)) {
     const token = readFileSync(telegramTokenPath, "utf8").trim();
@@ -122,15 +127,21 @@ function loadConfig(): Config {
       ? readFileSync(telegramSecretPath, "utf8").trim()
       : process.env.TELEGRAM_WEBHOOK_SECRET || "";
 
-    const allowedUsers = new Set<number>();
-    if (existsSync(telegramUsersPath)) {
-      const users = readFileSync(telegramUsersPath, "utf8").trim();
-      for (const id of users.split(",").map((s) => parseInt(s.trim(), 10))) {
-        if (!isNaN(id) && id > 0) allowedUsers.add(id);
-      }
+    // The allow-list has one implementation (harness/telegram-auth.ts): the
+    // TELEGRAM_ALLOWED_USERS env var, telegram-allowed-users.txt or - as the
+    // legacy fallback - telegram-chat-id.txt.
+    const allowedUsers = getAllowedUserIds();
+
+    // The chat id is the identity of a private chat with the bot: the user id
+    // and the chat id are the same number there. It is the fallback when no
+    // explicit allow-list exists.
+    let chatId: number | undefined;
+    if (existsSync(telegramChatIdPath)) {
+      const parsed = parseInt(readFileSync(telegramChatIdPath, "utf8").trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) chatId = parsed;
     }
 
-    config.telegram = { botToken: token, secret, allowedUsers };
+    config.telegram = { botToken: token, secret, allowedUsers, chatId };
   }
 
   // LINE
@@ -180,14 +191,16 @@ function parseCallbackData(data: string): { action: string; targetId: string } {
 
 // --- Create Callback Payload ---
 function createCallbackPayload(
-  type: "telegram_callback" | "line_callback",
+  type: "telegram_callback" | "line_callback" | "telegram_message",
   action: string,
   targetId: string,
   userId: number | string,
   username?: string,
   messageId?: number,
   callbackQueryId?: string,
-  chatId?: number
+  chatId?: number,
+  text?: string,
+  isBot?: boolean
 ): CallbackPayload {
   return {
     id: generateMessageId(),
@@ -199,8 +212,36 @@ function createCallbackPayload(
     messageId,
     callbackQueryId,
     chatId,
+    text,
+    isBot,
     timestamp: new Date().toISOString(),
   };
+}
+
+// --- Telegram Authorization ---
+/**
+ * Is the sender of an update allowed to drive the harness?
+ *
+ * Rules (fail closed):
+ * 1. An explicit allow-list (telegram-allowed-users.txt) wins.
+ * 2. Otherwise the configured chat id is the identity: in a private chat the
+ *    user id and the chat id are the same number.
+ * 3. Without any of them nobody is allowed - an open bot would let every
+ *    Telegram user write into Pi.
+ */
+function isAuthorizedTelegramUser(
+  config: Config,
+  fromId: number | undefined,
+): boolean {
+  const telegram = config.telegram;
+  if (!telegram) return false;
+  // One implementation of the rule (harness/telegram-auth.ts) - the harness
+  // and this server must agree on who may write in.
+  return isAuthorizedTelegramSender(
+    telegram.allowedUsers,
+    telegram.chatId,
+    fromId,
+  );
 }
 
 // --- Telegram Handler ---
@@ -232,10 +273,29 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
       const query = update.callback_query;
       const from = query.from;
 
+      // An update without a sender (a channel post, an anonymous admin) has
+      // no identity: acknowledge it, but never act on it.
+      if (!from) {
+        res.writeHead(200);
+        res.end("OK");
+        return;
+      }
+
       // Check authorization
-      if (config.telegram.allowedUsers.size > 0 && !config.telegram.allowedUsers.has(from.id)) {
-        res.writeHead(403);
-        res.end("Forbidden");
+      if (!isAuthorizedTelegramUser(config, from.id)) {
+        console.log(`[Telegram] Rejected callback from unauthorized user ${from.id}`);
+        // 200 + drop: a 403 makes Telegram retry the same update.
+        res.writeHead(200);
+        res.end("OK");
+        return;
+      }
+
+      // A bot may not press a button: it could otherwise approve a code
+      // review or dismiss a task.
+      if (from.is_bot === true) {
+        console.log(`[Telegram] Rejected callback from bot ${from.id}`);
+        res.writeHead(200);
+        res.end("OK");
         return;
       }
 
@@ -251,7 +311,9 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
         from.username,
         query.message?.message_id,
         query.id,                    // callbackQueryId for Telegram acknowledgment
-        query.message?.chat?.id      // chatId for greeting verification
+        query.message?.chat?.id,     // chatId for greeting verification
+        undefined,                   // no text for a button callback
+        from.is_bot === true         // the real bot flag
       );
 
       // Broadcast via typed streaming relay (for relay-client WebSocket)
@@ -277,6 +339,71 @@ async function handleTelegram(req: IncomingMessage, res: ServerResponse, config:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callback_query_id: query.id }),
       });
+    }
+
+    // Handle a text message (the user typed something in the chat)
+    if (update.message && !update.callback_query) {
+      const message = update.message;
+      const from = message.from;
+      const text = typeof message.text === "string" ? message.text : "";
+
+      // An update without a sender has no identity: acknowledge it, but never
+      // act on it (a throw here would make Telegram retry the update).
+      if (!from) {
+        res.writeHead(200);
+        res.end("OK");
+        return;
+      }
+
+      // A bot must never reach the agent: acknowledge it, but do not act.
+      if (from.is_bot) {
+        res.writeHead(200);
+        res.end("OK");
+        return;
+      }
+
+      // Check authorization
+      if (!isAuthorizedTelegramUser(config, from.id)) {
+        console.log(`[Telegram] Rejected message from unauthorized user ${from.id}`);
+        // 200 + drop: a 403 makes Telegram retry the same update.
+        res.writeHead(200);
+        res.end("OK");
+        return;
+      }
+
+      if (text) {
+        const payload = createCallbackPayload(
+          "telegram_message",
+          "message",
+          // The target id must not carry the user text: it is written to the
+          // log files of the client.
+          `msg-${message.message_id ?? 0}`,
+          from.id,
+          from.username,
+          message.message_id,
+          undefined,                 // no callback query id for a text message
+          message.chat?.id,          // chat id
+          text,                      // the text itself
+          from.is_bot === true       // the real bot flag
+        );
+
+        // Broadcast via typed streaming relay (for relay-client WebSocket)
+        const wsCount = relayServer.broadcastCallback(payload);
+
+        if (wsCount === 0) {
+          // A text message has no consumer in the file queue (the callback
+          // processor only understands the button actions), so it is NOT
+          // persisted there: it would be user text on disk, never delivered.
+          console.log(
+            `[Telegram] Message from @${from.username || from.id} was NOT delivered: no relay client is connected`,
+          );
+        }
+
+        // The text itself is user content: the log keeps the length only.
+        console.log(
+          `[Telegram] Message from @${from.username || from.id} (${text.length} chars, WS clients: ${wsCount})`,
+        );
+      }
     }
 
     res.writeHead(200);

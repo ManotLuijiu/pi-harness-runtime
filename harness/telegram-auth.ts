@@ -91,6 +91,38 @@ export function getAllowedUserIds(): Set<number> {
 }
 
 /**
+ * Describe who may write into Pi through Telegram.
+ *
+ * The allow-list falls back to the chat id file, and a GROUP chat id is
+ * negative - it identifies a chat, not a person. A sender rule that only
+ * knows a group id lets nobody in, silently. The description makes that
+ * visible.
+ */
+export function describeInboundAccess(
+	allowedUserIds: Iterable<number>,
+	chatId?: string,
+): string {
+	const ids = [...allowedUserIds].filter((n) => Number.isFinite(n));
+	const users = ids.filter((n) => n > 0);
+	const groups = ids.filter((n) => n < 0);
+	if (users.length === 0) {
+		const known = groups.length > 0 ? ` (the allow-list holds the group chat id ${groups.join(", ")})` : "";
+		return `nobody may write in${known}`;
+	}
+	const chat = chatId ? ` in chat ${chatId}` : "";
+	return `user id(s) ${users.join(", ")} may write in${chat}`;
+}
+
+/**
+ * Decide whether a Telegram sender may write into Pi.
+ *
+ * The rule itself lives in the notification package
+ * (packages/notification/src/telegram-auth.ts) so that the adapter, this
+ * module and the remote webhook server all use ONE implementation.
+ */
+export { isAuthorizedTelegramSender } from "../packages/notification/dist/telegram-auth.js";
+
+/**
  * Check if a Telegram user ID is authorized
  */
 export function isAuthorizedUser(userId: number): boolean {

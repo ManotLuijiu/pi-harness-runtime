@@ -6,18 +6,11 @@
  *
  * No file queue needed - real-time streaming!
  */
+import type { CallbackPayload } from "./types.js";
+export type { CallbackPayload };
 export interface RelayMessage {
     type: "callback" | "ping" | "pong" | "auth";
     payload: unknown;
-}
-export interface CallbackPayload {
-    type: "telegram_callback" | "line_callback";
-    action: string;
-    targetId: string;
-    userId: number;
-    username?: string;
-    messageId?: number;
-    timestamp: string;
 }
 /**
  * WebSocket Relay Server
