@@ -15,6 +15,8 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+// Centralized pipeline (R2 / webhook) - a copy of the local log.
+import { centralError, centralInfo, centralWarn } from "../packages/logging/dist/index.js";
 
 export type LogLevel = "INFO" | "WARN" | "ERROR";
 
@@ -54,6 +56,21 @@ function writeLog(
 	} catch {
 		// Non-fatal - just log to console
 		console.error(`[GLMQuotaLogger] Failed to write log: ${message}`);
+	}
+
+	// Ship a copy to the centralized pipeline. The job id is an identifier,
+	// not content, so it is safe to include.
+	try {
+		const fields = { jobId: jobId ?? "system" };
+		if (level === "ERROR") {
+			centralError("harness.glm-quota", "quota", message, fields);
+		} else if (level === "WARN") {
+			centralWarn("harness.glm-quota", "quota", message, fields);
+		} else {
+			centralInfo("harness.glm-quota", "quota", message, fields);
+		}
+	} catch {
+		// Logging must never break the quota flow
 	}
 }
 

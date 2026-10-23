@@ -1,4 +1,5 @@
 import { createTodoProvider } from "./todo-provider.js";
+import { buildValidationSteerSuffix, formatDuration, parseValidationPlan, validationBudgetStatus, } from "./validation-plan.js";
 /**
  * Simple debug logger that writes to file, not stdout
  */
@@ -78,9 +79,11 @@ export class TodoContinuationController {
     _circuitBreakerCooldownMs = 5 * 60 * 1000; // How long the breaker stays open
     _inFlightTimeoutMs = INFLIGHT_TIMEOUT_MS; // Watchdog for a hanging dispatch
     _attemptsByItem = new Map(); // Successful dispatches per item
+    _itemStartedAt = new Map(); // First continuation of an item (elapsed-time budget)
     _totalAttempts = 0; // Successful dispatches in this session (runaway guard)
     _maxTotalSteerAttempts = 9; // Session-wide cap on successful dispatches
     _disposed = false; // Set on shutdown: no dispatch and no timer may act anymore
+    _validationLedger; // Optional ledger of validation runs
     /** True while a dispatch is on the wire */
     get inFlight() {
         return this._inFlightSeq !== null;
@@ -93,6 +96,7 @@ export class TodoContinuationController {
         this._circuitBreakerCooldownMs = config?.circuitBreakerCooldownMs ?? 5 * 60 * 1000;
         this._maxConsecutiveFailures = config?.maxConsecutiveFailures ?? 3;
         this._inFlightTimeoutMs = config?.inFlightTimeoutMs ?? INFLIGHT_TIMEOUT_MS;
+        this._validationLedger = config?.validationLedger;
         this.config = {
             jevFallbackMinWaitMs: 5 * 60 * 1000, // 5 minutes
             routineThreshold: 0.7,
@@ -112,6 +116,54 @@ export class TodoContinuationController {
      */
     attemptsFor(itemId) {
         return this._attemptsByItem.get(itemId) ?? 0;
+    }
+    /**
+     * Elapsed work time on an item, measured from the first continuation.
+     *
+     * `undefined` means the item was never continued, so no elapsed time can
+     * be reported yet.
+     */
+    elapsedForItem(itemId) {
+        const startedAt = this._itemStartedAt.get(itemId);
+        if (startedAt === undefined)
+            return undefined;
+        return Date.now() - startedAt;
+    }
+    /**
+     * Remember when work on an item started (first continuation only).
+     */
+    markItemStarted(itemId) {
+        if (!this._itemStartedAt.has(itemId))
+            this._itemStartedAt.set(itemId, Date.now());
+    }
+    /**
+     * The validation state of an item, read from the ledger.
+     *
+     * `undefined` when no ledger is wired: the caller then falls back to the
+     * declared plan alone.
+     */
+    validationStateFor(item) {
+        if (!item || !this._validationLedger)
+            return undefined;
+        return this._validationLedger.stateFor(item);
+    }
+    /**
+     * The budget status of an item.
+     *
+     * Only a declared `budgetMinutes` arms a budget - the harness never
+     * invents one, because an invented budget could pause legitimate work.
+     */
+    budgetStatusFor(item) {
+        const plan = parseValidationPlan(item);
+        return validationBudgetStatus(plan, item ? this.elapsedForItem(item.id) : undefined);
+    }
+    /**
+     * The reason reported when an item ran out of its declared time budget.
+     */
+    budgetAbortReason(item, budget) {
+        const spent = formatDuration(budget.elapsedMs ?? 0);
+        const total = formatDuration(budget.budgetMs ?? 0);
+        return `budget exhausted for task ${item.id} (${spent} of ${total}) - pausing at a safe boundary`;
     }
     /**
      * True while the circuit breaker forbids a send.
@@ -332,6 +384,16 @@ export class TodoContinuationController {
             if (this._totalAttempts >= this._maxTotalSteerAttempts) {
                 return { action: "stop", reason: `max total attempts (${this._maxTotalSteerAttempts}) reached` };
             }
+            // A declared time budget that is spent pauses the item at a safe
+            // boundary: the work stays open, the report says what is pending.
+            const budget = this.budgetStatusFor(item);
+            if (budget.exhausted) {
+                return {
+                    action: "stop",
+                    reason: this.budgetAbortReason(item, budget),
+                    budget,
+                };
+            }
             this.state.currentItemId = item.id;
             this.state.nextItemId = item.id;
             return { action: "continue", nextItemId: item.id };
@@ -350,6 +412,16 @@ export class TodoContinuationController {
             // exhaust the per-item budget.
             if (this._totalAttempts >= this._maxTotalSteerAttempts) {
                 return { action: "stop", reason: `max total attempts (${this._maxTotalSteerAttempts}) reached` };
+            }
+            // A declared time budget that is spent pauses the item at a safe
+            // boundary: the work stays open, the report says what is pending.
+            const budget = this.budgetStatusFor(item);
+            if (budget.exhausted) {
+                return {
+                    action: "stop",
+                    reason: this.budgetAbortReason(item, budget),
+                    budget,
+                };
             }
             this.state.currentItemId = item.id;
             this.state.nextItemId = item.id;
@@ -383,17 +455,38 @@ export class TodoContinuationController {
             debugLog("TodoContinuation", "Max total steer attempts reached");
             return;
         }
-        // Build continuation message
-        const message = item.description
-            ? `Continue task: ${item.subject}\n\n${item.description}`
-            : `Continue task: ${item.subject}`;
-        // A retry after a stalled dispatch gets the same duplicate warning as
-        // the automatic continuation path.
-        const finalMessage = this._stalledItemId === item.id
-            ? `${message} (retry after a stalled dispatch - a duplicate continuation for this item may still arrive)`
-            : message;
+        // The message is built when the dispatch is about to be sent: the
+        // validation context must reflect the state at that moment.
+        this.markItemStarted(item.id);
         debugLog("TodoContinuation", "Sending continuation:", item.subject);
-        const result = await this.guardedDispatch(item.id, finalMessage);
+        const result = await this.guardedDispatch(item.id, (dispatched) => {
+            const target = dispatched ?? item;
+            const baseMessage = target.description
+                ? `Continue task: ${target.subject}\n\n${target.description}`
+                : `Continue task: ${target.subject}`;
+            // A retry after a stalled dispatch gets the same duplicate warning
+            // as the automatic continuation path.
+            const retryNote = this._stalledItemId === item.id
+                ? " (retry after a stalled dispatch - a duplicate continuation for this item may still arrive)"
+                : "";
+            // A spent time budget pauses the item: nothing goes on the wire.
+            const budget = this.budgetStatusFor(target);
+            if (budget.exhausted) {
+                return { abort: this.budgetAbortReason(target, budget) };
+            }
+            // A declared staged-validation plan rides along with the
+            // continuation: the agent must know which tier is cheap before it
+            // picks a command.
+            const validation = buildValidationSteerSuffix(target, {
+                elapsedMs: this.elapsedForItem(target.id),
+                state: this.validationStateFor(target),
+            });
+            return {
+                send: validation
+                    ? `${baseMessage}${retryNote}\n\n${validation}`
+                    : `${baseMessage}${retryNote}`,
+            };
+        });
         if (result.dispatched) {
             // Only a dispatch that actually reached the agent consumes an attempt
             this.recordAttempt(item.id);
@@ -416,8 +509,12 @@ export class TodoContinuationController {
     /**
      * Guarded dispatch - checks all conditions before sending
      * Uses in-flight guard to prevent race conditions
+     *
+     * The message is built by `buildMessage` at the moment the dispatch is
+     * about to send, so the payload always reflects the state at that moment
+     * (and the item comes from the snapshot read this dispatch already does).
      */
-    async guardedDispatch(itemId, message) {
+    async guardedDispatch(itemId, buildMessage) {
         // 0. A disposed controller never dispatches.
         if (this._disposed) {
             debugLog("TodoContinuation", "Guarded dispatch: controller disposed, skipping");
@@ -555,6 +652,18 @@ export class TodoContinuationController {
             // must not leave the guard armed forever.
             this.scheduleGuardRelease();
             try {
+                const payload = buildMessage(item);
+                if ("abort" in payload) {
+                    // The message builder refused the dispatch (e.g. the item
+                    // ran out of its declared time budget). Nothing goes on the
+                    // wire, and the guard is released again.
+                    debugLog("TodoContinuation", "Guarded dispatch: aborted before send:", payload.abort);
+                    this.state.continuationQueued = false;
+                    this.cancelGuardTimer();
+                    this._blockedDispatches++;
+                    return { dispatched: false, reason: payload.abort, blocked: true };
+                }
+                const message = payload.send;
                 await this.config.dispatch(message);
                 this.state.lastSteerMessage = message;
                 // Only the dispatch that owns the guard may reset the
@@ -658,12 +767,29 @@ export class TodoContinuationController {
                 blockedDispatches: this._blockedDispatches,
             };
         }
-        const message = this._stalledItemId === itemId
-            ? `Continue todo item ID ${itemId}. (retry after a stalled dispatch - a duplicate continuation for this item may still arrive)`
-            : `Continue todo item ID ${itemId}.`;
+        this.markItemStarted(itemId);
         debugLog("TodoContinuation", "Attempting steer to continue item", itemId);
-        // Use guarded dispatch to verify all conditions
-        const result = await this.guardedDispatch(itemId, message);
+        // The message is built when the dispatch is about to be sent, from the
+        // item the dispatch itself read: one snapshot read, no extra latency,
+        // and the validation context is always current.
+        const result = await this.guardedDispatch(itemId, (item) => {
+            const baseMessage = this._stalledItemId === itemId
+                ? `Continue todo item ID ${itemId}. (retry after a stalled dispatch - a duplicate continuation for this item may still arrive)`
+                : `Continue todo item ID ${itemId}.`;
+            // A spent time budget pauses the item: nothing goes on the wire.
+            const budget = this.budgetStatusFor(item);
+            if (budget.exhausted && item) {
+                return { abort: this.budgetAbortReason(item, budget) };
+            }
+            // A declared staged-validation plan rides along with the
+            // continuation: the agent must know which tier is cheap before it
+            // picks a command.
+            const validation = buildValidationSteerSuffix(item, {
+                elapsedMs: this.elapsedForItem(itemId),
+                state: this.validationStateFor(item),
+            });
+            return { send: validation ? `${baseMessage}\n\n${validation}` : baseMessage };
+        });
         if (result.dispatched) {
             // Only a dispatch that actually reached the agent consumes an attempt
             this.recordAttempt(itemId);

@@ -29,6 +29,10 @@ import type { RelayServerOptions } from "../packages/relay/src/server";
 // One implementation of the Telegram allow-list (env var, key file, legacy
 // chat id) - the harness and this server must agree on who may write in.
 import { getAllowedUserIds, isAuthorizedTelegramSender } from "../harness/telegram-auth";
+// Centralized application logs: the harness ships redacted batches to
+// /api/logs, the server persists them and relays them to Cloudflare R2.
+import { redactValue } from "../packages/logging/src/redact";
+import { loadR2Config, R2Client } from "./r2-storage";
 
 // --- Configuration ---
 interface Config {
@@ -72,6 +76,11 @@ const JOB_COMMANDS_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-har
 // --- Callback Queue (fallback when no relay client is connected) ---
 const CALLBACK_QUEUE_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "callback-queue.jsonl");
 
+// --- Log ingest (centralized application logs) ---
+const LOG_INGEST_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "inbound");
+/** Largest accepted ingest body (2 MB). A batch is NDJSON, so this is generous. */
+const LOG_INGEST_MAX_BYTES = 2 * 1024 * 1024;
+
 /**
  * Persist a callback to disk when no WebSocket client is connected.
  * Without this, a click that lands while the relay client is offline is lost.
@@ -84,6 +93,96 @@ function queueCallback(payload: CallbackPayload): void {
   } catch (err) {
     console.error("[Queue] Failed to persist callback:", err);
   }
+}
+
+/**
+ * Persist an inbound log batch and relay it to Cloudflare R2.
+ *
+ * The harness already redacts what it sends; the server re-redacts it
+ * (defence in depth) and writes NDJSON next to the other harness logs. The
+ * R2 relay is best effort: a failed upload never fails the request, because
+ * the batch is already on disk.
+ */
+async function handleLogIngest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const ingestToken = process.env.LOG_INGEST_TOKEN;
+  if (ingestToken) {
+    const auth = req.headers.authorization;
+    if (auth !== `Bearer ${ingestToken}`) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "forbidden" }));
+      return;
+    }
+  }
+
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > LOG_INGEST_MAX_BYTES) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "payload too large" }));
+      return;
+    }
+    chunks.push(chunk as Buffer);
+  }
+
+  let payload: { batchId?: string; records?: unknown[] };
+  try {
+    payload = JSON.parse(Buffer.concat(chunks).toString());
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "invalid json" }));
+    return;
+  }
+
+  const incoming = Array.isArray(payload.records) ? payload.records : [];
+  const records = incoming.map((record) => sanitizeLogRecord(record));
+
+  // Persist locally first - the R2 relay is best effort.
+  try {
+    if (!existsSync(LOG_INGEST_DIR)) mkdirSync(LOG_INGEST_DIR, { recursive: true });
+    const day = new Date().toISOString().slice(0, 10);
+    const file = join(LOG_INGEST_DIR, `logs-${day}.ndjson`);
+    appendFileSync(file, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
+  } catch (err) {
+    console.error("[LogIngest] Failed to persist batch:", err);
+  }
+
+  let relayed = false;
+  try {
+    const r2Config = loadR2Config();
+    if (r2Config) {
+      const client = new R2Client(r2Config);
+      const now = new Date();
+      const stamp = `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}`;
+      await client.upload({
+        key: `logs/inbound/${stamp}/${payload.batchId ?? Date.now()}.ndjson`,
+        body: records.map((record) => JSON.stringify(record)).join("\n") + "\n",
+        contentType: "application/x-ndjson",
+      });
+      relayed = true;
+    }
+  } catch (err) {
+    console.error("[LogIngest] Failed to relay batch to R2:", err);
+  }
+
+  res.writeHead(202, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ accepted: records.length, relayed }));
+}
+
+/** Re-redact one inbound record. Unknown shapes are kept as a redacted value. */
+function sanitizeLogRecord(record: unknown): Record<string, unknown> {
+  if (!record || typeof record !== "object") {
+    return { value: redactValue(record) };
+  }
+  const safe: Record<string, unknown> = { ...(record as Record<string, unknown>) };
+  if (typeof safe.message === "string") {
+    safe.message = redactValue(safe.message);
+  }
+  if (safe.fields && typeof safe.fields === "object") {
+    safe.fields = redactValue(safe.fields);
+  }
+  return safe;
 }
 
 interface JobCommand {
@@ -550,6 +649,9 @@ async function main() {
         acknowledgeCommands();
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true }));
+      } else if (url.pathname === "/api/logs" && req.method === "POST") {
+        // Centralized application logs from the harness
+        await handleLogIngest(req, res);
       } else if (url.pathname === "/health") {
         // Keep the plain-text contract that external monitors check for "OK".
         res.writeHead(200, { "Content-Type": "text/plain" });

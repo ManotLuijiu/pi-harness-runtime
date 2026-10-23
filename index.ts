@@ -100,6 +100,10 @@ import {
 	hasPaperclipConfig,
 	PaperclipWatcher,
 } from "./packages/paperclip-integration/dist/index.js";
+// Centralized application logging: R2 (durable archive) + webhook (live),
+// with a local spool as the fallback. Optional - without credentials the
+// logs simply stay local.
+import { centralInfo, initCentralLogging } from "./packages/logging/dist/index.js";
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
@@ -642,12 +646,29 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 				// Get task context from local todo controller (not bd)
 				const snapshot = await (todoContinuationController?.getSnapshot() ?? Promise.resolve({ items: [] }));
+				// An item whose final tier is still pending is NOT done, even when
+				// it is already marked completed. The judge must see it as
+				// remaining work, otherwise the session ends on a false
+				// completion.
+				const pendingFinalTier = validationLedger
+					? snapshot.items.filter((item) => validationLedger?.isFinalTierPending(item))
+					: [];
+				const pendingFinalTierIds = new Set(pendingFinalTier.map((item) => item.id));
+				if (pendingFinalTier.length > 0) {
+					logToFile(
+						"[auto-continue]",
+						"Final tier still pending for:",
+						pendingFinalTier.map((item) => `${item.id}:${item.subject}`).join(", "),
+					);
+				}
 				const taskContext = {
 					completed: snapshot.items
-					.filter((item: { status?: string; subject?: string }) => item.status === "completed")
+					.filter((item: { id?: number; status?: string; subject?: string }) =>
+						item.status === "completed" && !(item.id !== undefined && pendingFinalTierIds.has(item.id)))
 					.map((item: { status?: string; subject?: string }) => item.subject ?? ""),
 					remaining: snapshot.items
-					.filter((item: { status?: string; subject?: string }) => item.status !== "completed")
+					.filter((item: { id?: number; status?: string; subject?: string }) =>
+						item.status !== "completed" || (item.id !== undefined && pendingFinalTierIds.has(item.id)))
 					.map((item: { status?: string; subject?: string }) => item.subject ?? ""),
 					total: snapshot.items.length,
 				};
@@ -729,11 +750,35 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// --- todo continuation: Retain one controller per session ----------
 		let todoContinuationController: import("./packages/jev-judge/dist/continuation-controller.js").TodoContinuationController | null = null;
+		// Ledger of the validation runs: it is the only mechanical source for
+		// "did the final tier pass?" and therefore guards the completion report.
+		let validationLedger: import("./packages/jev-judge/dist/validation-ledger.js").ValidationLedger | null = null;
 
 		// Create controller on session_start with proper dispatch callback
 		pi.on("session_start", async (_event, ctx) => {
 			try {
 				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
+				const { ValidationLedger } = await import("./packages/jev-judge/dist/validation-ledger.js");
+				// The ledger records which validation tier ran. The controller
+				// uses it to tell the agent what already passed and whether the
+				// final tier is still pending.
+				validationLedger = new ValidationLedger({
+					onRecord: (record) => {
+						centralInfo(
+							"validation",
+							"tier.run",
+							`${record.tier} tier ${record.status}`,
+							{
+								itemId: record.itemId,
+								tier: record.tier,
+								status: record.status,
+								durationMs: record.durationMs,
+								datasetSize: record.datasetSize,
+								command: record.command,
+							},
+						);
+					},
+				});
 				// SAFETY: ctx is ExtensionContext with sessionManager, isIdle, hasPendingMessages
 				// dispatch uses pi.sendUserMessage for actual message delivery
 				todoContinuationController = new TodoContinuationController(
@@ -742,6 +787,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						dispatch: async (content: string) => {
 							await pi.sendUserMessage(content, { deliverAs: "steer" });
 						},
+						validationLedger,
 					}
 				);
 				logToFile("[auto-continue]", "Todo continuation controller initialized");
@@ -988,6 +1034,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						const isNoPendingTasks = reason === "No pending tasks";
 
 						if (isNoPendingTasks) {
+							// A todo whose final tier is still pending must not be
+							// reported as complete. The item may already be marked
+							// completed by the agent - the ledger is the check that
+							// catches it.
+							const snapshot = await todoContinuationController.getSnapshot();
+							const pendingFinalTier = validationLedger
+								? snapshot.items.filter((item) => validationLedger?.isFinalTierPending(item))
+								: [];
+							if (pendingFinalTier.length > 0) {
+								const details = pendingFinalTier
+									.map((item) => `${item.id}:${item.subject}`)
+									.join(", ");
+								logToFile(
+									"[auto-continue]",
+									"Completion suppressed - final tier still pending for:",
+									details,
+								);
+								updateAutoContinueStatus("ERROR", "final tier pending");
+								return;
+							}
 							// Check if there's a pending question - suppress completion if so
 							if (pqController.hasPendingQuestion()) {
 								logToFile("[auto-continue]", "Suppressing completion - pending question exists");
@@ -1005,7 +1071,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							_completedNotifiedFor = completionKey;
 
 							// Get full todo list for notification
-							const snapshot = await todoContinuationController.getSnapshot();
 							const todoList = snapshot.items
 								.map((item) => {
 									const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
@@ -2883,6 +2948,14 @@ function logToFile(...parts: string[]): void {
 	} catch {
 		// Ignore file write errors
 	}
+
+	// Mirror the line into the centralized pipeline. The sampler keeps the
+	// volume bounded; the local file above stays the source of truth.
+	try {
+		centralInfo("harness", "log", msg);
+	} catch {
+		// Logging must never break the caller.
+	}
 }
 
 /** Log a harness startup message to file and track for UI */
@@ -3329,6 +3402,22 @@ export default async function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
+
+	// --- central-logging: ship structured logs to R2 / the webhook server ---
+	// The pipeline is opt-in by configuration, never by code: without R2
+	// credentials and without a webhook URL nothing leaves the machine.
+	try {
+		const logConfig = initCentralLogging();
+		if (logConfig?.enabled) {
+			logToFile(
+				"[CentralLogging]",
+				"enabled -",
+				logConfig.notes.length > 0 ? logConfig.notes.join("; ") : "no transport configured",
+			);
+		}
+	} catch (e) {
+		logToFile("[CentralLogging]", "init failed:", String(e));
+	}
 
 	// Collect async init promises so we can wait for them before showing startup notification
 	const asyncInitPromises: Promise<unknown>[] = [];
