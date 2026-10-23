@@ -1,4 +1,6 @@
 import type { TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
+import { type ValidationBudgetStatus } from "./validation-plan.js";
+import type { ValidationLedger } from "./validation-ledger.js";
 export interface ContinuationConfig {
     /** Dispatch function to send messages to the agent (required) */
     dispatch: (content: string) => Promise<void>;
@@ -50,6 +52,14 @@ export interface ContinuationConfig {
      * A dispatch that never settles must not block every later continuation.
      */
     inFlightTimeoutMs?: number;
+    /**
+     * Ledger of validation runs.
+     *
+     * When a ledger is wired, the controller knows which tier already ran and
+     * whether the final tier is still pending, and it can pause an item whose
+     * declared time budget is spent.
+     */
+    validationLedger?: ValidationLedger;
 }
 /**
  * Continuation state
@@ -106,6 +116,8 @@ export interface ContinuationResult {
     nextItemId?: number;
     question?: string;
     reason?: string;
+    /** Budget status of the item the decision was about. */
+    budget?: ValidationBudgetStatus;
 }
 /**
  * Todo-Driven Continuation Controller
@@ -138,9 +150,11 @@ export declare class TodoContinuationController {
     private _circuitBreakerCooldownMs;
     private _inFlightTimeoutMs;
     private _attemptsByItem;
+    private _itemStartedAt;
     private _totalAttempts;
     private _maxTotalSteerAttempts;
     private _disposed;
+    private _validationLedger?;
     /** True while a dispatch is on the wire */
     private get inFlight();
     constructor(ctx: TodoContext, config?: ContinuationConfig);
@@ -152,6 +166,35 @@ export declare class TodoContinuationController {
      * still bounds an alternating run.
      */
     private attemptsFor;
+    /**
+     * Elapsed work time on an item, measured from the first continuation.
+     *
+     * `undefined` means the item was never continued, so no elapsed time can
+     * be reported yet.
+     */
+    private elapsedForItem;
+    /**
+     * Remember when work on an item started (first continuation only).
+     */
+    private markItemStarted;
+    /**
+     * The validation state of an item, read from the ledger.
+     *
+     * `undefined` when no ledger is wired: the caller then falls back to the
+     * declared plan alone.
+     */
+    private validationStateFor;
+    /**
+     * The budget status of an item.
+     *
+     * Only a declared `budgetMinutes` arms a budget - the harness never
+     * invents one, because an invented budget could pause legitimate work.
+     */
+    private budgetStatusFor;
+    /**
+     * The reason reported when an item ran out of its declared time budget.
+     */
+    private budgetAbortReason;
     /**
      * True while the circuit breaker forbids a send.
      *
@@ -218,6 +261,10 @@ export declare class TodoContinuationController {
     /**
      * Guarded dispatch - checks all conditions before sending
      * Uses in-flight guard to prevent race conditions
+     *
+     * The message is built by `buildMessage` at the moment the dispatch is
+     * about to send, so the payload always reflects the state at that moment
+     * (and the item comes from the snapshot read this dispatch already does).
      */
     private guardedDispatch;
     /**

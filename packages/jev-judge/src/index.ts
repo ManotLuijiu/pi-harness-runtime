@@ -728,6 +728,47 @@ export type { ContinuationConfig, ContinuationState, ContinuationResult } from "
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
 
+// Export staged validation plans
+export {
+	parseValidationPlan,
+	formatValidationContext,
+	buildValidationSteerSuffix,
+	describeTier,
+	parseTier,
+	parseDurationMs,
+	formatDuration,
+	summarizeValidationState,
+	validationBudgetStatus,
+} from "./validation-plan.js";
+export type {
+	ValidationPlan,
+	ValidationTier,
+	ValidationTierKind,
+	ValidationState,
+	ValidationTierState,
+	ValidationBudgetStatus,
+} from "./validation-plan.js";
+
+// Export the validation ledger (durable record of the tiers that ran)
+export {
+	ValidationLedger,
+	defaultLedgerPath,
+	parseRunRecord,
+	parseLedgerContent,
+} from "./validation-ledger.js";
+export type {
+	ValidationRunRecord,
+	ValidationRunStatus,
+	ValidationLedgerOptions,
+} from "./validation-ledger.js";
+
+// Export the validation tie-breaker (typed verdict about one item)
+export {
+	tieBreakValidation,
+	formatTieBreaker,
+} from "./validation-tie-breaker.js";
+export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-breaker.js";
+
 // Export Task Intake
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";

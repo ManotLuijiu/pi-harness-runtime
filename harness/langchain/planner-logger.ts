@@ -14,6 +14,8 @@
 import { mkdirSync, appendFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+// Centralized pipeline (R2 / webhook) - a copy of the local log.
+import { centralInfo } from "../../packages/logging/dist/index.js";
 
 export interface PlannerDecision {
 	timestamp: string;
@@ -178,6 +180,19 @@ export async function logPlannerDecision(decision: PlannerLogEntry): Promise<voi
 	const fileLog = formatFileLog(decision);
 	appendFileSync(LOG_FILE, fileLog);
 	console.log(fileLog);
+
+	// Ship a copy to the centralized pipeline. Only the decision itself is
+	// shipped - the request and the raw planner output stay local.
+	try {
+		centralInfo("harness.planner", "decision", undefined, {
+			provider: decision.provider,
+			escalate: decision.escalate,
+			escalateReason: decision.escalateReason,
+			userInputType: decision.userInput?.type ?? null,
+		});
+	} catch {
+		// Logging must never break the planner flow
+	}
 
 	// Send to Telegram (async, non-blocking for main flow)
 	const telegramMsg = formatTelegramMessage(decision);

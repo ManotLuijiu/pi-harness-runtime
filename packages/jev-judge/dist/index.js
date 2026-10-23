@@ -566,6 +566,12 @@ export { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, score
 export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
 // Export TodoProvider
 export { createTodoProvider } from "./todo-provider.js";
+// Export staged validation plans
+export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, } from "./validation-plan.js";
+// Export the validation ledger (durable record of the tiers that ran)
+export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
+// Export the validation tie-breaker (typed verdict about one item)
+export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 // Export Task Intake
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 //# sourceMappingURL=index.js.map

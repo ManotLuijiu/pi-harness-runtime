@@ -36,6 +36,56 @@ bd list --status pending
 
 **Why**: Agent often builds/commits without checking todos. This causes incomplete tasks to be forgotten.
 
+## Staged Validation & Test-Cost Discipline (CRITICAL)
+
+A task with a cheap tier and an expensive tier MUST use the cheap tier while the code is still changing. Repeating an expensive regression after every fix is the most common way an autonomous run burns an entire night.
+
+1. **Declare the tiers.** Put the plan in the todo metadata (`metadata.validationPlan`):
+
+   ```json
+   {
+     "metadata": {
+       "validationPlan": {
+         "fast": { "command": "bun test tests/fast", "expectedDurationMs": 18000, "datasetSize": 100 },
+         "full": { "command": "bun test tests/full", "expectedDurationMs": 2400000, "datasetSize": 10000 },
+         "budgetMinutes": 90,
+         "finalTierRequired": true
+       }
+     }
+   }
+   ```
+
+   The harness never guesses a tier from a command string. Without a declared plan the current behaviour is unchanged.
+
+2. **Iterate on the fast tier.** After every code edit, rerun the fast tier plus the focused unit/type checks the edit touches.
+
+3. **Run the full tier once.** Run the full tier as the final acceptance check, when the implementation and the fast tier are stable.
+
+4. **Do not repeat the full tier blindly.** Never rerun the full tier after an edit that cannot affect the behavior it covers. If it genuinely must be repeated, say why in one line.
+
+5. **Make the cost visible.** Report each validation run compactly: `[TEST] fast: bun test tests/fast - passed (18s, 100 records)`. A test that is not reported cannot be budgeted.
+
+6. **No false completion.** A todo whose `finalTierRequired` plan is set must not be marked completed while that tier is pending or failed. Pause instead and report what passed, what is pending, and why.
+
+7. **Respect the time budget.** `budgetMinutes` is a soft budget. When it is reached, stop at a safe boundary, report completed and skipped checks, and leave the work open. Never kill a destructive or non-interruptible test mid-run.
+
+8. **The fast tier must be representative.** A small fixture keeps the shape of the data (optional fields, relations, uniqueness, boundary values, aggregates under test), not just the row count. Use deterministic data with cleanup so repeated runs do not accumulate rows.
+
+9. **Record every tier run in the ledger.** The harness never runs the tests, so the run is recorded by whoever knows the result:
+
+   ```bash
+   bun scripts/validation-run.ts --item 12 --tier fast --status passed --duration 18s --dataset 100
+   bun scripts/validation-run.ts --item 12 --tier full --status passed --duration 41m -- "bun test tests/full"
+   ```
+
+   The ledger is plain NDJSON under `~/.pi-harness-runtime/logs/validation-runs.jsonl` (inspectable with `tail` or `jq`) and every record is mirrored into the central logging pipeline. The harness reads it to know which tier already passed, so an unreported run looks like a run that never happened.
+
+**What the harness does with the plan:**
+
+- The continuation message carries the plan, the recorded tier state and the remaining budget, so the agent never re-runs a tier that already passed.
+- When `budgetMinutes` is spent, the item pauses at a safe boundary: nothing is dispatched, the work stays open, and the reason is reported.
+- When a todo with `finalTierRequired` is marked complete while that tier is pending or failed, the completion report is suppressed and the item is named instead. A todo may not be reported as done on the strength of an unreported run.
+
 ## Versioning Convention
 
 **Only patch-level updates (`0.10.x`)** — no minor/major bumps until the app is fully functional.
@@ -502,6 +552,9 @@ bun run build && bun run start   # Server deployment
   mode (`*_ENV`, `*_ENVIRONMENT`, `*_MODE`, `*_STAGE`, e.g. `AMOS_ENV`), then
   any other environment shaped key - and only then an environment shaped key
   of the process env → development/production/test
+- The facts about the repository (only when NO variable names the environment
+  at all) → a published source repository without a runtime of its own is a
+  development checkout; a `develop`/`development` branch is the fallback
 - System RAM → Low RAM warning (<16GB total or <4GB available)
 - Running processes → dev/build server status
 
@@ -513,8 +566,26 @@ A value that is not provably harmless is masked (`<set>`): only the
 shown. A key that only looks like a branch (`BRANCH=production`) never
 decides the mode.
 
+**Session variables of a desktop are not environment selectors.**
+`GNOME_SHELL_SESSION_MODE`, `XDG_*`, `DESKTOP_*`, `DBUS_*`, ... name the
+desktop session, never the environment of a workspace. Some of them end in
+`_MODE` or `_ENV`, so they are excluded from the candidates by NAMESPACE,
+not by value: their value ("ubuntu", "wayland") says nothing about the mode.
+
+**The repository tier (last resort, never production).** It runs only when
+no variable names the environment at all. A published package (a
+`package.json` with a name, a version and declared content - `files`,
+`bin` or `publishConfig`) without a deployment configuration (no Dockerfile,
+compose file, Procfile, fly.toml, render.yaml, railway.json, vercel.json,
+netlify.toml, serverless.yml, app.yaml, pm2 ecosystem file, no deploy
+workflow) and without a running server is SOURCE CODE that the user runs on
+their own machine → `DEVELOPMENT (source-only repository)`. A branch named
+`develop` or `development` is the fallback → `DEVELOPMENT (git branch
+develop)`. A production branch is NEVER a development checkout, and this
+tier never claims production.
+
 **This info is shown in UI and delivered to agent context:**
-```
+```text
 Workspace: ~/pi-harness-runtime | OS: Linux | mode: DEVELOPMENT (from AMOS_ENV in .env) | dev server: running | dev script: available | build script: available | RAM: 10/16
 ```
 
@@ -522,7 +593,8 @@ The mode words are exactly what the detector emits: `DEVELOPMENT`, `PRODUCTION`,
 `TEST` or `UNKNOWN` (with its reason, e.g.
 `UNKNOWN (no NODE_ENV or environment variable found)` or
 `UNKNOWN (AMOS_ENV in .env names no known mode)`). A known mode also
-names its source: `DEVELOPMENT (from AMOS_ENV in .env)`.
+names its source: `DEVELOPMENT (from AMOS_ENV in .env)` or
+`DEVELOPMENT (source-only repository)`.
 A dev/build script is a CAPABILITY, not a state: `dev script: available` means
 the script exists, not that a server runs. The server state is separate and
 never claims more than it knows: `running`, `not detected` (a check ran and
@@ -545,12 +617,15 @@ command to use.
 | `Dev server running` | Reuse it, don't restart |
 
 **Decision flow:**
-```
+```text
 Check process.env.NODE_ENV first (it decides, also when it names no known mode)
 Check the .env and .env.* files of the workspace second
   (NODE_ENV, then an environment shaped key whose value names a mode,
    then any other environment shaped key)
 Only then an environment shaped key of the process env (e.g. AMOS_ENV)
+Only then the facts about the repository
+  (a published source repository without a runtime of its own,
+   or a develop/development branch)
 Presence of dev script = capability, not proof of mode
 UNKNOWN requires investigation, not auto-build
 Production detection ≠ deployment authorization
@@ -561,3 +636,50 @@ Production detection ≠ deployment authorization
 ```
 ~/.pi-harness-runtime/workspace-env.sqlite
 ```
+
+## Centralized Application Logging
+
+All application logs can be shipped to **Cloudflare R2** (durable archive) and to the
+**unified webhook server** (live path). The pipeline lives in `packages/logging`
+(`@pi-harness/logging`); the harness uses the process-wide singleton from it.
+
+**Delivery order** (first success wins, the rest are skipped):
+
+```text
+producer -> redact -> sample -> buffer -> R2 -> webhook -> local spool (~/.pi-harness-runtime/logs/spool)
+```
+
+- The local spool is the fallback: if every transport fails the batch is written to
+  disk as NDJSON and re-shipped on the next successful flush. Nothing is lost, only delayed.
+- The local log files (`~/.pi-harness-runtime/logs/*.jsonl`, `harness/*.log`) stay the
+  source of truth. The centralized pipeline is a copy for the archive.
+
+**Configuration** (environment first, then `~/.pi-harness-runtime/keys/`):
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `PI_LOG_SINK` | `off` \| `auto` \| `r2` \| `webhook` \| `r2+webhook` | `auto` |
+| `PI_LOG_LEVEL` | Minimum level that is shipped | `info` |
+| `PI_LOG_SAMPLE_RATE` | Share of `debug` records kept (0..1) | `0.1` |
+| `PI_LOG_RATE_LIMIT` | Max records per source+event per minute | `60` |
+| `PI_LOG_BATCH_SIZE` | Records per batch | `100` |
+| `PI_LOG_BUFFER_SIZE` | Records held in memory | `1000` |
+| `PI_LOG_FLUSH_INTERVAL_MS` | Automatic flush interval | `15000` |
+| `PI_LOG_WEBHOOK_URL` | Ingest URL of the webhook server | unset |
+| `PI_LOG_WEBHOOK_TOKEN` | Bearer token for the ingest endpoint | unset |
+| `PI_LOG_R2_BUCKET` / `PI_LOG_R2_ENDPOINT` / `PI_LOG_R2_ACCESS_KEY_ID` / `PI_LOG_R2_SECRET_ACCESS_KEY` | R2 credentials | key files |
+| `PI_LOG_SPOOL_DIR` | Local spool directory | `~/.pi-harness-runtime/logs/spool` |
+
+R2 credentials are read from the key files `r2-bucket-name.txt`, `r2-endpoint.txt`,
+`r2-access-key-id.txt`, `r2-secret-access-key.txt` and `r2-account-id.txt`.
+
+**Rules for producers:**
+
+- Emit through the singleton: `centralInfo/centralWarn/centralError(source, event, message?, fields?)`.
+  The `source` identifies the component, the `event` is a dotted name.
+- Redaction is automatic (key names, credential patterns, truncation), but producers must
+  not pass user content: prompts, raw model output and message bodies are dropped by the
+  redactor, so shipping them is pointless.
+- Never put a credential in a log message. The redactor is a safety net, not a licence.
+- The webhook server exposes `POST /api/logs` for the ingest path. Set `LOG_INGEST_TOKEN`
+  to require a bearer token; the server re-redacts every batch and relays it to R2.

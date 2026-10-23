@@ -189,6 +189,12 @@ export { TodoContinuationController, createTodoContinuation } from "./continuati
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
+export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, } from "./validation-plan.js";
+export type { ValidationPlan, ValidationTier, ValidationTierKind, ValidationState, ValidationTierState, ValidationBudgetStatus, } from "./validation-plan.js";
+export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
+export type { ValidationRunRecord, ValidationRunStatus, ValidationLedgerOptions, } from "./validation-ledger.js";
+export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
+export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-breaker.js";
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";
 //# sourceMappingURL=index.d.ts.map

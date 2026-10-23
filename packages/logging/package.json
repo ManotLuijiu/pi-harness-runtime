@@ -1,0 +1,29 @@
+{
+  "name": "@pi-harness/logging",
+  "version": "1.1.185",
+  "type": "module",
+  "description": "Centralized structured application logging with buffered Cloudflare R2 and webhook transports",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "keywords": [
+    "logging",
+    "observability",
+    "r2",
+    "cloudflare"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.7.2"
+  }
+}

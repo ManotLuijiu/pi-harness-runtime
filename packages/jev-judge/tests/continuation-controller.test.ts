@@ -8,8 +8,12 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TodoContinuationController } from "../src/continuation-controller.js";
 import { MockTodoProvider, type TodoContext } from "../src/todo-provider.js";
+import { ValidationLedger } from "../src/validation-ledger.js";
 
 function makeCtx(overrides: Partial<TodoContext> = {}): TodoContext {
 	return {
@@ -1225,5 +1229,168 @@ describe("TodoContinuationController - guard lifecycle", () => {
 		const trial = await controller.steerToContinue(1);
 		expect(trial.dispatched).toBe(false);
 		expect(sends).toBe(4);
+	});
+});
+
+describe("TodoContinuationController - staged validation context", () => {
+	it("adds the declared validation plan to the continuation message", async () => {
+		const provider = new MockTodoProvider();
+		provider.addItem({
+			subject: "seed data",
+			status: "in_progress",
+			metadata: {
+				validationPlan: {
+					fast: { command: "bun test tests/fast", expectedDurationMs: 18_000, datasetSize: 100 },
+					full: { command: "bun test tests/full", expectedDurationMs: 2_400_000, datasetSize: 10_000 },
+					budgetMinutes: 90,
+					finalTierRequired: true,
+				},
+			},
+		} as never);
+
+		const sent: string[] = [];
+		const controller = makeController({
+			provider,
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+		});
+
+		const result = await controller.steerToContinue(1);
+		expect(result.dispatched).toBe(true);
+		expect(sent.length).toBe(1);
+
+		const message = sent[0];
+		expect(message).toContain("Continue todo item ID 1.");
+		expect(message).toContain("VALIDATION PLAN (staged)");
+		expect(message).toContain("bun test tests/fast");
+		expect(message).toContain("bun test tests/full");
+		expect(message).toContain("Run the fast tier after every edit");
+		expect(message).toContain("Time budget: 90m");
+	});
+
+	it("leaves the message untouched when no plan is declared", async () => {
+		const provider = new MockTodoProvider();
+		provider.addItem({ subject: "keep going", status: "in_progress" } as never);
+
+		const sent: string[] = [];
+		const controller = makeController({
+			provider,
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+		});
+
+		await controller.steerToContinue(1);
+		expect(sent[0]).toBe("Continue todo item ID 1.");
+		expect(sent[0]).not.toContain("VALIDATION PLAN");
+	});
+});
+
+describe("TodoContinuationController - validation budget and ledger", () => {
+	it("pauses the item when the declared time budget is spent", async () => {
+		const provider = new MockTodoProvider();
+		provider.addItem({
+			subject: "budgeted work",
+			status: "in_progress",
+			metadata: {
+				validationPlan: {
+					fast: { command: "bun test tests/fast" },
+					budgetMinutes: 0,
+				},
+			},
+		} as never);
+
+		const sent: string[] = [];
+		const controller = makeController({
+			provider,
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+		});
+
+		const result = await controller.decide();
+		expect(result.action).toBe("stop");
+		expect(result.reason).toContain("budget exhausted");
+		expect(result.budget?.exhausted).toBe(true);
+		expect(sent.length).toBe(0);
+	});
+
+	it("does not put a continuation on the wire when the budget is spent", async () => {
+		const provider = new MockTodoProvider();
+		provider.addItem({
+			subject: "budgeted work",
+			status: "in_progress",
+			metadata: {
+				validationPlan: {
+					fast: { command: "bun test tests/fast" },
+					budgetMinutes: 0.001, // 60ms
+				},
+			},
+		} as never);
+
+		const sent: string[] = [];
+		const controller = makeController({
+			provider,
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+		});
+
+		// The first continuation is inside the budget.
+		const first = await controller.steerToContinue(1);
+		expect(first.dispatched).toBe(true);
+		expect(sent.length).toBe(1);
+
+		// After the budget is spent the item pauses at a safe boundary.
+		await new Promise((resolve) => setTimeout(resolve, 90));
+		controller.releaseContinuationGuard("settled");
+		const second = await controller.steerToContinue(1);
+		expect(second.dispatched).toBe(false);
+		expect(second.reason).toContain("budget exhausted");
+		expect(sent.length).toBe(1);
+	});
+
+	it("reports the recorded tier state in the continuation message", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "validation-ledger-"));
+		try {
+			const provider = new MockTodoProvider();
+			provider.addItem({
+				subject: "staged work",
+				status: "in_progress",
+				metadata: {
+					validationPlan: {
+						fast: { command: "bun test tests/fast" },
+						full: { command: "bun test tests/full" },
+						finalTierRequired: true,
+					},
+				},
+			} as never);
+
+			const ledger = new ValidationLedger({ path: join(dir, "runs.jsonl") });
+			ledger.record({ tier: "fast", status: "passed", itemId: 1 });
+
+			const sent: string[] = [];
+			const controller = new TodoContinuationController(makeCtx(), {
+				dispatch: async (content) => {
+					sent.push(content);
+				},
+				todoProvider: provider,
+				validationLedger: ledger,
+			});
+
+			await controller.steerToContinue(1);
+			expect(sent[0]).toContain("Fast tier: passed");
+			expect(sent[0]).toContain("do not complete this todo while it is pending or failed");
+
+			// Once the final tier passed, the message says so.
+			ledger.record({ tier: "full", status: "passed", itemId: 1 });
+			controller.releaseContinuationGuard("settled");
+			await controller.steerToContinue(1);
+			expect(sent[1]).toContain("Full tier: passed");
+			expect(sent[1]).toContain("The final tier already passed");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

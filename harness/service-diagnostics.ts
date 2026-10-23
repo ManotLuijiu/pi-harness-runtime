@@ -8,6 +8,9 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+// Centralized pipeline (R2 / webhook). The local JSONL file stays the
+// source of truth; the shipper is a copy for the archive.
+import { centralError, centralInfo, centralWarn } from "../packages/logging/dist/index.js";
 
 export type ServiceLevel = "info" | "warn" | "error" | "debug";
 export type ServiceName = "jev" | "honcho" | "qdrant";
@@ -41,15 +44,43 @@ function ensureLogDir(): void {
  * Sensitive fields (keys, tokens, full content) are never logged.
  */
 export function logServiceEvent(event: ServiceEvent): void {
+	let safeEvent: Record<string, unknown> = { ...event };
 	try {
 		ensureLogDir();
 
 		// Redact sensitive fields
-		const safeEvent = redactSensitive(event);
+		safeEvent = redactSensitive(event);
 
 		appendFileSync(LOG_FILE, JSON.stringify(safeEvent) + "\n");
 	} catch {
 		// Silently fail if logging fails - don't crash the service
+	}
+
+	shipServiceEvent(safeEvent);
+}
+
+/**
+ * Send a service event to the centralized pipeline.
+ *
+ * The event was already redacted above; the shipper redacts again, which
+ * is cheap and keeps the guarantee local to one place.
+ */
+function shipServiceEvent(event: Record<string, unknown>): void {
+	try {
+		const level = typeof event.level === "string" ? event.level : "info";
+		const fields: Record<string, unknown> = { ...event };
+		delete fields.level;
+		delete fields.ts;
+
+		if (level === "error") {
+			centralError("harness.service-diagnostics", String(event.operation ?? "event"), undefined, fields);
+		} else if (level === "warn") {
+			centralWarn("harness.service-diagnostics", String(event.operation ?? "event"), undefined, fields);
+		} else {
+			centralInfo("harness.service-diagnostics", String(event.operation ?? "event"), undefined, fields);
+		}
+	} catch {
+		// Never let shipping break the service
 	}
 }
 
