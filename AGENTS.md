@@ -555,7 +555,10 @@ bun run build && bun run start   # Server deployment
 - The facts about the repository (only when NO variable names the environment
   at all) → a published source repository without a runtime of its own is a
   development checkout; a `develop`/`development` branch is the fallback
-- System RAM → Low RAM warning (<16GB total or <4GB available)
+- System RAM → Low RAM warning (<4GB free, or a small machine (<16GB total)
+  with less than 6GB free). The warning is about the headroom that is
+  actually free, not about the size of the machine: a 15GB laptop with 6.5GB
+  free can build, a 32GB server with 3GB free cannot.
 - Running processes → dev/build server status
 
 The dotenv files are read from the WORKSPACE (not from the current working
@@ -615,6 +618,12 @@ command to use.
 | `mode: PRODUCTION` | Build allowed, but confirm with user |
 | `Low RAM` | Never run parallel build + dev |
 | `Dev server running` | Reuse it, don't restart |
+
+The status line states the build permission with its reason: `Build allowed:
+yes`, `no - low memory` (not enough free memory) or `no - requires explicit
+request` (the mode is unknown, so the environment has to be investigated
+first). In development mode the permission follows the free memory (a build
+needs ~2GB), not the size of the machine.
 
 **Decision flow:**
 ```text

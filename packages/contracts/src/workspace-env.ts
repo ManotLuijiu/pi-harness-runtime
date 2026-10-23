@@ -32,7 +32,9 @@ import {
 	formatEnvStatusLine as formatStatusLine,
 	formatWorkspacePath,
 	isLauncherCommand,
+	isLowRamWarning,
 	MASKED_MODE_VALUE,
+	MIN_BUILD_HEADROOM_GB,
 	modeFromRepositoryFacts,
 	modeFromValue,
 	orderDotenvFileNames,
@@ -148,12 +150,11 @@ function detectRamInfo(): {
 		const freeBytes = freemem();
 		const totalGb = Math.round((totalBytes / (1024 ** 3)) * 10) / 10;
 		const availableGb = Math.round((freeBytes / (1024 ** 3)) * 10) / 10;
-		const LOW_RAM_GB = 16;
 
 		return {
 			total: totalGb,
 			available: availableGb,
-			lowWarning: totalGb < LOW_RAM_GB || availableGb < 4,
+			lowWarning: isLowRamWarning(totalGb, availableGb),
 		};
 	} catch {
 		return { total: null, available: null, lowWarning: false };
@@ -778,7 +779,11 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
 	if (mode === "production") {
 		buildAllowed = true; // Production build is allowed
 	} else if (mode === "development") {
-		buildAllowed = !ramInfo.lowWarning; // Allow if not low RAM
+		// A build needs headroom, not a big machine. The low-memory warning is
+		// about running a build AND a dev server in parallel; a build on its
+		// own only needs enough free memory to finish.
+		buildAllowed =
+			ramInfo.available === null ? false : ramInfo.available >= MIN_BUILD_HEADROOM_GB;
 	} else {
 		buildAllowed = false; // Unknown requires investigation
 	}

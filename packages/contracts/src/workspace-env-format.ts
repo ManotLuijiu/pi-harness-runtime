@@ -90,6 +90,43 @@ export function isLauncherCommand(cmdline: string): boolean {
 	return /^(npm|bun|yarn|pnpm)\b.*\b(run\s+)?(dev|start)\b/.test(cmdline.trim());
 }
 
+/**
+ * The RAM rule behind the "low memory" warning.
+ *
+ * The warning exists to avoid running a build AND a dev server in parallel,
+ * so it is about the headroom that is actually available - not about the size
+ * of the machine. A 15 GB laptop with 6.5 GB free can build; a 32 GB server
+ * with 3 GB free cannot.
+ *
+ * - Below 4 GB free: always low.
+ * - Below 16 GB total: a small machine needs real headroom (6 GB) before a
+ *   parallel build and dev server are safe.
+ */
+export function isLowRamWarning(totalGb: number | null, availableGb: number | null): boolean {
+	if (availableGb === null) return false;
+	if (availableGb < 4) return true;
+	if (totalGb === null) return false;
+	return totalGb < 16 && availableGb < 6;
+}
+
+/**
+ * The headroom a build needs before it is allowed in development mode.
+ */
+export const MIN_BUILD_HEADROOM_GB = 2;
+
+/**
+ * The reason the build permission is (not) given.
+ *
+ * The agent has to know WHY a build is not allowed: an unknown environment
+ * needs an explicit request, a memory shortage needs a lighter build.
+ */
+export function buildAllowanceReason(env: WorkspaceEnvResult): string {
+	if (env.buildAllowed) return "yes";
+	if (env.mode === "unknown") return "no - requires explicit request";
+	if (env.lowRamWarning) return "no - low memory";
+	return "no - requires explicit request";
+}
+
 export type ServerState = "running" | "not-detected" | "not-checked";
 
 /**
@@ -756,7 +793,7 @@ export function formatEnvForAgentResult(env: WorkspaceEnvResult): string {
 	}
 
 	message += `\n`;
-	message += `Build allowed: ${env.buildAllowed ? "yes" : "no - requires explicit request"}\n`;
+	message += `Build allowed: ${buildAllowanceReason(env)}\n`;
 
 	if (env.mode === "unknown") {
 		message += `\nNOTE: Environment unknown - a dev/build script only means a server CAN be started, it does not establish the workspace mode. Explicitly ask the user before build.\n`;

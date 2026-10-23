@@ -82,6 +82,30 @@ export interface WorkspaceEnvResult {
  * without the SQLite cache.
  */
 export declare function isLauncherCommand(cmdline: string): boolean;
+/**
+ * The RAM rule behind the "low memory" warning.
+ *
+ * The warning exists to avoid running a build AND a dev server in parallel,
+ * so it is about the headroom that is actually available - not about the size
+ * of the machine. A 15 GB laptop with 6.5 GB free can build; a 32 GB server
+ * with 3 GB free cannot.
+ *
+ * - Below 4 GB free: always low.
+ * - Below 16 GB total: a small machine needs real headroom (6 GB) before a
+ *   parallel build and dev server are safe.
+ */
+export declare function isLowRamWarning(totalGb: number | null, availableGb: number | null): boolean;
+/**
+ * The headroom a build needs before it is allowed in development mode.
+ */
+export declare const MIN_BUILD_HEADROOM_GB = 2;
+/**
+ * The reason the build permission is (not) given.
+ *
+ * The agent has to know WHY a build is not allowed: an unknown environment
+ * needs an explicit request, a memory shortage needs a lighter build.
+ */
+export declare function buildAllowanceReason(env: WorkspaceEnvResult): string;
 export type ServerState = "running" | "not-detected" | "not-checked";
 /**
  * The name of the operating system the harness runs on.
