@@ -400,6 +400,20 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/logging": {
+      "name": "@pi-harness/logging",
+      "version": "1.1.185",
+      "devDependencies": {
+        "@types/node": "^26.6.4",
+        "typescript": "^5.7.2",
+      },
+      "peerDependencies": {
+        "@aws-sdk/client-s3": ">=3.0.0",
+      },
+      "optionalPeers": [
+        "@aws-sdk/client-s3",
+      ],
+    },
     "packages/mcp-adapter": {
       "name": "@pi/mcp-adapter",
       "version": "1.1.71-1",
@@ -1082,6 +1096,8 @@
     "@pi-harness/knowledge-retrieval": ["@pi-harness/knowledge-retrieval@workspace:packages/knowledge-retrieval"],
 
     "@pi-harness/learning-engine": ["@pi-harness/learning-engine@workspace:packages/learning-engine"],
+
+    "@pi-harness/logging": ["@pi-harness/logging@workspace:packages/logging"],
 
     "@pi-harness/memory-engine": ["@pi-harness/memory-engine@workspace:packages/memory-engine"],
 
@@ -2176,6 +2192,8 @@
     "@pi-harness/knowledge-retrieval/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@pi-harness/learning-engine/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
+
+    "@pi-harness/logging/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@pi-harness/memory-engine/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
 
