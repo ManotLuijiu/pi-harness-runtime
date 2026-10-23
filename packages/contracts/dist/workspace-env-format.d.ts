@@ -136,6 +136,14 @@ export declare const MASKED_MODE_VALUE = "<set>";
  */
 export declare function isEnvShapedKey(key: string): boolean;
 /**
+ * True for a key that belongs to the desktop session, not to the workspace.
+ *
+ * The rule is a namespace list, not a value check: the value of a session
+ * variable ("ubuntu", "wayland", "user") says nothing about the environment
+ * of a workspace, so such a variable must never name the mode.
+ */
+export declare function isSessionVariableKey(key: string): boolean;
+/**
  * True for a key that may hold a secret.
  */
 export declare function isSecretLikeKey(key: string): boolean;
@@ -202,6 +210,61 @@ export interface ModeResolution {
     hint: DotenvVar | null;
     source: "process.env" | ".env file" | null;
 }
+/**
+ * The deployment configuration of a repository.
+ *
+ * A repository that carries one of these files is deployed somewhere: it
+ * has a runtime environment of its own, so the shape of the repository
+ * cannot prove that the workspace is a development checkout.
+ */
+export declare const DEPLOYMENT_MARKER_FILES: readonly ["Dockerfile", "Containerfile", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", "Procfile", "fly.toml", "render.yaml", "railway.json", "vercel.json", "netlify.toml", "serverless.yml", "serverless.yaml", "app.yaml", "ecosystem.config.cjs", "ecosystem.config.js"];
+/**
+ * The facts about the repository the workspace belongs to.
+ *
+ * They are read from the file system (and from git), never from a variable:
+ * a published package that is deployed nowhere is source code that the
+ * user runs on their own machine.
+ */
+export interface RepositoryFacts {
+    /** The workspace is a git checkout. */
+    isGitRepository: boolean;
+    /** The current branch ("" when it cannot be read). */
+    branch: string;
+    /** The package.json describes a package that is published to a registry. */
+    isPublishedPackage: boolean;
+    /** The repository carries a deployment configuration. */
+    hasDeploymentMarker: boolean;
+    /** A dev or build server runs in this workspace. */
+    hasRunningServer: boolean;
+}
+/**
+ * A mode that the facts about the repository named.
+ */
+export interface RepositoryModeDetection {
+    mode: WorkspaceMode;
+    /**
+     * The phrase that names the detection.
+     *
+     * It is used as the key of the evidence ("source-only repository",
+     * "git branch develop"), so the label can name it the same way it
+     * names a variable.
+     */
+    key: string;
+}
+/**
+ * Name the mode of a workspace from the facts about its repository.
+ *
+ * This is the LAST tier of the mode detection: it runs only when no
+ * variable names the environment at all. It never claims production - a
+ * checkout of a production branch is not a production environment, and the
+ * deployment marker of the repository keeps the answer honest.
+ *
+ * Two sets of facts name a development workspace:
+ * 1. a published package without a deployment configuration and without a
+ *    running server: source code that the user runs on their own machine
+ * 2. a branch that names a development line of work ("develop")
+ */
+export declare function modeFromRepositoryFacts(facts: RepositoryFacts): RepositoryModeDetection | null;
 /**
  * Resolve the workspace mode from the variables that were found.
  *

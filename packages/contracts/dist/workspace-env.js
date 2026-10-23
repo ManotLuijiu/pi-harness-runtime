@@ -13,10 +13,10 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { execSync } from "child_process";
-import { existsSync, readFileSync, mkdirSync, readlinkSync, realpathSync } from "fs";
+import { existsSync, readFileSync, readdirSync, mkdirSync, readlinkSync, realpathSync } from "fs";
 import { join } from "path";
 import { platform, totalmem, freemem } from "os";
-import { canShowModeValue, collectDotenvVars, collectProcessEnvVars, describeCwdCommand, describeOs, describeServerState, describeWorkspaceMode, detectModeHint, filterOwnPids, formatEnvForAgentResult, formatEnvStatusLine as formatStatusLine, formatWorkspacePath, isLauncherCommand, MASKED_MODE_VALUE, modeFromValue, orderDotenvFileNames, parseDotenvVars, resolveWorkspaceMode, } from "./workspace-env-format.js";
+import { canShowModeValue, collectDotenvVars, collectProcessEnvVars, describeCwdCommand, describeOs, describeServerState, describeWorkspaceMode, detectModeHint, DEPLOYMENT_MARKER_FILES, filterOwnPids, formatEnvForAgentResult, formatEnvStatusLine as formatStatusLine, formatWorkspacePath, isLauncherCommand, MASKED_MODE_VALUE, modeFromRepositoryFacts, modeFromValue, orderDotenvFileNames, parseDotenvVars, resolveWorkspaceMode, } from "./workspace-env-format.js";
 import { readDotenvFiles } from "./workspace-dotenv.js";
 const STORE_DIR = join(process.env.HOME || "/home/frappe", ".pi-harness-runtime");
 /**
@@ -521,6 +521,97 @@ function detectPackageManager(workspacePath) {
     return null;
 }
 /**
+ * The git repository of a workspace.
+ *
+ * The root of the repository is the unit of the detection: a package
+ * published from a monorepo is described by the root, not by the folder
+ * the harness happens to run in.
+ */
+function detectGitFacts(workspacePath) {
+    try {
+        const out = execSync("git rev-parse --show-toplevel 2>/dev/null; git rev-parse --abbrev-ref HEAD 2>/dev/null", { cwd: workspacePath, encoding: "utf8", timeout: 1500 });
+        const lines = out.split("\n").map((line) => line.trim());
+        const root = lines[0] ?? "";
+        const branch = lines[1] ?? "";
+        // A detached HEAD reports "HEAD" - that is not a branch name.
+        return { root, branch: branch === "HEAD" ? "" : branch };
+    }
+    catch {
+        // No git, no repository, or a timeout: nothing is known.
+        return { root: "", branch: "" };
+    }
+}
+/**
+ * True when the package is published to a registry.
+ *
+ * A package that is published names a version and declares what it ships
+ * ("files", "bin" or a "publishConfig"). A repository that only holds an
+ * application usually declares none of them - so this stays a careful
+ * signal instead of "every package.json is published".
+ */
+function isPublishedPackage(packageDir) {
+    const pkgJsonPath = join(packageDir, "package.json");
+    if (!existsSync(pkgJsonPath))
+        return false;
+    try {
+        const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+        if (!pkg || typeof pkg !== "object")
+            return false;
+        if (pkg.private === true)
+            return false;
+        if (typeof pkg.name !== "string" || !pkg.name)
+            return false;
+        if (typeof pkg.version !== "string" || !pkg.version)
+            return false;
+        return (Array.isArray(pkg.files) ||
+            (typeof pkg.bin === "object" && pkg.bin !== null) ||
+            (typeof pkg.publishConfig === "object" && pkg.publishConfig !== null));
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * True when the repository carries a deployment configuration.
+ *
+ * A deployment file or a deploy workflow means the repository has a
+ * runtime environment of its own - the shape of the repository can then no
+ * longer say that the workspace is a development checkout.
+ */
+function hasDeploymentConfiguration(repoRoot) {
+    for (const marker of DEPLOYMENT_MARKER_FILES) {
+        if (existsSync(join(repoRoot, marker)))
+            return true;
+    }
+    const workflowDir = join(repoRoot, ".github", "workflows");
+    if (existsSync(workflowDir)) {
+        try {
+            for (const name of readdirSync(workflowDir)) {
+                if (/deploy/i.test(name))
+                    return true;
+            }
+        }
+        catch {
+            // An unreadable directory proves nothing.
+        }
+    }
+    return false;
+}
+/**
+ * Read the facts about the repository the workspace belongs to.
+ */
+function detectRepositoryFacts(workspacePath, hasRunningServer) {
+    const { root, branch } = detectGitFacts(workspacePath);
+    const repoRoot = root || workspacePath;
+    return {
+        isGitRepository: root !== "",
+        branch,
+        isPublishedPackage: isPublishedPackage(repoRoot),
+        hasDeploymentMarker: hasDeploymentConfiguration(repoRoot),
+        hasRunningServer,
+    };
+}
+/**
  * Determine workspace mode with proper precedence
  * Never assume production - unknown requires investigation
  *
@@ -531,8 +622,11 @@ function detectPackageManager(workspacePath) {
  *    key whose value names a known mode, then any other environment shaped
  *    key
  * 3. an environment shaped key of the process env (the files are silent)
+ * 4. the facts about the repository (only when NO variable names the
+ *    environment at all) - a published source repository without a runtime
+ *    of its own is a development checkout
  */
-function determineMode(processVars, dotenvVars, evidence) {
+function determineMode(processVars, dotenvVars, evidence, repositoryFacts) {
     const resolved = resolveWorkspaceMode(processVars, dotenvVars);
     if (resolved.hint && resolved.source) {
         // The value is only kept when it is provably not a secret: the
@@ -546,8 +640,21 @@ function determineMode(processVars, dotenvVars, evidence) {
             timestamp: Date.now(),
             file: resolved.hint.file,
         });
+        // An explicit variable decides - even when it names no known mode
+        // ("staging"). The mode stays unknown and the label names the value.
+        return resolved.mode;
     }
-    return resolved.mode;
+    // No variable names the environment: the repository may still name it.
+    const detection = modeFromRepositoryFacts(repositoryFacts);
+    if (!detection)
+        return resolved.mode;
+    evidence.push({
+        source: "detection",
+        key: detection.key,
+        value: detection.mode,
+        timestamp: Date.now(),
+    });
+    return detection.mode;
 }
 /**
  * Detect and store workspace environment
@@ -594,7 +701,8 @@ export function detectWorkspaceEnv(workspacePath) {
     // workspace (see detectServerStates).
     const { dev: devServerState, build: buildServerState } = detectServerStates(workspacePath);
     // Determine mode - NEVER assume production
-    const mode = determineMode(processVars, dotenvVars, evidence);
+    const repositoryFacts = detectRepositoryFacts(workspacePath, devServerState === "running" || buildServerState === "running");
+    const mode = determineMode(processVars, dotenvVars, evidence, repositoryFacts);
     // Determine build permission
     let buildAllowed = false;
     if (mode === "production") {
