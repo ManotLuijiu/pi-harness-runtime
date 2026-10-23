@@ -11,7 +11,7 @@
 export { RelayServer, createRelayServer } from './server.js';
 export type { RelayServerOptions } from './server.js';
 export { RelayClient } from './client.js';
-export type { RelayClientCallbacks } from './client.js';
+export type { RelayClientCallbacks, RelayLogger } from './client.js';
 export { resolveRelayEndpoint, deriveRelayWsUrl, isRelayWsUrl, describeRelayEndpoint, } from './relay-endpoint.js';
 export type { RelayEndpointEnv, RelayEndpointResolution, ResolveRelayEndpointOptions, } from './relay-endpoint.js';
 export { RELAY_URL_SOURCES, RELAY_TOKEN_SOURCES, } from './relay-endpoint.js';

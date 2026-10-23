@@ -30,6 +30,7 @@ import {
 import { renderDetailLines } from "./harness/startup-lines.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
+import { installConsoleGuard } from "./harness/console-guard.ts";
 import {
 	jevMissingKeyReport,
 	lineConfigurationReport,
@@ -345,6 +346,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (ctx.hasUI && ctx.ui) {
 				_setAutoContinueStatus = ctx.ui.setStatus.bind(ctx.ui, "harness-auto-continue");
 			}
+
 		});
 
 		// Clear status and cancel background work on session shutdown
@@ -2044,6 +2046,14 @@ async function initRelayStream(): Promise<void> {
 					]);
 				}
 			},
+		},
+		{
+			// A TUI owns the terminal: the relay diagnostics belong in the log
+			// file. A console write would land in the prompt input field
+			// ("[RelayClient] Connected ...").
+			log: (message) => logToFile("[RelayStream]", `log: ${message}`),
+			warn: (message) => logToFile("[RelayStream]", `warn: ${message}`),
+			error: (message) => logToFile("[RelayStream]", `error: ${message}`),
 		}
 	);
 
@@ -2053,6 +2063,50 @@ async function initRelayStream(): Promise<void> {
 	} catch (err) {
 		logToFile("[RelayStream]", `Failed to connect: ${err}`);
 	}
+}
+
+/**
+ * Console guard - the TUI owns the terminal.
+ *
+ * A library that writes to the console puts its text into the prompt input
+ * field ("[RelayClient] Connected ..."). In TUI mode every console call goes
+ * to the harness log instead. An error is also surfaced as a harness message,
+ * so a crash is never invisible.
+ */
+function initConsoleGuard(pi: ExtensionAPI): void {
+	let restore: (() => void) | null = null;
+	// A reload emits session_start BEFORE the previous session_shutdown:
+	// the guard must stay installed for the new session. The console is only
+	// given back when every started session has been shut down.
+	let starts = 0;
+	let shutdowns = 0;
+	const recentErrors = new Map<string, number>();
+
+	pi.on("session_start", (_event, ctx) => {
+		starts++;
+		if (ctx.mode !== "tui" || restore) return;
+		restore = installConsoleGuard({
+			sink: (level, message) => {
+				logToFile("[Console]", `${level}: ${message}`);
+				if (level !== "error") return;
+				// One message per 30s: a crash must be visible, a loop must not flood.
+				const now = Date.now();
+				if (now - (recentErrors.get(message) ?? 0) < 30_000) return;
+				recentErrors.set(message, now);
+				const text = message.length > 200 ? `${message.slice(0, 200)}...` : message;
+				addHarnessMessage("Console", text, "err");
+			},
+		});
+		logToFile("[Console]", "Console redirected to the log file (TUI mode)");
+	});
+
+	pi.on("session_shutdown", () => {
+		shutdowns++;
+		// Only the last session may take the console back.
+		if (!restore || shutdowns < starts) return;
+		restore();
+		restore = null;
+	});
 }
 
 // --- honcho-memory: Honcho MCP for peer/user memory via https://mcp.honcho.dev ------
@@ -2765,7 +2819,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 // --- Debug logging (file only, no console override) ---------------
 // Logs written to file only. Real console output preserved for pi's TUI.
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, appendFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, appendFileSync, realpathSync, statSync, chmodSync, openSync, closeSync, renameSync } from "node:fs";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
 
@@ -2775,6 +2829,11 @@ const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 /** Startup messages collected during init — shown on session_start via ctx.ui.notify */
 const startupMessages: string[] = [];
 const HARNESS_LOG_FILE = "/tmp/pi-harness.log";
+// The log can contain urls and session ids: owner only, no rotation while it
+// is small, and a bounded size so a chatty dependency cannot fill the disk.
+const HARNESS_LOG_MAX_BYTES = 5 * 1024 * 1024;
+let harnessLogFileSecured = false;
+let harnessLogWrites = 0;
 
 /** Log a harness message to file (not stderr - bypasses Pi's cursor tracking) */
 function logToFile(...parts: string[]): void {
@@ -2782,6 +2841,44 @@ function logToFile(...parts: string[]): void {
 	// A timestamp makes the log usable for latency measurements.
 	const stamp = new Date().toISOString();
 	try {
+		if (!harnessLogFileSecured) {
+			try {
+				// Create the file with the owner-only mode BEFORE the first
+				// write: there must be no world-readable window.
+				const fd = openSync(HARNESS_LOG_FILE, "a", 0o600);
+				closeSync(fd);
+				chmodSync(HARNESS_LOG_FILE, 0o600);
+				// Only a successful attempt stops the retries.
+				harnessLogFileSecured = true;
+			} catch {
+				// Ignore permission errors (e.g. a mounted /tmp) and retry
+				// on the next write.
+			}
+		}
+
+		// Keep the log bounded: rotate it when it grew too large.
+		harnessLogWrites++;
+		if (harnessLogWrites % 200 === 0) {
+			try {
+				if (statSync(HARNESS_LOG_FILE).size > HARNESS_LOG_MAX_BYTES) {
+					renameSync(HARNESS_LOG_FILE, `${HARNESS_LOG_FILE}.1`);
+					chmodSync(`${HARNESS_LOG_FILE}.1`, 0o600);
+					// Secure the fresh file right away: the write that
+					// follows must not land in a 0644 file.
+					try {
+						const fd = openSync(HARNESS_LOG_FILE, "a", 0o600);
+						closeSync(fd);
+						chmodSync(HARNESS_LOG_FILE, 0o600);
+						harnessLogFileSecured = true;
+					} catch {
+						harnessLogFileSecured = false;
+					}
+				}
+			} catch {
+				// Ignore rotation errors
+			}
+		}
+
 		appendFileSync(HARNESS_LOG_FILE, `[${stamp}] ${msg}\n`);
 	} catch {
 		// Ignore file write errors
@@ -3293,6 +3390,11 @@ export default async function (pi: ExtensionAPI) {
 	// Telegram adapter), but the CONFIGURATION must be reported even when
 	// Telegram is not configured at all - that is the fresh-install case.
 	reportRelayConfiguration();
+
+	// --- console-guard: keep the TUI prompt input field clean ----
+	// A library that writes to the console would put its text into the
+	// prompt input field. The guard sends it to the harness log instead.
+	initConsoleGuard(pi);
 
 	// --- line-voice-queue: Watch for LINE voice commands ----
 	void initLineVoiceQueue(pi);
