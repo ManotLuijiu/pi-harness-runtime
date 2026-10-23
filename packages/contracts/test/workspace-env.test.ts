@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	buildAllowanceReason,
 	canShowModeValue,
 	collectDotenvVars,
 	collectProcessEnvVars,
@@ -16,6 +17,7 @@ import {
 	formatEnvStatusLine,
 	formatWorkspacePath,
 	isLauncherCommand,
+	isLowRamWarning,
 	isSessionVariableKey,
 	MASKED_MODE_VALUE,
 	modeFromRepositoryFacts,
@@ -750,5 +752,51 @@ describe("the mode detection of a source repository", () => {
 		});
 
 		expect(describeWorkspaceMode(env)).toBe("DEVELOPMENT (source-only repository)");
+	});
+});
+
+describe("the low memory rule", () => {
+	test("flags a machine with almost no free memory", () => {
+		expect(isLowRamWarning(64, 2)).toBe(true);
+		expect(isLowRamWarning(16, 3.9)).toBe(true);
+	});
+
+	test("does not flag a small machine with real headroom", () => {
+		expect(isLowRamWarning(15, 6.6)).toBe(false);
+		expect(isLowRamWarning(8, 8)).toBe(false);
+	});
+
+	test("flags a big machine that ran out of memory", () => {
+		expect(isLowRamWarning(64, 3)).toBe(true);
+	});
+
+	test("does not flag an unknown memory state", () => {
+		expect(isLowRamWarning(null, null)).toBe(false);
+		expect(isLowRamWarning(null, 12)).toBe(false);
+	});
+});
+
+describe("the build permission", () => {
+	test("allows a build when the environment allows it", () => {
+		expect(buildAllowanceReason(makeEnv({ mode: "development", buildAllowed: true }))).toBe("yes");
+	});
+
+	test("asks for an explicit request when the mode is unknown", () => {
+		expect(
+			buildAllowanceReason(makeEnv({ mode: "unknown", buildAllowed: false, lowRamWarning: false })),
+		).toBe("no - requires explicit request");
+	});
+
+	test("names the memory shortage when the memory is the reason", () => {
+		expect(
+			buildAllowanceReason(makeEnv({ mode: "development", buildAllowed: false, lowRamWarning: true })),
+		).toBe("no - low memory");
+	});
+
+	test("appears in the agent context", () => {
+		const message = formatEnvForAgentResult(
+			makeEnv({ mode: "development", buildAllowed: false, lowRamWarning: true }),
+		);
+		expect(message).toContain("Build allowed: no - low memory");
 	});
 });
