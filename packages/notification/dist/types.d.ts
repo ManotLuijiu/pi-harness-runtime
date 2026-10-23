@@ -31,6 +31,11 @@ export interface TelegramConfig {
     botToken: string;
     chatId: string;
     parseMode?: "MarkdownV2" | "HTML" | "Markdown";
+    /**
+     * Users that may write into Pi (their user id). Empty/absent means only
+     * `chatId` is allowed; if both are absent nobody may write in.
+     */
+    allowedUserIds?: number[];
     enableInlineKeyboard?: boolean;
     actionButtons?: InlineKeyboardButton[];
 }

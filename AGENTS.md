@@ -494,27 +494,45 @@ bun run build && bun run start   # Server deployment
 ### 14. Workspace Environment Auto-Detection
 
 **At session start, the harness auto-detects:**
-- `.env` file presence → Dev environment evidence
+- `.env` / `.env.*` file variables → Dev environment evidence
 - `package.json` `dev` script → Hot reload capability
-- `NODE_ENV` value → development/production/test
+- The environment variable, in this order: the `NODE_ENV` of the process env
+  (it decides, also when it names no known mode), then the dotenv files of the
+  workspace: `NODE_ENV`, an environment shaped key whose value names a known
+  mode (`*_ENV`, `*_ENVIRONMENT`, `*_MODE`, `*_STAGE`, e.g. `AMOS_ENV`), then
+  any other environment shaped key - and only then an environment shaped key
+  of the process env → development/production/test
 - System RAM → Low RAM warning (<16GB total or <4GB available)
 - Running processes → dev/build server status
 
+The dotenv files are read from the WORKSPACE (not from the current working
+directory), the template files (`.env.example`, `.env.sample`,
+`.env.template`, ...) are ignored and a file bigger than 256 kB is not read.
+A value that is not provably harmless is masked (`<set>`): only the
+`NODE_ENV` of the process env and a value that IS the name of the mode are
+shown. A key that only looks like a branch (`BRANCH=production`) never
+decides the mode.
+
 **This info is shown in UI and delivered to agent context:**
 ```
-Workspace: ~/pi-harness-runtime | OS: Linux | mode: DEVELOPMENT | dev server: running | dev script: available | build script: available | RAM: 10/16
+Workspace: ~/pi-harness-runtime | OS: Linux | mode: DEVELOPMENT (from AMOS_ENV in .env) | dev server: running | dev script: available | build script: available | RAM: 10/16
 ```
 
 The mode words are exactly what the detector emits: `DEVELOPMENT`, `PRODUCTION`,
-`TEST` or `UNKNOWN` (with its reason, e.g. `UNKNOWN (no explicit NODE_ENV)`).
+`TEST` or `UNKNOWN` (with its reason, e.g.
+`UNKNOWN (no NODE_ENV or environment variable found)` or
+`UNKNOWN (AMOS_ENV in .env names no known mode)`). A known mode also
+names its source: `DEVELOPMENT (from AMOS_ENV in .env)`.
 A dev/build script is a CAPABILITY, not a state: `dev script: available` means
 the script exists, not that a server runs. The server state is separate and
 never claims more than it knows: `running`, `not detected` (a check ran and
 found nothing) or `not checked` (no check was possible, e.g. no `pgrep`).
 
 The OS is part of the line because it decides which command prints the
-working directory: `pwd` on Linux/macOS, `cd` or `echo %cd%` on Windows.
-The agent context names the command to use.
+working directory: `pwd` on Linux/macOS, `(pwd).Path` or `$pwd.Path` in
+PowerShell (the plain `pwd` there prints a "Path: " header), `cd` or
+`echo %cd%` in the Windows command prompt. The agent context names the
+command to use.
 
 **IMPORTANT Rules:**
 
@@ -528,8 +546,11 @@ The agent context names the command to use.
 
 **Decision flow:**
 ```
-Check process.env.NODE_ENV first
-Check .env file NODE_ENV second
+Check process.env.NODE_ENV first (it decides, also when it names no known mode)
+Check the .env and .env.* files of the workspace second
+  (NODE_ENV, then an environment shaped key whose value names a mode,
+   then any other environment shaped key)
+Only then an environment shaped key of the process env (e.g. AMOS_ENV)
 Presence of dev script = capability, not proof of mode
 UNKNOWN requires investigation, not auto-build
 Production detection ≠ deployment authorization

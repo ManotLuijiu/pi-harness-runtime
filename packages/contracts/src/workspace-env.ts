@@ -2,8 +2,10 @@
  * Workspace Environment Detector
  *
  * Detects if the workspace is a development environment by checking:
- * 1. process.env.NODE_ENV (for build processes)
- * 2. .env file existence and NODE_ENV value
+ * 1. the NODE_ENV of the process env (for build processes)
+ * 2. the dotenv files of the workspace (".env", ".env.*"): NODE_ENV, then
+ *    an environment shaped key whose VALUE names a known mode (e.g.
+ *    AMOS_ENV=development), then any other environment shaped key
  * 3. package.json "dev" script presence
  *
  * Stores detected environment in SQLite for agent reference.
@@ -16,17 +18,33 @@ import { existsSync, readFileSync, mkdirSync, readlinkSync, realpathSync } from 
 import { join } from "path";
 import { platform, totalmem, freemem } from "os";
 import {
+	canShowModeValue,
+	collectDotenvVars,
+	collectProcessEnvVars,
 	describeCwdCommand,
 	describeOs,
 	describeServerState,
 	describeWorkspaceMode,
+	detectModeHint,
 	filterOwnPids,
 	formatEnvForAgentResult,
 	formatEnvStatusLine as formatStatusLine,
 	formatWorkspacePath,
 	isLauncherCommand,
+	MASKED_MODE_VALUE,
+	modeFromValue,
+	orderDotenvFileNames,
+	parseDotenvVars,
+	resolveWorkspaceMode,
 } from "./workspace-env-format.js";
-import type { EnvEvidence, ServerState, WorkspaceEnvResult, WorkspaceMode } from "./workspace-env-format.js";
+import { readDotenvFiles } from "./workspace-dotenv.js";
+import type {
+	DotenvVar,
+	EnvEvidence,
+	ServerState,
+	WorkspaceEnvResult,
+	WorkspaceMode,
+} from "./workspace-env-format.js";
 
 const STORE_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime");
 
@@ -96,35 +114,23 @@ function initDatabase(): DatabaseSync {
  * the existing import paths keep working.
  */
 export {
+	collectDotenvVars,
+	collectProcessEnvVars,
 	describeCwdCommand,
 	describeOs,
 	describeServerState,
 	describeWorkspaceMode,
+	detectModeHint,
 	formatEnvForAgentResult,
 	formatWorkspacePath,
+	modeFromValue,
+	orderDotenvFileNames,
+	parseDotenvVars,
+	resolveWorkspaceMode,
 };
-export type { EnvEvidence, ServerState, WorkspaceEnvResult, WorkspaceMode };
-
-/**
- * Parse dotenv file without loading secrets
- * Returns only NODE_ENV value, ignoring comments and other vars
- */
-function parseNodeEnvFromDotenv(content: string): string | null {
-	const lines = content.split("\n");
-	for (const line of lines) {
-		// Skip empty lines and comments
-		const trimmed = line.trim();
-		if (!trimmed || trimmed.startsWith("#")) continue;
-
-		// Match NODE_ENV= followed by value (handle quotes, spaces)
-		// Allow: NODE_ENV=development, NODE_ENV="production", NODE_ENV: development
-		const match = trimmed.match(/^NODE_ENV\s*[=:]\s*['"]?([^\s'";]+)['"]?/);
-		if (match) {
-			return match[1];
-		}
-	}
-	return null;
-}
+export { canShowModeValue, isEnvShapedKey, isSecretLikeKey, MASKED_MODE_VALUE } from "./workspace-env-format.js";
+export { isTemplateDotenvName, listDotenvFiles, readDotenvFiles } from "./workspace-dotenv.js";
+export type { DotenvVar, EnvEvidence, ServerState, WorkspaceEnvResult, WorkspaceMode };
 
 /**
  * Detect RAM information
@@ -562,53 +568,39 @@ function detectPackageManager(workspacePath: string): string | null {
 /**
  * Determine workspace mode with proper precedence
  * Never assume production - unknown requires investigation
+ *
+ * The search order (the priority the user described):
+ * 1. the NODE_ENV of the process env - it decides, also when it names no
+ *    known mode
+ * 2. the dotenv files of the workspace: NODE_ENV, then an environment shaped
+ *    key whose value names a known mode, then any other environment shaped
+ *    key
+ * 3. an environment shaped key of the process env (the files are silent)
  */
 function determineMode(
-	processEnv: string | undefined,
-	dotenvNodeEnv: string | null,
+	processVars: DotenvVar[],
+	dotenvVars: DotenvVar[],
 	evidence: EnvEvidence[]
 ): WorkspaceMode {
-	// Explicit process.env takes highest priority (for build processes)
-	if (processEnv) {
-		const env = processEnv.toLowerCase();
-		// The evidence is recorded for EVERY value, including one that names
-		// no known mode ("staging"): the label then says which NODE_ENV could
-		// not be interpreted instead of claiming there is none.
+	const resolved = resolveWorkspaceMode(processVars, dotenvVars);
+	if (resolved.hint && resolved.source) {
+		// The value is only kept when it is provably not a secret: the
+		// dotenv files hold secrets and the evidence ends up in the agent
+		// context and in the SQLite cache.
+		const keepValue = canShowModeValue(
+			resolved.hint.key,
+			resolved.hint.value,
+			resolved.source,
+		);
 		evidence.push({
-			source: "process.env",
-			key: "NODE_ENV",
-			value: env,
+			source: resolved.source,
+			key: resolved.hint.key,
+			value: keepValue ? resolved.hint.value : MASKED_MODE_VALUE,
 			timestamp: Date.now(),
+			file: resolved.hint.file,
 		});
-		if (env === "production") {
-			return "production";
-		}
-		if (env === "development" || env === "dev") {
-			return "development";
-		}
-		if (env === "test") {
-			return "test";
-		}
 	}
-
-	// Check dotenv file if present
-	if (dotenvNodeEnv) {
-		const env = dotenvNodeEnv.toLowerCase();
-		evidence.push({
-			source: ".env file",
-			key: "NODE_ENV",
-			value: env,
-			timestamp: Date.now(),
-		});
-
-		if (env === "production") return "production";
-		if (env === "development" || env === "dev") return "development";
-		if (env === "test") return "test";
-	}
-
-	// Note: presence of dev script is a capability, not proof of mode
-	// Mode detection requires explicit NODE_ENV
-	return "unknown";
+	return resolved.mode;
 }
 
 /**
@@ -619,37 +611,15 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
 	const evidence: EnvEvidence[] = [];
 
 	// Get process.env.NODE_ENV (for build process context)
-	const processNodeEnv = process.env.NODE_ENV;
+	const processVars = collectProcessEnvVars();
 
 	// Detect RAM info
 	const ramInfo = detectRamInfo();
 
-	// Check for .env files and parse NODE_ENV
-	let dotenvNodeEnv: string | null = null;
-	const dotenvFiles = [
-		join(workspacePath, ".env"),
-		join(workspacePath, ".env.development"),
-		join(workspacePath, ".env.dev"),
-	];
-	for (const envFile of dotenvFiles) {
-		if (existsSync(envFile)) {
-			try {
-				const content = readFileSync(envFile, "utf8");
-				dotenvNodeEnv = parseNodeEnvFromDotenv(content);
-				if (dotenvNodeEnv) {
-					evidence.push({
-						source: ".env file",
-						key: "NODE_ENV",
-						value: dotenvNodeEnv,
-						timestamp: now,
-					});
-					break;
-				}
-			} catch {
-				// Ignore read errors
-			}
-		}
-	}
+	// Read the dotenv files of the workspace (".env" and every ".env.*").
+	// The variables name the environment: NODE_ENV, another *_ENV key
+	// (e.g. AMOS_ENV) or a value that names a known mode.
+	const dotenvVars = collectDotenvVars(readDotenvFiles(workspacePath));
 
 	// Check for dev/build scripts in package.json
 	let hasDevScript = false;
@@ -685,7 +655,7 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
 		detectServerStates(workspacePath);
 
 	// Determine mode - NEVER assume production
-	const mode = determineMode(processNodeEnv, dotenvNodeEnv, evidence);
+	const mode = determineMode(processVars, dotenvVars, evidence);
 
 	// Determine build permission
 	let buildAllowed = false;

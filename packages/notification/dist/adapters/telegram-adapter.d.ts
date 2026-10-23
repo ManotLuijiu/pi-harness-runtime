@@ -28,6 +28,38 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     private _greetingVerified;
     private _greetingReplyInFlight;
     private _greetingHandler;
+    /** Why the poll loop is not running (null = running, or never needed). */
+    private _pollStopReason;
+    /** How many 409 retries have been scheduled. */
+    private _pollRetryCount;
+    /** Timer of the scheduled 409 retry. */
+    private _pollRetryTimer;
+    /**
+     * True when polling was stopped on purpose (stopPolling). A pending
+     * 409 retry must not fire afterwards.
+     */
+    private _pollStopped;
+    /**
+     * True when the 409 retry chain gave up. The reason is reported
+     * exactly once.
+     */
+    private _pollGaveUp;
+    /**
+     * True when the poll stop reason was already reported. The report is
+     * one shot: a later startPolling() must not produce a second
+     * "retries exhausted" with the same reason.
+     */
+    private _pollStopReported;
+    /**
+     * Called when the poll loop stops because Telegram answered 409.
+     * The harness uses it to tell the user that the inbound path degraded.
+     */
+    onPollStopped: ((reason: string) => void) | undefined;
+    /**
+     * The backoff of the 409 retries. Public so a test can shorten it.
+     */
+    pollRetryBaseDelayMs: number;
+    pollRetryMaxAttempts: number;
     setGreetingVerifiedHandler(handler: () => void): void;
     isGreetingVerified(): boolean;
     constructor(config: TelegramConfig);
@@ -50,13 +82,61 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
     get botUsername(): string | undefined;
     initialize(): Promise<boolean>;
     /**
+     * True when a separate webhook server owns the Telegram updates.
+     *
+     * Polling and a webhook are mutually exclusive: Telegram rejects
+     * getUpdates while a webhook is active, and every rejected poll also
+     * terminates the getUpdates stream of the OTHER poller of the same bot.
+     * That is how an inbound text message got delayed by seconds.
+     */
+    isWebhookConfigured(): boolean;
+    /**
+     * True while the getUpdates poll loop is running.
+     */
+    isPolling(): boolean;
+    /**
+     * True when a webhook was registered for this bot. A webhook and polling
+     * are mutually exclusive: Telegram rejects getUpdates while a webhook is
+     * active.
+     */
+    isWebhookActive(): boolean;
+    /**
+     * Why the poll loop is not running (null = it runs, or was never needed).
+     *
+     * The harness shows this in the startup summary: a silent 409 would look
+     * like a working inbound path.
+     */
+    getPollStopReason(): string | null;
+    /**
+     * Report that the inbound path stopped - exactly once.
+     *
+     * A report that is repeated would show the same warning twice; a
+     * report that is lost would hide a broken inbound path.
+     */
+    private reportPollStopped;
+    /**
+     * Schedule a bounded retry after a 409.
+     *
+     * Only used when no webhook is configured: there the harness poll is the
+     * only inbound path, so it must survive a competing poller instead of
+     * giving up after the first rejection.
+     */
+    private schedulePollRetry;
+    /**
      * Start polling for Telegram updates (callback queries, etc.)
      */
     startPolling(): void;
     /**
      * Stop polling
+     *
+     * The stop reason is kept: it is the diagnosis of a broken inbound path
+     * (a 409 by another poller) and the startup summary reads it.
      */
     stopPolling(): void;
+    /**
+     * Stop the poll loop but keep the 409 retry chain alive.
+     */
+    private clearPollInterval;
     /**
      * Poll for updates using getUpdates
      */
@@ -88,6 +168,21 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      * Process incoming webhook update from Telegram
      */
     handleWebhookUpdate(update: Record<string, unknown>): Promise<void>;
+    /**
+     * Forward a text message that arrived through the webhook to the
+     * registered message handler. Same rules as the polling path: no bots and
+     * only the configured chat.
+     */
+    private forwardWebhookMessage;
+    /**
+     * True when the sender may write into Pi.
+     *
+     * ONE rule, shared with the remote webhook server
+     * (packages/notification/src/telegram-auth.ts): the SENDER decides, an
+     * allow-list is authoritative, otherwise the configured chat id
+     * identifies the sender. With neither configured nobody may.
+     */
+    private isAuthorizedSender;
     /**
      * Parse callback query from webhook update
      */

@@ -249,6 +249,42 @@ describe("relay end-to-end (mocked Telegram)", () => {
 		}
 	});
 
+	it("accepts nobody when no token is configured", async () => {
+		// A relay without a token must not accept a public default secret:
+		// the server fails closed (packages/relay/src/server.ts).
+		const relay = new RelayServer({
+			port: 0,
+			host: "127.0.0.1",
+		});
+
+		let client: RelayClient | undefined;
+
+		try {
+			await relay.start();
+			const relayPort = (relay as unknown as { server: Server }).server.address();
+			const port = (relayPort as AddressInfo).port;
+
+			client = new RelayClient(
+				{
+					serverUrl: `ws://127.0.0.1:${port}`,
+					// The empty token is the dangerous case: without the
+					// fail-closed guard the server would accept it.
+					token: "",
+					connectTimeout: 5000,
+				},
+				{},
+			);
+
+			await expect(
+				withTimeout(client.connect(), OVERALL_TIMEOUT_MS, "client.connect()"),
+			).rejects.toThrow();
+			expect(client.getState().state).not.toBe("connected");
+		} finally {
+			client?.disconnect();
+			await relay.stop().catch(() => {});
+		}
+	});
+
 	it("rejects a webhook POST with the wrong secret", async () => {
 		const telegram = await startMockTelegram(() => {});
 		try {

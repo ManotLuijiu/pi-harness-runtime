@@ -11,22 +11,18 @@ import { createServer, IncomingMessage, ServerResponse, Server } from "node:http
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 
+import type { CallbackPayload } from "./types.js";
+
+export type { CallbackPayload };
+
 export interface RelayMessage {
   type: "callback" | "ping" | "pong" | "auth";
   payload: unknown;
 }
 
-export interface CallbackPayload {
-  type: "telegram_callback" | "line_callback";
-  action: string;
-  targetId: string;
-  userId: number;
-  username?: string;
-  messageId?: number;
-  timestamp: string;
-}
-
-const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
+// No default token: a relay without a configured token accepts nobody.
+// A public default secret would be worse than no relay at all.
+const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "";
 
 /**
  * WebSocket Relay Server
@@ -92,7 +88,7 @@ export class WsRelayServer {
   private handleMessage(ws: WebSocket, clientId: string, msg: RelayMessage): void {
     switch (msg.type) {
       case "auth":
-        if (msg.payload === AUTH_TOKEN) {
+        if (AUTH_TOKEN.length > 0 && msg.payload === AUTH_TOKEN) {
           this.clients.set(clientId, ws);
           ws.send(JSON.stringify({ type: "auth", payload: { success: true } }));
           console.log(`[WsRelay] Client authenticated: ${clientId}`);
@@ -115,7 +111,7 @@ export class WsRelayServer {
     const msg = JSON.stringify({ type: "callback", payload: callback });
     let count = 0;
 
-    for (const [clientId, ws] of this.clients) {
+    for (const ws of this.clients.values()) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(msg);
         count++;

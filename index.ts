@@ -28,6 +28,8 @@ import {
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
 import { renderDetailLines } from "./harness/startup-lines.ts";
+import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
+import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import {
 	jevMissingKeyReport,
 	lineConfigurationReport,
@@ -1364,6 +1366,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			return;
 		}
 
+		const allowedUserIds = [...getAllowedUserIds()];
 		const channels: Array<{
 			id: string;
 			type: string;
@@ -1374,9 +1377,26 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				id: "telegram",
 				type: "telegram",
 				enabled: true,
-				config: { botToken, chatId },
+				config: { botToken, chatId, allowedUserIds },
 			},
 		];
+
+		// Who may write into Pi? A group chat id is not a user id: when the
+		// allow-list holds only a group id, the inbound path is closed - and
+		// that must be visible, not silent.
+		const inboundAccess = describeInboundAccess(allowedUserIds, chatId);
+		logStartup(`[pi-harness] Telegram inbound: ${inboundAccess}`);
+		if (inboundAccess.startsWith("nobody")) {
+			addHarnessMessage(
+				"Telegram",
+				"nobody may write in: the allow-list holds no user id",
+				"warn",
+				[
+					"Write your Telegram user id into ~/.pi-harness-runtime/keys/telegram-allowed-users.txt (a chat id of a group is not a user id).",
+					"Then reload Pi.",
+				],
+			);
+		}
 
 		// Add LINE channel if credentials exist
 		const lineChannelConfigured = Boolean(hasLineCredentials && lineAccessToken && lineUserId);
@@ -1587,7 +1607,9 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				return;
 			}
 			
-			logToFile("[TelegramInbound]", `Forwarding message to Pi: "${text.slice(0, 50)}..."`);
+			// The user's own words stay out of the log files: only the length
+			// is recorded.
+			logToFile("[TelegramInbound]", `Forwarding message to Pi (${text.length} chars)`);
 			// Forward the message to Pi as a user message
 			await pi.sendUserMessage(text, { deliverAs: "steer" });
 		});
@@ -1644,7 +1666,32 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			]);
 			return;
 		}
-		telegram?.startPolling();
+		// Polling and the remote webhook are mutually exclusive. Telegram
+		// rejects getUpdates while a webhook is active, and the rejected poll
+		// also terminates the getUpdates stream of every other poller of this
+		// bot, which delayed the inbound text messages by seconds.
+		if (telegram) {
+			// A 409 (a webhook or another poller owns this bot) stops the
+			// inbound path. The user must see it - a silent 409 looks like a
+			// working inbound path.
+			telegram.onPollStopped = (reason) => {
+				addHarnessMessage("Telegram", `inbound polling stopped: ${reason}`, "warn", [
+					"Telegram rejects getUpdates (409) while a webhook or another poller owns this bot.",
+					"Stop the other poller of this bot (or remove the remote webhook), then reload Pi.",
+				]);
+			};
+			if (!telegram.isWebhookConfigured()) {
+				telegram.startPolling();
+				// The poll may already have been rejected (a 409 fires the
+				// callback above); make the reason visible either way.
+				const stopReason = telegram.getPollStopReason();
+				if (stopReason) {
+					addHarnessMessage("Telegram", `inbound polling stopped: ${stopReason}`, "warn", [
+						"Stop the other poller of this bot (or remove the remote webhook), then reload Pi.",
+					]);
+				}
+			}
+		}
 		if (!telegram?.isGreetingVerified()) {
 			addHarnessMessage("Telegram", "Hi sent; tap Say Hi to verify inbound (tap Toggle Telegram to disable)", "wait");
 		}
@@ -1931,33 +1978,57 @@ async function initRelayStream(): Promise<void> {
 				logToFile("[RelayStream]", "Synchronized - receiving live events");
 			},
 			onCallback: async (callback: CallbackPayload) => {
-				logToFile("[RelayStream]", `Callback: ${callback.action} ${callback.targetId}`);
+				logToFile(
+					"[RelayStream]",
+					callback.type === "telegram_message"
+						? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
+						: `Callback: ${callback.action} ${callback.targetId}`,
+				);
 
 				// Forward Telegram callbacks to the adapter
 				if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
-					// Convert relay callback to Telegram update format
-					const update = {
-						callback_query: {
-							id: callback.callbackQueryId || String(callback.id),
-							from: {
-								id: callback.userId,
-								is_bot: false,
-								first_name: callback.username || "User",
-								username: callback.username,
-							},
-							data: `${callback.action}:${callback.targetId}`,
-							message: {
-								chat: { id: callback.chatId || callback.userId },
-								message_id: callback.messageId || 0,
-							},
-						},
-					};
+					// The mapping is a pure function (harness/telegram-update.ts) so
+					// that it can be tested without the harness.
+					const update = buildTelegramCallbackUpdate({
+						id: callback.id,
+						action: callback.action,
+						targetId: callback.targetId,
+						callbackQueryId: callback.callbackQueryId,
+						userId: callback.userId,
+						username: callback.username,
+						messageId: callback.messageId,
+						chatId: callback.chatId,
+						isBot: callback.isBot,
+					});
+					if (update) {
+						try {
+							await _relayTelegramAdapter.handleWebhookUpdate(update);
+							logToFile("[RelayStream]", "Callback processed by Telegram adapter");
+						} catch (err) {
+							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+						}
+					}
+				}
 
-					try {
-						await _relayTelegramAdapter.handleWebhookUpdate(update);
-						logToFile("[RelayStream]", "Callback processed by Telegram adapter");
-					} catch (err) {
-						logToFile("[RelayStream]", `Adapter error: ${err}`);
+				// Forward a Telegram TEXT message (the user typed it) to the adapter
+				if (callback.type === "telegram_message" && _relayTelegramAdapter) {
+					// The mapping is a pure function (harness/telegram-update.ts) so
+					// that it can be tested without the harness.
+					const update = buildTelegramMessageUpdate({
+						userId: callback.userId,
+						username: callback.username,
+						messageId: callback.messageId,
+						chatId: callback.chatId,
+						text: callback.text,
+						isBot: callback.isBot,
+					});
+					if (update) {
+						try {
+							await _relayTelegramAdapter.handleWebhookUpdate(update);
+							logToFile("[RelayStream]", "Message processed by Telegram adapter");
+						} catch (err) {
+							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+						}
 					}
 				}
 			},
@@ -2708,8 +2779,10 @@ const HARNESS_LOG_FILE = "/tmp/pi-harness.log";
 /** Log a harness message to file (not stderr - bypasses Pi's cursor tracking) */
 function logToFile(...parts: string[]): void {
 	const msg = parts.join(" ");
+	// A timestamp makes the log usable for latency measurements.
+	const stamp = new Date().toISOString();
 	try {
-		appendFileSync(HARNESS_LOG_FILE, msg + "\n");
+		appendFileSync(HARNESS_LOG_FILE, `[${stamp}] ${msg}\n`);
 	} catch {
 		// Ignore file write errors
 	}

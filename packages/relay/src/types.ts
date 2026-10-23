@@ -117,7 +117,7 @@ export interface SynchronizedMessage extends BaseMessage<'synchronized'> {}
  */
 export interface CallbackPayload {
   id: string;
-  type: 'telegram_callback' | 'line_callback';
+  type: 'telegram_callback' | 'line_callback' | 'telegram_message';
   action: string;
   targetId: string;
   userId: number;
@@ -127,6 +127,11 @@ export interface CallbackPayload {
   // Preserve Telegram-specific fields for proper greeting verification
   callbackQueryId?: string;
   chatId?: number;
+  // Text of a "telegram_message" payload (the user typed a message)
+  text?: string;
+  // True when the sender of a "telegram_message" payload is a bot. The
+  // client refuses bot messages, so the flag has to survive the transport.
+  isBot?: boolean;
 }
 
 /**

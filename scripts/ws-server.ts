@@ -17,7 +17,13 @@ import { createRelayServer, type RelayServerOptions } from "../packages/relay/sr
 // Configuration from environment
 const PORT = parseInt(process.env.WS_PORT || "8444", 10);
 const HOST = process.env.WS_HOST || "0.0.0.0";
-const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "change-me-in-production";
+// No default token: a relay without a configured token accepts nobody.
+// A public default secret would be worse than no relay at all.
+const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || "";
+if (!AUTH_TOKEN) {
+  console.error("[RelayServer] RELAY_AUTH_TOKEN is not set - refusing to start.");
+  process.exit(1);
+}
 const SERVER_VERSION = process.env.SERVER_VERSION || "1.0.0";
 
 // Create and start server

@@ -98,7 +98,7 @@ export interface SynchronizedMessage extends BaseMessage<'synchronized'> {
  */
 export interface CallbackPayload {
     id: string;
-    type: 'telegram_callback' | 'line_callback';
+    type: 'telegram_callback' | 'line_callback' | 'telegram_message';
     action: string;
     targetId: string;
     userId: number;
@@ -107,6 +107,8 @@ export interface CallbackPayload {
     timestamp: string;
     callbackQueryId?: string;
     chatId?: number;
+    text?: string;
+    isBot?: boolean;
 }
 /**
  * Server -> Client: Live callback event (after synchronized)

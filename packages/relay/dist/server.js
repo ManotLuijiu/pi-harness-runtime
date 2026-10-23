@@ -45,7 +45,10 @@ export class RelayServer {
         this.options = {
             port: options.port ?? DEFAULT_PORT,
             host: options.host ?? DEFAULT_HOST,
-            authToken: options.authToken ?? "change-me-in-production",
+            // No default token: a relay without a configured token accepts nobody
+            // (the live path resolves a real token from the key files and fails
+            // closed when there is none).
+            authToken: options.authToken ?? process.env.RELAY_AUTH_TOKEN ?? "",
             serverVersion: options.serverVersion ?? "1.0.0",
             onTunnelConnect: options.onTunnelConnect ?? (() => { }),
             onTunnelDisconnect: options.onTunnelDisconnect ?? (() => { }),
@@ -248,7 +251,9 @@ export class RelayServer {
         const session = this.clients.get(clientId);
         if (!session)
             return;
-        const success = token === this.options.authToken;
+        // Without a configured token nobody may connect - a public default
+        // secret would be worse than no relay at all.
+        const success = this.options.authToken.length > 0 && token === this.options.authToken;
         const response = {
             version: PROTOCOL_VERSION,
             type: 'auth',
