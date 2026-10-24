@@ -1,6 +1,8 @@
+/// <reference types="node" />
 import { describe, it } from "node:test";
 import { equal, deepEqual } from "node:assert";
 import { EventBus } from "../src/bus.js";
+import type { EventPayload } from "../src/types.js";
 
 describe("EventBus", () => {
 	const bus = new EventBus();
@@ -12,12 +14,22 @@ describe("EventBus", () => {
 	});
 
 	it("subscriber receives event", () => {
-		let received: unknown = null;
-		bus.subscribe("test.1", (p) => {
-			received = p;
+		// The value is held in a box: a variable that is only assigned in a
+		// callback would be narrowed to null by the type checker.
+		const received: { value: EventPayload<{ data: string }> | null } = {
+			value: null,
+		};
+		bus.subscribe<{ data: string }>("test.1", (p) => {
+			received.value = p;
 		});
 		bus.publish("test.1", { data: "hello" });
-		equal((received as { data: string }).data, "hello");
+		// The subscriber receives the envelope of the event, not the raw data.
+		equal(received.value?.topic, "test.1");
+		equal(received.value?.data.data, "hello");
+		equal(typeof received.value?.eventId, "string");
+		equal(typeof received.value?.timestamp, "string");
+		// A published event comes from the system unless a source is given.
+		equal(received.value?.source, "system");
 	});
 
 	it("multiple subscribers all called", () => {

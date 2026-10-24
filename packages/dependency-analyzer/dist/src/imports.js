@@ -6,11 +6,11 @@ import { extname, resolve } from "node:path";
  * Parse imports from file content. Supports TypeScript, JavaScript, CommonJS, Python.
  */
 export function parseImports(content, filePath) {
-    const ext = extname(filePath).toLowerCase();
+    // The extension without its dot: "file.ts" is the type "ts".
+    const ext = extname(filePath).toLowerCase().replace(/^\./, "");
     const imports = [];
     if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(ext)) {
         imports.push(...parseTypeScriptImports(content));
-        imports.push(...parsePythonImports(content));
     }
     else if (ext === "py") {
         imports.push(...parsePythonImports(content));
@@ -20,7 +20,7 @@ export function parseImports(content, filePath) {
 function parseTypeScriptImports(content) {
     const imports = [];
     // ESM: import X from './y' or import X from 'package'
-    const esmDefault = /import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[A-Z][\w$]*)\s+from\s+)?['"]([^'"]+)['"]/g;
+    const esmDefault = /import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[A-Za-z_$][\w$]*)\s+from\s+)?['"]([^'"]+)['"]/g;
     for (const match of content.matchAll(esmDefault)) {
         imports.push(match[1]);
     }

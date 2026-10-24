@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, it } from "node:test";
 import { equal, deepEqual } from "node:assert";
 import { parseImports } from "../src/imports.js";

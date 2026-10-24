@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Durable Review Acceptance Tests
  *
@@ -23,6 +24,27 @@ import { handleReviewRequest, cancelJob, getJobStatus } from "../dist/worker.js"
 // Test workspace path
 const TEST_WORKSPACE = "/tmp/durable-review-test-" + Date.now();
 const TEST_DB_DIR = join(process.env.HOME || "/tmp", ".pi-harness-runtime", "durable");
+
+/**
+ * The storage of the worker is SQLite, which needs `node:sqlite`.
+ *
+ * Node has that module, Bun does not. Without it the worker cannot start, so
+ * the tests that need a running worker are skipped with a reason instead of
+ * failing with a module error.
+ */
+const sqliteAvailable = await (async () => {
+  try {
+    await import("node:sqlite");
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+const SKIP_WITHOUT_SQLITE = sqliteAvailable
+  ? false
+  : "node:sqlite is not available in this runtime";
+const describeWorker = sqliteAvailable ? describe : describe.skip;
 
 describe("Acceptance Tests", () => {
   // Setup
@@ -152,7 +174,7 @@ describe("Acceptance Tests", () => {
   });
 
   // --- Worker Lifecycle ---
-  describe("Worker lifecycle", () => {
+  describeWorker("Worker lifecycle", () => {
     it("startWorker succeeds", async () => {
       const result = await startWorker(TEST_WORKSPACE);
       assert.strictEqual(result.success, true);
@@ -174,7 +196,7 @@ describe("Acceptance Tests", () => {
   });
 
   // --- Request Handling ---
-  describe("Request handling", () => {
+  describeWorker("Request handling", () => {
     before(async () => {
       await startWorker(TEST_WORKSPACE);
     });

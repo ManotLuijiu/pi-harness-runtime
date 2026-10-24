@@ -1,9 +1,13 @@
+/// <reference types="bun-types" />
 /**
  * End-to-end sync tests.
  *
  * Build a synthetic drop folder in a tmp dir, call sync(), assert
  * the canonical cache was written correctly. No real cookie values
  * are used.
+ *
+ * A fixture that must survive the expiry filter uses an expiration in the
+ * future; a fixed date would make the test fail when it passes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -36,7 +40,9 @@ const NETSCAPE_FIXTURE = [
 const JSON_FIXTURE = JSON.stringify([
 	{
 		domain: ".minimax.io",
-		expirationDate: 1700000000,
+		// A cookie that is still valid: an expiration in the past would be
+		// filtered out and the test would count a different number.
+		expirationDate: Math.floor(Date.now() / 1000) + 3600,
 		name: "test_json",
 		value: "test-value-json",
 		httpOnly: false,
