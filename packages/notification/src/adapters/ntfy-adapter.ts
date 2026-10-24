@@ -10,6 +10,7 @@ import type {
 	NtfyConfig,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
+import { formatDetailLines } from "./detail-format.js";
 
 export class NtfyAdapter extends BaseChannelAdapter {
 	readonly id = "ntfy";
@@ -73,8 +74,8 @@ export class NtfyAdapter extends BaseChannelAdapter {
 		if (payload.details?.jobId) {
 			lines.push(`Job: ${payload.details.jobId}`);
 		}
-		if (payload.details?.error) {
-			lines.push(`\nError: ${payload.details.error}`);
+		for (const detail of formatDetailLines(payload.details, payload.event)) {
+			lines.push(`\n${detail.label}: ${detail.value}`);
 		}
 
 		return lines.join("");

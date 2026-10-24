@@ -12,6 +12,7 @@ import { logError, logInfo, logWarn } from "../file-logger.js";
 import { isAuthorizedTelegramSender } from "../telegram-auth.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { maskString } from "../mask-secrets.js";
+import { formatDetailLines } from "./detail-format.js";
 import { filterTelegramContent, getSafeNotificationLog } from "../telegram-content-filter.js";
 /**
  * Bounded retry for a rejected getUpdates call (409).
@@ -24,6 +25,86 @@ import { filterTelegramContent, getSafeNotificationLog } from "../telegram-conte
 const POLL_RETRY_MAX_ATTEMPTS = 5;
 const POLL_RETRY_BASE_DELAY_MS = 10_000;
 const POLL_RETRY_MAX_DELAY_MS = 120_000;
+/**
+ * The status label of an event.
+ *
+ * Use ASCII labels per AGENTS.md convention - emoji render inconsistently
+ * across terminals and break the alignment of the machine readable output.
+ */
+export function telegramStatusLabel(event) {
+    const labels = {
+        JobStarted: "[START]",
+        TaskCompleted: "[OK]",
+        TaskFailed: "[FAIL]",
+        QuotaPaused: "[PAUSE]",
+        ResumeScheduled: "[RESUME]",
+        ContextCompacted: "[COMPACT]",
+        OutputLimitContinued: "[CONTINUE]",
+        E2EFailed: "[TEST]",
+        HumanReviewNeeded: "[REVIEW]",
+        ReadyForClient: "[DONE]",
+        JobCancelled: "[CANCEL]",
+        Error: "[ERROR]",
+        WaitingForUserInput: "[INPUT]",
+        Info: "[INFO]",
+        CodexSessionStarted: "[CODEX]",
+        CodexPlanDetected: "[PLAN]",
+        AssistantResponse: "[TODO]",
+        ToolSummary: "[TOOL]",
+    };
+    return labels[event] ?? "[MSG]";
+}
+/**
+ * Render the Telegram message of a payload.
+ *
+ * Exported so the rendering can be tested without a Telegram connection: the
+ * detail footer must never label a resume trigger as an error.
+ */
+export function buildTelegramMessage(payload) {
+    // Mask all fields before rendering - defense in depth
+    const maskedTitle = maskString(payload.title);
+    const maskedMessage = maskString(payload.message);
+    const taskTitle = payload.details?.taskTitle;
+    const jobId = payload.details?.jobId;
+    const ordinal = payload.details?.ordinal;
+    const planPath = payload.details?.planPath;
+    const projectRoot = payload.details?.projectRoot;
+    const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
+    const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
+    const maskedProjectRoot = typeof projectRoot === "string" ? maskString(projectRoot) : undefined;
+    const maskedPlanPath = typeof planPath === "string" ? maskString(planPath) : undefined;
+    // Get hostname for multi-machine identification
+    const hostTag = `[${hostname()}]`;
+    const label = telegramStatusLabel(payload.event);
+    const title = `${label} ${maskedTitle} ${hostTag}`;
+    const lines = [title];
+    // Add metadata for Codex events
+    if (maskedTaskTitle) {
+        lines.push("", `Task: ${maskedTaskTitle}`);
+    }
+    if (maskedProjectRoot) {
+        lines.push(`Root: ${maskedProjectRoot}`);
+    }
+    if (ordinal !== undefined) {
+        lines.push(`Ordinal: ${ordinal}`);
+    }
+    if (maskedPlanPath) {
+        lines.push(`Plan: ${maskedPlanPath}`);
+    }
+    // Add message content (artifact content flows through message)
+    if (maskedMessage) {
+        lines.push("", maskedMessage);
+    }
+    if (maskedJobId) {
+        lines.push(`Job: ${maskedJobId}`);
+    }
+    // Detail fields: "Error:" only for real failures, "Reason:" for a trigger.
+    for (const detail of formatDetailLines(payload.details, payload.event)) {
+        lines.push("", `${detail.label}: ${maskString(detail.value)}`);
+    }
+    // Final mask pass on the complete rendered string
+    return maskString(lines.filter(Boolean).join("\n"));
+}
 export class TelegramAdapter extends BaseChannelAdapter {
     id = "telegram";
     type = "telegram";
@@ -867,50 +948,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         }
     }
     formatMessage(payload) {
-        // Mask all fields before rendering - defense in depth
-        const maskedTitle = maskString(payload.title);
-        const maskedMessage = maskString(payload.message);
-        const taskTitle = payload.details?.taskTitle;
-        const jobId = payload.details?.jobId;
-        const errorVal = payload.details?.error;
-        const ordinal = payload.details?.ordinal;
-        const planPath = payload.details?.planPath;
-        const projectRoot = payload.details?.projectRoot;
-        const maskedTaskTitle = typeof taskTitle === "string" ? maskString(taskTitle) : undefined;
-        const maskedJobId = typeof jobId === "string" ? maskString(jobId) : undefined;
-        const maskedError = typeof errorVal === "string" ? maskString(errorVal) : undefined;
-        const maskedProjectRoot = typeof projectRoot === "string" ? maskString(projectRoot) : undefined;
-        const maskedPlanPath = typeof planPath === "string" ? maskString(planPath) : undefined;
-        // Get hostname for multi-machine identification
-        const hostTag = `[${hostname()}]`;
-        const label = this.getStatusLabel(payload.event);
-        const title = `${label} ${maskedTitle} ${hostTag}`;
-        const lines = [title];
-        // Add metadata for Codex events
-        if (maskedTaskTitle) {
-            lines.push("", `Task: ${maskedTaskTitle}`);
-        }
-        if (maskedProjectRoot) {
-            lines.push(`Root: ${maskedProjectRoot}`);
-        }
-        if (ordinal !== undefined) {
-            lines.push(`Ordinal: ${ordinal}`);
-        }
-        if (maskedPlanPath) {
-            lines.push(`Plan: ${maskedPlanPath}`);
-        }
-        // Add message content (artifact content flows through message)
-        if (maskedMessage) {
-            lines.push("", maskedMessage);
-        }
-        if (maskedJobId) {
-            lines.push(`Job: ${maskedJobId}`);
-        }
-        if (maskedError) {
-            lines.push("", `Error: ${maskedError}`);
-        }
-        // Final mask pass on the complete rendered string
-        return maskString(lines.filter(Boolean).join("\n"));
+        return buildTelegramMessage(payload);
     }
     /**
      * Split long messages into ordered chunks for Telegram.
@@ -943,29 +981,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
         return chunks;
     }
     getStatusLabel(event) {
-        // Use ASCII labels per AGENTS.md convention
-        // Avoid emoji which renders inconsistently across terminals
-        const labels = {
-            JobStarted: "[START]",
-            TaskCompleted: "[OK]",
-            TaskFailed: "[FAIL]",
-            QuotaPaused: "[PAUSE]",
-            ResumeScheduled: "[RESUME]",
-            ContextCompacted: "[COMPACT]",
-            OutputLimitContinued: "[CONTINUE]",
-            E2EFailed: "[TEST]",
-            HumanReviewNeeded: "[REVIEW]",
-            ReadyForClient: "[DONE]",
-            JobCancelled: "[CANCEL]",
-            Error: "[ERROR]",
-            WaitingForUserInput: "[INPUT]",
-            Info: "[INFO]",
-            CodexSessionStarted: "[CODEX]",
-            CodexPlanDetected: "[PLAN]",
-            AssistantResponse: "[TODO]",
-            ToolSummary: "[TOOL]",
-        };
-        return labels[event] ?? "[MSG]";
+        return telegramStatusLabel(event);
     }
 }
 //# sourceMappingURL=telegram-adapter.js.map

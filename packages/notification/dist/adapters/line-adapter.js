@@ -4,6 +4,7 @@
  * Sends notifications via LINE Messaging API.
  */
 import { BaseChannelAdapter } from "../base-adapter.js";
+import { formatDetailLines } from "./detail-format.js";
 /**
  * The endpoint that validates a channel access token.
  *
@@ -189,8 +190,8 @@ export class LineAdapter extends BaseChannelAdapter {
         if (payload.details?.jobId) {
             lines.push(`Job: ${payload.details.jobId}`);
         }
-        if (payload.details?.error) {
-            lines.push("", `Error: ${payload.details.error}`);
+        for (const detail of formatDetailLines(payload.details, payload.event)) {
+            lines.push("", `${detail.label}: ${detail.value}`);
         }
         return lines.filter(Boolean).join("\n");
     }
