@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.190](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.403...v1.1.190) (2026-10-24)
+
+
+### Bug Fixes
+
+* **jev:** apply the caution threshold to a cautious approval ([9c6836e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9c6836e569e70140175a37f62e978d2a08ba27d7))
+
 ### [1.1.189](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.402...v1.1.189) (2026-10-24)
 
 
