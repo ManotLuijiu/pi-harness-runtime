@@ -551,6 +551,10 @@ export class NotificationCenter {
     async notifyWithButtons(event, context, buttons, options) {
         const results = [];
         for (const [id, adapter] of this.adapters.entries()) {
+            // A channel the user turned off must not receive a button
+            // message: the answer would never arrive.
+            if (!this.isChannelEnabled(id))
+                continue;
             if (adapter instanceof TelegramAdapter) {
                 try {
                     const formattedButtons = buttons.map((b) => ({
@@ -560,6 +564,28 @@ export class NotificationCenter {
                     }));
                     const payload = this.buildPayload(event, context, {
                         enableInlineKeyboard: true,
+                        actionButtons: formattedButtons,
+                        ...(options?.additionalDetails && { additionalDetails: options.additionalDetails }),
+                    });
+                    const result = await adapter.send(payload);
+                    results.push(result);
+                }
+                catch (error) {
+                    results.push({ success: false, channel: id, error: String(error) });
+                }
+            }
+            else if (adapter instanceof LineAdapter) {
+                // LINE carries the same buttons as a template with postback
+                // actions. Without this branch a button message would only
+                // reach Telegram, and the answer of the user would depend
+                // on the channel they happen to use.
+                try {
+                    const formattedButtons = buttons.map((b) => ({
+                        text: b.text,
+                        callbackData: buildCallbackData(b.action, b.targetId),
+                        url: b.url,
+                    }));
+                    const payload = this.buildPayload(event, context, {
                         actionButtons: formattedButtons,
                         ...(options?.additionalDetails && { additionalDetails: options.additionalDetails }),
                     });
@@ -692,6 +718,12 @@ export class NotificationCenter {
             CodexReviewDetected: {
                 title: "[REVIEW] Codex Review",
                 message: context.requirement ?? "(no review content)",
+            },
+            ToolingPreferenceProposal: {
+                title: "Tooling Proposal",
+                // The full proposal travels: a truncated proposal is not a
+                // proposal the user can answer.
+                message: fullRequirement,
             },
             Error: {
                 title: "Runtime Error",

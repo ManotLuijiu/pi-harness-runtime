@@ -19,6 +19,13 @@ export const CallbackActions = {
     TOGGLE_TELEGRAM: "toggle_telegram",
     /** Toggle LINE notifications */
     TOGGLE_LINE: "toggle_line",
+    /**
+     * The tooling preference proposal (Biome.js instead of ESLint/Prettier).
+     *
+     * The action must be a single token: the callback data is parsed by
+     * splitting on "_", so an action with an underscore would be cut in two.
+     */
+    TOOLING_PREFERENCE: "biome",
     /** Custom action prefix */
     CUSTOM: "custom",
 };
