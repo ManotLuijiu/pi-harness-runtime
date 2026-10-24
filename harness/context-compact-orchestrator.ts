@@ -28,7 +28,7 @@ import type {
 import {
 	roughTokenCount,
 	roughMessagesTokens,
-} from "../packages/token-estimation/src/index.js";
+} from "../packages/token-estimation/dist/index.js";
 import {
 	ContextWindowManager,
 	microcompactToolResults,

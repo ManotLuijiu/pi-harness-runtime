@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { centralError, centralInfo, centralWarn } from "../packages/logging/dist/index.js";
 
 export type ServiceLevel = "info" | "warn" | "error" | "debug";
-export type ServiceName = "jev" | "honcho" | "qdrant";
+export type ServiceName = "jev" | "honcho" | "qdrant" | "infisical";
 
 export interface ServiceEvent {
 	ts: string;

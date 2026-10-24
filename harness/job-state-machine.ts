@@ -20,7 +20,7 @@ import type {
 	JobStatus,
 	RuntimeEvent,
 	RuntimeCheckpoint,
-} from "../packages/types/src/runtime-types.ts";
+} from "../packages/types/dist/runtime-types.js";
 
 export interface StateTransition {
 	from: JobStatus;

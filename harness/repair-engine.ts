@@ -9,11 +9,9 @@ import type {
 	FailureType,
 	AttemptedFix,
 	RetryPolicy,
-} from "../packages/types/src/runtime-types.ts";
-import { appendJsonl } from "../cli.ts";
-// @ts-expect-error - Bun has built-in Node.js types
+} from "../packages/types/dist/runtime-types.js";
+import { appendJsonl } from "../cli.js";
 import { join, dirname } from "node:path";
-// @ts-expect-error - Bun has built-in Node.js types
 import { mkdirSync } from "node:fs";
 
 const DEFAULT_RETRY_POLICY: RetryPolicy = {

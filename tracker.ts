@@ -15,7 +15,7 @@ import {
 	ensureUsageDir,
 	getUsageLogPath,
 	readJsonl,
-} from "./cli.ts";
+} from "./cli.js";
 import { unlinkSync } from "node:fs";
 
 export interface UsageRecord {

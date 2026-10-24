@@ -5,7 +5,7 @@
  * Uses a planning LLM to decompose the requirement into tasks with dependencies.
  */
 
-import type { TaskGraph } from "../packages/types/src/runtime-types.ts";
+import type { TaskGraph } from "../packages/types/dist/runtime-types.js";
 import type { TaskGraphManager } from "./task-graph.ts";
 
 export interface PlanResult {

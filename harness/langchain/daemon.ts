@@ -38,7 +38,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { LeaseManager } from "../../packages/autonomous-runtime/src/lease.js";
+import { LeaseManager } from "../../packages/autonomous-runtime/dist/lease.js";
 import type { ApprovalClass } from "../../packages/autonomous-runtime/src/types.js";
 import {
 	type CodexSession,
@@ -56,12 +56,12 @@ import {
 	publishLoopFinished,
 	publishLoopStarted,
 	publishReviewCompleted,
-} from "../../packages/event-bus/src/herdr-bus.js";
+} from "../../packages/event-bus/dist/src/herdr-bus.js";
 import { NotificationCenter } from "../../packages/notification/dist/notification-center.js";
 import {
 	getApprovedPatternStore,
 	getTrajectoryStore,
-} from "../../packages/trajectory/src/index.js";
+} from "../../packages/trajectory/dist/src/index.js";
 import { createLoopCheckpointer } from "./checkpointer.js";
 import {
 	buildDryRunDeps,

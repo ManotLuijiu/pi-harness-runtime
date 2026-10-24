@@ -123,6 +123,14 @@ jobs:
             -d '{"name":"Release v${{ steps.meta.outputs.version }}"}' \
             || true
 
+      # The published app is a SINGLE npm package: every internal app is
+      # compiled into packages/<name>/dist and shipped inside the root
+      # tarball. Verify the tarball really contains every runtime import
+      # target before anything is published - a missing internal app must
+      # fail the release, not ship.
+      - name: Verify package contents
+        run: bun run build:verify:pack
+
       - name: Publish to npm
         if: >-
           github.event_name != 'workflow_dispatch' ||

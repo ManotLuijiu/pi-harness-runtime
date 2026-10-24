@@ -12,7 +12,7 @@ import { join } from "path";
 import {
 	ensureHerdrWorkspace,
 	parseVerdict,
-} from "../packages/event-bus/src/herdr-bus.js";
+} from "../packages/event-bus/dist/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
 import type {
 	LoopNextAction,

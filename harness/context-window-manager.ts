@@ -16,11 +16,11 @@ import type {
 	ContextWindowConfig,
 	ProviderMessage,
 	CompactableMessage,
-} from "../packages/types/src/runtime-types.ts";
+} from "../packages/types/dist/runtime-types.js";
 import {
 	roughTokenCount,
 	roughMessagesTokens,
-} from "../packages/token-estimation/src/index.ts";
+} from "../packages/token-estimation/dist/index.js";
 
 // --- Constants ----------------------------------------------------------------
 

@@ -1,5 +1,33 @@
 # Development Rules
 
+## Single Published App (CRITICAL)
+
+**`pi-harness-runtime` is the ONLY npm package a user installs.** Every internal
+app (logging, jev-judge, contracts, relay, skills, todo-bd-sync, ...) ships
+INSIDE that one tarball - it is never published on its own and a user never
+runs `npm install @pi-harness/<anything>`.
+
+**Rules:**
+
+1. Every workspace lives in `packages/<name>/` and is compiled into
+   `packages/<name>/dist/`.
+2. A runtime **value** import may only point at a built artifact
+   (`../packages/<name>/dist/...`). A `packages/<name>/src/<file>.js` specifier
+   only exists when somebody compiled the package in place - it is never a
+   valid import in shipped code.
+3. The package manifest points at the built output (`main`/`exports` →
+   `./dist/...`). The single exception is the vendored `packages/telegram`
+   app: it ships compiled JavaScript upstream, so its entry point stays in
+   `src/` and the files are committed.
+4. Compiled JavaScript never lives next to a TypeScript source. Bun resolves
+   the literal `.js` file first, so a stale artifact silently shadows the
+   current source.
+5. `npm run build` (scripts/build-packages.ts) builds every package and fails
+   when a published entry point is missing. `npm run build:verify:pack`
+   proves the npm tarball contains every runtime import target.
+6. Both run in CI, so a release can never publish a tarball with a missing
+   internal app.
+
 ## Version Management
 
 ### NPM Publishing via GitHub Actions + OIDC

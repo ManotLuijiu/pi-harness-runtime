@@ -3,7 +3,6 @@
  *
  * Advertises agent capabilities and handles agent registry.
  */
-import { fetch } from "undici";
 import { createAgentCard } from "./agent.js";
 /**
  * Start a local A2A discovery agent

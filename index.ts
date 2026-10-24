@@ -59,7 +59,7 @@ import {
 } from "./packages/quota-manager/src/tui-usage-monitor.ts";
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
-import { registerGithubLoginCommand } from "./packages/clipboard/src/github-login.js";
+import { registerGithubLoginCommand } from "./packages/clipboard/dist/src/github-login.js";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
@@ -74,9 +74,9 @@ import {
 import { aggregateWindows } from "./windows.ts";
 
 // Relay client for streaming callbacks (t3code-style two-way communication)
-import { RelayClient } from "./packages/relay/src/client.js";
+import { RelayClient } from "./packages/relay/dist/client.js";
 import type { CallbackPayload } from "./packages/relay/src/types.js";
-import { describeRelayEndpoint, resolveRelayEndpoint } from "./packages/relay/src/relay-endpoint.js";
+import { describeRelayEndpoint, resolveRelayEndpoint } from "./packages/relay/dist/relay-endpoint.js";
 import { renderStatus } from "./renderer.ts";
 import {
 	JobStateMachine,
@@ -1151,7 +1151,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 // Lazy import - only loads when packages/todo-bd-sync exists
 async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
 	try {
-		const mod = await import("./packages/todo-bd-sync/src/extension.js");
+		const mod = await import("./packages/todo-bd-sync/dist/extension.js");
 		mod.registerTodoBdSync(pi);
 	} catch {
 		// todo-bd-sync not available
@@ -1162,7 +1162,7 @@ async function initTodoBdSync(pi: ExtensionAPI): Promise<void> {
 // Lazy import - only loads when packages/config-capture exists
 async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
 	try {
-		const mod = await import("./packages/config-capture/src/index.js");
+		const mod = await import("./packages/config-capture/dist/index.js");
 		mod.registerConfigCapture(pi, { debug: false });
 	} catch {
 		// config-capture not available
@@ -1174,11 +1174,11 @@ async function initConfigCapture(pi: ExtensionAPI): Promise<void> {
 async function initQdrant(): Promise<void> {
 	addHarnessMessage("Qdrant", "checking configuration", "wait");
 	try {
-		const { getQdrantConfig } = await import("./packages/skills/src/loader.js");
+		const { getQdrantConfig } = await import("./packages/skills/dist/loader.js");
 		const cfg = getQdrantConfig();
 		if (cfg) {
 			// Check if OpenAI embedding key is available
-			const { getOpenAIApiKey } = await import("./packages/qdrant-skills/src/embedder.js");
+			const { getOpenAIApiKey } = await import("./packages/qdrant-skills/dist/embedder.js");
 			const embeddingKey = getOpenAIApiKey();
 			if (embeddingKey) {
 				logStartup("[pi-harness] Qdrant vector search ready");
@@ -2499,7 +2499,7 @@ function initMoocodingSyncHint(): void {
 // Lazy import - only loads when packages/write-review exists
 async function initWriteReview(pi: ExtensionAPI): Promise<void> {
 	try {
-		const mod = await import("./packages/write-review/src/index.js");
+		const mod = await import("./packages/write-review/dist/index.js");
 		mod.injectWriterInstructions(pi);
 	} catch {
 		// write-review not available
@@ -2512,7 +2512,7 @@ async function initFileCopyHelper(_pi: ExtensionAPI): Promise<void> {
 	// DISABLED: File copy helper appends large suffix to every prompt
 	// but agent doesn't read it properly. Re-enable when fixed.
 	// try {
-	// 	const mod = await import("./packages/file-copy-helper/src/extension.js");
+	// 	const mod = await import("./packages/file-copy-helper/dist/extension.js");
 	// 	mod.registerFileCopyHelper(_pi);
 	// } catch {
 		// file-copy-helper not available
@@ -2528,8 +2528,8 @@ async function initFileCopyHelper(_pi: ExtensionAPI): Promise<void> {
 // - harness_rules tool for rule retrieval and acknowledgement
 async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 	try {
-		const { registerAgentPolicy } = await import("./packages/agent-policy/src/extension.js");
-		const { resetPolicyStore } = await import("./packages/agent-policy/src/policy-store.js");
+		const { registerAgentPolicy } = await import("./packages/agent-policy/dist/extension.js");
+		const { resetPolicyStore } = await import("./packages/agent-policy/dist/policy-store.js");
 		resetPolicyStore(); // Auto-reset so new sessions don't need re-acknowledgment
 		registerAgentPolicy(pi, {
 			harnessRulesPath: new URL("./AGENTS.md", import.meta.url),
@@ -2557,7 +2557,7 @@ async function initAgentPolicy(pi: ExtensionAPI): Promise<void> {
 // Loads curated notes at session start for Hermes-style memory
 async function initMemory(pi: ExtensionAPI): Promise<void> {
 	try {
-		const { getGlobalMemoryStore } = await import("./packages/trajectory/src/memory-store.js");
+		const { getGlobalMemoryStore } = await import("./packages/trajectory/dist/src/memory-store.js");
 		const memoryStore = getGlobalMemoryStore();
 
 		logToFile("[memory]", "Memory store initialized");
@@ -2790,7 +2790,7 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 	try {
 		// Dynamically import to avoid circular deps
 		const { initSkills } =
-			await import("./packages/skills/src/index.js");
+			await import("./packages/skills/dist/index.js");
 
 		// Scan skills from default locations
 		const result = initSkills();
@@ -2799,7 +2799,7 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 		// Register /skill commands
 		try {
-			const { initSkillCommands } = await import("./packages/skills/src/skill-commands.js");
+			const { initSkillCommands } = await import("./packages/skills/dist/skill-commands.js");
 			initSkillCommands(pi);
 			logStartup("[pi-harness] Registered skill commands");
 
@@ -4357,7 +4357,7 @@ Run \`bd ready\` to see current bd issues.
 			}
 			if (mode !== "tui") return;
 			const { createHarnessFooter } = await import(
-				"./packages/tui/src/harness-footer.js"
+				"./packages/tui/dist/harness-footer.js"
 			);
 			ctx.ui.setFooter((tui, theme, footerData) =>
 				createHarnessFooter(tui, theme, footerData, {
@@ -5262,7 +5262,7 @@ Run \`bd ready\` to see current bd issues.
 				ctx.ui.setHeader(undefined);
 				ctx.ui.notify("Built-in Pi header restored.", "info");
 			} else if (mode === "harness" || mode === "" || mode === "") {
-				const { createHarnessHeader } = await import("./packages/tui/src/harness-header.js");
+				const { createHarnessHeader } = await import("./packages/tui/dist/harness-header.js");
 				ctx.ui.setHeader((tui, theme) =>
 					createHarnessHeader(tui, theme, {
 						version: HARNESS_VERSION,

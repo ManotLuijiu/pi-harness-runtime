@@ -10,9 +10,8 @@ import type {
 	ProjectDetection,
 	SeedStrategy,
 	E2EStrategy,
-} from "../../packages/types/src/runtime-types.ts";
+} from "../packages/types/dist/runtime-types.js";
 import { readJson } from "../../cli.ts";
-// @ts-expect-error - Bun has built-in Node.js types
 import { join } from "node:path";
 
 export interface DetectionSignal {

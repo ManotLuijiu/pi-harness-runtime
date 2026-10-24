@@ -9,7 +9,7 @@ import {
 	ensureHerdrWorkspace,
 	publishReviewCompletedSimple,
 	publishReviewRequestedSimple,
-} from "../packages/event-bus/src/herdr-bus.js";
+} from "../packages/event-bus/dist/src/herdr-bus.js";
 
 const AGENT_ID = "review-agent";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;

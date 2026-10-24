@@ -7,7 +7,7 @@ import {
 	createHerdrBus,
 	getHerdrWorkspacePaths,
 	ensureHerdrWorkspace,
-} from "../packages/event-bus/src/herdr-bus.js";
+} from "../packages/event-bus/dist/src/herdr-bus.js";
 
 // Suppress stack traces — only show error message to keep TUI clean
 const logError = (err: unknown) =>

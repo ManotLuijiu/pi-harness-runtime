@@ -12,7 +12,7 @@
  *   Telegram/LINE → Webhook → This Server → WebSocket → Local Client
  */
 
-import { createRelayServer, type RelayServerOptions } from "../packages/relay/src/server";
+import { createRelayServer, type RelayServerOptions } from "../packages/relay/dist/server.js";
 
 // Configuration from environment
 const PORT = parseInt(process.env.WS_PORT || "8444", 10);

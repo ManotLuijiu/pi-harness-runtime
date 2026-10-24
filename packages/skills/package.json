@@ -22,10 +22,6 @@
       "import": "./src/scanner.ts",
       "types": "./src/scanner.ts"
     },
-    "./registry": {
-      "import": "./src/registry.ts",
-      "types": "./src/registry.ts"
-    },
     "./loader": {
       "import": "./src/loader.ts",
       "types": "./src/loader.ts"

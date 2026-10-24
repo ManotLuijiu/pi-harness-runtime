@@ -5,7 +5,7 @@
 import type {
 	TaskGraph,
 	TaskNode,
-} from "../packages/types/src/runtime-types.ts";
+} from "../packages/types/dist/runtime-types.js";
 
 export type LoopVerdict = "approved" | "changes_requested" | "blocked";
 export type LoopNodeType = "write" | "review" | "decide" | "report";

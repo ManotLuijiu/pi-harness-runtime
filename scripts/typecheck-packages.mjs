@@ -27,15 +27,15 @@ import { join, relative } from "node:path";
  * not listed must type check cleanly.
  */
 const BASELINES = new Map([
-	["a2a-adapter", 1],
+	["a2a-adapter", 0],
 	["clipboard-plugin", 1],
-	["provider-router", 3],
+	["provider-router", 0],
 	["providers", 4],
 	["quota-manager", 2],
 	["runtime", 5],
 	["voice-api", 16],
 	["worktree", 2],
-	["harness", 35],
+	["harness", 20],
 	["scripts", 15],
 	["root", 2],
 	["new-modules", 0],

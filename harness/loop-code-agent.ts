@@ -12,9 +12,9 @@ import { join } from "path";
 import {
 	createHerdrBus,
 	ensureHerdrWorkspace,
-} from "../packages/event-bus/src/herdr-bus.js";
+} from "../packages/event-bus/dist/src/herdr-bus.js";
 import { SharedBlackboard } from "./blackboard.js";
-import type { LoopNextAction, LoopAgentReport } from "./loop-types.js";
+import type { LoopNextAction } from "./loop-types.js";
 import type { BlackboardRecord } from "../packages/types/src/runtime-types.js";
 
 const AGENT_ID = "code-agent";
@@ -121,8 +121,10 @@ async function main(): Promise<void> {
 			agentId: AGENT_ID,
 			taskId: action.taskId,
 			status: "success",
-			files: result.files,
-		} satisfies LoopAgentReport);
+			summary: `wrote ${result.files.length} file(s)`,
+			filesChanged: result.files,
+			createdAt: new Date().toISOString(),
+		});
 		blackboard.updateAgentStatus(AGENT_ID, "idle");
 	}
 }
