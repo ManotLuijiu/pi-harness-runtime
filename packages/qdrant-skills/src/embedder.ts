@@ -18,6 +18,15 @@ export interface EmbeddingResult {
   tokens: number;
 }
 
+/**
+ * The result of a batch embedding: one vector per input text, in the order
+ * of the input.
+ */
+export interface BatchEmbeddingResult {
+  embeddings: number[][];
+  tokens: number;
+}
+
 /** The embeddings endpoint of OpenAI. */
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 
@@ -120,6 +129,87 @@ export async function createEmbedding(
     embedding: data.data[0]?.embedding || [],
     tokens: data.usage?.total_tokens || 0,
   };
+}
+
+/**
+ * The number of texts one embeddings request may carry. The endpoint of
+ * OpenAI accepts an array of inputs, so a batch costs one request instead of
+ * one request per text.
+ */
+const MAX_BATCH_INPUTS = 64;
+
+/**
+ * The options of an embeddings request.
+ */
+export interface EmbeddingRequestOptions {
+  /**
+   * The HTTP client of the request. The default is the global `fetch`; a
+   * caller (a test) can pass its own, so no global has to be replaced.
+   */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Create embeddings for many texts with as few requests as possible.
+ *
+ * One request per text exhausts the sockets of the process when a registry
+ * holds hundreds of skills: every request opens its own connection and the
+ * process then cannot talk to anything else. The endpoint of OpenAI accepts
+ * an array of inputs, so a batch stays one request per chunk.
+ */
+export async function createEmbeddingsBatch(
+  texts: string[],
+  apiKey?: string,
+  options: EmbeddingRequestOptions = {}
+): Promise<BatchEmbeddingResult> {
+  const key = apiKey || getOpenAIApiKey();
+  if (!key) {
+    throw new Error("No OpenAI API key available for embeddings");
+  }
+  if (texts.length === 0) {
+    return { embeddings: [], tokens: 0 };
+  }
+
+  const send = options.fetchImpl ?? fetch;
+  const embeddings: number[][] = [];
+  let tokens = 0;
+
+  for (let offset = 0; offset < texts.length; offset += MAX_BATCH_INPUTS) {
+    const chunk = texts
+      .slice(offset, offset + MAX_BATCH_INPUTS)
+      .map((text) => text.slice(0, 8000));
+
+    const response = await send(OPENAI_EMBEDDINGS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "text-embedding-3-small",
+        input: chunk,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenAI embedding failed: ${error}`);
+    }
+
+    const data = (await response.json()) as {
+      data: Array<{ embedding: number[]; index: number }>;
+      usage?: { total_tokens?: number };
+    };
+
+    // The endpoint may answer out of order, so the index decides the place.
+    const ordered = [...data.data].sort((a, b) => a.index - b.index);
+    for (const entry of ordered) {
+      embeddings.push(entry.embedding || []);
+    }
+    tokens += data.usage?.total_tokens || 0;
+  }
+
+  return { embeddings, tokens };
 }
 
 /**

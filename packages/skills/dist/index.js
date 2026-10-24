@@ -20,9 +20,12 @@ import { scanForSkillsSync } from "./scanner.js";
 import { getGlobalSkillRegistry } from "./loader.js";
 /**
  * Initialize skills system
+ *
+ * A caller (a test) can pass its own registry, so the initialization does
+ * not have to touch the global one.
  */
 export function initSkills(config) {
-    const registry = getGlobalSkillRegistry();
+    const registry = config?.registry ?? getGlobalSkillRegistry();
     // Scan for skills
     const scanOptions = {};
     // Only set directories if explicitly provided, otherwise use defaults

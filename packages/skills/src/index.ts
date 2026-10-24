@@ -20,15 +20,24 @@ export * from "./linter.js";
 
 import type { SkillsConfig, ScanResult, ScanOptions } from "./types.js";
 import { scanForSkillsSync } from "./scanner.js";
-import { getGlobalSkillRegistry } from "./loader.js";
+import { getGlobalSkillRegistry, type SkillRegistry } from "./loader.js";
 
 /**
  * Initialize skills system
+ *
+ * A caller (a test) can pass its own registry, so the initialization does
+ * not have to touch the global one.
  */
 export function initSkills(
-  config?: Partial<SkillsConfig & { maxDepth?: number; includeHidden?: boolean }>
+  config?: Partial<
+    SkillsConfig & {
+      maxDepth?: number;
+      includeHidden?: boolean;
+      registry?: SkillRegistry;
+    }
+  >
 ): ScanResult {
-  const registry = getGlobalSkillRegistry();
+  const registry = config?.registry ?? getGlobalSkillRegistry();
 
   // Scan for skills
   const scanOptions: Partial<ScanOptions> = {};

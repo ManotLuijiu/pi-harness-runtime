@@ -1,118 +1,114 @@
 /**
- * Skills Initialization E2E Test
- * 
- * Tests the initSkills function to ensure:
- * 1. initSkills() with no args uses default directories
- * 2. initSkills({ locations }) with explicit locations works
- * 3. initSkills({ locations: undefined }) falls back to defaults (the bug case)
- * 
- * Bug: Previously, passing undefined for locations would override defaults
- * with undefined, causing "directories is not iterable" error.
- * 
- * Usage:
- *   bun packages/skills/test/init-skills.test.ts
+ * The initialization of the skills system.
+ *
+ * The test used to be a script that ran `initSkills()` while the module was
+ * imported. That scanned the real skill directories of the machine and
+ * started the vector indexing of every skill it found, which opened a
+ * connection per skill and starved every other test of the process.
+ *
+ * The test now uses a temporary directory and a registry without a vector
+ * index, so it neither reads the machine nor reaches the network.
  */
 
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { initSkills } from "../src/index.js";
+import { createSkillRegistry } from "../src/loader.js";
 
-async function runTests() {
-  console.log("=== initSkills E2E Test ===\n");
-  
-  let passed = 0;
-  let failed = 0;
+let tempDir: string;
 
-  // Test 1: no args
-  console.log("[Test 1] initSkills() with no arguments...");
-  try {
-    const result = initSkills();
-    if (!result || !Array.isArray(result.skills) || !Array.isArray(result.errors)) {
-      throw new Error("Invalid result structure");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills, ${result.errors.length} errors\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Test 2: explicit locations
-  console.log("[Test 2] initSkills({ locations: [...] })...");
-  try {
-    const result = initSkills({ locations: ["/tmp/test"] });
-    if (!result) {
-      throw new Error("No result returned");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Test 3: undefined locations (the bug case)
-  console.log("[Test 3] initSkills({ locations: undefined }) - THE BUG CASE...");
-  try {
-    const result = initSkills({ locations: undefined });
-    if (!result || !Array.isArray(result.skills)) {
-      throw new Error("Invalid result structure");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Test 4: partial config with only maxDepth
-  console.log("[Test 4] initSkills({ maxDepth: 5 })...");
-  try {
-    const result = initSkills({ maxDepth: 5 });
-    if (!result || !Array.isArray(result.skills)) {
-      throw new Error("Invalid result structure");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Test 5: partial config with only includeHidden
-  console.log("[Test 5] initSkills({ includeHidden: true })...");
-  try {
-    const result = initSkills({ includeHidden: true });
-    if (!result || !Array.isArray(result.skills)) {
-      throw new Error("Invalid result structure");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Test 6: empty locations array
-  console.log("[Test 6] initSkills({ locations: [] })...");
-  try {
-    const result = initSkills({ locations: [] });
-    if (!result) {
-      throw new Error("No result returned");
-    }
-    console.log(`  PASS: Returned ${result.skills.length} skills\n`);
-    passed++;
-  } catch (error) {
-    console.error(`  FAIL: ${error}\n`);
-    failed++;
-  }
-
-  // Summary
-  console.log("=== Summary ===");
-  console.log(`Passed: ${passed}`);
-  console.log(`Failed: ${failed}`);
-  
-  if (failed > 0) {
-    process.exit(1);
-  }
+/** Write a skill into a directory of the temporary home. */
+function writeSkill(directory: string, name: string): void {
+	const skillDir = join(tempDir, directory, name);
+	mkdirSync(skillDir, { recursive: true });
+	writeFileSync(
+		join(skillDir, "SKILL.md"),
+		[
+			"---",
+			`name: ${name}`,
+			`description: The ${name} skill.`,
+			"version: 1.0.0",
+			"---",
+			"",
+			`The body of the ${name} skill.`,
+			"",
+		].join("\n"),
+		"utf8",
+	);
 }
 
-runTests();
+beforeEach(() => {
+	tempDir = mkdtempSync(join(tmpdir(), "test-init-skills-"));
+	mkdirSync(join(tempDir, "skills"), { recursive: true });
+	writeSkill("skills", "alpha");
+	writeSkill("skills", "beta");
+});
+
+afterEach(() => {
+	rmSync(tempDir, { recursive: true, force: true });
+});
+
+describe("the initialization of the skills system", () => {
+	it("scans the given locations", () => {
+		const result = initSkills({
+			locations: [join(tempDir, "skills")],
+			registry: createSkillRegistry({ indexer: null }),
+		});
+
+		expect(result.skills.length).toBe(2);
+		expect(result.skills.map((skill) => skill.id).sort()).toEqual(["alpha", "beta"]);
+		expect(result.errors).toEqual([]);
+	});
+
+	it("falls back to the default locations when none are given", () => {
+		// The default locations point at the machine of the test, so the
+		// result is only checked for its shape.
+		const result = initSkills({
+			registry: createSkillRegistry({ indexer: null }),
+		});
+
+		expect(Array.isArray(result.skills)).toBe(true);
+		expect(Array.isArray(result.errors)).toBe(true);
+	});
+
+	it("falls back to the default locations when they are undefined", () => {
+		// The bug case: an undefined value must not override the defaults.
+		const result = initSkills({
+			locations: undefined,
+			registry: createSkillRegistry({ indexer: null }),
+		});
+
+		expect(Array.isArray(result.skills)).toBe(true);
+		expect(Array.isArray(result.errors)).toBe(true);
+	});
+
+	it("accepts a partial configuration", () => {
+		const result = initSkills({
+			maxDepth: 5,
+			includeHidden: true,
+			registry: createSkillRegistry({ indexer: null }),
+		});
+
+		expect(Array.isArray(result.skills)).toBe(true);
+	});
+
+	it("accepts an empty list of locations", () => {
+		const result = initSkills({
+			locations: [],
+			registry: createSkillRegistry({ indexer: null }),
+		});
+
+		expect(result.skills).toEqual([]);
+	});
+
+	it("registers the scanned skills in the registry", () => {
+		const registry = createSkillRegistry({ indexer: null });
+
+		initSkills({ locations: [join(tempDir, "skills")], registry });
+
+		expect(registry.list().length).toBe(2);
+	});
+});

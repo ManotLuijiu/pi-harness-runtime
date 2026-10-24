@@ -21,5 +21,5 @@
  * ```
  */
 export { createQdrantClient, createCollection, deleteCollection, getCollectionInfo, validateCollectionSchema, upsertSkills, searchSkills, getAllSkills, } from './client.js';
-export { createEmbedding, embedSkillDocument, embedSkillsBatch, getOpenAIApiKey, } from './embedder.js';
+export { createEmbedding, createEmbeddingsBatch, embedSkillDocument, embedSkillsBatch, getOpenAIApiKey, } from './embedder.js';
 //# sourceMappingURL=index.js.map

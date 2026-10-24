@@ -37,8 +37,11 @@ export {
 
 export {
   createEmbedding,
+  createEmbeddingsBatch,
   embedSkillDocument,
   embedSkillsBatch,
   getOpenAIApiKey,
+  type BatchEmbeddingResult,
+  type EmbeddingRequestOptions,
   type EmbeddingResult,
 } from './embedder.js';

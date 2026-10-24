@@ -16,12 +16,17 @@ export * from "./skill-tool.js";
 export * from "./skill-versioning.js";
 export * from "./linter.js";
 import type { SkillsConfig, ScanResult } from "./types.js";
+import { type SkillRegistry } from "./loader.js";
 /**
  * Initialize skills system
+ *
+ * A caller (a test) can pass its own registry, so the initialization does
+ * not have to touch the global one.
  */
 export declare function initSkills(config?: Partial<SkillsConfig & {
     maxDepth?: number;
     includeHidden?: boolean;
+    registry?: SkillRegistry;
 }>): ScanResult;
 /**
  * Get skills summary

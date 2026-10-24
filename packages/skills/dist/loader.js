@@ -7,6 +7,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSkillFile } from "./parser.js";
+/**
+ * The default number of skills one indexing request carries.
+ */
+const DEFAULT_INDEX_BATCH_SIZE = 32;
 /** Resolve the Qdrant skill module path (monorepo sibling or npm package) */
 async function resolveQdrantModules() {
     // Try the monorepo sibling first (the compiled package, so the module
@@ -31,6 +35,11 @@ async function resolveQdrantModules() {
             createQdrantClient: (cfg) => mod.createQdrantClient(cfg),
             createCollection: mod.createCollection,
             createEmbedding: mod.createEmbedding,
+            // Absent in an older package build: the registry falls back to one
+            // request per text, still with a bounded concurrency.
+            createEmbeddingsBatch: typeof mod.createEmbeddingsBatch === "function"
+                ? mod.createEmbeddingsBatch
+                : undefined,
         };
     }
     catch {
@@ -75,15 +84,35 @@ export class SkillRegistry {
     skills = new Map();
     index = { entries: [], loadedAt: 0 };
     loading = new Map();
+    // The vector index. `undefined` means "use Qdrant", `null` means "no index".
+    _indexer;
+    _batchSize;
+    // The skills that still have to be indexed, in registration order.
+    _indexQueue = [];
+    _indexFlushRunning = false;
+    _indexFlushScheduled = false;
+    // The content hash of the version of a skill that was queued or indexed.
+    _indexedHashes = new Map();
     // Qdrant state (lazily initialized on first register if configured)
     _qdrant = null;
     _qdrantInitPromise = null;
     _qdrantInitFailed = false;
+    _qdrantIndexer = null;
+    constructor(options = {}) {
+        this._indexer = options.indexer;
+        this._batchSize = options.batchSize ?? DEFAULT_INDEX_BATCH_SIZE;
+    }
     /**
      * Check if Qdrant initialization has failed (useful for diagnostics).
      */
     isQdrantFailed() {
         return this._qdrantInitFailed;
+    }
+    /**
+     * Whether skills are still queued for the vector index.
+     */
+    isIndexing() {
+        return this._indexFlushRunning || this._indexQueue.length > 0;
     }
     /**
      * Initialize Qdrant client if configured.
@@ -118,7 +147,10 @@ export class SkillRegistry {
             await mods.createCollection(client, config.collection, 1536);
             this._qdrant = {
                 client,
-                embedder: { createEmbedding: mods.createEmbedding },
+                embedder: {
+                    createEmbedding: mods.createEmbedding,
+                    createEmbeddingsBatch: mods.createEmbeddingsBatch,
+                },
                 collection: config.collection,
                 ready: true,
             };
@@ -128,28 +160,142 @@ export class SkillRegistry {
             this._qdrantInitFailed = true;
         }
     }
-    /**
-     * Index a single skill into Qdrant (non-blocking).
-     */
-    async _indexSkillToQdrant(skill) {
-        if (!this._qdrant?.ready)
-            return;
-        const point = {
+    /** The point of a skill in the vector index. */
+    _toQdrantPoint(skill) {
+        return {
             id: this._hashId(skill.id),
             name: skill.id,
             description: skill.frontmatter.description,
             body: skill.body.slice(0, 2000),
             text: [skill.id, skill.frontmatter.name, skill.frontmatter.description, skill.body.slice(0, 1500)].join(" "),
         };
-        try {
-            const { embedding } = await this._qdrant.embedder.createEmbedding(point.text);
-            await this._qdrant.client.upsert(this._qdrant.collection, {
-                wait: false,
-                points: [{ id: point.id, vector: embedding, payload: point }],
-            });
+    }
+    /**
+     * The indexer of the registry: the injected one, or the Qdrant cluster.
+     */
+    _getIndexer() {
+        if (this._indexer !== undefined)
+            return this._indexer;
+        if (!this._qdrantIndexer) {
+            this._qdrantIndexer = this._createQdrantIndexer();
         }
-        catch {
-            // Silently skip — embeddings are optional
+        return this._qdrantIndexer;
+    }
+    /**
+     * The Qdrant cluster as an indexer.
+     *
+     * The batch call of the embeddings endpoint carries many texts in one
+     * request. One request per skill exhausted the sockets of the process when
+     * a registry held hundreds of skills, and every other request of the
+     * program then starved.
+     */
+    _createQdrantIndexer() {
+        const qdrant = this._qdrant;
+        if (!qdrant?.ready)
+            return null;
+        return {
+            embed: async (texts) => {
+                if (texts.length === 0)
+                    return [];
+                const batch = qdrant.embedder.createEmbeddingsBatch;
+                if (batch) {
+                    const result = await batch(texts);
+                    return result.embeddings;
+                }
+                // An older build without the batch call: one request per text, but
+                // the caller keeps the concurrency bounded all the same.
+                const embeddings = [];
+                for (const text of texts) {
+                    const { embedding } = await qdrant.embedder.createEmbedding(text);
+                    embeddings.push(embedding);
+                }
+                return embeddings;
+            },
+            upsert: async (points) => {
+                await qdrant.client.upsert(qdrant.collection, { wait: false, points });
+            },
+        };
+    }
+    /**
+     * Queue a skill for the vector index.
+     *
+     * A skill whose text did not change is not queued again: the registry is
+     * filled on every scan, and re-embedding the same skill would pay for the
+     * same vector over and over.
+     */
+    _scheduleIndex(skill) {
+        const point = this._toQdrantPoint(skill);
+        const hash = this._hashId(point.text);
+        if (this._indexedHashes.get(skill.id) === hash)
+            return;
+        this._indexedHashes.set(skill.id, hash);
+        this._indexQueue.push({ skill, point, hash });
+        this._scheduleIndexFlush();
+    }
+    /**
+     * Start the index flush, a microtask from now.
+     *
+     * A scan registers every skill in one go. Waiting for the microtask lets
+     * that burst share one request instead of starting one request per skill.
+     */
+    _scheduleIndexFlush() {
+        if (this._indexFlushScheduled)
+            return;
+        this._indexFlushScheduled = true;
+        queueMicrotask(() => {
+            this._indexFlushScheduled = false;
+            this._runIndexFlush();
+        });
+    }
+    /**
+     * Index the queued skills, one batch at a time.
+     *
+     * Only one batch is in flight, so the number of open connections stays
+     * bound no matter how many skills the registry holds.
+     */
+    _runIndexFlush() {
+        if (this._indexFlushRunning)
+            return;
+        this._indexFlushRunning = true;
+        void this._flushIndexQueue().finally(() => {
+            this._indexFlushRunning = false;
+            // Skills may have arrived while the flush was running.
+            if (this._indexQueue.length > 0)
+                this._scheduleIndexFlush();
+        });
+    }
+    async _flushIndexQueue() {
+        if (this._indexer === undefined)
+            await this._ensureQdrant();
+        const indexer = this._getIndexer();
+        if (!indexer) {
+            // No vector index: the skills stay usable without vectors.
+            this._indexQueue = [];
+            return;
+        }
+        while (this._indexQueue.length > 0) {
+            const batch = this._indexQueue.splice(0, this._batchSize);
+            try {
+                const vectors = await indexer.embed(batch.map((item) => item.point.text));
+                const points = [];
+                batch.forEach((item, position) => {
+                    const vector = vectors[position];
+                    if (!vector || vector.length === 0)
+                        return;
+                    points.push({ id: item.point.id, vector, payload: item.point });
+                });
+                if (points.length > 0)
+                    await indexer.upsert(points);
+            }
+            catch {
+                // The vector index is optional. A failed batch may be retried by a
+                // later registration of the same skills.
+                for (const item of batch) {
+                    if (this._indexedHashes.get(item.skill.id) === item.hash) {
+                        this._indexedHashes.delete(item.skill.id);
+                    }
+                }
+            }
         }
     }
     /** Simple deterministic ID for Qdrant (no bigints needed). */
@@ -166,8 +312,8 @@ export class SkillRegistry {
     register(skill) {
         this.skills.set(skill.id, skill);
         this.updateIndex(skill);
-        // Trigger async Qdrant indexing without blocking registration
-        this._ensureQdrant().then(() => this._indexSkillToQdrant(skill)).catch(() => { });
+        // Queue the skill for the vector index without blocking registration.
+        this._scheduleIndex(skill);
     }
     /**
      * Unregister a skill by ID
@@ -324,13 +470,34 @@ export class SkillRegistry {
      * Useful after Qdrant becomes available or collection is rebuilt.
      */
     async syncAllToQdrant(onProgress) {
-        await this._ensureQdrant();
-        if (!this._qdrant?.ready)
+        if (this._indexer === undefined)
+            await this._ensureQdrant();
+        const indexer = this._getIndexer();
+        if (!indexer)
             return;
         const skills = this.list();
-        for (let i = 0; i < skills.length; i++) {
-            await this._indexSkillToQdrant(skills[i]);
-            onProgress?.(i + 1, skills.length);
+        const total = skills.length;
+        let done = 0;
+        for (let i = 0; i < total; i += this._batchSize) {
+            const batch = skills.slice(i, i + this._batchSize);
+            const points = batch.map((skill) => this._toQdrantPoint(skill));
+            try {
+                const vectors = await indexer.embed(points.map((point) => point.text));
+                const payload = [];
+                points.forEach((point, position) => {
+                    const vector = vectors[position];
+                    if (!vector || vector.length === 0)
+                        return;
+                    payload.push({ id: point.id, vector, payload: point });
+                });
+                if (payload.length > 0)
+                    await indexer.upsert(payload);
+            }
+            catch {
+                // The vector index is optional — a failed batch does not stop the sync.
+            }
+            done += batch.length;
+            onProgress?.(done, total);
         }
     }
     /** Whether Qdrant is available and ready. */
@@ -464,8 +631,8 @@ export class SkillRegistry {
 /**
  * Create a new skill registry
  */
-export function createSkillRegistry() {
-    return new SkillRegistry();
+export function createSkillRegistry(options = {}) {
+    return new SkillRegistry(options);
 }
 /**
  * Global skill registry instance (singleton)
