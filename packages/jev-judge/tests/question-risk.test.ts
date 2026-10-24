@@ -25,14 +25,17 @@ describe("classifyQuestionRisk", () => {
 	});
 
 	describe("a question that asks for permission", () => {
-		it("needs an explicit authorization for an approval question", () => {
+		it("keeps a benign approval question auto-approvable", () => {
 			const risk = classifyQuestionRisk({
 				kind: "approval",
 				text: "Want me to implement the toggle buttons now?",
 			});
 
-			expect(risk.requiresExplicitAuthorization).toBe(true);
+			// The timeout exists for routine, reversible work: the agent
+			// proposing work is not a hard authorization block.
+			expect(risk.requiresExplicitAuthorization).toBe(false);
 			expect(risk.destructive).toBe(false);
+			expect(risk.reversible).toBe(true);
 		});
 
 		it("needs an explicit authorization for an explicit question", () => {
@@ -42,6 +45,16 @@ describe("classifyQuestionRisk", () => {
 			});
 
 			expect(risk.requiresExplicitAuthorization).toBe(true);
+		});
+
+		it("needs an explicit authorization for a risky approval question", () => {
+			const risk = classifyQuestionRisk({
+				kind: "approval",
+				text: "Want me to remove the old config file now?",
+			});
+
+			expect(risk.requiresExplicitAuthorization).toBe(true);
+			expect(risk.destructive).toBe(true);
 		});
 	});
 

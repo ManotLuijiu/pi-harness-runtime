@@ -138,6 +138,28 @@ describe("decision policy", () => {
 		expect(result.appliedRule).toBe("clarification-never-approved");
 	});
 
+	it("approves a benign approval question so the timeout can work", () => {
+		// The timeout exists for routine, reversible work: an agent that
+		// proposes work is not a hard authorization block.
+		const result = applyDecisionPolicy(
+			"approve",
+			context({
+				question: {
+					requestId: "q-1",
+					text: "Want me to implement the toggle buttons now?",
+					kind: "approval",
+					requiresExplicitAuthorization: false,
+					destructive: false,
+					reversible: true,
+				},
+			}),
+			{ confidence: 0.9 },
+		);
+
+		expect(result.outcome).toBe("approve");
+		expect(result.appliedRule).toBeUndefined();
+	});
+
 	it("never approves an action that needs an explicit authorization", () => {
 		const result = applyDecisionPolicy(
 			"approve",

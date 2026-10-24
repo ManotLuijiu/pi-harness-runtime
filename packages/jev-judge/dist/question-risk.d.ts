@@ -36,15 +36,18 @@ export interface QuestionRiskInput {
  *
  * The rules:
  *
- * - A question that asks for permission for a concrete action ("approval",
- *   "explicit") needs the explicit authorization of a human. Jev never
- *   approves it on its own.
+ * - A question of kind "explicit" asks for an explicit human authorization.
+ *   Jev never approves it on its own.
+ * - A question of kind "approval" is the agent proposing work. It stays
+ *   auto-approvable as long as nothing in it is risky - that is the whole
+ *   point of the timeout: routine, reversible work continues when the user
+ *   is away.
  * - A question that names a destructive action is destructive, and its
  *   reversibility cannot be proven - so it waits.
+ * - A question that reaches the outside world or touches a secret needs a
+ *   human as well.
  * - A question with an unknown kind or an empty text is uncertain, and an
  *   uncertain case waits for the human.
- * - Only a routine question without a destructive or external signal is
- *   harmless enough for an autonomous decision.
  */
 export declare function classifyQuestionRisk(input: QuestionRiskInput): QuestionRiskFacts;
 //# sourceMappingURL=question-risk.d.ts.map
