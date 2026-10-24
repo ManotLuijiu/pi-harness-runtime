@@ -648,20 +648,41 @@ Production detection ≠ deployment authorization
 
 ## Centralized Application Logging
 
-All application logs can be shipped to **Cloudflare R2** (durable archive) and to the
-**unified webhook server** (live path). The pipeline lives in `packages/logging`
-(`@pi-harness/logging`); the harness uses the process-wide singleton from it.
+All application logs can be shipped to the **unified webhook server** (ingest path),
+which is the only component that writes to **Cloudflare R2** (durable archive). The
+pipeline lives in `packages/logging` (`@pi-harness/logging`); the harness uses the
+process-wide singleton from it.
 
-**Delivery order** (first success wins, the rest are skipped):
+**Client side** (first success wins, the rest are skipped - a fallback chain, never
+a broadcast):
 
 ```text
-producer -> redact -> sample -> buffer -> R2 -> webhook -> local spool (~/.pi-harness-runtime/logs/spool)
+producer -> classify -> redact -> sample -> buffer -> webhook -> local spool (~/.pi-harness-runtime/logs/spool)
+```
+
+**Server side** (durable hand-off, then an independent upload):
+
+```text
+POST /api/logs -> authenticate -> validate -> durable outbox -> 202
+                                              |
+                                              v
+                                    worker -> R2 -> done
 ```
 
 - The local spool is the fallback: if every transport fails the batch is written to
   disk as NDJSON and re-shipped on the next successful flush. Nothing is lost, only delayed.
 - The local log files (`~/.pi-harness-runtime/logs/*.jsonl`, `harness/*.log`) stay the
   source of truth. The centralized pipeline is a copy for the archive.
+- **Only the server writes to R2.** In `auto` mode the webhook is preferred when
+  `PI_LOG_WEBHOOK_URL` is set, so client machines need no R2 credentials.
+
+**What may leave the machine** (`classify`): an event allowlist decides, not a
+denylist. Structured service/session/validation events are remote; the catch-all
+`harness.log` mirror of a local log line, prompts, responses and command output stay
+local. A message only travels when it looks sanitized (one line, short, no path, no
+URL with a query string), and fields with a private key name (`prompt`, `output`,
+`path`, `url`, `user`, ...) are dropped. `PI_LOG_DIAGNOSTIC=1` relaxes the message rule
+for a user who explicitly asked for more - it never widens the event allowlist.
 
 **Configuration** (environment first, then `~/.pi-harness-runtime/keys/`):
 
@@ -676,6 +697,9 @@ producer -> redact -> sample -> buffer -> R2 -> webhook -> local spool (~/.pi-ha
 | `PI_LOG_FLUSH_INTERVAL_MS` | Automatic flush interval | `15000` |
 | `PI_LOG_WEBHOOK_URL` | Ingest URL of the webhook server | unset |
 | `PI_LOG_WEBHOOK_TOKEN` | Bearer token for the ingest endpoint | unset |
+| `PI_LOG_APP_VERSION` | Version reported with every batch | unset |
+| `PI_LOG_INSTALLATION_ID` | Stable id of this installation | generated once |
+| `PI_LOG_DIAGNOSTIC` | `1` allows raw messages (events stay allowlisted) | unset |
 | `PI_LOG_R2_BUCKET` / `PI_LOG_R2_ENDPOINT` / `PI_LOG_R2_ACCESS_KEY_ID` / `PI_LOG_R2_SECRET_ACCESS_KEY` | R2 credentials | key files |
 | `PI_LOG_SPOOL_DIR` | Local spool directory | `~/.pi-harness-runtime/logs/spool` |
 
@@ -686,9 +710,32 @@ R2 credentials are read from the key files `r2-bucket-name.txt`, `r2-endpoint.tx
 
 - Emit through the singleton: `centralInfo/centralWarn/centralError(source, event, message?, fields?)`.
   The `source` identifies the component, the `event` is a dotted name.
+- The event name decides whether a record may leave the machine. Use one of the
+  allowlisted shapes (`service.*`, `session.*`, `validation.*`, `harness.service-diagnostics.*`,
+  `harness.planner.decision`, `harness.glm-quota.quota`, ...) or a `warn`/`error` level.
+  An unknown event stays local.
 - Redaction is automatic (key names, credential patterns, truncation), but producers must
   not pass user content: prompts, raw model output and message bodies are dropped by the
   redactor, so shipping them is pointless.
 - Never put a credential in a log message. The redactor is a safety net, not a licence.
-- The webhook server exposes `POST /api/logs` for the ingest path. Set `LOG_INGEST_TOKEN`
-  to require a bearer token; the server re-redacts every batch and relays it to R2.
+- Prefer a structured event over mirroring a local log line. The `logToFile()` mirror
+  (`harness.log`) stays local on purpose - the local file is the source of truth.
+
+**Server endpoints** (all require an ingest credential):
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/logs` | POST | Accept a batch. `202` only after the durable write, `503` when the endpoint is not configured or the queue is unavailable (the client keeps its spool). |
+| `/api/logs/query` | POST | Read-only, tenant-scoped metadata query (installation, session, time range, level, source, event). Bounded and paginated; never returns message text. |
+| `/api/logs/health` | GET | Queue depth, oldest pending age, failure count, last error. |
+
+**Ingest credentials** (server side):
+
+- The endpoint **fails closed**: without a credential every write is refused with `503`.
+- `LOG_INGEST_TOKEN` (or `keys/log-ingest-token.txt`) is a shared token for a
+  single-tenant deployment; `LOG_INGEST_TENANT` names its tenant.
+- `keys/log-ingest-credentials.json` holds scoped credentials, one per installation:
+  `{ "id", "tenantId", "label", "scopes", "tokenHash", "createdAt", "revokedAt" }`.
+  Tokens are stored as SHA-256 hashes; the tenant is derived from the credential and
+  never from the request body.
+- Rotate by adding an entry and revoking the old one (`revokedAt`).

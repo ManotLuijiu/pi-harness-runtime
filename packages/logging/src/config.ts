@@ -13,6 +13,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createR2Transport } from "./transports/r2.js";
 import { createWebhookTransport } from "./transports/webhook.js";
+import { resolveInstallationId } from "./installation.js";
+import {
+	DEFAULT_CLASSIFICATION_POLICY,
+	type ClassificationPolicy,
+} from "./classification.js";
 import type { LogBufferOptions } from "./buffer.js";
 import type { SamplingPolicy } from "./sampler.js";
 import type { LogTransport } from "./types.js";
@@ -24,6 +29,10 @@ export interface LogSinkConfig {
 	enabled: boolean;
 	/** Application name reported with every batch. */
 	app: string;
+	/** Version of the emitting application. */
+	appVersion?: string;
+	/** Stable id of this installation. */
+	installationId: string;
 	/** Transports in delivery priority order. */
 	transports: LogTransport[];
 	/** Directory of the local spool (undefined when logging is off). */
@@ -31,6 +40,8 @@ export interface LogSinkConfig {
 	sampling: Partial<SamplingPolicy>;
 	buffer: LogBufferOptions;
 	flushIntervalMs: number;
+	/** What may leave the machine. */
+	classification: ClassificationPolicy;
 	/** Human readable notes about what was enabled and why. */
 	notes: string[];
 }
@@ -39,6 +50,8 @@ export interface ResolveConfigOptions {
 	env?: Record<string, string | undefined>;
 	/** Directory holding the credential key files. */
 	keysDir?: string;
+	/** Overrides the installation id (tests, containers). */
+	installationId?: string;
 }
 
 function readKeyFile(keysDir: string, name: string): string | undefined {
@@ -68,6 +81,21 @@ export function defaultSpoolDir(): string {
 }
 
 /**
+ * Build the classification policy.
+ *
+ * `PI_LOG_DIAGNOSTIC=1` is the explicit, user controlled diagnostic mode: it
+ * lets messages travel that the default policy keeps local. It never widens
+ * the event allowlist - only the message rule.
+ */
+function classificationFor(
+	env: Record<string, string | undefined>,
+): ClassificationPolicy {
+	const diagnostic = env.PI_LOG_DIAGNOSTIC === "1" || env.PI_LOG_DIAGNOSTIC === "true";
+	if (!diagnostic) return DEFAULT_CLASSIFICATION_POLICY;
+	return { ...DEFAULT_CLASSIFICATION_POLICY, allowRawMessages: true };
+}
+
+/**
  * Build the log sink configuration from the environment and the key files.
  */
 export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSinkConfig {
@@ -76,14 +104,19 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 	const mode = (env.PI_LOG_SINK ?? "auto") as LogSinkMode;
 	const notes: string[] = [];
 
+	const installationId =
+		options.installationId ?? env.PI_LOG_INSTALLATION_ID ?? resolveInstallationId();
+
 	if (mode === "off") {
 		return {
 			enabled: false,
 			app: env.PI_LOG_APP ?? "pi-harness",
+			installationId,
 			transports: [],
 			sampling: {},
 			buffer: {},
 			flushIntervalMs: 0,
+			classification: classificationFor(env),
 			notes: ["logging disabled by PI_LOG_SINK=off"],
 		};
 	}
@@ -102,7 +135,21 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 		(accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
 
 	const r2Ready = Boolean(bucket && accessKeyId && secretAccessKey && endpoint);
-	const wantR2 = mode === "r2" || mode === "r2+webhook" || (mode === "auto" && r2Ready);
+	const webhookUrl = env.PI_LOG_WEBHOOK_URL;
+
+	/*
+	 * Transport selection.
+	 *
+	 * The transports form a FALLBACK chain, not a broadcast: the first
+	 * transport that accepts the batch wins and the later ones are not
+	 * called. `auto` therefore prefers the webhook ingress when one is
+	 * configured: the server is the single writer to R2, so client machines
+	 * never need R2 credentials at all.
+	 */
+	const wantR2 =
+		mode === "r2" ||
+		mode === "r2+webhook" ||
+		(mode === "auto" && r2Ready && !webhookUrl);
 
 	if (wantR2) {
 		if (r2Ready) {
@@ -121,7 +168,6 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 		}
 	}
 
-	const webhookUrl = env.PI_LOG_WEBHOOK_URL;
 	const wantWebhook =
 		mode === "webhook" || mode === "r2+webhook" || (mode === "auto" && Boolean(webhookUrl));
 
@@ -134,6 +180,11 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 				}),
 			);
 			notes.push(`webhook enabled (${webhookUrl})`);
+			if (mode === "auto") {
+				notes.push(
+					"webhook is the client ingress point - the server writes to R2 (direct r2 transport skipped)",
+				);
+			}
 		} else {
 			notes.push("webhook requested but PI_LOG_WEBHOOK_URL is not set - transport skipped");
 		}
@@ -143,9 +194,10 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 		notes.push("no transport configured - logs stay local");
 	}
 
-	return {
+	const config: LogSinkConfig = {
 		enabled: true,
 		app: env.PI_LOG_APP ?? "pi-harness",
+		installationId,
 		transports,
 		spoolDir: env.PI_LOG_SPOOL_DIR ?? defaultSpoolDir(),
 		sampling: {
@@ -158,6 +210,11 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 			maxBatchSize: readNumber(env, "PI_LOG_BATCH_SIZE", 100),
 		},
 		flushIntervalMs: readNumber(env, "PI_LOG_FLUSH_INTERVAL_MS", 15_000),
+		classification: classificationFor(env),
 		notes,
 	};
+
+	if (env.PI_LOG_APP_VERSION) config.appVersion = env.PI_LOG_APP_VERSION;
+
+	return config;
 }

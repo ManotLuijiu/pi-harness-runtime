@@ -3,17 +3,26 @@
 Centralized structured application logging for pi-harness.
 
 ```text
-producer -> redact -> sample -> buffer -> R2 -> webhook -> local spool
+client: producer -> classify -> redact -> sample -> buffer -> webhook -> local spool
+server: POST /api/logs -> authenticate -> validate -> durable outbox -> 202
+                                                        |
+                                                        v
+                                              worker -> R2 -> done
 ```
 
+- **Classification**: an event allowlist decides what may leave the machine. Prompts,
+  responses, command output and the catch-all `harness.log` mirror stay local.
 - **Redaction**: credential-looking keys, bearer tokens, JWTs and long token runs are
   replaced; strings are truncated and structures are depth limited.
 - **Sampling**: minimum level, a deterministic sample rate for `debug` records and a
   per source+event rate limit. Errors are never sampled away.
 - **Buffering**: bounded in-memory buffer; when it is full the least severe record is
   dropped and the drop is counted.
-- **Delivery**: transports are tried in order (R2, webhook). If all of them fail the
-  batch is spooled to disk as NDJSON and retried on the next flush.
+- **Delivery**: transports are a FALLBACK chain (the first success wins, the rest are
+  skipped - never a broadcast). If all of them fail the batch is spooled to disk as
+  NDJSON and retried on the next flush.
+- **Durability**: the server only answers `202` after the batch is written to its
+  durable outbox. A background worker uploads it to R2 with a bounded backoff.
 
 ## Usage
 
@@ -21,16 +30,42 @@ producer -> redact -> sample -> buffer -> R2 -> webhook -> local spool
 import { centralInfo, centralWarn, initCentralLogging } from "./packages/logging/dist/index.js";
 
 initCentralLogging();                       // reads the environment and the key files
-centralInfo("harness", "startup", "ready", { pid: process.pid });
+centralInfo("harness.service-diagnostics", "service.check", "service is up", { durationMs: 3 });
 ```
+
+The event name decides whether the record may be shipped: use an allowlisted shape
+(`service.*`, `session.*`, `validation.*`, `harness.service-diagnostics.*`,
+`harness.planner.decision`, `harness.glm-quota.quota`) or a `warn`/`error` level.
 
 ## Transports
 
 | Transport | Purpose |
 |-----------|---------|
-| `createR2Transport` | Cloudflare R2 (S3 API), gzipped NDJSON under a date prefix |
-| `createWebhookTransport` | HTTP POST to the unified webhook server (`/api/logs`) |
+| `createWebhookTransport` | HTTP POST to the unified webhook server (`/api/logs`) - the client ingress point |
+| `createR2Transport` | Cloudflare R2 (S3 API), gzipped NDJSON under a date prefix - normally used by the server, not by clients |
 | `LogSpool` | Local NDJSON fallback, rotated by size, with retention |
+
+## Server side
+
+```ts
+import {
+  LogCredentialStore,
+  LogIndexStore,
+  LogIngestService,
+  LogOutbox,
+  LogOutboxWorker,
+  createLogHttpHandler,
+} from "./packages/logging/dist/index.js";
+
+const credentials = LogCredentialStore.load();
+const outbox = new LogOutbox({ dir: `${home}/.pi-harness-runtime/logs/outbox` });
+const index = new LogIndexStore({ dir: `${home}/.pi-harness-runtime/logs/index` });
+const service = new LogIngestService({ credentials, outbox, index });
+const handler = createLogHttpHandler({ service, outbox, index });
+```
+
+The credential store decides whether the endpoint exists: without a credential every
+write is refused (`503`). The tenant comes from the credential, never from the body.
 
 ## Configuration
 

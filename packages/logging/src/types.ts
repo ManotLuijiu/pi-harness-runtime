@@ -12,6 +12,15 @@
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
+/**
+ * Schema version of the batch/record contract.
+ *
+ * v2 adds the installation identity (`installationId`), the app version and
+ * a `schemaVersion` marker, so a server can tell an old client from a new
+ * one instead of guessing.
+ */
+export const LOG_SCHEMA_VERSION = 2;
+
 /** Severity order used by the sampler and the buffer drop policy. */
 export const LOG_LEVEL_SEVERITY: Record<LogLevel, number> = {
 	debug: 10,
@@ -58,9 +67,26 @@ export interface LogInput {
 
 /** The transport unit: a batch of records shipped together. */
 export interface LogBatch {
+	/** Contract version, see `LOG_SCHEMA_VERSION`. */
+	schemaVersion: number;
 	batchId: string;
+	/** Application name, e.g. "pi-harness". */
 	app: string;
-	host: string;
+	/** Version of the emitting application. */
+	appVersion?: string;
+	/**
+	 * Stable random id of this installation, created once per local install.
+	 *
+	 * It is the only machine identity in the protocol. It is never derived
+	 * from the hostname and it is not an identity on the server either - the
+	 * tenant comes from the authenticated credential.
+	 */
+	installationId: string;
+	/** Optional user-editable display label (never an identity). */
+	hostLabel?: string;
+	/** Opaque session id, when the producer knows one. */
+	sessionId?: string;
+	/** ISO-8601 timestamp of the send. */
 	sentAt: string;
 	records: LogRecord[];
 }
@@ -80,6 +106,8 @@ export interface FlushStats {
 	dropped: number;
 	/** Records dropped by the sampler (level, sample rate, rate limit). */
 	sampled: number;
+	/** Records that stayed on the machine (classification: local only). */
+	localOnly: number;
 	/** Transport errors, keyed by transport name. */
 	errors: Record<string, string>;
 }

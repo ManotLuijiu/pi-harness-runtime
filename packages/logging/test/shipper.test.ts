@@ -41,11 +41,11 @@ describe("LogShipper", () => {
 		const transport = recorder();
 		const shipper = new LogShipper({ transports: [transport.transport], flushIntervalMs: 0 });
 
-		shipper.info("unit", "started", "hello");
+		shipper.info("unit", "service.started", "hello");
 		await shipper.flush();
 
 		expect(transport.batches).toHaveLength(1);
-		expect(transport.batches[0].records[0].event).toBe("started");
+		expect(transport.batches[0].records[0].event).toBe("service.started");
 		expect(shipper.getStats().shipped).toBe(1);
 	});
 
@@ -58,7 +58,7 @@ describe("LogShipper", () => {
 			flushIntervalMs: 0,
 		});
 
-		shipper.info("unit", "started");
+		shipper.info("unit", "service.started");
 		await shipper.flush();
 
 		expect(working.batches).toHaveLength(1);
@@ -76,7 +76,7 @@ describe("LogShipper", () => {
 			flushIntervalMs: 0,
 		});
 
-		shipper.info("unit", "started");
+		shipper.info("unit", "service.started");
 		await shipper.flush();
 
 		expect(spool.list()).toHaveLength(1);
@@ -94,7 +94,7 @@ describe("LogShipper", () => {
 			flushIntervalMs: 0,
 		});
 
-		shipper.info("unit", "first");
+		shipper.info("unit", "service.first");
 		await shipper.flush();
 		expect(spool.list()).toHaveLength(1);
 
@@ -103,14 +103,14 @@ describe("LogShipper", () => {
 
 		expect(spool.list()).toHaveLength(0);
 		expect(failing.batches).toHaveLength(1);
-		expect(failing.batches[0].records[0].event).toBe("first");
+		expect(failing.batches[0].records[0].event).toBe("service.first");
 	});
 
 	test("redacts secrets before shipping", async () => {
 		const transport = recorder();
 		const shipper = new LogShipper({ transports: [transport.transport], flushIntervalMs: 0 });
 
-		shipper.info("unit", "login", "token=super-secret-value", { apiKey: "sk-should-not-ship" });
+		shipper.info("unit", "service.login", "token=super-secret-value", { apiKey: "sk-should-not-ship" });
 		await shipper.flush();
 
 		const serialized = JSON.stringify(transport.batches[0]);
@@ -128,7 +128,7 @@ describe("LogShipper", () => {
 		const spool = new LogSpool({ dir });
 		const shipper = new LogShipper({ transports: [], spool, flushIntervalMs: 0 });
 
-		shipper.info("unit", "exit");
+		shipper.info("unit", "service.exit");
 		shipper.flushSync();
 
 		expect(spool.list()).toHaveLength(1);
@@ -142,11 +142,11 @@ describe("LogShipper", () => {
 			sampling: { minLevel: "info", sampleRate: 0 },
 		});
 
-		shipper.debug("unit", "noisy");
-		shipper.info("unit", "important");
+		shipper.debug("unit", "service.noisy");
+		shipper.info("unit", "service.important");
 		await shipper.flush();
 
 		expect(transport.batches[0].records).toHaveLength(1);
-		expect(transport.batches[0].records[0].event).toBe("important");
+		expect(transport.batches[0].records[0].event).toBe("service.important");
 	});
 });

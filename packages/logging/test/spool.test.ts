@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LogSpool } from "../src/spool.js";
 import type { LogBatch, LogRecord } from "../src/types.js";
+import { LOG_SCHEMA_VERSION } from "../src/types.js";
 
 const created: string[] = [];
 
@@ -24,9 +25,11 @@ function record(event: string): LogRecord {
 
 function batch(events: string[]): LogBatch {
 	return {
+		schemaVersion: LOG_SCHEMA_VERSION,
 		batchId: "batch-1",
 		app: "test",
-		host: "localhost",
+		installationId: "11111111-2222-3333-4444-555555555555",
+		hostLabel: "localhost",
 		sentAt: new Date().toISOString(),
 		records: events.map(record),
 	};
