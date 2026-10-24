@@ -104,9 +104,15 @@ export interface DecisionPolicyResult {
 export interface DecisionPolicyOptions {
     /** The confidence an autonomous approval needs. */
     confidenceThreshold?: number;
+    /** The confidence a cautious approval needs (lower than the approval threshold). */
+    cautionThreshold?: number;
     /** The confidence of the proposed outcome. */
     confidence?: number;
 }
+/** The confidence an autonomous approval needs by default. */
+export declare const DEFAULT_PROCEED_THRESHOLD = 0.7;
+/** The confidence a cautious approval needs by default. */
+export declare const DEFAULT_CAUTION_THRESHOLD = 0.5;
 /**
  * Is the value a known outcome?
  *

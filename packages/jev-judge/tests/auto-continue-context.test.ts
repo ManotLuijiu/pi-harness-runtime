@@ -13,6 +13,8 @@ import {
 	buildDecisionState,
 	createTaskState,
 	isEligibleForDecision,
+	DEFAULT_CAUTION_THRESHOLD,
+	DEFAULT_PROCEED_THRESHOLD,
 	MAX_LISTED_TASKS,
 	MAX_QUESTION_CHARS,
 	type DecisionContext,
@@ -220,6 +222,41 @@ describe("decision policy", () => {
 		const result = applyDecisionPolicy("approve", context(), {
 			confidence: 0.4,
 			confidenceThreshold: 0.7,
+		});
+
+		expect(result.outcome).toBe("wait");
+		expect(result.appliedRule).toBe("confidence-below-threshold");
+	});
+
+	it("keeps the configured caution range out of the approval threshold", () => {
+		// A cautious approval needs the caution threshold, not the higher
+		// approval threshold: the configured range must really proceed.
+		const result = applyDecisionPolicy("proceed_with_caution", context(), {
+			confidence: 0.6,
+			confidenceThreshold: DEFAULT_PROCEED_THRESHOLD,
+			cautionThreshold: DEFAULT_CAUTION_THRESHOLD,
+		});
+
+		expect(result.outcome).toBe("proceed_with_caution");
+		expect(result.appliedRule).toBeUndefined();
+	});
+
+	it("waits for a cautious approval below the caution threshold", () => {
+		const result = applyDecisionPolicy("proceed_with_caution", context(), {
+			confidence: 0.4,
+			confidenceThreshold: DEFAULT_PROCEED_THRESHOLD,
+			cautionThreshold: DEFAULT_CAUTION_THRESHOLD,
+		});
+
+		expect(result.outcome).toBe("wait");
+		expect(result.appliedRule).toBe("confidence-below-threshold");
+	});
+
+	it("keeps the approval threshold for a full approval", () => {
+		const result = applyDecisionPolicy("approve", context(), {
+			confidence: 0.6,
+			confidenceThreshold: DEFAULT_PROCEED_THRESHOLD,
+			cautionThreshold: DEFAULT_CAUTION_THRESHOLD,
 		});
 
 		expect(result.outcome).toBe("wait");
