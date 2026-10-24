@@ -9,6 +9,20 @@ import type { NotificationPayload, NotificationResult, TelegramCallbackHandler, 
  */
 type TelegramMessageHandler = (text: string, chatId: string) => Promise<void>;
 import { BaseChannelAdapter } from "../base-adapter.js";
+/**
+ * The status label of an event.
+ *
+ * Use ASCII labels per AGENTS.md convention - emoji render inconsistently
+ * across terminals and break the alignment of the machine readable output.
+ */
+export declare function telegramStatusLabel(event: NotificationPayload["event"]): string;
+/**
+ * Render the Telegram message of a payload.
+ *
+ * Exported so the rendering can be tested without a Telegram connection: the
+ * detail footer must never label a resume trigger as an error.
+ */
+export declare function buildTelegramMessage(payload: NotificationPayload): string;
 export declare class TelegramAdapter extends BaseChannelAdapter {
     readonly id = "telegram";
     readonly type = "telegram";

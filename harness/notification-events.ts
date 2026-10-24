@@ -105,7 +105,7 @@ export class HarnessNotificationEvents {
 	 */
 	async emitQuotaPaused(resumeAt?: string): Promise<void> {
 		await this.emit("QuotaPaused", {
-			error: resumeAt ? `Resumes at ${resumeAt}` : undefined,
+			reason: resumeAt ? `Resumes at ${resumeAt}` : undefined,
 		});
 	}
 
@@ -113,7 +113,7 @@ export class HarnessNotificationEvents {
 	 * Emit ResumeScheduled event
 	 */
 	async emitResumeScheduled(resumeAt: string): Promise<void> {
-		await this.emit("ResumeScheduled", { error: resumeAt });
+		await this.emit("ResumeScheduled", { reason: resumeAt });
 	}
 
 	/**
@@ -121,7 +121,7 @@ export class HarnessNotificationEvents {
 	 */
 	async emitContextCompacted(tokensCompacted?: number): Promise<void> {
 		await this.emit("ContextCompacted", {
-			error: tokensCompacted
+			reason: tokensCompacted
 				? `Compacted ${tokensCompacted.toLocaleString()} tokens`
 				: undefined,
 		});
@@ -132,7 +132,7 @@ export class HarnessNotificationEvents {
 	 */
 	async emitOutputLimitContinued(attempt: number): Promise<void> {
 		await this.emit("OutputLimitContinued", {
-			error: `Attempt ${attempt}`,
+			reason: `Attempt ${attempt}`,
 		});
 	}
 
@@ -149,7 +149,7 @@ export class HarnessNotificationEvents {
 	 * Emit HumanReviewNeeded event
 	 */
 	async emitHumanReviewNeeded(taskId: string, reason: string): Promise<void> {
-		await this.emit("HumanReviewNeeded", { taskId, error: reason });
+		await this.emit("HumanReviewNeeded", { taskId, reason });
 	}
 
 	/**
@@ -163,7 +163,7 @@ export class HarnessNotificationEvents {
 	 * Emit JobCancelled event
 	 */
 	async emitJobCancelled(reason?: string): Promise<void> {
-		await this.emit("JobCancelled", { error: reason });
+		await this.emit("JobCancelled", { reason });
 	}
 
 	/**

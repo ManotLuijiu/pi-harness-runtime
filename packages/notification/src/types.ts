@@ -148,5 +148,8 @@ export interface NotificationContext {
 	requirement: string;
 	taskId?: string;
 	taskTitle?: string;
+	/** A real failure. Only error events render this under an "Error:" label. */
 	error?: string;
+	/** Why the event happened (a resume trigger, a quota detail, a review reason). */
+	reason?: string;
 }

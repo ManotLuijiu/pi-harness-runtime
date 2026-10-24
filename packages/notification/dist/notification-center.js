@@ -561,6 +561,7 @@ export class NotificationCenter {
                 ...(context.taskId && { taskId: context.taskId }),
                 ...(context.taskTitle && { taskTitle: context.taskTitle }),
                 ...(context.error && { error: context.error }),
+                ...(context.reason && { reason: context.reason }),
                 // Pass inline keyboard options to Telegram adapter
                 ...(options?.enableInlineKeyboard && { _enableInlineKeyboard: true }),
                 ...(options?.actionButtons && { _actionButtons: options.actionButtons }),

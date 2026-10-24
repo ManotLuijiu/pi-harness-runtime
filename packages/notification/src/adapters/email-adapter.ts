@@ -10,6 +10,7 @@ import type {
 	EmailConfig,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
+import { formatDetailLines } from "./detail-format.js";
 import { logInfo } from "../file-logger.js";
 
 // Simple SMTP client using built-in net module
@@ -100,8 +101,8 @@ export class EmailAdapter extends BaseChannelAdapter {
 		if (payload.details?.jobId) {
 			lines.push(`Job ID: ${payload.details.jobId}`);
 		}
-		if (payload.details?.error) {
-			lines.push("", `Error: ${payload.details.error}`);
+		for (const detail of formatDetailLines(payload.details, payload.event)) {
+			lines.push("", `${detail.label}: ${detail.value}`);
 		}
 
 		return lines.join("\n");

@@ -5610,7 +5610,7 @@ Run \`bd ready\` to see current bd issues.
 			pi.sendUserMessage(content, { deliverAs });
 			await nc("ResumeScheduled", {
 				requirement: "Session auto-resume",
-				error: reason,
+				reason,
 			});
 		} catch (error) {
 			logToFile(
