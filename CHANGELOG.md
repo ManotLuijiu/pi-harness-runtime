@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.189](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.402...v1.1.189) (2026-10-24)
+
+
+### Bug Fixes
+
+* **jev:** keep routine approval questions auto-approvable ([31fb075](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31fb075db4363791f6c9b6094d90ce2acbeff9c1))
+
 ### [1.1.188](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.401...v1.1.188) (2026-10-24)
 
 
