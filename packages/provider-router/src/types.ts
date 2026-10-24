@@ -2,8 +2,8 @@
  * Provider Router Types (RFC-0054)
  */
 
-import type { ProviderState } from "../../types/src/runtime-types.ts";
-import type { Capability } from "../../capability-registry/src/types.ts";
+import type { ProviderState } from "../../types/dist/runtime-types.js";
+import type { Capability } from "../../capability-registry/dist/types.js";
 
 // Re-export Latency from here for convenience
 export type Latency = "fast" | "medium" | "slow";

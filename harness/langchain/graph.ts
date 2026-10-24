@@ -38,8 +38,8 @@ export function getJevProvider(): "minimax" | "gpt" {
 	return _currentProvider;
 }
 import { readFileSync } from "node:fs";
-import { WriteReviewBlackboard } from "../../packages/write-review/src/blackboard.js";
-import { getApprovedPatternStore } from "../../packages/trajectory/src/index.js";
+import { WriteReviewBlackboard } from "../../packages/write-review/dist/blackboard.js";
+import { getApprovedPatternStore } from "../../packages/trajectory/dist/src/index.js";
 import type { Verdict } from "../../packages/write-review/src/types.js";
 import type { LoopWidget } from "./widget.js";
 

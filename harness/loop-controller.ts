@@ -13,7 +13,7 @@ import {
 	ensureHerdrWorkspace,
 	publishLoopStarted,
 	type LoopConfig,
-} from "../packages/event-bus/src/index.js";
+} from "../packages/event-bus/dist/src/index.js";
 import { createBlackboard } from "./blackboard.js";
 import { buildLoopTaskGraph } from "./loop-types.js";
 import type { SharedBlackboard } from "./blackboard.js";

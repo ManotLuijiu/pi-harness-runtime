@@ -1,13 +1,13 @@
 import { randomUUID, createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getHerdrWorkspace } from "../../packages/event-bus/src/herdr-bus.js";
+import { getHerdrWorkspace } from "../../packages/event-bus/dist/src/herdr-bus.js";
 import {
 	PingPongDecisionEngine,
 	scanCodebaseComplexity,
 	type PingPongDecisionOptions,
 	type PingPongDecisionResult,
-} from "../../packages/intent-analyzer/src/index.js";
+} from "../../packages/intent-analyzer/dist/src/index.js";
 
 export interface PingPongMiddlewareOptions extends PingPongDecisionOptions {
 	/** Shared directory watched by LoopDaemon. Defaults to /tmp/herdr-workspace. */

@@ -14,7 +14,7 @@ import {
 	formatRelative,
 	formatTokens,
 	formatUsd,
-} from "./cli.ts";
+} from "./cli.js";
 import type { AggregatedWindows } from "./windows.ts";
 import {
 	FIVE_HOURS_MS,

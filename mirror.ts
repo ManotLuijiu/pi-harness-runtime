@@ -30,7 +30,7 @@
  * Models live here: `~/.pi/usage-status/mirror.json`.
  */
 
-import { getMirrorPath, readJson, writeJson } from "./cli.ts";
+import { getMirrorPath, readJson, writeJson } from "./cli.js";
 
 /**
  * Canonical lowercase provider ids — mirrors the KNOWN_AI_PROVIDERS from

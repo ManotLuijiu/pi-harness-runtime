@@ -161,14 +161,16 @@ export class PlaywrightE2ERunner implements E2ERunner {
 
 	/**
 	 * Assert a condition
+	 *
+	 * The condition is a JavaScript expression that is evaluated INSIDE the
+	 * page. Playwright evaluates a string expression in the page context on
+	 * its own, so the runner never has to build a function from a string
+	 * (which would be dynamic code execution in this process).
 	 */
 	async assert(condition: string, message?: string): Promise<boolean> {
 		if (!this.page) throw new Error("Browser not started");
 
-		const result = await this.page.evaluate((cond: unknown) => {
-			// eslint-disable-next-line no-eval
-			return eval(String(cond)) as boolean; // eslint-disable-line
-		}, condition);
+		const result = await this.page.evaluate(condition);
 
 		if (!result && message) {
 			throw new Error(message);

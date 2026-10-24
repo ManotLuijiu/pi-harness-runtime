@@ -8,9 +8,8 @@
 import type {
 	HandoffContext,
 	HandoffEvent,
-} from "../packages/types/src/runtime-types.ts";
-import { writeJson, readJson } from "../cli.ts";
-// @ts-expect-error - Bun has built-in Node.js types
+} from "../packages/types/dist/runtime-types.js";
+import { writeJson, readJson } from "../cli.js";
 import { join } from "node:path";
 
 export interface HandoffData {

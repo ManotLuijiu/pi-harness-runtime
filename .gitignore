@@ -33,6 +33,12 @@ packages/*/src/*.d.ts
 packages/*/src/*.d.ts.map
 packages/*/src/*.js.map
 
+# The vendored telegram app ships compiled JavaScript upstream - it has no
+# TypeScript source, so its build output is the published artifact.
+!packages/telegram/src/*.js
+!packages/telegram/src/*.d.ts
+
+
 # Build outputs
 .pi-subagents/
 harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
@@ -76,3 +82,11 @@ mirror.js
 
 # pi-lens
 .pi-lens/
+
+# Compiled artifacts must never live next to a TypeScript source: Bun
+# resolves the literal .js file first, so a stale artifact shadows the
+# current source.
+harness/**/*.d.ts.map
+harness/**/*.js.map
+scripts/**/*.d.ts.map
+scripts/**/*.js.map

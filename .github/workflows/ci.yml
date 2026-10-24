@@ -38,6 +38,17 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # The published app is a SINGLE npm package. Every internal app
+      # (logging, jev-judge, contracts, ...) is compiled into
+      # packages/<name>/dist and shipped inside the root tarball. The build
+      # must produce every published entry point, and the verifier proves the
+      # tarball actually contains them.
+      - name: Build packages
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm run build:verify:pack
+
       # The root suite runs with bun (see scripts/run-root-tests.mjs): the
       # harness sources import each other with ".js" specifiers, and only bun
       # resolves those to the TypeScript sources. Node would need the

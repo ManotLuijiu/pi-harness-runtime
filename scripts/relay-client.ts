@@ -17,8 +17,8 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import { RelayClient } from "../packages/relay/src/client";
-import { describeRelayEndpoint, resolveRelayEndpoint } from "../packages/relay/src/relay-endpoint";
+import { RelayClient } from "../packages/relay/dist/client.js";
+import { describeRelayEndpoint, resolveRelayEndpoint } from "../packages/relay/dist/relay-endpoint.js";
 import type { CallbackPayload, SnapshotMessage } from "../packages/relay/src/types";
 
 // Configuration

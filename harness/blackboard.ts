@@ -24,9 +24,8 @@ import type {
 	LockInfo,
 	RuntimeEvent,
 	TaskGraph,
-} from "../packages/types/src/runtime-types.ts";
-import { writeJson, readJson, appendJsonl, ensureUsageDir } from "../cli.ts";
-// @ts-expect-error - Bun has built-in Node.js types
+} from "../packages/types/dist/runtime-types.js";
+import { writeJson, readJson, appendJsonl, ensureUsageDir } from "../cli.js";
 import { join, dirname } from "node:path";
 
 export class SharedBlackboard {

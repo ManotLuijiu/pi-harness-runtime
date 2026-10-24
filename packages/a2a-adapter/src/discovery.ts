@@ -4,7 +4,6 @@
  * Advertises agent capabilities and handles agent registry.
  */
 
-import { fetch } from "undici";
 import type { AgentSearchCriteria } from "./client.js";
 import { createAgentCard } from "./agent.js";
 import type { AgentCard, AgentCapabilities, Skill, Authentication } from "./types.js";

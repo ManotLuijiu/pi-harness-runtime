@@ -10,7 +10,7 @@
  * - allow separate models to work on separate tasks
  */
 
-import type { WorktreeInfo } from "../../packages/types/src/runtime-types.ts";
+import type { WorktreeInfo } from "../packages/types/dist/runtime-types.js";
 // @ts-expect-error - Bun has built-in Node.js types
 import { execSync } from "node:child_process";
 // @ts-expect-error - Bun has built-in Node.js types

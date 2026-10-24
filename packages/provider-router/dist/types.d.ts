@@ -1,8 +1,8 @@
 /**
  * Provider Router Types (RFC-0054)
  */
-import type { ProviderState } from "@pi-harness/types";
-import type { Capability } from "@pi-harness/capability-registry";
+import type { ProviderState } from "../../types/dist/runtime-types.js";
+import type { Capability } from "../../capability-registry/dist/types.js";
 export type Latency = "fast" | "medium" | "slow";
 export type RoutingStrategy = "cheapest" | "fastest" | "best_quality" | "balanced" | "quota_aware";
 export interface RoutingPolicy {

@@ -12,10 +12,10 @@ import type {
 	SkillInfo,
 	GetSkillResult,
 } from "../packages/skill-mcp-client/src/types.js";
-import { SkillAPIError } from "../packages/skill-mcp-client/src/errors.js";
+import { SkillAPIError } from "../packages/skill-mcp-client/dist/errors.js";
 
 type SkillMCPClient = InstanceType<
-	typeof import("../packages/skill-mcp-client/src/client.js").SkillMCPClient
+	typeof import("../packages/skill-mcp-client/dist/client.js").SkillMCPClient
 >;
 
 // Lazy import to avoid errors if package not built yet
@@ -31,7 +31,7 @@ async function getClient(): Promise<SkillMCPClient | null> {
 	}
 
 	try {
-		const mod = await import("../packages/skill-mcp-client/src/client.js");
+		const mod = await import("../packages/skill-mcp-client/dist/client.js");
 		const SkillMCPClientClass = mod.SkillMCPClient;
 		const serverUrl = await getSkillsSaasUrl();
 
