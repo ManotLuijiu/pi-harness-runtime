@@ -11,6 +11,7 @@
  */
 
 import { validateBatch, type BatchValidationLimits } from "../ingest/schema.js";
+import { extractIncidents, type LogIncident } from "../incidents/schema.js";
 import {
 	LOG_READ_SCOPE,
 	LOG_WRITE_SCOPE,
@@ -19,6 +20,8 @@ import {
 } from "./credentials.js";
 import { serverObjectKey } from "./keys.js";
 import type { LogIndexStore, LogQueryParams, LogQueryResult } from "./index-store.js";
+import type { IncidentQueryParams, IncidentStore } from "./incident-store.js";
+import type { IncidentQdrantWriter } from "./incident-qdrant.js";
 import type { LogOutbox, OutboxBatch } from "./outbox.js";
 
 export interface IngestSuccess {
@@ -52,20 +55,35 @@ export interface LogIngestServiceOptions {
 	credentials: LogCredentialStore;
 	outbox: LogOutbox;
 	index: LogIndexStore;
+	/** Durable storage of the derived incidents. Optional. */
+	incidents?: IncidentStore;
+	/** Searchable view of the incidents. Optional. */
+	incidentIndex?: IncidentQdrantWriter;
 	/** Validation limits for an inbound batch. */
 	limits?: Partial<BatchValidationLimits>;
+}
+
+export interface IncidentQuerySuccess {
+	incidents: LogIncident[];
+	truncated: boolean;
+	scannedFiles: number;
+	tenantId: string;
 }
 
 export class LogIngestService {
 	private readonly credentials: LogCredentialStore;
 	private readonly outbox: LogOutbox;
 	private readonly index: LogIndexStore;
+	private readonly incidents: IncidentStore | undefined;
+	private readonly incidentIndex: IncidentQdrantWriter | undefined;
 	private readonly limits: Partial<BatchValidationLimits>;
 
 	constructor(options: LogIngestServiceOptions) {
 		this.credentials = options.credentials;
 		this.outbox = options.outbox;
 		this.index = options.index;
+		this.incidents = options.incidents;
+		this.incidentIndex = options.incidentIndex;
 		this.limits = options.limits ?? {};
 	}
 
@@ -136,6 +154,9 @@ export class LogIngestService {
 			// The metadata index is best effort: a failing index never loses
 			// the batch itself.
 			this.index.append(batch, serverObjectKey(batch));
+			// The same holds for the derived incidents: they are a view of
+			// the batch, never a precondition for accepting it.
+			this.recordIncidents(batch);
 			return {
 				status: 202,
 				body: {
@@ -192,5 +213,63 @@ export class LogIngestService {
 		};
 		if (result.nextCursor) body.nextCursor = result.nextCursor;
 		return { status: 200, body };
+	}
+
+	/**
+	 * Derive the incidents of a batch and store them.
+	 *
+	 * The tenant comes from the credential that was authenticated, never
+	 * from the batch itself. A failing store or a failing Qdrant never
+	 * affects the acceptance of the batch.
+	 */
+	private recordIncidents(batch: OutboxBatch): void {
+		if (!this.incidents && !this.incidentIndex) return;
+		const derived = extractIncidents(batch.records, batch.tenantId, batch.installationId);
+		if (derived.length === 0) return;
+		if (this.incidents) this.incidents.append(derived);
+		if (this.incidentIndex) void this.incidentIndex.upsert(derived);
+	}
+
+	/**
+	 * Query the incidents of the tenant of the caller.
+	 *
+	 * The `tenantId` of the request is ignored on purpose - only the
+	 * credential decides whose incidents are visible.
+	 */
+	queryIncidents(
+		params: Omit<IncidentQueryParams, "tenantId">,
+		bearerToken: string | undefined,
+	): { status: number; body: IncidentQuerySuccess | IngestFailure } {
+		if (!this.credentials.configured) {
+			return {
+				status: 503,
+				body: { error: "log ingest is not configured", code: "ingest_unconfigured" },
+			};
+		}
+
+		const auth = this.credentials.authenticate(bearerToken);
+		if (!auth) {
+			return { status: 401, body: { error: "unauthorized", code: "unauthorized" } };
+		}
+		if (!auth.scopes.includes(LOG_READ_SCOPE)) {
+			return { status: 403, body: { error: "forbidden", code: "forbidden" } };
+		}
+		if (!this.incidents) {
+			return {
+				status: 503,
+				body: { error: "incident storage is not configured", code: "incidents_unconfigured" },
+			};
+		}
+
+		const result = this.incidents.query({ ...params, tenantId: auth.tenantId });
+		return {
+			status: 200,
+			body: {
+				incidents: result.incidents,
+				truncated: result.truncated,
+				scannedFiles: result.scannedFiles,
+				tenantId: auth.tenantId,
+			},
+		};
 	}
 }

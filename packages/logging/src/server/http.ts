@@ -6,9 +6,10 @@
  * be tested over a real socket.
  *
  * Routes:
- *   POST /api/logs         accept a batch (202 after the durable write)
- *   POST /api/logs/query   read-only, tenant scoped metadata query
- *   GET  /api/logs/health  queue depth, oldest pending age, failure count
+ *   POST /api/logs              accept a batch (202 after the durable write)
+ *   POST /api/logs/query        read-only, tenant scoped metadata query
+ *   POST /api/logs/incidents    read-only, tenant scoped incident query
+ *   GET  /api/logs/health       queue depth, oldest pending age, failure count
  */
 
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
@@ -16,6 +17,7 @@ import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readBearerToken } from "./credentials.js";
 import type { LogIndexStore, LogQueryParams } from "./index-store.js";
+import type { IncidentQueryParams } from "./incident-store.js";
 import type { LogOutbox } from "./outbox.js";
 import type { LogIngestService } from "./service.js";
 
@@ -145,6 +147,43 @@ export function createLogHttpHandler(options: LogHttpOptions): LogHttpHandler {
 					event: params.event,
 					limit: params.limit,
 					cursor: params.cursor,
+				},
+				token,
+			);
+			sendJson(res, result.status, result.body);
+			return;
+		}
+
+		if (url.pathname === "/api/logs/incidents" && req.method === "POST") {
+			if (!options.service.configured) {
+				sendJson(res, 503, { error: "log ingest is not configured", code: "ingest_unconfigured" });
+				return;
+			}
+
+			const raw = await readBody(req, maxQueryBytes);
+			if (!raw) {
+				sendJson(res, 413, { error: "payload too large", code: "payload_too_large" });
+				return;
+			}
+
+			let params: Partial<IncidentQueryParams> = {};
+			if (raw.length > 0) {
+				try {
+					params = JSON.parse(raw.toString()) as Partial<IncidentQueryParams>;
+				} catch {
+					sendJson(res, 400, { error: "invalid json", code: "invalid_json" });
+					return;
+				}
+			}
+
+			const result = options.service.queryIncidents(
+				{
+					severity: params.severity,
+					source: params.source,
+					event: params.event,
+					since: params.since,
+					until: params.until,
+					limit: params.limit,
 				},
 				token,
 			);

@@ -2,9 +2,25 @@
  * The shipper owns the delivery decision.
  *
  * Producers call `log()`. The shipper redacts, samples, buffers, and then
- * delivers a batch through the configured transports in priority order:
+ * delivers a batch through the configured transports.
  *
- *   R2 (durable archive) -> webhook (live) -> local spool (last resort)
+ * Two delivery modes exist:
+ *
+ *   fallback (the default) - the transports form a chain. The first
+ *     transport that accepts the batch wins and the later ones are not
+ *     called:
+ *
+ *       R2 (durable archive) -> webhook (live) -> local spool
+ *
+ *   fanout (explicit opt-in) - the transports are independent. Every
+ *     transport receives the batch, each one tracks its own success, and
+ *     the batch is spooled only when EVERY transport failed:
+ *
+ *       R2 (durable archive) + webhook (live) -> local spool
+ *
+ * Fallback is the default because it avoids duplicate records in the
+ * archive. Fanout is opt-in because it deliberately creates a second copy
+ * of every batch.
  *
  * If every transport fails the batch is spooled to disk and retried on the
  * next flush, so a temporary outage costs latency, not data.
@@ -31,6 +47,28 @@ import {
 	type LogTransport,
 } from "./types.js";
 
+/**
+ * How the batch is handed to the transports.
+ *
+ * - `fallback`: the first transport that accepts the batch wins.
+ * - `fanout`: every transport receives the batch independently.
+ */
+export type DeliveryMode = "fallback" | "fanout";
+
+/** The delivery state of one transport. */
+export interface TransportStatus {
+	/** The name of the transport. */
+	name: string;
+	/** How many batches this transport accepted. */
+	delivered: number;
+	/** How many batches this transport rejected. */
+	failed: number;
+	/** The message of the last failure. */
+	lastError?: string;
+	/** ISO timestamp of the last successful delivery. */
+	lastSuccessAt?: string;
+}
+
 export interface LogShipperOptions {
 	/** Application name reported with every batch. */
 	app?: string;
@@ -47,6 +85,12 @@ export interface LogShipperOptions {
 	sessionId?: string;
 	/** Transports in priority order. */
 	transports?: LogTransport[];
+	/**
+	 * How the transports are used. `fallback` (the default) lets the first
+	 * transport that accepts the batch win; `fanout` delivers the batch to
+	 * every transport independently.
+	 */
+	delivery?: DeliveryMode;
 	/** Local spool used when every transport fails. */
 	spool?: LogSpool;
 	/** Buffer bounds. */
@@ -86,6 +130,8 @@ export class LogShipper {
 	private readonly hostLabel: string | undefined;
 	private readonly sessionId: string | undefined;
 	private readonly transports: LogTransport[];
+	private readonly delivery: DeliveryMode;
+	private readonly transportStatus = new Map<string, TransportStatus>();
 	private readonly spool: LogSpool | undefined;
 	private readonly buffer: LogBuffer;
 	private readonly sampler: LogSampler;
@@ -112,6 +158,7 @@ export class LogShipper {
 		this.hostLabel = options.hostLabel ?? hostname();
 		this.sessionId = options.sessionId;
 		this.transports = options.transports ?? [];
+		this.delivery = options.delivery ?? "fallback";
 		this.spool = options.spool;
 		this.buffer = new LogBuffer(options.buffer);
 		this.sampler = new LogSampler(options.sampling);
@@ -221,6 +268,21 @@ export class LogShipper {
 		};
 	}
 
+	/**
+	 * The delivery state of every transport.
+	 *
+	 * In fanout mode this is the only way to see that one transport is
+	 * broken while the others still deliver.
+	 */
+	getTransportStatus(): TransportStatus[] {
+		return [...this.transportStatus.values()].map((status) => ({ ...status }));
+	}
+
+	/** The delivery mode of the shipper. */
+	get deliveryMode(): DeliveryMode {
+		return this.delivery;
+	}
+
 	private buildRecord(input: LogInput): LogRecord {
 		const record: LogRecord = {
 			ts: new Date(this.now()).toISOString(),
@@ -291,18 +353,71 @@ export class LogShipper {
 		}
 	}
 
-	/** Try every transport in order. Returns true when one accepted the batch. */
+	/**
+	 * Deliver the batch to the transports.
+	 *
+	 * In `fallback` mode the transports form a chain: the first one that
+	 * accepts the batch wins and the later ones are not called.
+	 *
+	 * In `fanout` mode every transport receives the batch independently.
+	 * Each transport tracks its own success, so a broken transport does not
+	 * hide the success of the others. The batch is only lost when EVERY
+	 * transport failed.
+	 */
 	private async deliver(batch: LogBatch): Promise<boolean> {
+		if (this.delivery === "fanout") return this.deliverToAll(batch);
 		for (const transport of this.transports) {
 			try {
 				await transport.send(batch);
+				this.noteSuccess(transport.name);
 				return true;
 			} catch (error) {
-				this.stats.errors[transport.name] =
-					error instanceof Error ? error.message : String(error);
+				this.noteFailure(transport.name, error);
 			}
 		}
 		return false;
+	}
+
+	/** Deliver the batch to every transport. Returns true when one accepted it. */
+	private async deliverToAll(batch: LogBatch): Promise<boolean> {
+		let accepted = false;
+		for (const transport of this.transports) {
+			try {
+				await transport.send(batch);
+				this.noteSuccess(transport.name);
+				accepted = true;
+			} catch (error) {
+				this.noteFailure(transport.name, error);
+			}
+		}
+		return accepted;
+	}
+
+	/** Record a successful delivery. */
+	private noteSuccess(name: string): void {
+		const status = this.statusFor(name);
+		status.delivered++;
+		status.lastSuccessAt = new Date(this.now()).toISOString();
+		delete status.lastError;
+	}
+
+	/** Record a failed delivery. */
+	private noteFailure(name: string, error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error);
+		this.stats.errors[name] = message;
+		const status = this.statusFor(name);
+		status.failed++;
+		status.lastError = message;
+	}
+
+	/** The delivery state of one transport. */
+	private statusFor(name: string): TransportStatus {
+		let status = this.transportStatus.get(name);
+		if (!status) {
+			status = { name, delivered: 0, failed: 0 };
+			this.transportStatus.set(name, status);
+		}
+		return status;
 	}
 
 	/** Re-send spooled files. Stops at the first failure. */

@@ -646,6 +646,25 @@ Production detection ≠ deployment authorization
 ~/.pi-harness-runtime/workspace-env.sqlite
 ```
 
+## Single Published App
+
+**`pi-harness-runtime` is the only npm package a user installs.** Every internal app
+(logging, jev-judge, contracts, relay, skills, todo-bd-sync, ...) lives in
+`packages/<name>/`, is compiled into `packages/<name>/dist/` and ships inside that one
+tarball. A user never runs `npm install @pi-harness/<anything>`.
+
+- A runtime **value** import may only point at a built artifact
+  (`../packages/<name>/dist/...`). A `packages/<name>/src/<file>.js` specifier only
+  exists when somebody compiled a package in place and is never valid in shipped code.
+- A package manifest points at the built output (`main`/`exports` -> `./dist/...`).
+  The exception is the vendored `packages/telegram` app: it ships compiled JavaScript
+  upstream, so its entry point stays in `src/` and the files are committed.
+- Compiled JavaScript never lives next to a TypeScript source: Bun resolves the
+  literal `.js` file first, so a stale artifact silently shadows the current source.
+- `npm run build` (`scripts/build-packages.ts`) builds every package and fails when a
+  published entry point is missing. `npm run build:verify:pack` proves the npm
+  tarball contains every runtime import target. Both run in CI and before a publish.
+
 ## Centralized Application Logging
 
 All application logs can be shipped to the **unified webhook server** (ingest path),
@@ -653,12 +672,18 @@ which is the only component that writes to **Cloudflare R2** (durable archive). 
 pipeline lives in `packages/logging` (`@pi-harness/logging`); the harness uses the
 process-wide singleton from it.
 
-**Client side** (first success wins, the rest are skipped - a fallback chain, never
-a broadcast):
+**Client side** (first success wins, the rest are skipped - a fallback chain by
+default, never a broadcast):
 
 ```text
 producer -> classify -> redact -> sample -> buffer -> webhook -> local spool (~/.pi-harness-runtime/logs/spool)
 ```
+
+`PI_LOG_DELIVERY=fanout` switches to **broadcast** semantics: every configured
+transport receives every batch, each transport tracks its own success, and the batch
+is spooled only when *every* transport failed. Fallback stays the default because it
+never stores the same batch twice; fanout is the explicit opt-in for "the archive and
+the live path must both have it".
 
 **Server side** (durable hand-off, then an independent upload):
 
@@ -689,6 +714,7 @@ for a user who explicitly asked for more - it never widens the event allowlist.
 | Variable | Meaning | Default |
 |----------|---------|---------|
 | `PI_LOG_SINK` | `off` \| `auto` \| `r2` \| `webhook` \| `r2+webhook` | `auto` |
+| `PI_LOG_DELIVERY` | `fallback` (first transport wins) \| `fanout` (every transport gets the batch) | `fallback` |
 | `PI_LOG_LEVEL` | Minimum level that is shipped | `info` |
 | `PI_LOG_SAMPLE_RATE` | Share of `debug` records kept (0..1) | `0.1` |
 | `PI_LOG_RATE_LIMIT` | Max records per source+event per minute | `60` |
@@ -727,7 +753,23 @@ R2 credentials are read from the key files `r2-bucket-name.txt`, `r2-endpoint.tx
 |-------|--------|---------|
 | `/api/logs` | POST | Accept a batch. `202` only after the durable write, `503` when the endpoint is not configured or the queue is unavailable (the client keeps its spool). |
 | `/api/logs/query` | POST | Read-only, tenant-scoped metadata query (installation, session, time range, level, source, event). Bounded and paginated; never returns message text. |
+| `/api/logs/incidents` | POST | Read-only, tenant-scoped query of the derived incidents (severity, source, event, time range). Bounded. |
 | `/api/logs/health` | GET | Queue depth, oldest pending age, failure count, last error. |
+
+**Incidents** (server side, versioned):
+
+A log record is a moment, an incident is a recurring problem. The server derives
+the incidents from the records it accepts:
+
+- The schema is versioned (`schemaVersion: 1`). The collection is `log_incidents_v1`,
+  so a schema change means a new collection and a reader always knows the shape.
+- The `fingerprint` is stable: the same failure produces the same fingerprint even
+  when the message carries a changing timestamp, id, path or number.
+- The `tenant_id` is **server derived** from the ingest credential, never from the
+  request body, and it is the filter of every query.
+- The durable source of truth is plain NDJSON
+  (`~/.pi-harness-runtime/logs/incidents/<tenant>/incidents-<day>.ndjson`); Qdrant
+  holds the searchable view (`IncidentQdrantWriter`).
 
 **Ingest credentials** (server side):
 

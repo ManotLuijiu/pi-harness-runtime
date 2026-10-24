@@ -21,9 +21,9 @@ import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } fr
 import { join } from "node:path";
 import { homedir } from "os";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { createRelayServer } from "../packages/relay/src/server";
-import { resolveRelayEndpoint } from "../packages/relay/src/relay-endpoint";
-import { generateMessageId } from "../packages/relay/src/types";
+import { createRelayServer } from "../packages/relay/dist/server.js";
+import { resolveRelayEndpoint } from "../packages/relay/dist/relay-endpoint.js";
+import { generateMessageId } from "../packages/relay/dist/types.js";
 import type { CallbackPayload } from "../packages/relay/src/types";
 import type { RelayServerOptions } from "../packages/relay/src/server";
 // One implementation of the Telegram allow-list (env var, key file, legacy
@@ -33,6 +33,7 @@ import { getAllowedUserIds, isAuthorizedTelegramSender } from "../harness/telegr
 // /api/logs, the server queues them durably and a worker uploads them to
 // Cloudflare R2.
 import {
+	IncidentStore,
 	LogCredentialStore,
 	LogIndexStore,
 	LogIngestService,
@@ -40,7 +41,7 @@ import {
 	LogOutboxWorker,
 	createLogHttpHandler,
 	serverObjectKey,
-} from "../packages/logging/src/server/index";
+} from "../packages/logging/dist/server/index.js";
 import type { OutboxEntry } from "../packages/logging/src/server/outbox";
 import { loadR2Config, R2Client } from "./r2-storage";
 
@@ -92,6 +93,8 @@ const LOG_INGEST_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harnes
 const LOG_OUTBOX_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "outbox");
 /** Metadata index used by the query endpoint. */
 const LOG_INDEX_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "index");
+/** Durable storage of the derived incidents, one file per tenant and day. */
+const LOG_INCIDENT_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "incidents");
 /** Largest accepted ingest body (2 MB). A batch is NDJSON, so this is generous. */
 const LOG_INGEST_MAX_BYTES = 2 * 1024 * 1024;
 /** Largest accepted query body (64 KB is plenty for a filter object). */
@@ -107,10 +110,14 @@ const LOG_QUERY_MAX_BYTES = 64 * 1024;
 const logCredentials = LogCredentialStore.load();
 const logOutbox = new LogOutbox({ dir: LOG_OUTBOX_DIR });
 const logIndex = new LogIndexStore({ dir: LOG_INDEX_DIR });
+const logIncidents = new IncidentStore({ dir: LOG_INCIDENT_DIR });
 const logService = new LogIngestService({
   credentials: logCredentials,
   outbox: logOutbox,
   index: logIndex,
+  // The derived incidents: a versioned, tenant scoped view of what is
+  // actually going wrong.
+  incidents: logIncidents,
 });
 /** The HTTP surface of the log service (ingest, query, diagnostics). */
 const logHttpHandler = createLogHttpHandler({
