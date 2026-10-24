@@ -15,9 +15,46 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 
+/**
+ * The file system calls the manager needs.
+ *
+ * The dependency is injected so that a test never has to replace `node:fs`
+ * for the whole process: a module mock is global and would break every test
+ * file that runs later.
+ */
+export interface WorktreeFileSystem {
+	existsSync(path: string): boolean;
+	mkdirSync(path: string, options: { recursive: true }): string | undefined;
+	writeFileSync(path: string, data: string, options: { encoding: "utf-8" }): void;
+	readFileSync(path: string, encoding: "utf-8"): string;
+}
+
+/** The options the command runner receives. */
+export interface WorktreeExecOptions {
+	cwd: string;
+	encoding: "utf-8";
+	stdio: ["pipe", "pipe", "pipe"];
+}
+
+/** The command runner the manager needs (Git). */
+export type WorktreeCommandRunner = (command: string, options: WorktreeExecOptions) => string;
+
+/** Run a command and return its output. */
+function runCommand(command: string, options: WorktreeExecOptions): string {
+	try {
+		return execSync(command, options);
+	} catch (error) {
+		throw error instanceof Error ? error : new Error(String(error));
+	}
+}
+
 export interface WorktreeOptions {
 	rootDir: string;
 	baseBranch?: string;
+	/** The file system to use; the real one by default. */
+	fs?: WorktreeFileSystem;
+	/** The command runner to use; `execSync` by default. */
+	exec?: WorktreeCommandRunner;
 }
 
 export interface CreateWorktreeOptions {
@@ -39,11 +76,15 @@ export class WorktreeManager {
 	private readonly rootDir: string;
 	private readonly baseBranch: string;
 	private readonly metaPath: string;
+	private readonly fs: WorktreeFileSystem;
+	private readonly exec: WorktreeCommandRunner;
 
 	constructor(options: WorktreeOptions) {
 		this.rootDir = options.rootDir;
 		this.baseBranch = options.baseBranch ?? "main";
 		this.metaPath = join(this.rootDir, ".worktrees.json");
+		this.fs = options.fs ?? { existsSync, mkdirSync, writeFileSync, readFileSync };
+		this.exec = options.exec ?? runCommand;
 	}
 
 	/**
@@ -55,7 +96,7 @@ export class WorktreeManager {
 		const path = join(this.rootDir, "worktrees", name);
 
 		// Ensure directory exists
-		mkdirSync(dirname(path), { recursive: true });
+		this.fs.mkdirSync(dirname(path), { recursive: true });
 
 		// Create git worktree
 		const startPoint = options.startPoint ?? this.baseBranch;
@@ -88,12 +129,12 @@ export class WorktreeManager {
 	 * List all worktrees
 	 */
 	async list(): Promise<WorktreeInfo[]> {
-		if (!existsSync(this.metaPath)) {
+		if (!this.fs.existsSync(this.metaPath)) {
 			return [];
 		}
 
 		try {
-			const content = readFileSync(this.metaPath, "utf-8");
+			const content = this.fs.readFileSync(this.metaPath, "utf-8");
 			return JSON.parse(content) as WorktreeInfo[];
 		} catch {
 			return [];
@@ -241,7 +282,7 @@ export class WorktreeManager {
 	private execGit(args: string[], options?: { cwd?: string }): string {
 		try {
 			const cwd = options?.cwd ?? this.rootDir;
-			return execSync(["git", ...args].join(" "), {
+			return this.exec(["git", ...args].join(" "), {
 				cwd,
 				encoding: "utf-8",
 				stdio: ["pipe", "pipe", "pipe"],
@@ -270,19 +311,19 @@ export class WorktreeManager {
 	 * Save all worktrees
 	 */
 	private saveAllWorktrees(worktrees: WorktreeInfo[]): void {
-		mkdirSync(dirname(this.metaPath), { recursive: true });
-		writeFileSync(this.metaPath, JSON.stringify(worktrees, null, 2), "utf-8");
+		this.fs.mkdirSync(dirname(this.metaPath), { recursive: true });
+		this.fs.writeFileSync(this.metaPath, JSON.stringify(worktrees, null, 2), { encoding: "utf-8" });
 	}
 
 	/**
 	 * List worktrees synchronously
 	 */
 	private listSync(): WorktreeInfo[] {
-		if (!existsSync(this.metaPath)) {
+		if (!this.fs.existsSync(this.metaPath)) {
 			return [];
 		}
 		try {
-			return JSON.parse(readFileSync(this.metaPath, "utf-8")) as WorktreeInfo[];
+			return JSON.parse(this.fs.readFileSync(this.metaPath, "utf-8")) as WorktreeInfo[];
 		} catch {
 			return [];
 		}

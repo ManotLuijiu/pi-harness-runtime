@@ -12,14 +12,27 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
+/** Run a command and return its output. */
+function runCommand(command, options) {
+    try {
+        return execSync(command, options);
+    }
+    catch (error) {
+        throw error instanceof Error ? error : new Error(String(error));
+    }
+}
 export class WorktreeManager {
     rootDir;
     baseBranch;
     metaPath;
+    fs;
+    exec;
     constructor(options) {
         this.rootDir = options.rootDir;
         this.baseBranch = options.baseBranch ?? "main";
         this.metaPath = join(this.rootDir, ".worktrees.json");
+        this.fs = options.fs ?? { existsSync, mkdirSync, writeFileSync, readFileSync };
+        this.exec = options.exec ?? runCommand;
     }
     /**
      * Create a new worktree
@@ -29,7 +42,7 @@ export class WorktreeManager {
         const branch = options.branch ?? `worktree/${name}`;
         const path = join(this.rootDir, "worktrees", name);
         // Ensure directory exists
-        mkdirSync(dirname(path), { recursive: true });
+        this.fs.mkdirSync(dirname(path), { recursive: true });
         // Create git worktree
         const startPoint = options.startPoint ?? this.baseBranch;
         const worktreePath = this.execGit([
@@ -57,11 +70,11 @@ export class WorktreeManager {
      * List all worktrees
      */
     async list() {
-        if (!existsSync(this.metaPath)) {
+        if (!this.fs.existsSync(this.metaPath)) {
             return [];
         }
         try {
-            const content = readFileSync(this.metaPath, "utf-8");
+            const content = this.fs.readFileSync(this.metaPath, "utf-8");
             return JSON.parse(content);
         }
         catch {
@@ -189,7 +202,7 @@ export class WorktreeManager {
     execGit(args, options) {
         try {
             const cwd = options?.cwd ?? this.rootDir;
-            return execSync(["git", ...args].join(" "), {
+            return this.exec(["git", ...args].join(" "), {
                 cwd,
                 encoding: "utf-8",
                 stdio: ["pipe", "pipe", "pipe"],
@@ -218,18 +231,18 @@ export class WorktreeManager {
      * Save all worktrees
      */
     saveAllWorktrees(worktrees) {
-        mkdirSync(dirname(this.metaPath), { recursive: true });
-        writeFileSync(this.metaPath, JSON.stringify(worktrees, null, 2), "utf-8");
+        this.fs.mkdirSync(dirname(this.metaPath), { recursive: true });
+        this.fs.writeFileSync(this.metaPath, JSON.stringify(worktrees, null, 2), { encoding: "utf-8" });
     }
     /**
      * List worktrees synchronously
      */
     listSync() {
-        if (!existsSync(this.metaPath)) {
+        if (!this.fs.existsSync(this.metaPath)) {
             return [];
         }
         try {
-            return JSON.parse(readFileSync(this.metaPath, "utf-8"));
+            return JSON.parse(this.fs.readFileSync(this.metaPath, "utf-8"));
         }
         catch {
             return [];
