@@ -30,8 +30,18 @@ import type { RelayServerOptions } from "../packages/relay/src/server";
 // chat id) - the harness and this server must agree on who may write in.
 import { getAllowedUserIds, isAuthorizedTelegramSender } from "../harness/telegram-auth";
 // Centralized application logs: the harness ships redacted batches to
-// /api/logs, the server persists them and relays them to Cloudflare R2.
-import { redactValue } from "../packages/logging/src/redact";
+// /api/logs, the server queues them durably and a worker uploads them to
+// Cloudflare R2.
+import {
+	LogCredentialStore,
+	LogIndexStore,
+	LogIngestService,
+	LogOutbox,
+	LogOutboxWorker,
+	createLogHttpHandler,
+	serverObjectKey,
+} from "../packages/logging/src/server/index";
+import type { OutboxEntry } from "../packages/logging/src/server/outbox";
 import { loadR2Config, R2Client } from "./r2-storage";
 
 // --- Configuration ---
@@ -78,8 +88,37 @@ const CALLBACK_QUEUE_FILE = join(process.env.HOME || homedir() || "/tmp", ".pi-h
 
 // --- Log ingest (centralized application logs) ---
 const LOG_INGEST_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "inbound");
+/** Durable queue of accepted batches (server side outbox). */
+const LOG_OUTBOX_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "outbox");
+/** Metadata index used by the query endpoint. */
+const LOG_INDEX_DIR = join(process.env.HOME || homedir() || "/tmp", ".pi-harness-runtime", "logs", "index");
 /** Largest accepted ingest body (2 MB). A batch is NDJSON, so this is generous. */
 const LOG_INGEST_MAX_BYTES = 2 * 1024 * 1024;
+/** Largest accepted query body (64 KB is plenty for a filter object). */
+const LOG_QUERY_MAX_BYTES = 64 * 1024;
+
+/**
+ * The ingest pipeline.
+ *
+ * The credential store decides whether the endpoint exists at all: without a
+ * credential the endpoint refuses every write (fail closed) instead of
+ * accepting anonymous batches.
+ */
+const logCredentials = LogCredentialStore.load();
+const logOutbox = new LogOutbox({ dir: LOG_OUTBOX_DIR });
+const logIndex = new LogIndexStore({ dir: LOG_INDEX_DIR });
+const logService = new LogIngestService({
+  credentials: logCredentials,
+  outbox: logOutbox,
+  index: logIndex,
+});
+/** The HTTP surface of the log service (ingest, query, diagnostics). */
+const logHttpHandler = createLogHttpHandler({
+  service: logService,
+  outbox: logOutbox,
+  index: logIndex,
+  localCopyDir: LOG_INGEST_DIR,
+});
 
 /**
  * Persist a callback to disk when no WebSocket client is connected.
@@ -96,93 +135,40 @@ function queueCallback(payload: CallbackPayload): void {
 }
 
 /**
- * Persist an inbound log batch and relay it to Cloudflare R2.
+ * Read a request body with a hard size limit.
  *
- * The harness already redacts what it sends; the server re-redacts it
- * (defence in depth) and writes NDJSON next to the other harness logs. The
- * R2 relay is best effort: a failed upload never fails the request, because
- * the batch is already on disk.
+ * Returns null when the body was too large (the response is already sent).
  */
-async function handleLogIngest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const ingestToken = process.env.LOG_INGEST_TOKEN;
-  if (ingestToken) {
-    const auth = req.headers.authorization;
-    if (auth !== `Bearer ${ingestToken}`) {
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "forbidden" }));
-      return;
-    }
-  }
-
+async function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > LOG_INGEST_MAX_BYTES) {
-      res.writeHead(413, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "payload too large" }));
-      return;
+    if (size > maxBytes) {
+      return null;
     }
     chunks.push(chunk as Buffer);
   }
-
-  let payload: { batchId?: string; records?: unknown[] };
-  try {
-    payload = JSON.parse(Buffer.concat(chunks).toString());
-  } catch {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "invalid json" }));
-    return;
-  }
-
-  const incoming = Array.isArray(payload.records) ? payload.records : [];
-  const records = incoming.map((record) => sanitizeLogRecord(record));
-
-  // Persist locally first - the R2 relay is best effort.
-  try {
-    if (!existsSync(LOG_INGEST_DIR)) mkdirSync(LOG_INGEST_DIR, { recursive: true });
-    const day = new Date().toISOString().slice(0, 10);
-    const file = join(LOG_INGEST_DIR, `logs-${day}.ndjson`);
-    appendFileSync(file, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
-  } catch (err) {
-    console.error("[LogIngest] Failed to persist batch:", err);
-  }
-
-  let relayed = false;
-  try {
-    const r2Config = loadR2Config();
-    if (r2Config) {
-      const client = new R2Client(r2Config);
-      const now = new Date();
-      const stamp = `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}`;
-      await client.upload({
-        key: `logs/inbound/${stamp}/${payload.batchId ?? Date.now()}.ndjson`,
-        body: records.map((record) => JSON.stringify(record)).join("\n") + "\n",
-        contentType: "application/x-ndjson",
-      });
-      relayed = true;
-    }
-  } catch (err) {
-    console.error("[LogIngest] Failed to relay batch to R2:", err);
-  }
-
-  res.writeHead(202, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ accepted: records.length, relayed }));
+  return Buffer.concat(chunks);
 }
 
-/** Re-redact one inbound record. Unknown shapes are kept as a redacted value. */
-function sanitizeLogRecord(record: unknown): Record<string, unknown> {
-  if (!record || typeof record !== "object") {
-    return { value: redactValue(record) };
-  }
-  const safe: Record<string, unknown> = { ...(record as Record<string, unknown>) };
-  if (typeof safe.message === "string") {
-    safe.message = redactValue(safe.message);
-  }
-  if (safe.fields && typeof safe.fields === "object") {
-    safe.fields = redactValue(safe.fields);
-  }
-  return safe;
+/**
+ * Upload one queued batch to R2.
+ *
+ * The worker calls this in the background: an R2 outage grows the queue
+ * instead of blocking the ingest endpoint.
+ */
+async function uploadQueuedBatch(entry: OutboxEntry): Promise<void> {
+  const r2Config = loadR2Config();
+  if (!r2Config) throw new Error("R2 is not configured");
+  const client = new R2Client(r2Config);
+  const key = serverObjectKey({
+    tenantId: entry.batch.tenantId,
+    batchId: entry.batch.batchId,
+    sentAt: entry.batch.sentAt,
+  });
+  const body = entry.batch.records.map((record) => JSON.stringify(record)).join("\n") + "\n";
+  await client.upload({ key, body, contentType: "application/x-ndjson" });
 }
 
 interface JobCommand {
@@ -649,9 +635,13 @@ async function main() {
         acknowledgeCommands();
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true }));
-      } else if (url.pathname === "/api/logs" && req.method === "POST") {
-        // Centralized application logs from the harness
-        await handleLogIngest(req, res);
+      } else if (
+        url.pathname === "/api/logs" ||
+        url.pathname === "/api/logs/query" ||
+        url.pathname === "/api/logs/health"
+      ) {
+        // Centralized application logs: ingest, query and diagnostics.
+        await logHttpHandler(req, res);
       } else if (url.pathname === "/health") {
         // Keep the plain-text contract that external monitors check for "OK".
         res.writeHead(200, { "Content-Type": "text/plain" });
@@ -684,9 +674,24 @@ async function main() {
     if (config.line) console.log(`  LINE:     https://webhook.bunchee.online/line`);
   });
 
+  // The outbox worker uploads the accepted batches to R2 in the background:
+  // an R2 outage grows the queue instead of blocking the ingest endpoint.
+  const outboxWorker = new LogOutboxWorker({ outbox: logOutbox, upload: uploadQueuedBatch });
+  outboxWorker.start();
+  if (!logService.configured) {
+    console.error(
+      "[LogIngest] No ingest credential configured (LOG_INGEST_TOKEN, keys/log-ingest-token.txt or keys/log-ingest-credentials.json) - /api/logs will refuse every write.",
+    );
+  } else {
+    console.log(
+      `[LogIngest] Ingest enabled - ${logOutbox.stats().pending} batch(es) queued, outbox at ${LOG_OUTBOX_DIR}`,
+    );
+  }
+
   // Graceful shutdown
   const shutdown = async () => {
     console.log("\nShutting down...");
+    await outboxWorker.stop();
     await relayServer.stop();
     server.close();
     process.exit(0);

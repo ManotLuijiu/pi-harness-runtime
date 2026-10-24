@@ -12,7 +12,7 @@
 
 // --- Types -----------------------------------------------------------------
 
-export { LOG_LEVEL_SEVERITY } from "./types.js";
+export { LOG_LEVEL_SEVERITY, LOG_SCHEMA_VERSION } from "./types.js";
 export type {
 	FlushStats,
 	LogBatch,
@@ -76,6 +76,50 @@ export {
 	shutdownCentralLogging,
 } from "./singleton.js";
 export type { InitCentralLoggingOptions } from "./singleton.js";
+
+// --- Installation identity --------------------------------------------------
+
+export {
+	INSTALLATION_ID_FILE,
+	defaultInstallationIdPath,
+	isValidInstallationId,
+	resolveInstallationId,
+} from "./installation.js";
+export type { ResolveInstallationIdOptions } from "./installation.js";
+
+// --- Classification (what may leave the machine) ----------------------------
+
+export {
+	DEFAULT_CLASSIFICATION_POLICY,
+	DEFAULT_LOCAL_EVENTS,
+	DEFAULT_REMOTE_EVENTS,
+	classifyRecord,
+	filterRemoteRecords,
+	isSanitizedMessage,
+	prepareRemoteRecord,
+} from "./classification.js";
+export type { ClassificationPolicy } from "./classification.js";
+
+export { LOCAL_ONLY_FIELD_KEYS, isLocalOnlyFieldKey } from "./sensitive-keys.js";
+
+// --- Ingest contract (shared by client and server) -------------------------
+
+export {
+	DEFAULT_BATCH_LIMITS,
+	LOG_LEVELS,
+	sanitizeRecord,
+	validateBatch,
+} from "./ingest/schema.js";
+export type {
+	BatchValidationError,
+	BatchValidationLimits,
+	BatchValidationResult,
+	SanitizeRecordResult,
+} from "./ingest/schema.js";
+
+// --- Server side ------------------------------------------------------------
+
+export * from "./server/index.js";
 
 // --- Configuration ---------------------------------------------------------
 

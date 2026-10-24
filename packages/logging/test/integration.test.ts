@@ -10,6 +10,7 @@ import {
 	shutdownCentralLogging,
 } from "../src/singleton.js";
 import type { LogBatch } from "../src/types.js";
+import { LOG_SCHEMA_VERSION } from "../src/types.js";
 
 const cleanup: string[] = [];
 
@@ -49,9 +50,11 @@ describe("webhook transport", () => {
 		try {
 			const transport = createWebhookTransport({ url: collector.url });
 			await transport.send({
+				schemaVersion: LOG_SCHEMA_VERSION,
 				batchId: "batch-1",
 				app: "test",
-				host: "localhost",
+				installationId: "11111111-2222-3333-4444-555555555555",
+				hostLabel: "localhost",
 				sentAt: new Date().toISOString(),
 				records: [
 					{
@@ -83,9 +86,11 @@ describe("webhook transport", () => {
 			const transport = createWebhookTransport({ url: `http://127.0.0.1:${port}/api/logs` });
 			await expect(
 				transport.send({
+					schemaVersion: LOG_SCHEMA_VERSION,
 					batchId: "batch-2",
 					app: "test",
-					host: "localhost",
+					installationId: "11111111-2222-3333-4444-555555555555",
+					hostLabel: "localhost",
 					sentAt: new Date().toISOString(),
 					records: [
 						{
@@ -123,11 +128,11 @@ describe("initCentralLogging", () => {
 			expect(config?.enabled).toBe(true);
 			expect(config?.transports).toHaveLength(1);
 
-			getCentralShipper()?.info("unit", "central", "hello");
+			getCentralShipper()?.info("unit", "service.central", "hello");
 			await getCentralShipper()?.flush();
 
 			expect(collector.batches).toHaveLength(1);
-			expect(collector.batches[0].records[0].event).toBe("central");
+			expect(collector.batches[0].records[0].event).toBe("service.central");
 		} finally {
 			collector.server.close();
 		}

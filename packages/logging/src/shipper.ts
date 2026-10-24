@@ -12,16 +12,39 @@
 
 import { hostname } from "node:os";
 import { LogBuffer, type LogBufferOptions } from "./buffer.js";
+import {
+	DEFAULT_CLASSIFICATION_POLICY,
+	prepareRemoteRecord,
+	type ClassificationPolicy,
+} from "./classification.js";
 import { redactFields, redactText, type RedactionOptions } from "./redact.js";
 import { LogSampler, type SamplingPolicy } from "./sampler.js";
 import { LogSpool } from "./spool.js";
-import type { FlushStats, LogBatch, LogErrorInfo, LogInput, LogLevel, LogRecord, LogTransport } from "./types.js";
+import {
+	LOG_SCHEMA_VERSION,
+	type FlushStats,
+	type LogBatch,
+	type LogErrorInfo,
+	type LogInput,
+	type LogLevel,
+	type LogRecord,
+	type LogTransport,
+} from "./types.js";
 
 export interface LogShipperOptions {
 	/** Application name reported with every batch. */
 	app?: string;
-	/** Host name reported with every batch. */
-	host?: string;
+	/** Version of the emitting application. */
+	appVersion?: string;
+	/** Stable id of this installation. */
+	installationId?: string;
+	/**
+	 * Optional display label for the machine (never an identity).
+	 * Defaults to the hostname, which is display metadata only.
+	 */
+	hostLabel?: string;
+	/** Opaque session id attached to the batch when the records agree. */
+	sessionId?: string;
 	/** Transports in priority order. */
 	transports?: LogTransport[];
 	/** Local spool used when every transport fails. */
@@ -32,6 +55,8 @@ export interface LogShipperOptions {
 	sampling?: Partial<SamplingPolicy>;
 	/** Redaction limits. */
 	redaction?: RedactionOptions;
+	/** What may leave the machine. */
+	classification?: ClassificationPolicy;
 	/** Interval for the automatic flush timer. Default 15000 ms. */
 	flushIntervalMs?: number;
 	/** Clock injection (tests). */
@@ -56,12 +81,16 @@ function toErrorInfo(error: unknown): LogErrorInfo {
 
 export class LogShipper {
 	private readonly app: string;
-	private readonly host: string;
+	private readonly appVersion: string | undefined;
+	private readonly installationId: string;
+	private readonly hostLabel: string | undefined;
+	private readonly sessionId: string | undefined;
 	private readonly transports: LogTransport[];
 	private readonly spool: LogSpool | undefined;
 	private readonly buffer: LogBuffer;
 	private readonly sampler: LogSampler;
 	private readonly redaction: RedactionOptions;
+	private readonly classification: ClassificationPolicy;
 	private readonly flushIntervalMs: number;
 	private readonly now: () => number;
 	private readonly createBatchId: () => string;
@@ -72,17 +101,22 @@ export class LogShipper {
 		spooled: 0,
 		dropped: 0,
 		sampled: 0,
+		localOnly: 0,
 		errors: {},
 	};
 
 	constructor(options: LogShipperOptions = {}) {
 		this.app = options.app ?? "pi-harness";
-		this.host = options.host ?? hostname();
+		this.appVersion = options.appVersion;
+		this.installationId = options.installationId ?? "unknown";
+		this.hostLabel = options.hostLabel ?? hostname();
+		this.sessionId = options.sessionId;
 		this.transports = options.transports ?? [];
 		this.spool = options.spool;
 		this.buffer = new LogBuffer(options.buffer);
 		this.sampler = new LogSampler(options.sampling);
 		this.redaction = options.redaction ?? {};
+		this.classification = options.classification ?? DEFAULT_CLASSIFICATION_POLICY;
 		this.flushIntervalMs = options.flushIntervalMs ?? 15_000;
 		this.now = options.now ?? (() => Date.now());
 		this.createBatchId = options.createBatchId ?? defaultBatchId;
@@ -96,7 +130,13 @@ export class LogShipper {
 				this.stats.sampled++;
 				return;
 			}
-			this.buffer.push(record);
+			// What must stay on the machine never enters the shipping path.
+			const remote = prepareRemoteRecord(record, this.classification);
+			if (!remote) {
+				this.stats.localOnly++;
+				return;
+			}
+			this.buffer.push(remote);
 			if (this.buffer.size >= this.buffer.batchSize) {
 				void this.flush();
 			}
@@ -211,13 +251,19 @@ export class LogShipper {
 	}
 
 	private buildBatch(records: LogRecord[]): LogBatch {
-		return {
+		const sessionId = this.sessionId ?? records.find((record) => record.sessionId)?.sessionId;
+		const batch: LogBatch = {
+			schemaVersion: LOG_SCHEMA_VERSION,
 			batchId: this.createBatchId(),
 			app: this.app,
-			host: this.host,
+			installationId: this.installationId,
 			sentAt: new Date(this.now()).toISOString(),
 			records,
 		};
+		if (this.appVersion) batch.appVersion = this.appVersion;
+		if (this.hostLabel) batch.hostLabel = this.hostLabel;
+		if (sessionId) batch.sessionId = sessionId;
+		return batch;
 	}
 
 	private async doFlush(): Promise<void> {
