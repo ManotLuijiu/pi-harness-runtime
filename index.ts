@@ -296,6 +296,240 @@ function waitBelongsToRequest(requestId: string | undefined): boolean {
 	return active === requestId;
 }
 
+// --- tooling-preference: the Biome proposal ---------------------------------
+//
+// The proposal ("use Biome.js instead of ESLint and Prettier") is a decision
+// of its own. It never travels through the task-approval path: a "No" here
+// must not pause the work and a "Yes" must not resume a pending question.
+
+/** The proposals of this session - the first answer wins. */
+interface ToolingProposalRequest {
+	requestId: string;
+	workspaceRoot: string;
+	userKey: string;
+}
+
+interface ToolingProposalRegistry {
+	register(request: ToolingProposalRequest): boolean;
+	claim(
+		requestId: string,
+		choice: "yes" | "no",
+		channel?: string,
+	): {
+		request: ToolingProposalRequest;
+		resolution: {
+			choice: "yes" | "no";
+			preference: "prefer_biome" | "use_project_tools";
+			channel?: string;
+		};
+	} | null;
+}
+
+interface ToolingProposalStore {
+	read(
+		userKey: string,
+		workspaceRoot: string,
+	): { decision?: "prefer_biome" | "use_project_tools"; askedAt?: string } | undefined;
+	markAsked(userKey: string, workspaceRoot: string, requestId: string): void;
+	recordDecision(
+		userKey: string,
+		workspaceRoot: string,
+		decision: "prefer_biome" | "use_project_tools",
+		requestId: string,
+		channel?: string,
+	): void;
+}
+
+let _toolingRegistry: ToolingProposalRegistry | null = null;
+let _toolingStore: ToolingProposalStore | null = null;
+/** The identity of the person the notifications reach (never logged). */
+let _toolingIdentity = "";
+/**
+ * The identity of the person the notifications reach.
+ *
+ * It is read from the channel key files, so a LINE-only setup is recognized
+ * too. The value is hashed before it is stored and never reaches a log.
+ */
+function readToolingIdentity(): string {
+	if (_toolingIdentity) return _toolingIdentity;
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	if (!home) return "";
+	const keysDir = `${home}/.pi-harness-runtime/keys`;
+	for (const name of ["telegram-chat-id.txt", "line-user-id.txt"]) {
+		try {
+			const value = readFileSync(`${keysDir}/${name}`, "utf8").trim();
+			if (value) {
+				_toolingIdentity = value;
+				return value;
+			}
+		} catch {
+			// The key file is optional - the channel may not be configured.
+		}
+	}
+	return "";
+}
+/** The running extension API - the relay path has no `pi` of its own. */
+let _extensionApi: ExtensionAPI | null = null;
+/** How long an unanswered proposal stays quiet before it is offered again. */
+const TOOLING_PROPOSAL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Load the tooling preference package and watch for the session start.
+ *
+ * The proposal is offered once per workspace: the answer is stored, and a
+ * workspace that already uses Biome is never asked at all.
+ */
+async function initToolingPreference(pi: ExtensionAPI): Promise<void> {
+	try {
+		const mod = await import("./packages/tooling-preference/dist/index.js");
+		_toolingRegistry = new mod.ToolingRequestRegistry();
+		_toolingStore = new mod.ToolingPreferenceStore(
+			mod.ToolingPreferenceStore.defaultFilePath(),
+		);
+	} catch (error) {
+		logToFile("[ToolingPreference]", `package unavailable: ${oneLineError(error)}`);
+		return;
+	}
+
+	pi.on("session_start", () => {
+		void offerToolingPreference();
+	});
+}
+
+/**
+ * Offer the tooling proposal for the workspace of this session.
+ *
+ * The proposal never blocks: it is a message with two buttons, and the work
+ * continues while the user decides.
+ */
+async function offerToolingPreference(): Promise<void> {
+	const registry = _toolingRegistry;
+	const store = _toolingStore;
+	const center = _nc?.center as NcCenter | undefined;
+	if (!registry || !store || !center?.notifyWithButtons) return;
+
+	let workspaceRoot: string;
+	try {
+		workspaceRoot = realpathSync(process.cwd());
+	} catch {
+		return;
+	}
+
+	try {
+		const mod = await import("./packages/tooling-preference/dist/index.js");
+		const userKey = mod.buildToolingUserKey(readToolingIdentity());
+		const record = store.read(userKey, workspaceRoot);
+		if (!mod.shouldAskAgain(record, TOOLING_PROPOSAL_COOLDOWN_MS)) return;
+
+		const context = mod.detectToolingContext(workspaceRoot);
+		const eligibility = mod.evaluateBiomeProposalEligibility(context);
+		if (!eligibility.eligible) {
+			logToFile("[ToolingPreference]", `no proposal: ${eligibility.reason}`);
+			return;
+		}
+
+		const requestId = mod.buildToolingRequestId(userKey, workspaceRoot);
+		if (!registry.register({ requestId, workspaceRoot, userKey })) return;
+
+		await center.notifyWithButtons(
+			"ToolingPreferenceProposal",
+			{
+				jobId: requestId,
+				questionId: requestId,
+				requirement: mod.buildToolingProposalMessage(context),
+				taskTitle: "Biome.js proposal",
+			},
+			mod.buildToolingButtons(requestId),
+			{ additionalDetails: { _actionPrompt: "Use Biome.js in this workspace?" } },
+		);
+		store.markAsked(userKey, workspaceRoot, requestId);
+		logToFile("[ToolingPreference]", `proposal sent (${requestId})`);
+	} catch (error) {
+		logToFile("[ToolingPreference]", `proposal failed: ${oneLineError(error)}`);
+	}
+}
+
+/**
+ * Apply the answer of the user to the tooling proposal.
+ *
+ * The first answer wins: a second click finds nothing and changes nothing.
+ */
+async function resolveToolingPreference(
+	targetId: string,
+	channel: "telegram" | "line",
+	pi: ExtensionAPI | null,
+): Promise<{ applied: boolean; reason: string }> {
+	const registry = _toolingRegistry;
+	const store = _toolingStore;
+	if (!registry || !store) {
+		return { applied: false, reason: "no proposal is open" };
+	}
+
+	let target: { choice: "yes" | "no"; requestId: string } | null = null;
+	try {
+		const mod = await import("./packages/tooling-preference/dist/index.js");
+		target = mod.parseToolingTarget(targetId);
+	} catch (error) {
+		logToFile("[ToolingPreference]", `package unavailable: ${oneLineError(error)}`);
+		return { applied: false, reason: "the proposal cannot be read" };
+	}
+	if (!target) {
+		return { applied: false, reason: "the button does not belong to a proposal" };
+	}
+
+	const claimed = registry.claim(target.requestId, target.choice, channel);
+	if (!claimed) {
+		return { applied: false, reason: "the proposal was already answered" };
+	}
+
+	store.recordDecision(
+		claimed.request.userKey,
+		claimed.request.workspaceRoot,
+		claimed.resolution.preference,
+		target.requestId,
+		channel,
+	);
+	logToFile(
+		"[ToolingPreference]",
+		`${channel} answered the proposal: ${claimed.resolution.preference}`,
+	);
+
+	if (claimed.resolution.choice === "yes" && pi) {
+		await startBiomeImplementation(claimed.request.workspaceRoot, channel, pi);
+	}
+	return {
+		applied: true,
+		reason:
+			claimed.resolution.choice === "yes"
+				? "Biome.js will be implemented"
+				: "the current tools stay",
+	};
+}
+
+/**
+ * Start the Biome implementation after a "Yes".
+ *
+ * The harness does not change the repository itself: the agent does the
+ * work, so the change stays reviewable in the session.
+ */
+async function startBiomeImplementation(
+	workspaceRoot: string,
+	channel: string,
+	pi: ExtensionAPI,
+): Promise<void> {
+	try {
+		const mod = await import("./packages/tooling-preference/dist/index.js");
+		const context = mod.detectToolingContext(workspaceRoot);
+		await pi.sendUserMessage(
+			mod.buildToolingImplementationPrompt(context, workspaceRoot),
+			{ deliverAs: "steer" },
+		);
+		logToFile("[ToolingPreference]", `agent asked to implement Biome (${channel})`);
+	} catch (error) {
+		logToFile("[ToolingPreference]", `steer failed: ${oneLineError(error)}`);
+	}
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
@@ -1656,6 +1890,10 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const lineAccessToken = hasLineCredentials ? readFileSync(lineTokenPath, "utf8").trim() : null;
 		const lineUserId = hasLineCredentials ? readFileSync(lineUserIdPath, "utf8").trim() : null;
 
+		// The identity of the person the notifications reach. It is hashed
+		// before it is stored and never reaches a log file.
+		_toolingIdentity = chatId || lineUserId || "";
+
 		if (!botToken || !chatId) {
 			logStartup("[pi-harness] Telegram: bot token or chat ID is empty — skipping");
 			const emptyFixes = keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]);
@@ -1782,6 +2020,21 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			}
 
 			switch (parsed.action) {
+				case CallbackActions.TOOLING_PREFERENCE: {
+					// The proposal is a decision of its own: it never resolves a
+					// pending question and it never pauses the work.
+					const result = await resolveToolingPreference(
+						parsed.targetId,
+						"telegram",
+						pi,
+					);
+					await acknowledge(
+						result.applied
+							? `Saved - ${result.reason}`
+							: `Stale button - ${result.reason}`,
+					);
+					break;
+				}
 				case CallbackActions.APPROVE: {
 					// The user clicked Continue. The request ID in the
 					// callback data is the canonical one, so the click
@@ -2268,7 +2521,21 @@ async function initRelayStream(): Promise<void> {
 				// A LINE postback is the same decision as a Telegram button
 				// click: one resolver, the same canonical request ID.
 				if (callback.type === "line_callback") {
-					applyChannelApproval(callback.action, callback.targetId, "line");
+					if (
+						callback.action === "biome" ||
+						callback.action.startsWith("biome_")
+					) {
+						// The tooling proposal is a decision of its own: it never
+						// resolves a pending question and it never pauses the
+						// work. The postback data may arrive split or as one
+						// string - both carry the choice and the request ID.
+						const raw = callback.action.startsWith("biome_")
+							? callback.action.slice("biome_".length)
+							: callback.targetId;
+						await resolveToolingPreference(raw, "line", _extensionApi);
+					} else {
+						applyChannelApproval(callback.action, callback.targetId, "line");
+					}
 				}
 
 				// Forward Telegram callbacks to the adapter
@@ -3621,6 +3888,9 @@ export default async function (pi: ExtensionAPI) {
 	const tracker = new UsageTracker();
 	const mirrorStore = new MirrorStore();
 	ensureHarnessDir();
+	// The relay path has no `pi` of its own - the extension API is kept
+	// here so every path can reach the agent.
+	_extensionApi = pi;
 
 	// --- central-logging: ship structured logs to R2 / the webhook server ---
 	// The pipeline is opt-in by configuration, never by code: without R2
@@ -3674,6 +3944,10 @@ export default async function (pi: ExtensionAPI) {
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
 	asyncInitPromises.push(initQdrant());
+
+	// --- tooling-preference: offer Biome.js instead of ESLint/Prettier ------
+	// The proposal is a decision of its own: it never pauses the work.
+	void initToolingPreference(pi);
 
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	// Collect promise so we can wait for initialization before showing startup notification

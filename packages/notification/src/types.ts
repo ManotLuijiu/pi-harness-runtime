@@ -20,6 +20,7 @@ export type NotificationEvent =
 	| "CodexSessionStarted"
 	| "CodexPlanDetected"
 	| "CodexReviewDetected"
+	| "ToolingPreferenceProposal"
 	| "AssistantResponse"
 	| "ToolSummary"
 	| "Error"

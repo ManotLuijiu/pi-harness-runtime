@@ -250,7 +250,13 @@ export class LineAdapter extends BaseChannelAdapter {
 			(typeof payload.questionId === "string" && payload.questionId) ||
 			(typeof payload.details?.questionId === "string" ? payload.details.questionId : "") ||
 			(typeof payload.details?.jobId === "string" ? payload.details.jobId : "");
-		const prompt = "Approve this request?";
+		// The prompt is the question the buttons answer. A message that is
+		// not an approval (the tooling proposal) brings its own wording.
+		const configuredPrompt =
+			typeof payload.details?._actionPrompt === "string"
+				? payload.details._actionPrompt.trim()
+				: "";
+		const prompt = configuredPrompt || "Approve this request?";
 		const templateText = requestId ? `${prompt}\nRequest: ${requestId}` : prompt;
 
 		const actions = buttons.slice(0, LINE_MAX_ACTIONS).map((button) => ({

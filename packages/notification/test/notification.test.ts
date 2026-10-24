@@ -11,44 +11,47 @@ const mockSend = vi.fn();
 const mockInitialize = vi.fn().mockResolvedValue(true);
 const mockIsConfigured = vi.fn().mockReturnValue(true);
 
+// The mocks are classes, not mock functions: the notification center checks
+// the adapter with "instanceof", and a mocked constructor makes that check
+// throw for every test file that is loaded after this one.
 vi.mock("../src/adapters/telegram-adapter.js", () => ({
-	TelegramAdapter: vi.fn().mockImplementation(() => ({
-		send: mockSend,
-		initialize: mockInitialize,
-		isConfigured: mockIsConfigured,
-		id: "telegram",
-		type: "telegram",
-	})),
+	TelegramAdapter: class {
+		id = "telegram";
+		type = "telegram";
+		send = mockSend;
+		initialize = mockInitialize;
+		isConfigured = mockIsConfigured;
+	},
 }));
 
 vi.mock("../src/adapters/ntfy-adapter.js", () => ({
-	NtfyAdapter: vi.fn().mockImplementation(() => ({
-		send: mockSend,
-		initialize: mockInitialize,
-		isConfigured: mockIsConfigured,
-		id: "ntfy",
-		type: "ntfy",
-	})),
+	NtfyAdapter: class {
+		id = "ntfy";
+		type = "ntfy";
+		send = mockSend;
+		initialize = mockInitialize;
+		isConfigured = mockIsConfigured;
+	},
 }));
 
 vi.mock("../src/adapters/email-adapter.js", () => ({
-	EmailAdapter: vi.fn().mockImplementation(() => ({
-		send: mockSend,
-		initialize: mockInitialize,
-		isConfigured: mockIsConfigured,
-		id: "email",
-		type: "email",
-	})),
+	EmailAdapter: class {
+		id = "email";
+		type = "email";
+		send = mockSend;
+		initialize = mockInitialize;
+		isConfigured = mockIsConfigured;
+	},
 }));
 
 vi.mock("../src/adapters/webhook-adapter.js", () => ({
-	WebhookAdapter: vi.fn().mockImplementation(() => ({
-		send: mockSend,
-		initialize: mockInitialize,
-		isConfigured: mockIsConfigured,
-		id: "webhook",
-		type: "webhook",
-	})),
+	WebhookAdapter: class {
+		id = "webhook";
+		type = "webhook";
+		send = mockSend;
+		initialize = mockInitialize;
+		isConfigured = mockIsConfigured;
+	},
 }));
 
 describe("NotificationCenter", () => {
