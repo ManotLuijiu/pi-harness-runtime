@@ -281,6 +281,21 @@ function applyChannelApproval(
 	return true;
 }
 
+/**
+ * Does the shared wait state still belong to the captured request?
+ *
+ * A newer question can become active while Jev is evaluating the captured
+ * one. Clearing the shared wait state then would stop the Jev checks of
+ * the new question, so the state is only cleared when it still belongs to
+ * the captured request.
+ */
+function waitBelongsToRequest(requestId: string | undefined): boolean {
+	if (!requestId) return true;
+	const active = sharedState.pqController?.getCurrentQuestion?.()?.requestId;
+	if (!active) return true;
+	return active === requestId;
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
@@ -297,7 +312,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Resolve the provider chain. Every credential stays bound to its own
 		// provider: a TypeSafe key is never sent to OpenRouter and an OpenRouter
 		// key is never sent to the TypeSafe API.
-		const { resolveJevProviders } = await import("./packages/jev-judge/dist/index.js");
+		const { resolveJevProviders, classifyQuestionRisk } = await import("./packages/jev-judge/dist/index.js");
 		const jevProviders = resolveJevProviders({ keysDir });
 
 		// Create pending question controller - works independently of Jev
@@ -480,11 +495,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}
 				
 				// Create question in controller
+				const questionKind = result.kind || "approval";
+				// The risk facts of the proposed action are derived from the
+				// question itself and recorded with the request: the
+				// autonomous decision is only as safe as these facts.
+				const riskFacts = classifyQuestionRisk({
+					kind: questionKind,
+					text: result.questionText,
+				});
 				const question = pqController.createQuestion({
 					text: result.questionText,
 					sessionId: _sessionId,
 					workspacePath: _piSessionCwd || "/",
-					kind: result.kind || "approval",
+					kind: questionKind,
+					risk: {
+						requiresExplicitAuthorization: riskFacts.requiresExplicitAuthorization,
+						destructive: riskFacts.destructive,
+						reversible: riskFacts.reversible,
+						external: riskFacts.external,
+						signals: riskFacts.signals,
+					},
 				});
 				
 				logToFile("[PendingQuestion]", `Question created: ${question.requestId} - ${result.questionText?.slice(0, 50)}`);
@@ -741,11 +771,32 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// The question Jev has to decide about. Without it Jev only
 				// sees progress, not what the agent asked permission to do.
 				const pendingQuestion = sharedState.pqController?.getCurrentQuestion?.();
+				// The risk facts of the proposed action. They are recorded
+				// with the question; a question without them is classified
+				// again, so the safeguards never run on missing facts.
+				const riskFacts = pendingQuestion
+					? pendingQuestion.requiresExplicitAuthorization !== undefined
+						? {
+								requiresExplicitAuthorization:
+									pendingQuestion.requiresExplicitAuthorization,
+								destructive: pendingQuestion.destructive ?? false,
+								reversible: pendingQuestion.reversible ?? true,
+								external: pendingQuestion.external ?? false,
+							}
+						: classifyQuestionRisk({
+								kind: pendingQuestion.kind,
+								text: pendingQuestion.questionText,
+							})
+					: undefined;
 				const questionContext = pendingQuestion
 					? {
 						requestId: pendingQuestion.requestId,
 						text: pendingQuestion.questionText,
 						kind: pendingQuestion.kind,
+						requiresExplicitAuthorization: riskFacts?.requiresExplicitAuthorization,
+						destructive: riskFacts?.destructive,
+						external: riskFacts?.external,
+						reversible: riskFacts?.reversible,
 					}
 					: undefined;
 
@@ -811,6 +862,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (!outcome) {
 					if (decision.action === "proceed") outcome = "approve";
 					else if (decision.action === "proceed_with_caution") outcome = "proceed_with_caution";
+					else if (decision.action === "reject") outcome = "reject";
 					else outcome = "wait";
 				}
 
@@ -826,9 +878,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					if (waitMinutes >= MAX_WAIT_MINUTES) {
 						logToFile("[auto-continue]", "Decision deadline reached - pausing the work");
 						(sharedState.todoContinuationController as any)?.explicitPause?.();
-						waitingForUserSince = null;
-						sharedState.waitingForUserSince = null;
-						updateAutoContinueStatus("IDLE");
+						// The deadline belongs to the captured question: a newer
+						// question keeps its own wait state.
+						if (waitBelongsToRequest(questionContext?.requestId)) {
+							waitingForUserSince = null;
+							sharedState.waitingForUserSince = null;
+							updateAutoContinueStatus("IDLE");
+						}
 					}
 				} else {
 					// Close the question with the Jev decision. The buttons of
@@ -854,10 +910,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							"Question is no longer pending - discarding the stale Jev decision",
 						);
 						_inferenceInProgress = false;
-						waitingForUserSince = null;
-						sharedState.waitingForUserSince = null;
-						_lastNotifiedQuestion = "";
-						updateAutoContinueStatus("IDLE");
+						// The wait state belongs to the captured question: a
+						// newer question keeps its own wait.
+						if (waitBelongsToRequest(questionContext?.requestId)) {
+							waitingForUserSince = null;
+							sharedState.waitingForUserSince = null;
+							_lastNotifiedQuestion = "";
+							updateAutoContinueStatus("IDLE");
+						} else {
+							logToFile(
+								"[auto-continue]",
+								"A newer question is active - keeping its wait state",
+							);
+						}
 						return;
 					}
 
@@ -870,10 +935,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							`Question ${questionContext?.requestId} closed by Jev (reject) - pausing the work`,
 						);
 						(sharedState.todoContinuationController as any)?.explicitPause?.();
-						waitingForUserSince = null;
-						sharedState.waitingForUserSince = null;
-						_lastNotifiedQuestion = "";
-						updateAutoContinueStatus("IDLE");
+						if (waitBelongsToRequest(questionContext?.requestId)) {
+							waitingForUserSince = null;
+							sharedState.waitingForUserSince = null;
+							_lastNotifiedQuestion = "";
+							updateAutoContinueStatus("IDLE");
+						}
 						return;
 					}
 

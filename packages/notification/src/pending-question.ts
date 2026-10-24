@@ -69,6 +69,16 @@ export interface PendingQuestion {
   questionText: string;
   /** Question kind */
   kind: QuestionKind;
+  /** Does the proposed action need an explicit human authorization? */
+  requiresExplicitAuthorization?: boolean;
+  /** Can the proposed action destroy or damage something? */
+  destructive?: boolean;
+  /** Can the proposed action be undone? */
+  reversible?: boolean;
+  /** Does the proposed action reach the outside world? */
+  external?: boolean;
+  /** The signals the risk facts were derived from. */
+  riskSignals?: string[];
   /** Current state */
   state: QuestionState;
   /** When created */
@@ -437,6 +447,14 @@ export class PendingQuestionController {
     workspacePath: string;
     jobId?: string;
     kind: QuestionKind;
+    /** The deterministic risk facts of the proposed action. */
+    risk?: {
+      requiresExplicitAuthorization?: boolean;
+      destructive?: boolean;
+      reversible?: boolean;
+      external?: boolean;
+      signals?: string[];
+    };
   }): PendingQuestion {
     const requestId = this.generateRequestId();
     
@@ -447,6 +465,11 @@ export class PendingQuestionController {
       jobId: params.jobId,
       questionText: params.text,
       kind: params.kind,
+      requiresExplicitAuthorization: params.risk?.requiresExplicitAuthorization,
+      destructive: params.risk?.destructive,
+      reversible: params.risk?.reversible,
+      external: params.risk?.external,
+      riskSignals: params.risk?.signals,
       state: "pending",
       createdAt: new Date(),
       dueAt: new Date(Date.now() + this.config.evaluationDelayMs),

@@ -697,6 +697,10 @@ export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
 export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto-continue.js";
 
+// Export the deterministic risk classifier of a pending question
+export { classifyQuestionRisk } from "./question-risk.js";
+export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
+
 // Export WrapUpJudge
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { WrapUpResult } from "./wrap-up-judge.js";
