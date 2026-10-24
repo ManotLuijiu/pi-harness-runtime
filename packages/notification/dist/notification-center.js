@@ -11,13 +11,30 @@
 import { logError, logWarn } from "./file-logger.js";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { TelegramAdapter } from "./adapters/telegram-adapter.js";
 import { buildCallbackData, CallbackActions } from "./telegram-webhook-handler.js";
 import { LineAdapter } from "./adapters/line-adapter.js";
 import { NtfyAdapter } from "./adapters/ntfy-adapter.js";
 import { EmailAdapter } from "./adapters/email-adapter.js";
 import { WebhookAdapter } from "./adapters/webhook-adapter.js";
+/**
+ * Load the SQLite binding lazily.
+ *
+ * `node:sqlite` does not exist in every runtime (Bun 1.3 has no
+ * `node:sqlite`), and a static import makes the whole module unloadable
+ * there. The persisted channel settings are an optimisation: without the
+ * database the center still works with the configured defaults.
+ */
+function loadDatabaseSync() {
+    try {
+        const require = createRequire(import.meta.url);
+        return require("node:sqlite").DatabaseSync;
+    }
+    catch {
+        return null;
+    }
+}
 export class NotificationCenter {
     adapters = new Map();
     channelEnabled = new Map();
@@ -41,6 +58,11 @@ export class NotificationCenter {
      */
     initDatabase() {
         try {
+            const DatabaseSync = loadDatabaseSync();
+            if (!DatabaseSync) {
+                logWarn("[NotificationCenter]", "node:sqlite is unavailable - the channel settings are not persisted");
+                return;
+            }
             const dbPath = NotificationCenter.getDatabasePath();
             this.db = new DatabaseSync(dbPath);
             // Create tables
@@ -157,6 +179,14 @@ export class NotificationCenter {
             const adapter = this.createAdapter(config);
             if (adapter && adapter.isConfigured()) {
                 this.adapters.set(config.id, adapter);
+                // A registered channel without a persisted state is enabled
+                // unless its configuration says otherwise. Without this the
+                // channel is registered but silently skipped by notify(),
+                // which happens whenever the settings database is
+                // unavailable (no `node:sqlite` in the runtime).
+                if (!this.channelEnabled.has(config.id)) {
+                    this.channelEnabled.set(config.id, config.enabled !== false);
+                }
                 return true;
             }
         }
@@ -412,13 +442,19 @@ export class NotificationCenter {
     async notifyWithApproval(event, context, options) {
         const approveLabel = options?.approveLabel ?? "Yes";
         const rejectLabel = options?.rejectLabel ?? "No";
+        // The canonical request ID is the approval correlation key. The
+        // presentation `jobId` may carry a prefix ("waiting-user-q-123") and
+        // must not be used for the correlation: a callback that carries the
+        // prefixed value can never match the pending question, so the click
+        // is reported as stale and the approval is lost.
+        const target = context.questionId ?? context.jobId;
         // Build buttons
         const buttons = [
-            { text: `\u2705 ${approveLabel}`, callbackData: buildCallbackData(CallbackActions.APPROVE, context.jobId) },
-            { text: `\u274C ${rejectLabel}`, callbackData: buildCallbackData(CallbackActions.REJECT, context.jobId) },
+            { text: `\u2705 ${approveLabel}`, callbackData: buildCallbackData(CallbackActions.APPROVE, target) },
+            { text: `\u274C ${rejectLabel}`, callbackData: buildCallbackData(CallbackActions.REJECT, target) },
         ];
         // Track this pending approval so callback can resolve it
-        this.trackPendingApproval(context.jobId, event, context);
+        this.trackPendingApproval(target, event, context);
         // Send to each channel with buttons (respecting enabled state)
         const results = [];
         for (const [id, adapter] of this.adapters.entries()) {
@@ -442,16 +478,23 @@ export class NotificationCenter {
                 }
             }
             else if (adapter instanceof LineAdapter) {
-                // LINE: Send approval request with text fallback directing user to answer via Telegram or Pi
+                // LINE: the same question and the same canonical request ID
+                // as Telegram, with the same Yes/No actions. The postback
+                // data uses the shared callback format, so the webhook
+                // forwards it into the same runtime resolver.
                 try {
                     const linePayload = {
                         jobId: context.jobId,
                         timestamp: new Date().toISOString(),
                         event,
                         title: "Approval Required",
-                        message: (context.requirement || "A decision is needed.") + "\n\nReply via Telegram or type answer in Pi.",
+                        message: context.requirement || "A decision is needed.",
+                        ...(context.questionId && { questionId: context.questionId }),
                         details: {
                             jobId: context.jobId,
+                            ...(context.questionId && { questionId: context.questionId }),
+                            ...(context.questionKind && { questionKind: context.questionKind }),
+                            _actionButtons: buttons,
                             ...options?.additionalDetails,
                         },
                     };
@@ -555,6 +598,7 @@ export class NotificationCenter {
             timestamp: new Date().toISOString(),
             title,
             message,
+            ...(context.questionId && { questionId: context.questionId }),
             details: {
                 jobId: context.jobId,
                 requirement: context.requirement,
@@ -562,6 +606,9 @@ export class NotificationCenter {
                 ...(context.taskTitle && { taskTitle: context.taskTitle }),
                 ...(context.error && { error: context.error }),
                 ...(context.reason && { reason: context.reason }),
+                ...(context.trigger && { trigger: context.trigger }),
+                ...(context.questionId && { questionId: context.questionId }),
+                ...(context.questionKind && { questionKind: context.questionKind }),
                 // Pass inline keyboard options to Telegram adapter
                 ...(options?.enableInlineKeyboard && { _enableInlineKeyboard: true }),
                 ...(options?.actionButtons && { _actionButtons: options.actionButtons }),
@@ -572,6 +619,11 @@ export class NotificationCenter {
     getEventContent(event, context) {
         const req = context.requirement ?? "";
         const requirement = req.length > 50 ? req.slice(0, 50) + "..." : req;
+        // The question the agent asks has to reach the user in full. A
+        // truncated question is not a question the user can answer, so the
+        // approval events keep the complete text and let the adapter split
+        // it for the platform.
+        const fullRequirement = req;
         const map = {
             JobStarted: {
                 title: "Job Started",
@@ -619,7 +671,7 @@ export class NotificationCenter {
             },
             WaitingForUserInput: {
                 title: "Your Input Needed",
-                message: `Agent needs your input: "${requirement}"${context.error ? ` (${context.error})` : ""}`,
+                message: `Agent needs your input: "${fullRequirement}"${context.error ? ` (${context.error})` : ""}`,
             },
             AssistantResponse: {
                 title: "Assistant",

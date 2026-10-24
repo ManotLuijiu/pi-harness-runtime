@@ -13,6 +13,17 @@ export type QuestionKind = "routine" | "approval" | "clarification" | "explicit"
  */
 export type QuestionState = "pending" | "evaluating" | "resolved" | "cancelled" | "expired";
 /**
+ * The typed outcome of a Jev evaluation.
+ *
+ * It is deliberately not the same shape as a human answer: an autonomous
+ * decision is never reported as a user "yes".
+ */
+export type JevOutcome = "approve" | "reject" | "wait" | "proceed_with_caution";
+/** Who resolved the question. */
+export type ResolutionSource = "user" | "jev" | "timeout";
+/** The channel a human answer came from. */
+export type ResolutionChannel = "telegram" | "line" | "pi";
+/**
  * Channel delivery states
  */
 export interface ChannelDeliveryState {
@@ -47,7 +58,13 @@ export interface PendingQuestion {
     /** Resolution: "yes", "no", "clarification", or undefined */
     resolution?: "yes" | "no" | "clarification";
     /** Who resolved it */
-    resolvedBy?: "user" | "jev" | "timeout";
+    resolvedBy?: ResolutionSource;
+    /** The channel a human answer came from. Unset for a Jev resolution. */
+    resolvedChannel?: ResolutionChannel;
+    /** The Jev outcome, when the decision was autonomous. */
+    jevOutcome?: JevOutcome;
+    /** The short reason of the Jev decision. */
+    jevReason?: string;
     /** Channel delivery states */
     deliveryState: {
         telegram?: ChannelDeliveryState;
@@ -157,10 +174,42 @@ export declare class PendingQuestionController {
      */
     resolve(params: {
         resolution: "yes" | "no" | "clarification";
-        by: "user" | "jev" | "timeout";
+        by: ResolutionSource;
         /** Optional requestId to validate (first-answer-wins) */
         requestId?: string;
+        /** The channel a human answer came from. */
+        channel?: ResolutionChannel;
     }): boolean;
+    /**
+     * Resolve a question with an autonomous Jev decision.
+     *
+     * The question is closed with `resolvedBy: "jev"`, the outcome is recorded
+     * and the Jev callback is notified. No user answer is dispatched: nobody
+     * clicked anything.
+     *
+     * @returns true if the question was closed, false when it was stale or
+     *   already answered by a human.
+     */
+    resolveByJev(requestId: string, outcome: JevOutcome, reason?: string): boolean;
+    /**
+     * Apply an approval action from a channel to the current question.
+     *
+     * The action names are the shared callback actions, so Telegram and LINE
+     * use the same values and the same resolver. A stale request ID, a
+     * duplicate click or a wrong session leaves the running wait untouched.
+     */
+    applyApproval(action: string, requestId: string, channel: ResolutionChannel): {
+        applied: boolean;
+        resolution?: "yes" | "no";
+        reason?: string;
+    };
+    /**
+     * Is the request ID still actionable?
+     *
+     * A button of a closed question is stale: it must not resolve another
+     * question and it must not clear a running wait.
+     */
+    isActionable(requestId: string): boolean;
     /**
      * Cancel the current question (e.g., on session switch)
      */

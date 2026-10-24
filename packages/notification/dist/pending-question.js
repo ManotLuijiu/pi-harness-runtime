@@ -336,12 +336,93 @@ export class PendingQuestionController {
         this.currentQuestion.resolution = params.resolution;
         this.currentQuestion.resolvedBy = params.by;
         this.currentQuestion.resolvedAt = new Date();
+        if (params.by === "user" && params.channel) {
+            this.currentQuestion.resolvedChannel = params.channel;
+        }
         logWarn("[PendingQuestion]", `Resolved question ${this.currentQuestion.requestId}: ${params.resolution} by ${params.by}`);
-        // Notify callback
-        if (this.userAnswerCallback) {
+        // Notify callback. A Jev resolution is NOT a user answer: it must never
+        // be dispatched as a synthetic "yes" into the conversation.
+        if (params.by === "jev") {
+            if (this.jevDecisionCallback) {
+                this.jevDecisionCallback(this.currentQuestion, {
+                    action: "continue",
+                    reason: "resolved by jev",
+                    eligible: true,
+                });
+            }
+        }
+        else if (this.userAnswerCallback) {
             this.userAnswerCallback(this.currentQuestion, params.resolution);
         }
         return true;
+    }
+    /**
+     * Resolve a question with an autonomous Jev decision.
+     *
+     * The question is closed with `resolvedBy: "jev"`, the outcome is recorded
+     * and the Jev callback is notified. No user answer is dispatched: nobody
+     * clicked anything.
+     *
+     * @returns true if the question was closed, false when it was stale or
+     *   already answered by a human.
+     */
+    resolveByJev(requestId, outcome, reason) {
+        if (!this.currentQuestion) {
+            logWarn("[PendingQuestion]", "No question to resolve - no pending question");
+            return false;
+        }
+        if (this.currentQuestion.requestId !== requestId) {
+            logWarn("[PendingQuestion]", `Jev resolution for an unknown request: ${requestId} (current=${this.currentQuestion.requestId})`);
+            return false;
+        }
+        if (this.currentQuestion.state === "resolved") {
+            logWarn("[PendingQuestion]", `Question already resolved as ${this.currentQuestion.resolution} - jev decision ignored`);
+            return false;
+        }
+        this.currentQuestion.state = "resolved";
+        this.currentQuestion.resolvedBy = "jev";
+        this.currentQuestion.jevOutcome = outcome;
+        this.currentQuestion.jevReason = reason;
+        this.currentQuestion.resolvedAt = new Date();
+        logWarn("[PendingQuestion]", `Closed question ${this.currentQuestion.requestId} with jev outcome ${outcome}`);
+        if (this.jevDecisionCallback) {
+            this.jevDecisionCallback(this.currentQuestion, {
+                action: outcome === "reject" ? "stop" : outcome === "wait" ? "wait" : "continue",
+                reason: reason ?? `jev:${outcome}`,
+                eligible: true,
+                metadata: { outcome },
+            });
+        }
+        return true;
+    }
+    /**
+     * Apply an approval action from a channel to the current question.
+     *
+     * The action names are the shared callback actions, so Telegram and LINE
+     * use the same values and the same resolver. A stale request ID, a
+     * duplicate click or a wrong session leaves the running wait untouched.
+     */
+    applyApproval(action, requestId, channel) {
+        if (action !== "approve" && action !== "reject") {
+            return { applied: false, reason: `unknown action '${action}'` };
+        }
+        const resolution = action === "approve" ? "yes" : "no";
+        const applied = this.resolve({ resolution, by: "user", requestId, channel });
+        return applied
+            ? { applied: true, resolution }
+            : { applied: false, resolution, reason: "stale or duplicate request ID" };
+    }
+    /**
+     * Is the request ID still actionable?
+     *
+     * A button of a closed question is stale: it must not resolve another
+     * question and it must not clear a running wait.
+     */
+    isActionable(requestId) {
+        if (!this.currentQuestion)
+            return false;
+        return (this.currentQuestion.requestId === requestId &&
+            (this.currentQuestion.state === "pending" || this.currentQuestion.state === "evaluating"));
     }
     /**
      * Cancel the current question (e.g., on session switch)

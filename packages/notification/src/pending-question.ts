@@ -19,12 +19,30 @@ export type QuestionKind =
 /**
  * Question states
  */
-export type QuestionState = 
+export type QuestionState =
   | "pending"      // Waiting for response
   | "evaluating"   // Jev is evaluating
   | "resolved"     // User answered
   | "cancelled"    // Cancelled (e.g., session switch)
   | "expired";     // Timed out
+
+/**
+ * The typed outcome of a Jev evaluation.
+ *
+ * It is deliberately not the same shape as a human answer: an autonomous
+ * decision is never reported as a user "yes".
+ */
+export type JevOutcome =
+  | "approve"
+  | "reject"
+  | "wait"
+  | "proceed_with_caution";
+
+/** Who resolved the question. */
+export type ResolutionSource = "user" | "jev" | "timeout";
+
+/** The channel a human answer came from. */
+export type ResolutionChannel = "telegram" | "line" | "pi";
 
 /**
  * Channel delivery states
@@ -62,7 +80,13 @@ export interface PendingQuestion {
   /** Resolution: "yes", "no", "clarification", or undefined */
   resolution?: "yes" | "no" | "clarification";
   /** Who resolved it */
-  resolvedBy?: "user" | "jev" | "timeout";
+  resolvedBy?: ResolutionSource;
+  /** The channel a human answer came from. Unset for a Jev resolution. */
+  resolvedChannel?: ResolutionChannel;
+  /** The Jev outcome, when the decision was autonomous. */
+  jevOutcome?: JevOutcome;
+  /** The short reason of the Jev decision. */
+  jevReason?: string;
   /** Channel delivery states */
   deliveryState: {
     telegram?: ChannelDeliveryState;
@@ -482,9 +506,11 @@ export class PendingQuestionController {
    */
   resolve(params: {
     resolution: "yes" | "no" | "clarification";
-    by: "user" | "jev" | "timeout";
+    by: ResolutionSource;
     /** Optional requestId to validate (first-answer-wins) */
     requestId?: string;
+    /** The channel a human answer came from. */
+    channel?: ResolutionChannel;
   }): boolean {
     if (!this.currentQuestion) {
       logWarn("[PendingQuestion]", "No question to resolve - no pending question");
@@ -504,20 +530,123 @@ export class PendingQuestionController {
         `Question already resolved as ${this.currentQuestion.resolution} - duplicate callback ignored`);
       return false;
     }
-    
+
     this.currentQuestion.state = "resolved";
     this.currentQuestion.resolution = params.resolution;
     this.currentQuestion.resolvedBy = params.by;
     this.currentQuestion.resolvedAt = new Date();
-    
+    if (params.by === "user" && params.channel) {
+      this.currentQuestion.resolvedChannel = params.channel;
+    }
+
     logWarn("[PendingQuestion]", `Resolved question ${this.currentQuestion.requestId}: ${params.resolution} by ${params.by}`);
-    
-    // Notify callback
-    if (this.userAnswerCallback) {
+
+    // Notify callback. A Jev resolution is NOT a user answer: it must never
+    // be dispatched as a synthetic "yes" into the conversation.
+    if (params.by === "jev") {
+      if (this.jevDecisionCallback) {
+        this.jevDecisionCallback(this.currentQuestion, {
+          action: "continue",
+          reason: "resolved by jev",
+          eligible: true,
+        });
+      }
+    } else if (this.userAnswerCallback) {
       this.userAnswerCallback(this.currentQuestion, params.resolution);
     }
 
     return true;
+  }
+
+  /**
+   * Resolve a question with an autonomous Jev decision.
+   *
+   * The question is closed with `resolvedBy: "jev"`, the outcome is recorded
+   * and the Jev callback is notified. No user answer is dispatched: nobody
+   * clicked anything.
+   *
+   * @returns true if the question was closed, false when it was stale or
+   *   already answered by a human.
+   */
+  resolveByJev(
+    requestId: string,
+    outcome: JevOutcome,
+    reason?: string,
+  ): boolean {
+    if (!this.currentQuestion) {
+      logWarn("[PendingQuestion]", "No question to resolve - no pending question");
+      return false;
+    }
+
+    if (this.currentQuestion.requestId !== requestId) {
+      logWarn("[PendingQuestion]",
+        `Jev resolution for an unknown request: ${requestId} (current=${this.currentQuestion.requestId})`);
+      return false;
+    }
+
+    if (this.currentQuestion.state === "resolved") {
+      logWarn("[PendingQuestion]",
+        `Question already resolved as ${this.currentQuestion.resolution} - jev decision ignored`);
+      return false;
+    }
+
+    this.currentQuestion.state = "resolved";
+    this.currentQuestion.resolvedBy = "jev";
+    this.currentQuestion.jevOutcome = outcome;
+    this.currentQuestion.jevReason = reason;
+    this.currentQuestion.resolvedAt = new Date();
+
+    logWarn("[PendingQuestion]",
+      `Closed question ${this.currentQuestion.requestId} with jev outcome ${outcome}`);
+
+    if (this.jevDecisionCallback) {
+      this.jevDecisionCallback(this.currentQuestion, {
+        action: outcome === "reject" ? "stop" : outcome === "wait" ? "wait" : "continue",
+        reason: reason ?? `jev:${outcome}`,
+        eligible: true,
+        metadata: { outcome },
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * Apply an approval action from a channel to the current question.
+   *
+   * The action names are the shared callback actions, so Telegram and LINE
+   * use the same values and the same resolver. A stale request ID, a
+   * duplicate click or a wrong session leaves the running wait untouched.
+   */
+  applyApproval(
+    action: string,
+    requestId: string,
+    channel: ResolutionChannel,
+  ): { applied: boolean; resolution?: "yes" | "no"; reason?: string } {
+    if (action !== "approve" && action !== "reject") {
+      return { applied: false, reason: `unknown action '${action}'` };
+    }
+
+    const resolution = action === "approve" ? "yes" : "no";
+    const applied = this.resolve({ resolution, by: "user", requestId, channel });
+
+    return applied
+      ? { applied: true, resolution }
+      : { applied: false, resolution, reason: "stale or duplicate request ID" };
+  }
+
+  /**
+   * Is the request ID still actionable?
+   *
+   * A button of a closed question is stale: it must not resolve another
+   * question and it must not clear a running wait.
+   */
+  isActionable(requestId: string): boolean {
+    if (!this.currentQuestion) return false;
+    return (
+      this.currentQuestion.requestId === requestId &&
+      (this.currentQuestion.state === "pending" || this.currentQuestion.state === "evaluating")
+    );
   }
 
   /**

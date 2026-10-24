@@ -738,8 +738,12 @@ return this._botUsername;
 						body.parse_mode = cfg.parseMode;
 					}
 
-					// Add inline keyboard if enabled and buttons are configured
-					if (enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
+					// The keyboard is attached to the final chunk only. The
+					// earlier chunks are the continuation of the same
+					// question, and a button on every chunk would offer the
+					// same action several times.
+					const isLastChunk = i === chunks.length - 1;
+					if (isLastChunk && enableInlineKeyboard && (actionButtons?.length ?? 0) > 0) {
 						body.reply_markup = this.buildInlineKeyboard(actionButtons);
 					}
 

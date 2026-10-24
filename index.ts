@@ -237,6 +237,50 @@ const sharedState = {
 	workspaceEnvMessage: null as string | null,
 };
 
+/**
+ * Apply an approval decision from a channel to the pending question.
+ *
+ * Telegram and LINE share this one resolver: the canonical request ID
+ * decides, the channel only records where the answer came from. A stale,
+ * duplicated or unauthorized click resolves nothing and leaves the running
+ * wait untouched.
+ */
+function applyChannelApproval(
+	action: string,
+	requestId: string,
+	channel: "telegram" | "line",
+): boolean {
+	const controller = sharedState.pqController;
+	if (!controller?.applyApproval) {
+		logToFile("[Approval]", "No pending question controller - click ignored");
+		return false;
+	}
+
+	const result = controller.applyApproval(action, requestId, channel);
+	if (!result?.applied) {
+		logToFile(
+			"[Approval]",
+			`Stale or duplicate ${channel} click for ${requestId}: ${result?.reason ?? "ignored"}`,
+		);
+		return false;
+	}
+
+	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
+
+	// The question is answered, so the wait is over. The wait state is only
+	// cleared after a successful resolution.
+	sharedState.waitingForUserSince = null;
+	sharedState.updateAutoContinueStatus?.("IDLE");
+
+	if (result.resolution === "yes") {
+		(sharedState.todoContinuationController as any)?.resume?.();
+	} else {
+		(sharedState.todoContinuationController as any)?.explicitPause?.();
+	}
+
+	return true;
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
@@ -394,6 +438,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Set up pending question callback to dispatch answers to Pi
 		pqController.onUserAnswer((question, answer) => {
 			logToFile("[PendingQuestion]", `User answered: ${answer} for question ${question.requestId}`);
+			// The question is answered, so the wait is over. The wait state
+			// is cleared here, after a successful resolution: a stale click
+			// must never clear a valid pending wait.
+			waitingForUserSince = null;
+			sharedState.waitingForUserSince = null;
+			_lastNotifiedQuestion = "";
+			updateAutoContinueStatus("IDLE");
 			// Dispatch answer to Pi
 			const message = answer === "yes" ? "yes" : "not yet";
 			pi.sendUserMessage(message, { deliverAs: "steer" });
@@ -457,10 +508,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					: "No active tasks";
 				const contextInfo = `Waiting: ${waitMinutes}m | ${taskInfo}`;
 
-				// Emit WaitingForUserInput to Telegram with Yes/No buttons
-				// Uses question.requestId for callback matching
+				// Emit WaitingForUserInput to Telegram and LINE with the same
+				// Yes/No actions. The canonical request ID is the correlation
+				// key of the callback: a prefixed jobId would never match the
+				// pending question and every click would be reported stale.
 				_nc?.notifyWithApproval("WaitingForUserInput", {
-					jobId: `waiting-user-${questionJobId}`,
+					jobId: questionJobId,
+					questionId: questionJobId,
+					questionKind: question.kind,
 					requirement: result.questionText,
 				}, {
 					approveLabel: "Continue",
@@ -609,6 +664,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Periodic check for auto-continue decision
 		const AUTO_CONTINUE_INTERVAL_MS = 60 * 1000; // Check every 1 minute
 		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
+		const MAX_WAIT_MINUTES = 30; // After this the work pauses instead of waiting
 
 		const checkAndAutoContinue = async () => {
 			// Prevent overlap if inference is already in progress
@@ -629,7 +685,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				: "";
 
 			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
-			if (waitMinutes < MIN_WAIT_MINUTES) return;
+			// The judge is only asked once the question waited long enough.
+			if (!mod.isEligibleForDecision?.(waitMinutes, MIN_WAIT_MINUTES)) return;
 
 			// Update status to checking
 			updateAutoContinueStatus("CHECKING", questionHash);
@@ -681,11 +738,43 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					return;
 				}
 
+				// The question Jev has to decide about. Without it Jev only
+				// sees progress, not what the agent asked permission to do.
+				const pendingQuestion = sharedState.pqController?.getCurrentQuestion?.();
+				const questionContext = pendingQuestion
+					? {
+						requestId: pendingQuestion.requestId,
+						text: pendingQuestion.questionText,
+						kind: pendingQuestion.kind,
+					}
+					: undefined;
+
+				const decisionContext = {
+					question: questionContext,
+					currentTask: taskContext.remaining[0],
+					completionRatio:
+						taskContext.total > 0
+							? taskContext.completed.length / taskContext.total
+							: 0,
+					totalTasks: taskContext.total,
+					completedTasks: taskContext.completed.length,
+					blockers: [] as string[],
+					nextTasks: taskContext.remaining.slice(0, 5),
+					validationStatus:
+						pendingFinalTier.length > 0
+							? `${pendingFinalTier.length} final tier(s) pending`
+							: "no pending final tier",
+					waitedMinutes: Math.round(waitMinutes),
+					deadlineMinutes: MAX_WAIT_MINUTES,
+					lastUserActivity: lastUserMessage || undefined,
+				};
+
 				const taskState = mod.createTaskState(
 					taskContext.completed,
 					taskContext.remaining,
 					lastUserMessage || undefined,
 					new Date(Date.now() - waitMinutes * 60000),
+					decisionContext,
 				);
 
 				const decision = await judge.decide(taskState);
@@ -716,22 +805,99 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						}
 					}
 
-				if (decision.action === "proceed" || decision.action === "proceed_with_caution") {
+				// The typed outcome of the decision. The action is the
+				// fallback for a judge that does not know the outcome yet.
+				let outcome = decision.outcome;
+				if (!outcome) {
+					if (decision.action === "proceed") outcome = "approve";
+					else if (decision.action === "proceed_with_caution") outcome = "proceed_with_caution";
+					else outcome = "wait";
+				}
+
+				if (outcome === "wait") {
+					// A wait decision is bounded: after the deadline the work
+					// pauses instead of waiting for a user who is not there.
+					// The question stays open: it is not closed with a Jev
+					// decision, so the next check can still decide about it.
+					logToFile(
+						"[auto-continue]",
+						`Jev decided to wait (${Math.round(waitMinutes)}m waited, deadline ${MAX_WAIT_MINUTES}m)`,
+					);
+					if (waitMinutes >= MAX_WAIT_MINUTES) {
+						logToFile("[auto-continue]", "Decision deadline reached - pausing the work");
+						(sharedState.todoContinuationController as any)?.explicitPause?.();
+						waitingForUserSince = null;
+						sharedState.waitingForUserSince = null;
+						updateAutoContinueStatus("IDLE");
+					}
+				} else {
+					// Close the question with the Jev decision. The buttons of
+					// that request ID become stale and no synthetic user
+					// answer is injected: nobody clicked anything.
+					//
+					// A failed close means the request is no longer pending: a
+					// human answered while Jev was still evaluating. The
+					// human answer wins, so the stale decision is discarded
+					// and no continuation steer is sent.
+					const closed = questionContext?.requestId
+						? sharedState.pqController?.resolveByJev?.(
+								questionContext.requestId,
+								outcome,
+								decision.reasoning,
+							) === true
+						: false;
+					const application = mod.decideOutcomeApplication(outcome, closed);
+
+					if (application === "discard") {
+						logToFile(
+							"[auto-continue]",
+							"Question is no longer pending - discarding the stale Jev decision",
+						);
+						_inferenceInProgress = false;
+						waitingForUserSince = null;
+						sharedState.waitingForUserSince = null;
+						_lastNotifiedQuestion = "";
+						updateAutoContinueStatus("IDLE");
+						return;
+					}
+
+					if (application === "pause") {
+						// Jev refused the proposed action. The question is
+						// closed and the work pauses: no continuation steer
+						// is sent, so the agent waits for a human.
+						logToFile(
+							"[auto-continue]",
+							`Question ${questionContext?.requestId} closed by Jev (reject) - pausing the work`,
+						);
+						(sharedState.todoContinuationController as any)?.explicitPause?.();
+						waitingForUserSince = null;
+						sharedState.waitingForUserSince = null;
+						_lastNotifiedQuestion = "";
+						updateAutoContinueStatus("IDLE");
+						return;
+					}
+
+					logToFile(
+						"[auto-continue]",
+						`Question ${questionContext?.requestId} closed by Jev (${outcome})`,
+					);
+
 					// Update status to continuing
 					updateAutoContinueStatus("CONTINUING", questionHash);
 
 					// Send steer message to continue
 					pi.sendUserMessage(
-						decision.action === "proceed"
+						outcome === "approve"
 							? "User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
-								  `Decision: ${decision.reasoning}\n` +
-								  "Continue with remaining tasks."
+							  `Decision: ${decision.reasoning}\n` +
+							  "Continue with remaining tasks."
 							: "User is unavailable. Proceeding with caution - will log each significant step.\n" +
-								  `Risk level: ${decision.riskLevel}\n` +
-								  "Continue with remaining tasks, reporting progress.",
+							  `Risk level: ${decision.riskLevel}\n` +
+							  "Continue with remaining tasks, reporting progress.",
 						{ deliverAs: "steer" },
 					);
 					waitingForUserSince = null;
+					sharedState.waitingForUserSince = null;
 					_lastNotifiedQuestion = "";
 
 					// Clear status after short delay
@@ -1550,41 +1716,21 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 
 			switch (parsed.action) {
 				case CallbackActions.APPROVE: {
-					// User clicked Continue - clear waiting state and resume continuation
+					// The user clicked Continue. The request ID in the
+					// callback data is the canonical one, so the click
+					// resolves exactly this question.
 					logToFile("[TelegramCallback] Approved - user clicked Continue, resuming work");
-					sharedState.waitingForUserSince = null;
-					sharedState.updateAutoContinueStatus?.("IDLE");
-					// Resolve pending question with yes, validating request ID (first-answer-wins)
-					const approved = sharedState.pqController?.resolve({
-						resolution: "yes",
-						by: "user",
-						requestId: parsed.targetId,
-					});
-					if (!approved) {
-						logToFile("[TelegramCallback] WARNING: APPROVE button ignored - stale or mismatched request ID");
+					if (!applyChannelApproval(parsed.action, parsed.targetId, "telegram")) {
 						await acknowledge("Stale button - no pending question to approve");
-						break;
 					}
-					// Also resume continuation controller
-					(sharedState.todoContinuationController as any)?.resume?.();
 					break;
 				}
 				case CallbackActions.REJECT: {
-					// User clicked Not yet - just dismiss, don't resume
+					// The user clicked Not yet - dismiss and pause.
 					logToFile("[TelegramCallback] Rejected - user clicked Not yet, pausing");
-					// Resolve pending question with no, validating request ID (first-answer-wins)
-					const rejected = sharedState.pqController?.resolve({
-						resolution: "no",
-						by: "user",
-						requestId: parsed.targetId,
-					});
-					if (!rejected) {
-						logToFile("[TelegramCallback] WARNING: REJECT button ignored - stale or mismatched request ID");
+					if (!applyChannelApproval(parsed.action, parsed.targetId, "telegram")) {
 						await acknowledge("Stale button - no pending question to reject");
-						break;
 					}
-					// Explicitly pause the continuation
-					(sharedState.todoContinuationController as any)?.explicitPause?.();
 					break;
 				}
 				default:
@@ -2051,6 +2197,12 @@ async function initRelayStream(): Promise<void> {
 						? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
 						: `Callback: ${callback.action} ${callback.targetId}`,
 				);
+
+				// A LINE postback is the same decision as a Telegram button
+				// click: one resolver, the same canonical request ID.
+				if (callback.type === "line_callback") {
+					applyChannelApproval(callback.action, callback.targetId, "line");
+				}
 
 				// Forward Telegram callbacks to the adapter
 				if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
@@ -5610,7 +5762,9 @@ Run \`bd ready\` to see current bd issues.
 			pi.sendUserMessage(content, { deliverAs });
 			await nc("ResumeScheduled", {
 				requirement: "Session auto-resume",
-				reason,
+				// A resume trigger is not a failure. It renders as
+				// "Trigger: Context compacted", never as "Error: ...".
+				trigger: reason,
 			});
 		} catch (error) {
 			logToFile(
