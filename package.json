@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "1.1.185",
+  "version": "1.1.186",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -27,7 +27,8 @@
     "test:e2e": "PI_HARNESS_E2E=1 bun test e2e/",
     "test:e2e:scripts": "node scripts/run-e2e-scripts.mjs",
     "test:all": "npm run test && npm run test:harness",
-    "prepublish": "bun run build"  },
+    "prepublish": "bun run build"
+  },
   "bin": {
     "harness-auth": "packages/auth/src/run-minimax-auth.ts"
   },

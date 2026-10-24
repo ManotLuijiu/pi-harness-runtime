@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.186](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.399...v1.1.186) (2026-10-24)
+
+
+### Features
+
+* **notification:** multi-channel pending questions with a typed Jev decision ([cef012e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cef012e8ef88053979ec3a68e3285eeefc59c673))
+
 ### [1.1.140](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.184...v1.1.140) (2026-10-10)
 
 
