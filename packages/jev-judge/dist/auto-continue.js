@@ -9,6 +9,72 @@
  */
 import { JevJudge } from "./index.js";
 import { logError } from "./file-logger.js";
+/** How many task titles reach the evaluation. */
+export const MAX_LISTED_TASKS = 10;
+/** How much of the question text reaches the evaluation. */
+export const MAX_QUESTION_CHARS = 2000;
+export function applyDecisionPolicy(proposed, context, options) {
+    const question = context?.question;
+    if (proposed === "approve" || proposed === "proceed_with_caution") {
+        if (question?.kind === "clarification") {
+            return {
+                outcome: "wait",
+                appliedRule: "clarification-never-approved",
+                reason: "A clarification asks which option is meant. Guessing it would decide for the user.",
+            };
+        }
+        if (question?.requiresExplicitAuthorization) {
+            return {
+                outcome: "wait",
+                appliedRule: "explicit-authorization-required",
+                reason: "The action needs an explicit human authorization.",
+            };
+        }
+        if (question?.destructive && question.reversible === false) {
+            return {
+                outcome: "wait",
+                appliedRule: "irreversible-action",
+                reason: "The action cannot be undone, so it waits for the user.",
+            };
+        }
+        if (question?.destructive) {
+            return {
+                outcome: "proceed_with_caution",
+                appliedRule: "destructive-action",
+                reason: "The action is destructive but reversible, so it proceeds with caution.",
+            };
+        }
+        const threshold = options?.confidenceThreshold ?? 0.7;
+        const confidence = options?.confidence;
+        if (typeof confidence === "number" && confidence < threshold) {
+            return {
+                outcome: "wait",
+                appliedRule: "confidence-below-threshold",
+                reason: `The confidence ${confidence.toFixed(2)} is below the threshold ${threshold.toFixed(2)}.`,
+            };
+        }
+    }
+    return { outcome: proposed, reason: "No policy rule applied." };
+}
+/**
+ * Decide what a Jev outcome means for the running work.
+ *
+ * `requestClosed` tells whether the pending question was still open and
+ * could be closed with the Jev decision. A closed question is the only
+ * proof that nobody answered in the meantime: when the request was already
+ * answered by a human the Jev decision is stale, and a stale decision must
+ * never continue the work.
+ *
+ * The rule is deterministic: only a successfully closed request may continue
+ * or pause the work, and a rejection never continues it.
+ */
+export function decideOutcomeApplication(outcome, requestClosed) {
+    if (outcome === "wait")
+        return "wait";
+    if (!requestClosed)
+        return "discard";
+    return outcome === "reject" ? "pause" : "continue";
+}
 /**
  * Default configuration
  */
@@ -98,12 +164,38 @@ export class AutoContinueJudge {
                     ],
                 },
             });
-            return this.buildDecision(result, taskState);
+            return this.applyPolicy(this.buildDecision(result, taskState), taskState);
         }
         catch (error) {
             logError("[AutoContinueJudge]", `Jev call failed: ${error}`);
-            return this.fallbackDecision(taskState);
+            return this.applyPolicy(this.fallbackDecision(taskState), taskState);
         }
+    }
+    /**
+     * Apply the deterministic policy to a proposed decision.
+     *
+     * The policy is code, not a prompt: it decides what is actually allowed,
+     * and it records which rule changed the outcome.
+     */
+    applyPolicy(decision, taskState) {
+        const policy = applyDecisionPolicy(decision.outcome, taskState.context, {
+            confidenceThreshold: this.config.proceedThreshold,
+            confidence: decision.probability,
+        });
+        decision.outcome = policy.outcome;
+        if (policy.appliedRule) {
+            decision.policyApplied = policy.appliedRule;
+            decision.reasoning = `${decision.reasoning} - ${policy.reason}`;
+        }
+        if (policy.outcome === "wait" && decision.action !== "wait") {
+            decision.action = "wait";
+            decision.waitRecommendation =
+                decision.waitRecommendation ?? this.config.maxWaitMinutes;
+        }
+        if (policy.outcome === "proceed_with_caution" && decision.action === "proceed") {
+            decision.action = "proceed_with_caution";
+        }
+        return decision;
     }
     /**
      * Quick decision - simple yes/no to proceed
@@ -120,24 +212,7 @@ export class AutoContinueJudge {
      * Build state for Jev
      */
     buildState(taskState) {
-        const completionPercent = Math.round((taskState.completedTasks.length / taskState.totalTasks) * 100);
-        const state = {
-            task_summary: {
-                completed: taskState.completedTasks.length,
-                remaining: taskState.remainingTasks.length,
-                total: taskState.totalTasks,
-                completion_percent: completionPercent,
-                completed_list: taskState.completedTasks,
-                remaining_list: taskState.remainingTasks,
-            },
-            user_status: {
-                responded: taskState.userResponded,
-                wait_time_minutes: taskState.waitTimeMinutes,
-                last_activity: taskState.lastUserActivity?.toISOString() ?? "unknown",
-                session_duration_minutes: Math.round((Date.now() - taskState.sessionStartTime.getTime()) / 60000),
-            },
-        };
-        return JSON.stringify(state, null, 2);
+        return JSON.stringify(buildDecisionState(taskState), null, 2);
     }
     /**
      * Build decision from Jev result
@@ -184,6 +259,11 @@ export class AutoContinueJudge {
         }
         return {
             action,
+            outcome: action === "proceed"
+                ? "approve"
+                : action === "proceed_with_caution"
+                    ? "proceed_with_caution"
+                    : "wait",
             probability,
             riskLevel,
             reasoning,
@@ -216,6 +296,7 @@ export class AutoContinueJudge {
         if (completionPercent >= 0.8 && taskState.waitTimeMinutes >= 15) {
             return {
                 action: "proceed_with_caution",
+                outcome: "proceed_with_caution",
                 probability: 0.6,
                 riskLevel: "medium",
                 reasoning: "Fallback: high completion, waited long time",
@@ -227,6 +308,7 @@ export class AutoContinueJudge {
         }
         return {
             action: this.config.fallbackAction,
+            outcome: "wait",
             probability: 0.5,
             riskLevel: "medium",
             reasoning: "Fallback: Jev unavailable, using default behavior",
@@ -238,9 +320,71 @@ export class AutoContinueJudge {
     }
 }
 /**
+ * Is the question old enough for an autonomous decision?
+ *
+ * The threshold belongs to the caller: the judge is only asked once the
+ * question waited long enough.
+ */
+export function isEligibleForDecision(waitedMinutes, minWaitMinutes) {
+    return waitedMinutes >= minWaitMinutes;
+}
+/**
+ * The bounded evaluation input of a decision.
+ *
+ * It carries the question Jev has to decide about, the risk of the proposed
+ * action and the relevant task state - and nothing that grows without a
+ * bound.
+ */
+export function buildDecisionState(taskState) {
+    const completionPercent = Math.round((taskState.completedTasks.length / taskState.totalTasks) * 100);
+    const context = taskState.context;
+    const question = context?.question;
+    return {
+        task_summary: {
+            completed: taskState.completedTasks.length,
+            remaining: taskState.remainingTasks.length,
+            total: taskState.totalTasks,
+            completion_percent: completionPercent,
+            // Bounded: the evaluation input stays small, the most recent
+            // completions and the first remaining tasks are the relevant ones.
+            completed_list: taskState.completedTasks.slice(-MAX_LISTED_TASKS),
+            remaining_list: taskState.remainingTasks.slice(0, MAX_LISTED_TASKS),
+        },
+        user_status: {
+            responded: taskState.userResponded,
+            wait_time_minutes: taskState.waitTimeMinutes,
+            last_activity: taskState.lastUserActivity?.toISOString() ?? "unknown",
+            session_duration_minutes: Math.round((Date.now() - taskState.sessionStartTime.getTime()) / 60000),
+        },
+        // The question Jev decides about. Without it Jev only sees progress.
+        pending_question: question
+            ? {
+                request_id: question.requestId,
+                kind: question.kind,
+                text: question.text.slice(0, MAX_QUESTION_CHARS),
+                proposed_action: question.proposedAction ?? "unknown",
+                consequence_of_approval: question.consequence ?? "unknown",
+                requires_explicit_authorization: question.requiresExplicitAuthorization ?? false,
+                destructive: question.destructive ?? false,
+                external_effect: question.external ?? false,
+                reversible: question.reversible ?? true,
+            }
+            : null,
+        decision_context: {
+            current_task: context?.currentTask ?? "unknown",
+            completion_ratio: context?.completionRatio ?? completionPercent / 100,
+            blockers: (context?.blockers ?? []).slice(0, MAX_LISTED_TASKS),
+            next_tasks: (context?.nextTasks ?? []).slice(0, MAX_LISTED_TASKS),
+            validation_status: context?.validationStatus ?? "unknown",
+            waited_minutes: context?.waitedMinutes ?? taskState.waitTimeMinutes,
+            deadline_minutes: context?.deadlineMinutes ?? null,
+        },
+    };
+}
+/**
  * Helper: Create task state from todo list
  */
-export function createTaskState(completedTasks, remainingTasks, lastUserActivity, sessionStartTime) {
+export function createTaskState(completedTasks, remainingTasks, lastUserActivity, sessionStartTime, context) {
     const totalTasks = completedTasks.length + remainingTasks.length;
     return {
         completedTasks,
@@ -252,6 +396,7 @@ export function createTaskState(completedTasks, remainingTasks, lastUserActivity
         userResponded: false,
         lastUserActivity,
         sessionStartTime: sessionStartTime ?? new Date(),
+        context,
     };
 }
 //# sourceMappingURL=auto-continue.js.map

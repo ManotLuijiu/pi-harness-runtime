@@ -13,13 +13,21 @@ import type { NotificationEvent, NotificationPayload } from "../types.js";
 export declare const ERROR_EVENTS: ReadonlySet<NotificationEvent>;
 export declare function isErrorEvent(event: NotificationEvent): boolean;
 export interface DetailLine {
-    /** "Error" for a real failure, "Reason" for a trigger or a detail. */
-    label: "Error" | "Reason";
+    /** "Error" for a real failure, "Trigger" for a resume trigger, "Reason" for a detail. */
+    label: "Error" | "Reason" | "Trigger";
     value: string;
 }
 /**
+ * Turn a trigger code into a human wording.
+ *
+ * "provider-overload" becomes "Provider overload". An unknown code keeps its
+ * words, only the separators and the capitalisation are cleaned up.
+ */
+export declare function formatTriggerValue(value: string): string;
+/**
  * Render the detail fields of a payload as footer lines.
  *
+ * - `details.trigger` becomes "Trigger: ..." in a human wording.
  * - `details.reason` becomes "Reason: ..." for every event.
  * - `details.error` becomes "Error: ..." for the error events only.
  * - A legacy `details.error` on a non-error event becomes "Reason: ..." so the

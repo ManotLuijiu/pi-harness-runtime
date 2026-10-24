@@ -6,6 +6,20 @@
 import type { NotificationPayload, NotificationResult, LineConfig } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 /**
+ * LINE limits the template fields. The complete question does not fit in a
+ * template, so it travels as a text message and the template only carries the
+ * prompt and the request ID.
+ */
+export declare const LINE_TEMPLATE_TEXT_LIMIT = 200;
+export declare const LINE_TEMPLATE_TITLE_LIMIT = 40;
+export declare const LINE_ACTION_LABEL_LIMIT = 20;
+/** LINE accepts at most 100 characters of postback data. */
+export declare const LINE_POSTBACK_DATA_LIMIT = 100;
+/** LINE accepts at most 4 actions in one template. */
+export declare const LINE_MAX_ACTIONS = 4;
+/** A LINE text message accepts up to 5000 characters. */
+export declare const LINE_TEXT_MESSAGE_LIMIT = 4500;
+/**
  * The endpoint that validates a channel access token.
  *
  * LINE answers a user profile with `GET /v2/bot/profile/{userId}`. Without
@@ -50,6 +64,25 @@ export declare class LineAdapter extends BaseChannelAdapter {
     constructor(config: LineConfig);
     initialize(): Promise<boolean>;
     send(payload: NotificationPayload): Promise<NotificationResult>;
+    /**
+     * Build the LINE messages of a payload.
+     *
+     * Without actions it is one text message. With actions the complete
+     * question travels as a text message (a LINE text message holds far more
+     * than a template) and a template carries the Yes/No postback actions.
+     * Both messages carry the canonical request ID, so the user can tell
+     * which request an action belongs to.
+     */
+    private buildMessages;
+    /**
+     * Split a long text into LINE sized text messages.
+     */
+    private chunkText;
+    /**
+     * The button label without its emoji. LINE counts the emoji in the 20
+     * character label limit.
+     */
+    private formatActionLabel;
     private formatMessage;
     private getEmoji;
 }

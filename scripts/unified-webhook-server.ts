@@ -560,12 +560,17 @@ async function handleLINE(req: IncomingMessage, res: ServerResponse, config: Con
           queueCallback(callback);
         }
 
-        // Write to job commands file (for pi-harness HTTP polling)
-        writeJobCommand({
-          command: action,
-          jobId: targetId,
-          userId: parseInt(event.source?.userId || "0", 10) || 0,
-        });
+        // Write to job commands file (for pi-harness HTTP polling).
+        // Only the job commands belong there: an approval action resolves a
+        // pending question and travels through the callback path, so the
+        // job command queue must not receive it.
+        if (action === "resume" || action === "cancel") {
+          writeJobCommand({
+            command: action,
+            jobId: targetId,
+            userId: parseInt(event.source?.userId || "0", 10) || 0,
+          });
+        }
 
         console.log(`[LINE] Postback: ${action} ${targetId} (WS clients: ${wsCount})`);
       }

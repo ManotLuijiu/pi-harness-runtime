@@ -14,6 +14,8 @@ export interface NotificationPayload {
     redacted?: string[];
     enableInlineKeyboard?: boolean;
     actionButtons?: InlineKeyboardButton[];
+    /** The canonical pending-question request ID (the approval correlation key). */
+    questionId?: string;
 }
 export interface NotificationConfig {
     channels: NotificationChannelConfig[];
@@ -112,5 +114,21 @@ export interface NotificationContext {
     error?: string;
     /** Why the event happened (a resume trigger, a quota detail, a review reason). */
     reason?: string;
+    /**
+     * Why the work resumed ("post-compact", "provider-overload"). A trigger is
+     * not a failure: it renders as "Trigger: ..." in a human wording, never
+     * under an "Error:" label.
+     */
+    trigger?: string;
+    /**
+     * The canonical pending-question request ID.
+     *
+     * It is the approval correlation key: the callback data of every Yes/No
+     * action points at it. The presentation `jobId` may carry a prefix and
+     * must not be used for the correlation.
+     */
+    questionId?: string;
+    /** The kind of the pending question (approval, clarification, ...). */
+    questionKind?: string;
 }
 //# sourceMappingURL=types.d.ts.map

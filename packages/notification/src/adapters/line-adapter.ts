@@ -8,9 +8,25 @@ import type {
 	NotificationPayload,
 	NotificationResult,
 	LineConfig,
+	InlineKeyboardButton,
 } from "../types.js";
 import { BaseChannelAdapter } from "../base-adapter.js";
 import { formatDetailLines } from "./detail-format.js";
+
+/**
+ * LINE limits the template fields. The complete question does not fit in a
+ * template, so it travels as a text message and the template only carries the
+ * prompt and the request ID.
+ */
+export const LINE_TEMPLATE_TEXT_LIMIT = 200;
+export const LINE_TEMPLATE_TITLE_LIMIT = 40;
+export const LINE_ACTION_LABEL_LIMIT = 20;
+/** LINE accepts at most 100 characters of postback data. */
+export const LINE_POSTBACK_DATA_LIMIT = 100;
+/** LINE accepts at most 4 actions in one template. */
+export const LINE_MAX_ACTIONS = 4;
+/** A LINE text message accepts up to 5000 characters. */
+export const LINE_TEXT_MESSAGE_LIMIT = 4500;
 
 /**
  * The endpoint that validates a channel access token.
@@ -160,7 +176,7 @@ export class LineAdapter extends BaseChannelAdapter {
 	async send(payload: NotificationPayload): Promise<NotificationResult> {
 		try {
 			const cfg = this.config.config as LineConfig;
-			const message = this.formatMessage(payload);
+			const messages = this.buildMessages(payload);
 
 			const response = await fetch(
 				"https://api.line.me/v2/bot/message/push",
@@ -172,12 +188,7 @@ export class LineAdapter extends BaseChannelAdapter {
 					},
 					body: JSON.stringify({
 						to: cfg.userId,
-						messages: [
-							{
-								type: "text",
-								text: message,
-							},
-						],
+						messages,
 					}),
 				},
 			);
@@ -216,6 +227,82 @@ export class LineAdapter extends BaseChannelAdapter {
 				),
 			};
 		}
+	}
+
+	/**
+	 * Build the LINE messages of a payload.
+	 *
+	 * Without actions it is one text message. With actions the complete
+	 * question travels as a text message (a LINE text message holds far more
+	 * than a template) and a template carries the Yes/No postback actions.
+	 * Both messages carry the canonical request ID, so the user can tell
+	 * which request an action belongs to.
+	 */
+	private buildMessages(payload: NotificationPayload): unknown[] {
+		const buttons = (payload.details?._actionButtons as InlineKeyboardButton[] | undefined) ?? [];
+		const text = this.formatMessage(payload);
+
+		if (buttons.length === 0) {
+			return [{ type: "text", text }];
+		}
+
+		const requestId =
+			(typeof payload.questionId === "string" && payload.questionId) ||
+			(typeof payload.details?.questionId === "string" ? payload.details.questionId : "") ||
+			(typeof payload.details?.jobId === "string" ? payload.details.jobId : "");
+		const prompt = "Approve this request?";
+		const templateText = requestId ? `${prompt}\nRequest: ${requestId}` : prompt;
+
+		const actions = buttons.slice(0, LINE_MAX_ACTIONS).map((button) => ({
+			type: "postback",
+			label: this.formatActionLabel(button.text),
+			data: button.callbackData.slice(0, LINE_POSTBACK_DATA_LIMIT),
+		}));
+
+		const messages: unknown[] = this.chunkText(text).map((part) => ({
+			type: "text",
+			text: part,
+		}));
+
+		messages.push({
+			type: "template",
+			altText: prompt,
+			template: {
+				type: "buttons",
+				title: prompt.slice(0, LINE_TEMPLATE_TITLE_LIMIT),
+				text: templateText.slice(0, LINE_TEMPLATE_TEXT_LIMIT),
+				actions,
+			},
+		});
+
+		return messages;
+	}
+
+	/**
+	 * Split a long text into LINE sized text messages.
+	 */
+	private chunkText(text: string, limit = LINE_TEXT_MESSAGE_LIMIT): string[] {
+		if (text.length <= limit) return [text];
+
+		const chunks: string[] = [];
+		let rest = text;
+		while (rest.length > limit) {
+			let cut = rest.lastIndexOf("\n", limit);
+			if (cut <= 0) cut = limit;
+			chunks.push(rest.slice(0, cut));
+			rest = rest.slice(cut);
+		}
+		if (rest.length > 0) chunks.push(rest);
+		return chunks;
+	}
+
+	/**
+	 * The button label without its emoji. LINE counts the emoji in the 20
+	 * character label limit.
+	 */
+	private formatActionLabel(label: string): string {
+		const plain = label.replace(/[\u{1F300}-\u{1FAFF}\u{2705}\u{274C}\u{2B50}\u{26A0}\u{1F7E1}]/gu, "").trim();
+		return (plain || label).slice(0, LINE_ACTION_LABEL_LIMIT);
 	}
 
 	private formatMessage(payload: NotificationPayload): string {
