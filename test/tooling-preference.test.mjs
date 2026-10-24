@@ -12,6 +12,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -30,6 +31,10 @@ const {
 	ToolingRequestRegistry,
 	detectToolingContext,
 	evaluateBiomeProposalEligibility,
+	detectChangedJsTsFiles,
+	selectQualityCheck,
+	runQualityCheck,
+	formatQualityCheckStatus,
 } = await import(join(toolingRoot, "dist", "index.js"));
 
 const { parseCallbackData } = await import(
@@ -151,4 +156,39 @@ test("the compiled proposal is in sync with its source", () => {
 		/TOOLING_ACTION = "biome"/,
 		"the compiled proposal carries the tooling action - rebuild packages/tooling-preference",
 	);
+});
+
+test("the quality check runs on the changed files of the workspace", () => {
+	const root = mkdtempSync(join(tmpdir(), "tooling-check-"));
+	try {
+		execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
+		writeFileSync(
+			join(root, "package.json"),
+			JSON.stringify({
+				name: "web",
+				scripts: { lint: "node -e \"console.log('lint ok')\"" },
+			}),
+			"utf8",
+		);
+		writeFileSync(join(root, "app.ts"), "export const a = 1;\n");
+
+		const changed = detectChangedJsTsFiles(root);
+		assert.deepEqual(changed.files, ["app.ts"]);
+
+		const context = detectToolingContext(root);
+		const plan = selectQualityCheck({
+			context,
+			preference: "use_project_tools",
+			files: changed.files,
+		});
+		assert.equal(plan.tool, "project");
+
+		const result = runQualityCheck(plan, { cwd: root, timeoutMs: 60_000 });
+		assert.equal(result.ran, true);
+		assert.equal(result.passed, true);
+		assert.match(result.output, /lint ok/);
+		assert.equal(formatQualityCheckStatus(result), "[TOOL] project lint: 1 file(s), ok");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
