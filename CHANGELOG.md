@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.188](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.401...v1.1.188) (2026-10-24)
+
+
+### Bug Fixes
+
+* **packaging:** restore the copy-plugins script of the install step ([bf838f1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/bf838f12efcf43d90b9b1b64608b2f46831bc896))
+
 ### [1.1.187](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.400...v1.1.187) (2026-10-24)
 
 
