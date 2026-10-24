@@ -530,6 +530,70 @@ async function startBiomeImplementation(
 	}
 }
 
+/** The last time a quality check ran - the check is not repeated in a loop. */
+let _toolingCheckAt = 0;
+/** Is a quality check running right now? */
+let _toolingCheckRunning = false;
+/** The shortest time between two quality checks. */
+const TOOLING_CHECK_INTERVAL_MS = 15_000;
+
+/**
+ * Run the post-change quality check of the workspace.
+ *
+ * The check honors the saved preference: Biome when the user asked for it,
+ * the project's own script otherwise. It never writes, it never blocks the
+ * session and it never runs without a decision of the user.
+ */
+async function maybeRunToolingCheck(ctx: ExtensionContext): Promise<void> {
+	const store = _toolingStore;
+	if (!store || _toolingCheckRunning) return;
+	const now = Date.now();
+	if (now - _toolingCheckAt < TOOLING_CHECK_INTERVAL_MS) return;
+
+	let workspaceRoot: string;
+	try {
+		workspaceRoot = realpathSync(process.cwd());
+	} catch {
+		return;
+	}
+
+	try {
+		const mod = await import("./packages/tooling-preference/dist/index.js");
+		const userKey = mod.buildToolingUserKey(readToolingIdentity());
+		const record = store.read(userKey, workspaceRoot);
+		// Without a decision of the user no tool is selected, so nothing runs.
+		if (!record?.decision) return;
+
+		const changed = mod.detectChangedJsTsFiles(workspaceRoot);
+		if (!changed.detected || changed.files.length === 0) return;
+
+		const context = mod.detectToolingContext(workspaceRoot);
+		const plan = mod.selectQualityCheck({
+			context,
+			preference: record.decision,
+			files: changed.files,
+		});
+		if (plan.tool === "none") return;
+
+		_toolingCheckRunning = true;
+		_toolingCheckAt = now;
+		try {
+			const result = mod.runQualityCheck(plan, {
+				cwd: workspaceRoot,
+				timeoutMs: 60_000,
+			});
+			const line = mod.formatQualityCheckStatus(result);
+			logToFile("[ToolingCheck]", line);
+			// The status line names the tool and says whether the check ran.
+			ctx.ui.setStatus("harness-tooling", line);
+		} finally {
+			_toolingCheckRunning = false;
+		}
+	} catch (error) {
+		logToFile("[ToolingCheck]", `check failed: ${oneLineError(error)}`);
+	}
+}
+
 async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
@@ -5988,6 +6052,9 @@ Run \`bd ready\` to see current bd issues.
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
 		maybeNotifyContextUsage(ctx);
+		// The quality check of the workspace runs after the turn: it never
+		// writes and it never steers the session.
+		void maybeRunToolingCheck(ctx);
 	});
 
 	pi.on("agent_end", () => {

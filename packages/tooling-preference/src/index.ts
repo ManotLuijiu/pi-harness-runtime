@@ -42,3 +42,22 @@ export {
 	type ToolingRequest,
 	type ToolingResolution,
 } from "./registry.js";
+
+export {
+	detectChangedJsTsFiles,
+	isIgnoredPath,
+	isJsTsFile,
+	parseGitStatus,
+	JS_TS_EXTENSIONS,
+	type ChangedFilesResult,
+} from "./changed-files.js";
+
+export {
+	formatQualityCheckStatus,
+	readWorkspaceScripts,
+	runQualityCheck,
+	selectQualityCheck,
+	type QualityCheckPlan,
+	type QualityCheckResult,
+	type QualityCheckTool,
+} from "./quality-check.js";

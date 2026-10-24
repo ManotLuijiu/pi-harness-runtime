@@ -10,4 +10,6 @@ export { detectPackageManager, detectToolingContext, evaluateBiomeProposalEligib
 export { buildToolingButtons, buildToolingImplementationPrompt, buildToolingProposalMessage, buildToolingRequestId, buildToolingUserKey, parseToolingTarget, TOOLING_ACTION, } from "./proposal.js";
 export { harnessRuntimeDir, shouldAskAgain, ToolingPreferenceStore, toolingPreferenceKey, } from "./store.js";
 export { ToolingRequestRegistry, } from "./registry.js";
+export { detectChangedJsTsFiles, isIgnoredPath, isJsTsFile, parseGitStatus, JS_TS_EXTENSIONS, } from "./changed-files.js";
+export { formatQualityCheckStatus, readWorkspaceScripts, runQualityCheck, selectQualityCheck, } from "./quality-check.js";
 //# sourceMappingURL=index.js.map
