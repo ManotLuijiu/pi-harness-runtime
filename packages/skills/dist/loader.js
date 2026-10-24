@@ -9,11 +9,12 @@ import { join } from "node:path";
 import { parseSkillFile } from "./parser.js";
 /** Resolve the Qdrant skill module path (monorepo sibling or npm package) */
 async function resolveQdrantModules() {
-    // Try monorepo sibling first (resolved from packages/skills/src/loader.ts)
-    for (const base of ["../../../packages/qdrant-skills/src", "../../packages/qdrant-skills/src"]) {
+    // Try the monorepo sibling first (the compiled package, so the module
+    // comes from the same build the app ships).
+    for (const base of ["../../../packages/qdrant-skills/dist", "../../packages/qdrant-skills/dist"]) {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const mod = require(/* @vite-ignore */ base + "/index.js");
+            // A dynamic import: this module is ESM, where `require` does not exist.
+            const mod = (await import(/* @vite-ignore */ base + "/index.js"));
             return mod;
         }
         catch {
@@ -22,8 +23,10 @@ async function resolveQdrantModules() {
     }
     // Fall back to npm package
     try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require(/* @vite-ignore */ "@pi-harness/qdrant-skills");
+        // The specifier is a variable on purpose: the package is optional and
+        // must not be resolved by the type checker.
+        const specifier = "@pi-harness/qdrant-skills";
+        const mod = (await import(/* @vite-ignore */ specifier));
         return {
             createQdrantClient: (cfg) => mod.createQdrantClient(cfg),
             createCollection: mod.createCollection,

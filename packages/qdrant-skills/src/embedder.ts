@@ -5,6 +5,9 @@
  * Used to store skills in Qdrant for semantic search.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { homedir as osHomedir } from "node:os";
+import { join } from "node:path";
 import type { SkillPoint } from "./client.js";
 
 /**
@@ -15,55 +18,68 @@ export interface EmbeddingResult {
   tokens: number;
 }
 
+/** The embeddings endpoint of OpenAI. */
+const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
+
+/** The home directory of the current user. */
+function homeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || osHomedir();
+}
+
 /**
- * Get OpenAI API key for embeddings
+ * Read a key file. A file that cannot be read is no key - the caller must
+ * not see an exception of an unreadable file as a broken installation.
+ */
+function readKeyFile(path: string): string | null {
+  try {
+    if (!existsSync(path)) return null;
+    const value = readFileSync(path, "utf8").trim();
+    return value.length > 5 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The OpenAI token of a pi.dev login (an OAuth access token).
+ */
+function readPiAuthToken(): string | null {
+  const authPath = join(homeDir(), ".pi", "agent", "auth.json");
+  try {
+    if (!existsSync(authPath)) return null;
+    const auth = JSON.parse(readFileSync(authPath, "utf8")) as {
+      openai?: { key?: string; access?: string };
+      "openai-codex"?: { key?: string; access?: string };
+    };
+    // The api key first, then the OAuth access token of the codex login.
+    const entry = auth.openai ?? auth["openai-codex"];
+    if (!entry) return null;
+    return (entry.access ?? entry.key ?? "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the OpenAI API key for embeddings.
+ *
+ * Only a key of OpenAI belongs here: the embeddings endpoint of OpenAI does
+ * not accept the key of another provider. A TypeSafe or an OpenRouter key is
+ * a different credential and must never be sent to that endpoint.
  */
 export function getOpenAIApiKey(): string | null {
-  // 1. Env vars (same priority as Jev)
-  if (process.env.OPENAI_API_KEY) {
-    return process.env.OPENAI_API_KEY;
-  }
-  if (process.env.TYPESAFE_API_KEY) {
-    return process.env.TYPESAFE_API_KEY;
-  }
-  if (process.env.OPENROUTER_API_KEY) {
-    return process.env.OPENROUTER_API_KEY;
-  }
+  // 1. The environment.
+  const fromEnv = process.env.OPENAI_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
 
-  // 2. Keys file
-  try {
-    const { existsSync, readFileSync } = require("node:fs");
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
-    const keyPath = `${homedir}/.pi-harness-runtime/keys/openai-api-key.txt`;
-    if (existsSync(keyPath)) {
-      const val = readFileSync(keyPath, "utf-8").trim();
-      if (val.length > 5) return val;
-    }
-  } catch {
-    // ignore
-  }
+  // 2. The key file of the installation.
+  const fromFile = readKeyFile(
+    join(homeDir(), ".pi-harness-runtime", "keys", "openai-api-key.txt"),
+  );
+  if (fromFile) return fromFile;
 
-  // 3. pi.dev auth.json (OpenAI OAuth tokens stored by pi.dev login)
-  try {
-    const { existsSync, readFileSync } = require("node:fs");
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
-    const authPath = `${homedir}/.pi/agent/auth.json`;
-    if (existsSync(authPath)) {
-      const auth = JSON.parse(readFileSync(authPath, "utf-8")) as {
-        openai?: { type?: string; key?: string; access?: string };
-        "openai-codex"?: { type?: string; key?: string; access?: string };
-      };
-      // Try openai first (API key), then openai-codex (OAuth access token)
-      const entry = auth.openai ?? auth["openai-codex"];
-      if (entry) {
-        return entry.access ?? entry.key ?? null;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return null;
+  // 3. pi.dev auth.json (the OpenAI token of a pi.dev login).
+  return readPiAuthToken();
 }
 
 /**
@@ -78,7 +94,7 @@ export async function createEmbedding(
     throw new Error("No OpenAI API key available for embeddings");
   }
   
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
+  const response = await fetch(OPENAI_EMBEDDINGS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

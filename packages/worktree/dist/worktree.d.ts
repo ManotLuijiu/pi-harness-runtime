@@ -9,7 +9,7 @@
  * - allow reviewer agent to inspect diffs
  * - allow separate models to work on separate tasks
  */
-import type { WorktreeInfo } from "../../types/src/runtime-types.js";
+import type { WorktreeInfo } from "../../types/dist/runtime-types.js";
 /**
  * The file system calls the manager needs.
  *

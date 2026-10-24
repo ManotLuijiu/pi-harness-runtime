@@ -4,7 +4,7 @@
  * Collects quota signals from API responses, provider status,
  * Playwright, and local estimates. Produces provider availability state.
  */
-import type { QuotaSignal, QuotaState } from "../../types/src/runtime-types.js";
+import type { QuotaSignal, QuotaState } from "../../types/dist/runtime-types.js";
 export interface QuotaSignalInput {
     provider: string;
     source: "api_response" | "provider_status" | "playwright" | "local_estimate" | "tui_message";

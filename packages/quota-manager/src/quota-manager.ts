@@ -5,7 +5,7 @@
  * Playwright, and local estimates. Produces provider availability state.
  */
 
-import type { QuotaSignal, QuotaState } from "../../types/src/runtime-types.js";
+import type { QuotaSignal, QuotaState } from "../../types/dist/runtime-types.js";
 
 export interface QuotaSignalInput {
 	provider: string;
@@ -72,7 +72,7 @@ export class QuotaManager {
 		let latest: QuotaSignal | null = null;
 		let latestTs = 0;
 
-		for (const entry of Array.from(this.signals.entries())) {
+		for (const entry of this.signals.entries()) {
 			const [k, sigs] = entry;
 			if (k.startsWith(`${provider}:`)) {
 				const mostRecent = sigs.sort(
@@ -134,7 +134,7 @@ export class QuotaManager {
 		const result: QuotaSignal[] = [];
 		const cutoff = Date.now() - this.staleThresholdMs;
 
-		for (const entry of Array.from(this.signals.entries())) {
+		for (const entry of this.signals.entries()) {
 			const [key, sigs] = entry;
 			if (key.startsWith(`${provider}:`)) {
 				for (const signal of sigs) {
@@ -199,7 +199,7 @@ export class QuotaManager {
 	clearStale(): void {
 		const cutoff = Date.now() - this.staleThresholdMs;
 
-		for (const entry of Array.from(this.signals.entries())) {
+		for (const entry of this.signals.entries()) {
 			const [key, sigs] = entry;
 			const fresh = sigs.filter(
 				(s: QuotaSignal) => Date.parse(s.capturedAt) >= cutoff,
@@ -222,11 +222,12 @@ export class QuotaManager {
 			const state = this.getProviderState(provider);
 			const latest = this.getLatestSignal(provider);
 
-			const status = state.exhausted
-				? "EXHAUSTED"
-				: state.limited
-					? "LIMITED"
-					: "AVAILABLE";
+			let status = "AVAILABLE";
+			if (state.exhausted) {
+				status = "EXHAUSTED";
+			} else if (state.limited) {
+				status = "LIMITED";
+			}
 
 			lines.push(`${provider}: ${status}`);
 

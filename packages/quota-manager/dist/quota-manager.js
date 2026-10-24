@@ -40,7 +40,7 @@ export class QuotaManager {
         // Return most recent across all window types
         let latest = null;
         let latestTs = 0;
-        for (const entry of Array.from(this.signals.entries())) {
+        for (const entry of this.signals.entries()) {
             const [k, sigs] = entry;
             if (k.startsWith(`${provider}:`)) {
                 const mostRecent = sigs.sort((a, b) => Date.parse(b.capturedAt) - Date.parse(a.capturedAt))[0];
@@ -87,7 +87,7 @@ export class QuotaManager {
     getSignals(provider) {
         const result = [];
         const cutoff = Date.now() - this.staleThresholdMs;
-        for (const entry of Array.from(this.signals.entries())) {
+        for (const entry of this.signals.entries()) {
             const [key, sigs] = entry;
             if (key.startsWith(`${provider}:`)) {
                 for (const signal of sigs) {
@@ -143,7 +143,7 @@ export class QuotaManager {
      */
     clearStale() {
         const cutoff = Date.now() - this.staleThresholdMs;
-        for (const entry of Array.from(this.signals.entries())) {
+        for (const entry of this.signals.entries()) {
             const [key, sigs] = entry;
             const fresh = sigs.filter((s) => Date.parse(s.capturedAt) >= cutoff);
             if (fresh.length === 0) {
@@ -162,11 +162,13 @@ export class QuotaManager {
         for (const provider of providers) {
             const state = this.getProviderState(provider);
             const latest = this.getLatestSignal(provider);
-            const status = state.exhausted
-                ? "EXHAUSTED"
-                : state.limited
-                    ? "LIMITED"
-                    : "AVAILABLE";
+            let status = "AVAILABLE";
+            if (state.exhausted) {
+                status = "EXHAUSTED";
+            }
+            else if (state.limited) {
+                status = "LIMITED";
+            }
             lines.push(`${provider}: ${status}`);
             if (latest) {
                 lines.push(`  Latest: ${latest.usedPct ?? 0}% used`);

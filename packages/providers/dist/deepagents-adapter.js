@@ -6,12 +6,6 @@
  *
  * @module deepagents-adapter
  */
-/**
- * DeepAgents Adapter
- *
- * Connects the harness runtime to a DeepAgents worker.
- * Runtime orchestrates; DeepAgents executes tasks.
- */
 export class DeepAgentsAdapter {
     id;
     provider = "deepagents";
@@ -280,8 +274,9 @@ export class DeepAgentsAdapter {
                 const errorBody = await response.text().catch(() => "");
                 throw new Error(`DeepAgents API error: ${response.status} ${response.statusText} - ${errorBody}`);
             }
-            const result = (await response.json());
-            return result;
+            // The API answers with the result of the task; the shape is
+            // checked by the caller that reads the fields.
+            return (await response.json());
         }
         catch (error) {
             clearTimeout(timeout);

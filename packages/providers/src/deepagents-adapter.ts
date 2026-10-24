@@ -20,8 +20,8 @@ import type {
 	DeepAgentsConfig,
 	DeepAgentsTaskRequest,
 	DeepAgentsResult,
-} from "../../types/src/agent-worker-types.js";
-import type { RuntimeTask } from "../../types/src/runtime-types.js";
+} from "../../types/dist/agent-worker-types.js";
+import type { RuntimeTask } from "../../types/dist/runtime-types.js";
 
 /**
  * DeepAgents Adapter
@@ -29,6 +29,28 @@ import type { RuntimeTask } from "../../types/src/runtime-types.js";
  * Connects the harness runtime to a DeepAgents worker.
  * Runtime orchestrates; DeepAgents executes tasks.
  */
+/**
+ * The result of a DeepAgents task run.
+ */
+export interface DeepAgentsTaskResult {
+	taskId: string;
+	status: "success" | "failure" | "partial";
+	summary: string;
+	filesChanged?: string[];
+	output?: string;
+	error?: string;
+	usage?: {
+		input: number;
+		output: number;
+		cost?: number;
+	};
+	metadata?: {
+		agentId?: string;
+		workerId?: string;
+		sandboxUrl?: string;
+	};
+}
+
 export class DeepAgentsAdapter implements AgentWorker {
 	readonly id: string;
 	readonly provider = "deepagents" as const;
@@ -344,24 +366,7 @@ export class DeepAgentsAdapter implements AgentWorker {
 	 */
 	private async callDeepAgents(
 		request: ReturnType<DeepAgentsAdapter["buildDeepAgentsRequest"]>,
-	): Promise<{
-		taskId: string;
-		status: "success" | "failure" | "partial";
-		summary: string;
-		filesChanged?: string[];
-		output?: string;
-		error?: string;
-		usage?: {
-			input: number;
-			output: number;
-			cost?: number;
-		};
-		metadata?: {
-			agentId?: string;
-			workerId?: string;
-			sandboxUrl?: string;
-		};
-	}> {
+	): Promise<DeepAgentsTaskResult> {
 		if (!this.config) {
 			throw new Error("Not initialized");
 		}
@@ -394,17 +399,9 @@ export class DeepAgentsAdapter implements AgentWorker {
 				);
 			}
 
-			const result = (await response.json()) as Awaited<
-				ReturnType<typeof fetch>
-			> extends {
-				json: () => Promise<infer T>;
-			}
-				? T
-				: unknown;
-
-			return result as typeof response extends { json: () => Promise<infer T> }
-				? T
-				: never;
+			// The API answers with the result of the task; the shape is
+			// checked by the caller that reads the fields.
+			return (await response.json()) as DeepAgentsTaskResult;
 		} catch (error) {
 			clearTimeout(timeout);
 

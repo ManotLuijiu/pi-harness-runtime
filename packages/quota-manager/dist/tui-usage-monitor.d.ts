@@ -15,8 +15,10 @@
  */
 import { EventEmitter } from "node:events";
 import type { QuotaManager } from "./quota-manager.js";
+/** The providers the monitor can recognize. */
+export type TUIProvider = "openai" | "glm" | "minimax" | "anthropic" | "openrouter";
 export interface TUIUsageSignal {
-    provider: "openai" | "glm" | "anthropic" | "openrouter" | "unknown";
+    provider: TUIProvider | "unknown";
     timestamp: string;
     /** Usage percentage (0-100), if available */
     usedPct?: number;
@@ -49,11 +51,11 @@ export declare class TUIUsageMonitor extends EventEmitter {
     /**
      * Detect which provider the message is about
      */
-    detectProvider(message: string): "openai" | "glm" | "anthropic" | "openrouter" | null;
+    detectProvider(message: string): TUIProvider | null;
     /**
      * Get the last signal for a provider
      */
-    getLastSignal(provider: "openai" | "glm" | "anthropic" | "openrouter"): TUIUsageSignal | null;
+    getLastSignal(provider: TUIProvider): TUIUsageSignal | null;
     /**
      * Get all last signals
      */

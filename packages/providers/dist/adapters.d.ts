@@ -9,7 +9,7 @@
  * - retry policy
  * - model capability metadata
  */
-import type { ProviderConfig, ProviderCapability, ProviderRequest, ProviderResponse } from "../../types/src/runtime-types.js";
+import type { ProviderConfig, ProviderCapability, ProviderRequest, ProviderResponse } from "../../types/dist/runtime-types.js";
 export interface AdapterConfig {
     provider: ProviderConfig;
     quotaSignalExtractor?: (error: unknown) => QuotaSignal | null;

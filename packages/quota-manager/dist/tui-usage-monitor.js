@@ -17,14 +17,19 @@ import { EventEmitter } from "node:events";
 /**
  * Provider-specific patterns
  */
+/**
+ * The patterns that name the provider.
+ *
+ * A pattern that names the provider wins over a bare error code: the message
+ * "Claude overloaded_error" is about Anthropic, not about the provider that
+ * happens to use the error code first.
+ */
 const PROVIDER_PATTERNS = {
     openai: [
         /(?:^|\s)OpenAI(?:$|\s)/i,
         /(?:^|\s)GPT(?:$|\s)/i,
         /openai.*(?:quota|limit|exhausted)/i,
         /gpt.*(?:quota|limit|exhausted)/i,
-        /insufficient_quota/i,
-        /context_length_exceeded/i,
         /openai.*rate.?limit/i,
         /429.*openai/i,
         /openai.*context.*(?:window|length)/i,
@@ -37,30 +42,39 @@ const PROVIDER_PATTERNS = {
         /glm.*context.*(?:window|length)/i,
         /glm.*rate.?limit/i,
         /glm.*429/i,
-        /code.*1308/i, // GLM specific error code
-        /Usage limit reached/i,
-        /5 hour.*quota/i,
     ],
     minimax: [
         /(?:^|\s)Minimax(?:$|\s)/i,
         /minimax.*(?:overload|surge|busy)/i,
-        /overloaded_error/i,
         /529.*minimax/i,
-        /peak.?hour.*surge/i,
     ],
     anthropic: [
         /(?:^|\s)Claude(?:$|\s)/i,
         /(?:^|\s)Anthropic(?:$|\s)/i,
         /anthropic.*(?:quota|limit|exhausted)/i,
         /claude.*(?:quota|limit|exhausted)/i,
-        /overloaded_error/i,
-        /rate_limit_error/i,
     ],
     openrouter: [
         /(?:^|\s)OpenRouter(?:$|\s)/i,
         /openrouter.*(?:quota|limit|exhausted)/i,
     ],
 };
+/**
+ * The error codes without a provider name.
+ *
+ * They are checked only when no pattern names a provider. A code that several
+ * providers share belongs to the one that reported it first.
+ */
+const GENERIC_PATTERNS = [
+    { provider: "openai", pattern: /insufficient_quota/i },
+    { provider: "openai", pattern: /context_length_exceeded/i },
+    { provider: "glm", pattern: /code.*1308/i },
+    { provider: "glm", pattern: /Usage limit reached/i },
+    { provider: "glm", pattern: /5 hour.*quota/i },
+    { provider: "minimax", pattern: /overloaded_error/i },
+    { provider: "minimax", pattern: /peak.?hour.*surge/i },
+    { provider: "anthropic", pattern: /rate_limit_error/i },
+];
 const RESET_TIME_PATTERNS = [
     // GLM specific: "reset at 2026-08-25 01:47:16" or "reset at 2026-08-25T01:47:16"
     /reset\s+(?:at\s+)?(\d{4}-\d{2}-\d{2}[T ]?\d{2}:\d{2}:\d{2})/i,
@@ -108,11 +122,17 @@ export class TUIUsageMonitor extends EventEmitter {
      * Detect which provider the message is about
      */
     detectProvider(message) {
+        // The named provider first, the bare error codes second.
         for (const [provider, patterns] of Object.entries(PROVIDER_PATTERNS)) {
             for (const pattern of patterns) {
                 if (pattern.test(message)) {
                     return provider;
                 }
+            }
+        }
+        for (const { provider, pattern } of GENERIC_PATTERNS) {
+            if (pattern.test(message)) {
+                return provider;
             }
         }
         return null;
@@ -221,7 +241,7 @@ export class TUIUsageMonitor extends EventEmitter {
                     // GLM full datetime format: "2026-08-25 01:47:16" or "2026-08-25T01:47:16"
                     const datetimeStr = match[1].replace(" ", "T");
                     const date = new Date(datetimeStr);
-                    if (!isNaN(date.getTime())) {
+                    if (!Number.isNaN(date.getTime())) {
                         return date.toISOString();
                     }
                 }

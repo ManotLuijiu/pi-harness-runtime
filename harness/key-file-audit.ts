@@ -235,8 +235,8 @@ export const KEY_REQUIREMENTS: KeyRequirement[] = [
 		fixFile: "openai-api-key.txt",
 		placeholder: "<API_KEY>",
 		hint: "OpenAI key used to embed the skills",
-		// The embedder accepts a TypeSafe or an OpenRouter key as well.
-		altEnv: ["TYPESAFE_API_KEY", "OPENROUTER_API_KEY"],
+		// The embeddings endpoint of OpenAI accepts only an OpenAI key: a
+		// TypeSafe or an OpenRouter key is a different credential.
 		minLength: 6,
 	},
 	{

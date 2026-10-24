@@ -507,7 +507,9 @@ test("an allowed-user list with one usable id satisfies the requirement", async 
 	await rm(dir, { recursive: true, force: true });
 });
 
-test("the qdrant embedding key accepts a TypeSafe or an OpenRouter key from the environment", async () => {
+test("the qdrant embedding key does not accept the key of another provider", async () => {
+	// The embeddings endpoint of OpenAI accepts only an OpenAI key: a
+	// TypeSafe or an OpenRouter key is a different credential.
 	const dir = await makeKeysDir({});
 	const audit = auditKeyFiles({
 		keysDir: dir,
@@ -516,7 +518,8 @@ test("the qdrant embedding key accepts a TypeSafe or an OpenRouter key from the 
 	const entry = audit.missing.find(
 		(item) => item.requirement.feature === "Qdrant" && item.requirement.label === "embedding key",
 	);
-	assert.equal(entry, undefined, "the embedder accepts a TypeSafe key");
+	assert.ok(entry, "the key of another provider does not satisfy the requirement");
+	assert.equal(entry.requirement.env, "OPENAI_API_KEY");
 	await rm(dir, { recursive: true, force: true });
 });
 

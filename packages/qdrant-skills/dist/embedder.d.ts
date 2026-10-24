@@ -13,7 +13,11 @@ export interface EmbeddingResult {
     tokens: number;
 }
 /**
- * Get OpenAI API key for embeddings
+ * Get the OpenAI API key for embeddings.
+ *
+ * Only a key of OpenAI belongs here: the embeddings endpoint of OpenAI does
+ * not accept the key of another provider. A TypeSafe or an OpenRouter key is
+ * a different credential and must never be sent to that endpoint.
  */
 export declare function getOpenAIApiKey(): string | null;
 /**

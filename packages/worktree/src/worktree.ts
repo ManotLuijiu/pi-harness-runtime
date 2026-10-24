@@ -10,7 +10,7 @@
  * - allow separate models to work on separate tasks
  */
 
-import type { WorktreeInfo } from "../../types/src/runtime-types.js";
+import type { WorktreeInfo } from "../../types/dist/runtime-types.js";
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";

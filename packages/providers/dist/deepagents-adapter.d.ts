@@ -6,13 +6,34 @@
  *
  * @module deepagents-adapter
  */
-import type { AgentWorker, AgentWorkerConfig, AgentStatus, TaskRequest, TaskResult, HealthStatus, AgentWorkerEvents } from "../../types/src/agent-worker-types.js";
+import type { AgentWorker, AgentWorkerConfig, AgentStatus, TaskRequest, TaskResult, HealthStatus, AgentWorkerEvents } from "../../types/dist/agent-worker-types.js";
 /**
  * DeepAgents Adapter
  *
  * Connects the harness runtime to a DeepAgents worker.
  * Runtime orchestrates; DeepAgents executes tasks.
  */
+/**
+ * The result of a DeepAgents task run.
+ */
+export interface DeepAgentsTaskResult {
+    taskId: string;
+    status: "success" | "failure" | "partial";
+    summary: string;
+    filesChanged?: string[];
+    output?: string;
+    error?: string;
+    usage?: {
+        input: number;
+        output: number;
+        cost?: number;
+    };
+    metadata?: {
+        agentId?: string;
+        workerId?: string;
+        sandboxUrl?: string;
+    };
+}
 export declare class DeepAgentsAdapter implements AgentWorker {
     readonly id: string;
     readonly provider: "deepagents";

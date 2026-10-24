@@ -15,7 +15,7 @@ import type {
 	ProviderCapability,
 	ProviderRequest,
 	ProviderResponse,
-} from "../../types/src/runtime-types.js";
+} from "../../types/dist/runtime-types.js";
 
 export interface AdapterConfig {
 	provider: ProviderConfig;
