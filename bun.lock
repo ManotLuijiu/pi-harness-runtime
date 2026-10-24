@@ -763,6 +763,10 @@
         "bun-types": "^1.0.0",
       },
     },
+    "packages/tooling-preference": {
+      "name": "@pi-harness/tooling-preference",
+      "version": "1.1.71-1",
+    },
     "packages/trajectory": {
       "name": "@pi-harness/trajectory",
       "version": "1.1.71-1",
@@ -777,6 +781,10 @@
     "packages/tui": {
       "name": "@pi-harness/tui",
       "version": "1.1.71-1",
+    },
+    "packages/two-phase-review": {
+      "name": "@pi-harness/two-phase-review",
+      "version": "1.1.0",
     },
     "packages/types": {
       "name": "@pi-harness/types",
@@ -1155,9 +1163,13 @@
 
     "@pi-harness/token-optimizer": ["@pi-harness/token-optimizer@workspace:packages/token-optimizer"],
 
+    "@pi-harness/tooling-preference": ["@pi-harness/tooling-preference@workspace:packages/tooling-preference"],
+
     "@pi-harness/trajectory": ["@pi-harness/trajectory@workspace:packages/trajectory"],
 
     "@pi-harness/tui": ["@pi-harness/tui@workspace:packages/tui"],
+
+    "@pi-harness/two-phase-review": ["@pi-harness/two-phase-review@workspace:packages/two-phase-review"],
 
     "@pi-harness/types": ["@pi-harness/types@workspace:packages/types"],
 
