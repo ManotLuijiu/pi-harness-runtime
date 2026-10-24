@@ -27,6 +27,48 @@ describe("pending question lifecycle", () => {
 		requestId = question.requestId;
 	});
 
+	describe("the risk facts of a question", () => {
+		it("keeps the recorded risk facts with the request", () => {
+			const local = new PendingQuestionController();
+			const question = local.createQuestion({
+				text: "Shall I drop the production table?",
+				sessionId: "session-1",
+				workspacePath: "/tmp",
+				kind: "approval",
+				risk: {
+					requiresExplicitAuthorization: true,
+					destructive: true,
+					reversible: false,
+					external: true,
+					signals: ["drop-object", "production"],
+				},
+			});
+
+			expect(question.requiresExplicitAuthorization).toBe(true);
+			expect(question.destructive).toBe(true);
+			expect(question.reversible).toBe(false);
+			expect(question.external).toBe(true);
+			expect(question.riskSignals).toContain("drop-object");
+
+			// The facts travel with the request.
+			expect(local.getCurrentQuestion()?.destructive).toBe(true);
+		});
+
+		it("leaves the facts unknown when they were not determined", () => {
+			const local = new PendingQuestionController();
+			const question = local.createQuestion({
+				text: "Should I continue?",
+				sessionId: "session-1",
+				workspacePath: "/tmp",
+				kind: "routine",
+			});
+
+			expect(question.requiresExplicitAuthorization).toBeUndefined();
+			expect(question.destructive).toBeUndefined();
+			expect(question.reversible).toBeUndefined();
+		});
+	});
+
 	describe("stale and unauthorized callbacks", () => {
 		it("ignores a callback with a stale request ID", () => {
 			const applied = controller.applyApproval("approve", "q-not-the-question", "telegram");

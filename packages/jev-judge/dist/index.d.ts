@@ -177,6 +177,8 @@ export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
 export type { TaskState, AutoContinueDecision, AutoContinueConfig } from "./auto-continue.js";
+export { classifyQuestionRisk } from "./question-risk.js";
+export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { WrapUpResult } from "./wrap-up-judge.js";
 export { EnvironmentJudge } from "./environment-judge.js";

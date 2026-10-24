@@ -107,6 +107,29 @@ export interface DecisionPolicyOptions {
     /** The confidence of the proposed outcome. */
     confidence?: number;
 }
+/**
+ * Is the value a known outcome?
+ *
+ * The evaluation returns the outcome as a free-text choice: an unknown
+ * value is ignored instead of being guessed.
+ */
+export declare function isDecisionOutcome(value: unknown): value is DecisionOutcome;
+/**
+ * Combine the threshold outcome with the structured outcome of the
+ * evaluation.
+ *
+ * The evaluation may only tighten the decision: a rejection stays a
+ * rejection, a wait stays a wait, and an approval never beats the
+ * thresholds.
+ */
+export declare function tightenOutcome(thresholdOutcome: DecisionOutcome, proposed: DecisionOutcome | undefined): DecisionOutcome;
+/**
+ * Are the risk facts of the proposed action unknown?
+ *
+ * A question without a kind and without a single known risk fact cannot be
+ * judged: the policy waits for the human instead of continuing on a guess.
+ */
+export declare function hasUnknownRiskFacts(question: PendingQuestionContext): boolean;
 export declare function applyDecisionPolicy(proposed: DecisionOutcome, context: DecisionContext | undefined, options?: DecisionPolicyOptions): DecisionPolicyResult;
 /**
  * What the runtime does with a Jev outcome.
@@ -134,7 +157,7 @@ export declare function decideOutcomeApplication(outcome: DecisionOutcome, reque
  * Auto-continue decision
  */
 export interface AutoContinueDecision {
-    action: "proceed" | "wait" | "proceed_with_caution";
+    action: "proceed" | "wait" | "proceed_with_caution" | "reject";
     /** The typed outcome after the policy was applied. */
     outcome: DecisionOutcome;
     probability: number;

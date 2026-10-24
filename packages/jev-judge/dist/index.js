@@ -554,6 +554,8 @@ export { E2EJudge } from "./e2e-judge.js";
 export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
+// Export the deterministic risk classifier of a pending question
+export { classifyQuestionRisk } from "./question-risk.js";
 // Export WrapUpJudge
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 // Export EnvironmentJudge

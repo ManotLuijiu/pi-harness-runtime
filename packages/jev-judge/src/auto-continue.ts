@@ -122,6 +122,58 @@ export interface DecisionPolicyOptions {
   confidence?: number;
 }
 
+/**
+ * Is the value a known outcome?
+ *
+ * The evaluation returns the outcome as a free-text choice: an unknown
+ * value is ignored instead of being guessed.
+ */
+export function isDecisionOutcome(value: unknown): value is DecisionOutcome {
+  return (
+    value === "approve" ||
+    value === "reject" ||
+    value === "wait" ||
+    value === "proceed_with_caution"
+  );
+}
+
+/**
+ * Combine the threshold outcome with the structured outcome of the
+ * evaluation.
+ *
+ * The evaluation may only tighten the decision: a rejection stays a
+ * rejection, a wait stays a wait, and an approval never beats the
+ * thresholds.
+ */
+export function tightenOutcome(
+  thresholdOutcome: DecisionOutcome,
+  proposed: DecisionOutcome | undefined,
+): DecisionOutcome {
+  if (!proposed) return thresholdOutcome;
+  if (proposed === "reject") return "reject";
+  if (proposed === "wait") return "wait";
+  if (proposed === "proceed_with_caution") {
+    return thresholdOutcome === "approve" ? "proceed_with_caution" : thresholdOutcome;
+  }
+  // The evaluation proposed an approval: the thresholds keep their veto.
+  return thresholdOutcome === "wait" ? "wait" : thresholdOutcome;
+}
+
+/**
+ * Are the risk facts of the proposed action unknown?
+ *
+ * A question without a kind and without a single known risk fact cannot be
+ * judged: the policy waits for the human instead of continuing on a guess.
+ */
+export function hasUnknownRiskFacts(question: PendingQuestionContext): boolean {
+  if (!question.kind) return true;
+  return (
+    question.requiresExplicitAuthorization === undefined &&
+    question.destructive === undefined &&
+    question.reversible === undefined
+  );
+}
+
 export function applyDecisionPolicy(
   proposed: DecisionOutcome,
   context: DecisionContext | undefined,
@@ -160,6 +212,17 @@ export function applyDecisionPolicy(
         outcome: "proceed_with_caution",
         appliedRule: "destructive-action",
         reason: "The action is destructive but reversible, so it proceeds with caution.",
+      };
+    }
+
+    // Nothing is known about the risk of the action: an uncertain case
+    // waits for the human instead of continuing on a guess.
+    if (question && hasUnknownRiskFacts(question)) {
+      return {
+        outcome: "wait",
+        appliedRule: "unknown-risk-facts",
+        reason:
+          "The risk of the proposed action is unknown, so it waits for the user.",
       };
     }
 
@@ -212,7 +275,7 @@ export function decideOutcomeApplication(
  * Auto-continue decision
  */
 export interface AutoContinueDecision {
-  action: "proceed" | "wait" | "proceed_with_caution";
+  action: "proceed" | "wait" | "proceed_with_caution" | "reject";
   /** The typed outcome after the policy was applied. */
   outcome: DecisionOutcome;
   probability: number; // 0-1 confidence to proceed
@@ -279,6 +342,19 @@ export class AutoContinueJudge {
 
     try {
       const result = await this.jev.evaluate(state, {
+        outcome: {
+          type: "choice",
+          instructions:
+            "The decision for the pending question. Reject it when the proposed action must not happen.",
+          options: ["approve", "proceed_with_caution", "wait", "reject"],
+          optionDescriptions: {
+            approve: "the agent may continue with the planned work",
+            proceed_with_caution:
+              "the agent may continue, but reports every significant step",
+            wait: "keep waiting for the user, the question stays open",
+            reject: "the proposed action must not happen, the work pauses",
+          },
+        },
         shouldProceed: {
           type: "noul",
           instructions:
@@ -379,6 +455,12 @@ export class AutoContinueJudge {
       decision.action = "proceed_with_caution";
     }
 
+    // A rejection is never downgraded: the work pauses and waits for a
+    // human.
+    if (policy.outcome === "reject") {
+      decision.action = "reject";
+    }
+
     return decision;
   }
 
@@ -391,7 +473,8 @@ export class AutoContinueJudge {
     const result = await this.decide(taskState);
 
     return {
-      shouldContinue: result.action !== "wait",
+      shouldContinue:
+        result.action === "proceed" || result.action === "proceed_with_caution",
       probability: result.probability,
       confidence: result.confidence,
     };
@@ -430,6 +513,15 @@ export class AutoContinueJudge {
 
     const waitBenefit = (result.decisions.waitBenefit?.response as { noul: number })?.noul ?? 0.5;
 
+    // The structured outcome of the evaluation. It can make the decision
+    // stricter (reject, wait) but never looser than the thresholds allow.
+    const outcomeChoice = (
+      result.decisions.outcome?.response as { choice?: string } | undefined
+    )?.choice;
+    const proposedOutcome = isDecisionOutcome(outcomeChoice)
+      ? outcomeChoice
+      : undefined;
+
     // Determine action based on thresholds
     let action: AutoContinueDecision["action"];
     let confidence: AutoContinueDecision["confidence"];
@@ -453,6 +545,31 @@ export class AutoContinueJudge {
       reasoning = `Waiting recommended (${((1 - probability) * 100).toFixed(0)}% confidence to wait)`;
     }
 
+    let outcome: DecisionOutcome =
+      action === "proceed"
+        ? "approve"
+        : action === "proceed_with_caution"
+          ? "proceed_with_caution"
+          : "wait";
+
+    // The outcome of the evaluation may only tighten the decision: a
+    // rejection stays a rejection, a wait stays a wait, and an approval
+    // never beats the thresholds.
+    outcome = tightenOutcome(outcome, proposedOutcome);
+    if (outcome === "reject") {
+      action = "reject";
+      confidence = probability > 0.85 ? "high" : "medium";
+      reasoning = `Jev rejected the proposed action (${(probability * 100).toFixed(0)}% confidence to proceed)`;
+    } else if (outcome === "wait" && proposedOutcome === "wait") {
+      action = "wait";
+      reasoning = "Jev decided to wait for the user";
+    } else if (outcome === "proceed_with_caution" && proposedOutcome === "proceed_with_caution") {
+      action = "proceed_with_caution";
+    } else if (proposedOutcome === "approve" && outcome === "wait") {
+      // The thresholds keep their veto: a low confidence stays a wait.
+      reasoning = `${reasoning} - Jev proposed an approval, the confidence stays below the threshold`;
+    }
+
     // Calculate recommended wait time
     let waitRecommendation: number | undefined;
     if (action === "wait") {
@@ -464,12 +581,7 @@ export class AutoContinueJudge {
 
     return {
       action,
-      outcome:
-        action === "proceed"
-          ? "approve"
-          : action === "proceed_with_caution"
-            ? "proceed_with_caution"
-            : "wait",
+      outcome,
       probability,
       riskLevel,
       reasoning,
@@ -581,11 +693,13 @@ export function buildDecisionState(taskState: TaskState): Record<string, unknown
           text: question.text.slice(0, MAX_QUESTION_CHARS),
           proposed_action: question.proposedAction ?? "unknown",
           consequence_of_approval: question.consequence ?? "unknown",
+          // The risk facts are unknown when they were not determined: an
+          // unknown fact is reported as unknown and never as "harmless".
           requires_explicit_authorization:
-            question.requiresExplicitAuthorization ?? false,
-          destructive: question.destructive ?? false,
-          external_effect: question.external ?? false,
-          reversible: question.reversible ?? true,
+            question.requiresExplicitAuthorization ?? "unknown",
+          destructive: question.destructive ?? "unknown",
+          external_effect: question.external ?? "unknown",
+          reversible: question.reversible ?? "unknown",
         }
       : null,
     decision_context: {

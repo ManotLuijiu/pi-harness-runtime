@@ -47,6 +47,16 @@ export interface PendingQuestion {
     questionText: string;
     /** Question kind */
     kind: QuestionKind;
+    /** Does the proposed action need an explicit human authorization? */
+    requiresExplicitAuthorization?: boolean;
+    /** Can the proposed action destroy or damage something? */
+    destructive?: boolean;
+    /** Can the proposed action be undone? */
+    reversible?: boolean;
+    /** Does the proposed action reach the outside world? */
+    external?: boolean;
+    /** The signals the risk facts were derived from. */
+    riskSignals?: string[];
     /** Current state */
     state: QuestionState;
     /** When created */
@@ -154,6 +164,14 @@ export declare class PendingQuestionController {
         workspacePath: string;
         jobId?: string;
         kind: QuestionKind;
+        /** The deterministic risk facts of the proposed action. */
+        risk?: {
+            requiresExplicitAuthorization?: boolean;
+            destructive?: boolean;
+            reversible?: boolean;
+            external?: boolean;
+            signals?: string[];
+        };
     }): PendingQuestion;
     /**
      * Get current pending question
