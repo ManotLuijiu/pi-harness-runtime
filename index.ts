@@ -373,6 +373,78 @@ let _extensionApi: ExtensionAPI | null = null;
 /** How long an unanswered proposal stays quiet before it is offered again. */
 const TOOLING_PROPOSAL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
+// --- two-phase-review: implementation first, review as a second phase -----
+
+/** The package of the two-phase workflow. */
+type TwoPhaseModule = typeof import("./packages/two-phase-review/dist/index.js");
+
+/** The todo shape the workflow needs. */
+type TwoPhaseTodoLike = import("./packages/two-phase-review/dist/index.js").TodoLike;
+
+/**
+ * Load the two-phase review package.
+ */
+async function loadTwoPhaseModule(): Promise<TwoPhaseModule | null> {
+	try {
+		return await import("./packages/two-phase-review/dist/index.js");
+	} catch (error) {
+		logToFile("[TwoPhase]", `package unavailable: ${oneLineError(error)}`);
+		return null;
+	}
+}
+
+/**
+ * Register the two-phase workflow in the session.
+ *
+ * The wiring itself lives in the package (it is tested there). The session
+ * only provides the todo list of the session and the workspace.
+ */
+async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
+	const mod = await loadTwoPhaseModule();
+	if (!mod) return;
+
+	/** Read the todo list of the session (the local one, never bd). */
+	const readTodos = async (ctx: unknown): Promise<{
+		available: boolean;
+		todos: TwoPhaseTodoLike[];
+		reason?: string;
+	}> => {
+		try {
+			const jev = await import("./packages/jev-judge/dist/index.js");
+			const provider = jev.createTodoProvider(ctx as never);
+			const availability = await provider.availability();
+			if (!availability.available) {
+				return {
+					available: false,
+					todos: [],
+					reason: availability.error ?? "the todo provider is not available",
+				};
+			}
+			const snapshot = await provider.getSnapshot();
+			return { available: true, todos: (snapshot.items ?? []) as TwoPhaseTodoLike[] };
+		} catch (error) {
+			return { available: false, todos: [], reason: oneLineError(error) };
+		}
+	};
+
+	try {
+		await mod.initTwoPhaseReview({
+			pi,
+			readTodos,
+			workspaceRoot: () => {
+				try {
+					return realpathSync(process.cwd());
+				} catch {
+					return process.cwd();
+				}
+			},
+			log: (message: string) => logToFile("[TwoPhase]", message),
+		});
+	} catch (error) {
+		logToFile("[TwoPhase]", `runtime not registered: ${oneLineError(error)}`);
+	}
+}
+
 /**
  * Load the tooling preference package and watch for the session start.
  *
@@ -4012,6 +4084,12 @@ export default async function (pi: ExtensionAPI) {
 	// --- tooling-preference: offer Biome.js instead of ESLint/Prettier ------
 	// The proposal is a decision of its own: it never pauses the work.
 	void initToolingPreference(pi);
+
+	// --- two-phase-review: implementation first, review as a second phase ----
+	// A review signal during the implementation is queued, never executed.
+	// The handlers are registered before the extension is ready, so a session
+	// that starts right away is already covered.
+	await initTwoPhaseReview(pi);
 
 	// --- telegram-notifications: Telegram bot for harness event notifications ----
 	// Collect promise so we can wait for initialization before showing startup notification
