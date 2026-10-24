@@ -118,9 +118,16 @@ export interface DecisionPolicyResult {
 export interface DecisionPolicyOptions {
   /** The confidence an autonomous approval needs. */
   confidenceThreshold?: number;
+  /** The confidence a cautious approval needs (lower than the approval threshold). */
+  cautionThreshold?: number;
   /** The confidence of the proposed outcome. */
   confidence?: number;
 }
+
+/** The confidence an autonomous approval needs by default. */
+export const DEFAULT_PROCEED_THRESHOLD = 0.7;
+/** The confidence a cautious approval needs by default. */
+export const DEFAULT_CAUTION_THRESHOLD = 0.5;
 
 /**
  * Is the value a known outcome?
@@ -226,7 +233,13 @@ export function applyDecisionPolicy(
       };
     }
 
-    const threshold = options?.confidenceThreshold ?? 0.7;
+    // The threshold belongs to the outcome: a cautious approval needs the
+    // caution threshold, the higher approval threshold is reserved for a
+    // full approval. The configured caution range must really proceed.
+    const threshold =
+      proposed === "proceed_with_caution"
+        ? (options?.cautionThreshold ?? DEFAULT_CAUTION_THRESHOLD)
+        : (options?.confidenceThreshold ?? DEFAULT_PROCEED_THRESHOLD);
     const confidence = options?.confidence;
     if (typeof confidence === "number" && confidence < threshold) {
       return {
@@ -307,8 +320,8 @@ export interface AutoContinueConfig extends JevJudgeConfig {
  * Default configuration
  */
 const DEFAULT_CONFIG = {
-  proceedThreshold: 0.7,
-  cautionThreshold: 0.5,
+  proceedThreshold: DEFAULT_PROCEED_THRESHOLD,
+  cautionThreshold: DEFAULT_CAUTION_THRESHOLD,
   maxWaitMinutes: 30,
   fallbackAction: "wait" as const,
 };
@@ -435,6 +448,7 @@ export class AutoContinueJudge {
   ): AutoContinueDecision {
     const policy = applyDecisionPolicy(decision.outcome, taskState.context, {
       confidenceThreshold: this.config.proceedThreshold,
+      cautionThreshold: this.config.cautionThreshold,
       confidence: decision.probability,
     });
 
