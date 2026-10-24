@@ -21,6 +21,7 @@ import {
 import type { LogBufferOptions } from "./buffer.js";
 import type { SamplingPolicy } from "./sampler.js";
 import type { LogTransport } from "./types.js";
+import type { DeliveryMode } from "./shipper.js";
 
 export type LogSinkMode = "off" | "auto" | "r2" | "webhook" | "r2+webhook";
 
@@ -35,6 +36,12 @@ export interface LogSinkConfig {
 	installationId: string;
 	/** Transports in delivery priority order. */
 	transports: LogTransport[];
+	/**
+	 * How the transports are used. `fallback` (the default) lets the first
+	 * transport that accepts a batch win; `fanout` delivers every batch to
+	 * every transport.
+	 */
+	delivery?: DeliveryMode;
 	/** Directory of the local spool (undefined when logging is off). */
 	spoolDir?: string;
 	sampling: Partial<SamplingPolicy>;
@@ -194,11 +201,26 @@ export function resolveLogSinkConfig(options: ResolveConfigOptions = {}): LogSin
 		notes.push("no transport configured - logs stay local");
 	}
 
+	/*
+	 * The delivery mode.
+	 *
+	 * `fallback` is the default: the transports form a chain and the first
+	 * one that accepts a batch wins, so a batch is never stored twice.
+	 * `fanout` is the explicit opt-in: every transport receives every
+	 * batch, which creates a second copy in the archive but also means a
+	 * broken transport cannot hide the delivery to the others.
+	 */
+	const delivery: DeliveryMode = env.PI_LOG_DELIVERY === "fanout" ? "fanout" : "fallback";
+	if (delivery === "fanout") {
+		notes.push("fanout delivery enabled - every batch goes to every transport");
+	}
+
 	const config: LogSinkConfig = {
 		enabled: true,
 		app: env.PI_LOG_APP ?? "pi-harness",
 		installationId,
 		transports,
+		delivery,
 		spoolDir: env.PI_LOG_SPOOL_DIR ?? defaultSpoolDir(),
 		sampling: {
 			minLevel: (env.PI_LOG_LEVEL as SamplingPolicy["minLevel"]) ?? "info",

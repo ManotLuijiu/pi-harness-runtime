@@ -49,6 +49,7 @@ export function initCentralLogging(
 			appVersion: resolved.appVersion,
 			installationId: resolved.installationId,
 			transports: resolved.transports,
+			delivery: resolved.delivery,
 			spool,
 			buffer: resolved.buffer,
 			sampling: resolved.sampling,

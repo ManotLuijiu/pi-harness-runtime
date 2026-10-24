@@ -121,6 +121,23 @@ export type {
 
 export * from "./server/index.js";
 
+// --- Incidents (versioned, tenant scoped) -----------------------------------
+
+export {
+	INCIDENT_COLLECTION,
+	INCIDENT_SCHEMA_VERSION,
+	extractIncidents,
+	incidentFingerprint,
+	isKnownIncidentSchema,
+	mergeIncident,
+	normalizeForFingerprint,
+} from "./incidents/schema.js";
+export type {
+	IncidentSeverity,
+	IncidentSourceRecord,
+	LogIncident,
+} from "./incidents/schema.js";
+
 // --- Configuration ---------------------------------------------------------
 
 export {

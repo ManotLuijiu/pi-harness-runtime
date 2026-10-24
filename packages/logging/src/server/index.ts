@@ -54,3 +54,24 @@ export type {
 
 export { createLogHttpHandler } from "./http.js";
 export type { LogHttpHandler, LogHttpOptions } from "./http.js";
+
+export { IncidentStore } from "./incident-store.js";
+export type {
+	IncidentQueryParams,
+	IncidentQueryResult,
+	IncidentStoreOptions,
+} from "./incident-store.js";
+
+export {
+	INCIDENT_COLLECTION_NAME,
+	IncidentQdrantWriter,
+	incidentPointId,
+	incidentVector,
+	tenantFilter,
+	toIncidentPayload,
+} from "./incident-qdrant.js";
+export type {
+	IncidentPayload,
+	IncidentPoint,
+	QdrantLike,
+} from "./incident-qdrant.js";

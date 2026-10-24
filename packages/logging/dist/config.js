@@ -12,6 +12,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createR2Transport } from "./transports/r2.js";
 import { createWebhookTransport } from "./transports/webhook.js";
+import { resolveInstallationId } from "./installation.js";
+import { DEFAULT_CLASSIFICATION_POLICY, } from "./classification.js";
 function readKeyFile(keysDir, name) {
     const file = join(keysDir, name);
     if (!existsSync(file))
@@ -33,6 +35,19 @@ export function defaultSpoolDir() {
     return join(homedir(), ".pi-harness-runtime", "logs", "spool");
 }
 /**
+ * Build the classification policy.
+ *
+ * `PI_LOG_DIAGNOSTIC=1` is the explicit, user controlled diagnostic mode: it
+ * lets messages travel that the default policy keeps local. It never widens
+ * the event allowlist - only the message rule.
+ */
+function classificationFor(env) {
+    const diagnostic = env.PI_LOG_DIAGNOSTIC === "1" || env.PI_LOG_DIAGNOSTIC === "true";
+    if (!diagnostic)
+        return DEFAULT_CLASSIFICATION_POLICY;
+    return { ...DEFAULT_CLASSIFICATION_POLICY, allowRawMessages: true };
+}
+/**
  * Build the log sink configuration from the environment and the key files.
  */
 export function resolveLogSinkConfig(options = {}) {
@@ -40,14 +55,17 @@ export function resolveLogSinkConfig(options = {}) {
     const keysDir = options.keysDir ?? defaultKeysDir();
     const mode = (env.PI_LOG_SINK ?? "auto");
     const notes = [];
+    const installationId = options.installationId ?? env.PI_LOG_INSTALLATION_ID ?? resolveInstallationId();
     if (mode === "off") {
         return {
             enabled: false,
             app: env.PI_LOG_APP ?? "pi-harness",
+            installationId,
             transports: [],
             sampling: {},
             buffer: {},
             flushIntervalMs: 0,
+            classification: classificationFor(env),
             notes: ["logging disabled by PI_LOG_SINK=off"],
         };
     }
@@ -60,7 +78,19 @@ export function resolveLogSinkConfig(options = {}) {
         readKeyFile(keysDir, "r2-endpoint.txt") ??
         (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
     const r2Ready = Boolean(bucket && accessKeyId && secretAccessKey && endpoint);
-    const wantR2 = mode === "r2" || mode === "r2+webhook" || (mode === "auto" && r2Ready);
+    const webhookUrl = env.PI_LOG_WEBHOOK_URL;
+    /*
+     * Transport selection.
+     *
+     * The transports form a FALLBACK chain, not a broadcast: the first
+     * transport that accepts the batch wins and the later ones are not
+     * called. `auto` therefore prefers the webhook ingress when one is
+     * configured: the server is the single writer to R2, so client machines
+     * never need R2 credentials at all.
+     */
+    const wantR2 = mode === "r2" ||
+        mode === "r2+webhook" ||
+        (mode === "auto" && r2Ready && !webhookUrl);
     if (wantR2) {
         if (r2Ready) {
             transports.push(createR2Transport({
@@ -76,7 +106,6 @@ export function resolveLogSinkConfig(options = {}) {
             notes.push("r2 requested but credentials are incomplete - transport skipped");
         }
     }
-    const webhookUrl = env.PI_LOG_WEBHOOK_URL;
     const wantWebhook = mode === "webhook" || mode === "r2+webhook" || (mode === "auto" && Boolean(webhookUrl));
     if (wantWebhook) {
         if (webhookUrl) {
@@ -85,6 +114,9 @@ export function resolveLogSinkConfig(options = {}) {
                 token: env.PI_LOG_WEBHOOK_TOKEN,
             }));
             notes.push(`webhook enabled (${webhookUrl})`);
+            if (mode === "auto") {
+                notes.push("webhook is the client ingress point - the server writes to R2 (direct r2 transport skipped)");
+            }
         }
         else {
             notes.push("webhook requested but PI_LOG_WEBHOOK_URL is not set - transport skipped");
@@ -93,10 +125,25 @@ export function resolveLogSinkConfig(options = {}) {
     if (transports.length === 0) {
         notes.push("no transport configured - logs stay local");
     }
-    return {
+    /*
+     * The delivery mode.
+     *
+     * `fallback` is the default: the transports form a chain and the first
+     * one that accepts a batch wins, so a batch is never stored twice.
+     * `fanout` is the explicit opt-in: every transport receives every
+     * batch, which creates a second copy in the archive but also means a
+     * broken transport cannot hide the delivery to the others.
+     */
+    const delivery = env.PI_LOG_DELIVERY === "fanout" ? "fanout" : "fallback";
+    if (delivery === "fanout") {
+        notes.push("fanout delivery enabled - every batch goes to every transport");
+    }
+    const config = {
         enabled: true,
         app: env.PI_LOG_APP ?? "pi-harness",
+        installationId,
         transports,
+        delivery,
         spoolDir: env.PI_LOG_SPOOL_DIR ?? defaultSpoolDir(),
         sampling: {
             minLevel: env.PI_LOG_LEVEL ?? "info",
@@ -108,7 +155,11 @@ export function resolveLogSinkConfig(options = {}) {
             maxBatchSize: readNumber(env, "PI_LOG_BATCH_SIZE", 100),
         },
         flushIntervalMs: readNumber(env, "PI_LOG_FLUSH_INTERVAL_MS", 15_000),
+        classification: classificationFor(env),
         notes,
     };
+    if (env.PI_LOG_APP_VERSION)
+        config.appVersion = env.PI_LOG_APP_VERSION;
+    return config;
 }
 //# sourceMappingURL=config.js.map

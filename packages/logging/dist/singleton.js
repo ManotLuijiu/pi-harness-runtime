@@ -32,10 +32,14 @@ export function initCentralLogging(options = {}) {
         const spool = resolved.spoolDir ? new LogSpool({ dir: resolved.spoolDir }) : undefined;
         shipper = new LogShipper({
             app: resolved.app,
+            appVersion: resolved.appVersion,
+            installationId: resolved.installationId,
             transports: resolved.transports,
+            delivery: resolved.delivery,
             spool,
             buffer: resolved.buffer,
             sampling: resolved.sampling,
+            classification: resolved.classification,
             flushIntervalMs: resolved.flushIntervalMs,
         });
         shipper.start();

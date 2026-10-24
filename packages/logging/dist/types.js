@@ -9,6 +9,14 @@
  * Producers never know which transport is configured; the shipper owns that
  * decision, including the fallback order and the local spool.
  */
+/**
+ * Schema version of the batch/record contract.
+ *
+ * v2 adds the installation identity (`installationId`), the app version and
+ * a `schemaVersion` marker, so a server can tell an old client from a new
+ * one instead of guessing.
+ */
+export const LOG_SCHEMA_VERSION = 2;
 /** Severity order used by the sampler and the buffer drop policy. */
 export const LOG_LEVEL_SEVERITY = {
     debug: 10,

@@ -9,7 +9,7 @@
  * webhook server provides the live path, and the local spool is the
  * fallback that keeps data when both are unavailable.
  */
-export { LOG_LEVEL_SEVERITY } from "./types.js";
+export { LOG_LEVEL_SEVERITY, LOG_SCHEMA_VERSION } from "./types.js";
 export type { FlushStats, LogBatch, LogErrorInfo, LogInput, LogLevel, LogRecord, LogTransport, } from "./types.js";
 export { isSecretKey, isSensitiveValueKey, redactFields, redactText, redactValue, splitKeyTokens, } from "./redact.js";
 export type { JsonValue, RedactionOptions } from "./redact.js";
@@ -27,6 +27,16 @@ export { LogShipper } from "./shipper.js";
 export type { LogShipperOptions } from "./shipper.js";
 export { centralDebug, centralError, centralInfo, centralLog, centralWarn, getCentralLogConfig, getCentralShipper, initCentralLogging, shutdownCentralLogging, } from "./singleton.js";
 export type { InitCentralLoggingOptions } from "./singleton.js";
+export { INSTALLATION_ID_FILE, defaultInstallationIdPath, isValidInstallationId, resolveInstallationId, } from "./installation.js";
+export type { ResolveInstallationIdOptions } from "./installation.js";
+export { DEFAULT_CLASSIFICATION_POLICY, DEFAULT_LOCAL_EVENTS, DEFAULT_REMOTE_EVENTS, classifyRecord, filterRemoteRecords, isSanitizedMessage, prepareRemoteRecord, } from "./classification.js";
+export type { ClassificationPolicy } from "./classification.js";
+export { LOCAL_ONLY_FIELD_KEYS, isLocalOnlyFieldKey } from "./sensitive-keys.js";
+export { DEFAULT_BATCH_LIMITS, LOG_LEVELS, sanitizeRecord, validateBatch, } from "./ingest/schema.js";
+export type { BatchValidationError, BatchValidationLimits, BatchValidationResult, SanitizeRecordResult, } from "./ingest/schema.js";
+export * from "./server/index.js";
+export { INCIDENT_COLLECTION, INCIDENT_SCHEMA_VERSION, extractIncidents, incidentFingerprint, isKnownIncidentSchema, mergeIncident, normalizeForFingerprint, } from "./incidents/schema.js";
+export type { IncidentSeverity, IncidentSourceRecord, LogIncident, } from "./incidents/schema.js";
 export { defaultKeysDir, defaultSpoolDir, resolveLogSinkConfig, } from "./config.js";
 export type { LogSinkConfig, LogSinkMode, ResolveConfigOptions } from "./config.js";
 //# sourceMappingURL=index.d.ts.map
