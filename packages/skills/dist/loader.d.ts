@@ -74,6 +74,28 @@ export interface QdrantSkillStats {
      * nothing does not have to guess why.
      */
     schemaMismatch?: string;
+    /**
+     * The collection of an earlier installation that still holds the skills.
+     *
+     * The runtime collection is empty (or does not exist yet) while the
+     * legacy collection holds the skills of the previous version. They are
+     * not lost - they live in a collection with another name, and one with
+     * another vector size.
+     */
+    legacy?: LegacyCollectionInfo;
+}
+/**
+ * The skills of the legacy collection.
+ */
+export interface LegacyCollectionInfo {
+    /** The name of the collection. */
+    collection: string;
+    /** The number of skill vectors it holds. */
+    count: number;
+    /** The vector size it was created with. */
+    dimensions?: number;
+    /** The embedding model it was created with. */
+    model?: string;
 }
 /**
  * A point of the vector index: the vector and the payload of one skill.
@@ -198,6 +220,14 @@ export declare class SkillRegistry {
      */
     private _ensureQdrant;
     private _doQdrantInit;
+    /**
+     * The skills of the legacy collection.
+     *
+     * The legacy collection holds 384-dimensional vectors, so it cannot be
+     * searched with the vectors of the runtime. Its skills are not lost -
+     * they live in a collection with another name.
+     */
+    private _readLegacyCollection;
     /**
      * The schema the runtime expects of the skill collection.
      *

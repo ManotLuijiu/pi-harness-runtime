@@ -11,7 +11,11 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { getCollectionInfo, validateCollectionSchema } from "../src/client.js";
+import {
+	getCollectionInfo,
+	isNotFoundError,
+	validateCollectionSchema,
+} from "../src/client.js";
 
 /** A client that answers with the given collection description. */
 function fakeClient(description: unknown): {
@@ -87,6 +91,38 @@ describe("the collection info", () => {
 		};
 		const info = await getCollectionInfo(client as never, "pi-harness-skills");
 		expect(info).toEqual({ exists: false });
+	});
+
+	it("reports a missing collection the way Qdrant really answers", async () => {
+		// Qdrant answers with the status 404 and the text "Not Found" -
+		// capitalised. A case-sensitive comparison turns a collection that
+		// does not exist yet into "the cluster could not be read".
+		const client = {
+			getCollection: async () => {
+				const error = new Error("Not Found") as Error & {
+					status: number;
+					headers: unknown;
+					url: string;
+				};
+				error.status = 404;
+				throw error;
+			},
+		};
+		const info = await getCollectionInfo(client as never, "pi-harness-skills-openai-v1");
+		expect(info).toEqual({ exists: false });
+	});
+
+	it("tells a missing collection apart from an unreachable cluster", async () => {
+		const missing = new Error("Not Found") as Error & { status: number };
+		missing.status = 404;
+		expect(isNotFoundError(missing)).toBe(true);
+
+		const unreachable = new Error("connection refused");
+		expect(isNotFoundError(unreachable)).toBe(false);
+
+		const forbidden = new Error("Forbidden") as Error & { status: number };
+		forbidden.status = 403;
+		expect(isNotFoundError(forbidden)).toBe(false);
 	});
 
 	it("reports an unreadable collection as unknown", async () => {

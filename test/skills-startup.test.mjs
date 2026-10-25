@@ -72,3 +72,32 @@ test("a machine without local skills still shows the remote count", () => {
 	const report = skillsReport(0, { state: "populated", count: 79 });
 	assert.equal(report.text, "Local Skills 0 | Qdrant Skills 79");
 });
+
+test("the skills of the legacy collection are named", () => {
+	// The runtime collection is empty, the skills live in the collection of
+	// the previous version. "0" alone would look like the skills are gone.
+	const report = skillsReport(0, {
+		state: "missing",
+		count: 0,
+		collection: "pi-harness-skills-openai-v1",
+		legacy: {
+			collection: "pi-harness-skills",
+			count: 79,
+			dimensions: 384,
+			model: "sentence-transformers/all-MiniLM-L6-v2",
+		},
+	});
+	assert.equal(report.text, "Local Skills 0 | Qdrant Skills 0");
+	assert.ok(
+		report.details.some((detail) => /pi-harness-skills still holds 79 skills/.test(detail)),
+		"the detail must name the collection and the count",
+	);
+	assert.ok(
+		report.details.some((detail) => /384-dimensional/.test(detail)),
+		"the detail must name the vector size",
+	);
+	assert.ok(
+		report.details.some((detail) => /all-MiniLM-L6-v2/.test(detail)),
+		"the detail must name the model",
+	);
+});

@@ -26,6 +26,7 @@ export {
   createCollection,
   deleteCollection,
   getCollectionInfo,
+  isNotFoundError,
   validateCollectionSchema,
   upsertSkills,
   searchSkills,

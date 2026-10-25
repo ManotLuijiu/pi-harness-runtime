@@ -239,4 +239,54 @@ describe("the state of the vector store", () => {
 		expect(stats.state).toBe("missing");
 		expect(stats.count).toBe(0);
 	});
+
+	it("names the skills of the legacy collection", async () => {
+		// The runtime collection does not exist yet, but the collection of
+		// the previous version still holds the skills. They are not lost -
+		// the reader has to know where they are.
+		const client = {
+			async upsert(): Promise<void> {},
+			async query(): Promise<unknown> {
+				return { points: [] };
+			},
+			async getCollection(name: string): Promise<unknown> {
+				if (name === "pi-harness-skills") {
+					return {
+						points_count: 79,
+						config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+					};
+				}
+				throw new Error("Not Found");
+			},
+		};
+		const registry = createSkillRegistry({
+			qdrantClient: client as never,
+			embedder: fakeEmbedder,
+			collection: "pi-harness-skills-openai-v1",
+		});
+
+		const stats = await registry.getQdrantStats();
+
+		expect(stats.state).toBe("missing");
+		expect(stats.legacy?.collection).toBe("pi-harness-skills");
+		expect(stats.legacy?.count).toBe(79);
+		expect(stats.legacy?.dimensions).toBe(384);
+		expect(stats.legacy?.model).toBe("sentence-transformers/all-MiniLM-L6-v2");
+	});
+
+	it("does not look for a second collection when the legacy one is the runtime one", async () => {
+		const client = fakeClient([], {
+			points_count: 0,
+			config: { params: { vectors: { size: 1536, distance: "Cosine" } } },
+		});
+		const registry = createSkillRegistry({
+			qdrantClient: client,
+			embedder: fakeEmbedder,
+			collection: "pi-harness-skills",
+		});
+
+		const stats = await registry.getQdrantStats();
+
+		expect(stats.legacy).toBeUndefined();
+	});
 });

@@ -42,6 +42,16 @@ export declare function getCollectionInfo(client: QdrantClient, name: string): P
     pointsCount?: number;
 } | null>;
 /**
+ * Whether the error means "the collection does not exist".
+ *
+ * Qdrant answers a missing collection with the status 404 and the text
+ * "Not Found". The text is compared case-insensitively, because the
+ * capitalisation differs between the client versions - a case-sensitive
+ * comparison turns a collection that does not exist yet into "the
+ * cluster could not be read", which hides the real cause.
+ */
+export declare function isNotFoundError(err: unknown): boolean;
+/**
  * Validate collection schema matches expected embedding model
  */
 export declare function validateCollectionSchema(client: QdrantClient, name: string, expectedDimensions: number, expectedDistance?: string): Promise<{

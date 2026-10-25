@@ -40,6 +40,23 @@ export interface QdrantSkillStats {
 	error?: string;
 	/** The collection does not match the schema of the runtime. */
 	schemaMismatch?: string;
+	/**
+	 * The collection of an earlier installation that still holds the skills.
+	 *
+	 * The runtime collection is empty while the legacy one holds the skills
+	 * of the previous version. They are not lost - they live in a
+	 * collection with another name, and one with another vector size.
+	 */
+	legacy?: {
+		/** The name of the collection. */
+		collection: string;
+		/** The number of skill vectors it holds. */
+		count: number;
+		/** The vector size it was created with. */
+		dimensions?: number;
+		/** The embedding model it was created with. */
+		model?: string;
+	};
 }
 
 export interface SkillsStartupReport {
@@ -115,6 +132,16 @@ export function skillsReport(
 			stats.error
 				? `The vector store could not be reached: ${stats.error}`
 				: "The vector store could not be reached.",
+		);
+	}
+	if (stats.legacy) {
+		const legacy = stats.legacy;
+		details.push(
+			`The collection ${legacy.collection} still holds ${legacy.count} skill${legacy.count === 1 ? "" : "s"}` +
+				(legacy.dimensions ? ` with ${legacy.dimensions}-dimensional vectors` : "") +
+				(legacy.model ? ` (${legacy.model})` : "") +
+				" - the runtime embeds with 1536 dimensions, so these skills cannot be found until they are moved.",
+			`Move them into ${stats.collection ?? "pi-harness-skills-openai-v1"} - scripts/sync-to-qdrant.ts writes them there.`,
 		);
 	}
 	details.push(...remoteDetails(remote));

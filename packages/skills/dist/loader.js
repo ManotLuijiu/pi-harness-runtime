@@ -235,6 +235,42 @@ export class SkillRegistry {
         }
     }
     /**
+     * The skills of the legacy collection.
+     *
+     * The legacy collection holds 384-dimensional vectors, so it cannot be
+     * searched with the vectors of the runtime. Its skills are not lost -
+     * they live in a collection with another name.
+     */
+    async _readLegacyCollection(client, mods) {
+        // The legacy collection IS the runtime collection when the user
+        // configured it explicitly - then there is no second collection.
+        if (this._options.collection === LEGACY_SKILL_COLLECTION)
+            return undefined;
+        if (!mods.getCollectionInfo)
+            return undefined;
+        try {
+            const info = await mods.getCollectionInfo(client, LEGACY_SKILL_COLLECTION);
+            if (!info?.exists)
+                return undefined;
+            const count = info.pointsCount ?? 0;
+            if (count === 0)
+                return undefined;
+            return {
+                collection: LEGACY_SKILL_COLLECTION,
+                count,
+                dimensions: info.vectorsSize,
+                model: info.vectorsSize === LEGACY_SKILL_COLLECTION_DIMENSIONS
+                    ? LEGACY_SKILL_COLLECTION_MODEL
+                    : undefined,
+            };
+        }
+        catch {
+            // The legacy collection is a bonus - a failure to read it must not
+            // hide the state of the runtime collection.
+            return undefined;
+        }
+    }
+    /**
      * The schema the runtime expects of the skill collection.
      *
      * The installed Qdrant package knows the size of its own model; an older
@@ -299,7 +335,15 @@ export class SkillRegistry {
                 };
             }
             if (!info.exists) {
-                return { state: "missing", count: 0, collection: config.collection };
+                // The runtime collection does not exist (yet). An earlier
+                // installation may have left the skills in the legacy collection -
+                // naming them is more useful than an empty count.
+                return {
+                    state: "missing",
+                    count: 0,
+                    collection: config.collection,
+                    legacy: await this._readLegacyCollection(client, mods),
+                };
             }
             const count = info.pointsCount ?? 0;
             const stats = {
@@ -309,6 +353,11 @@ export class SkillRegistry {
                 dimensions: info.vectorsSize,
                 distance: info.vectorsDistance,
             };
+            // An empty runtime collection can still have its skills in the
+            // legacy one - the same information, one collection further down.
+            if (count === 0) {
+                stats.legacy = await this._readLegacyCollection(client, mods);
+            }
             const mismatch = describeSkillSchemaMismatch({ dimensions: info.vectorsSize, distance: info.vectorsDistance }, this._expectedVectorSchema(mods));
             if (mismatch) {
                 stats.schemaMismatch = mismatch;

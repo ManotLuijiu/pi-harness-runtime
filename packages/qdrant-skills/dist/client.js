@@ -78,12 +78,31 @@ export async function getCollectionInfo(client, name) {
         };
     }
     catch (err) {
-        if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+        if (isNotFoundError(err)) {
             return { exists: false };
         }
         // Return null on other errors
         return null;
     }
+}
+/**
+ * Whether the error means "the collection does not exist".
+ *
+ * Qdrant answers a missing collection with the status 404 and the text
+ * "Not Found". The text is compared case-insensitively, because the
+ * capitalisation differs between the client versions - a case-sensitive
+ * comparison turns a collection that does not exist yet into "the
+ * cluster could not be read", which hides the real cause.
+ */
+export function isNotFoundError(err) {
+    if (!(err instanceof Error))
+        return false;
+    const status = err.status
+        ?? err.statusCode;
+    if (status === 404)
+        return true;
+    const message = err.message.toLowerCase();
+    return message.includes("not found") || message.includes("404");
 }
 /**
  * Validate collection schema matches expected embedding model
