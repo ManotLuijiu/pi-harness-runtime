@@ -13,14 +13,39 @@
  * network nor replaces a process-global module.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import {
 	createSkillRegistry,
 	type QdrantClientLike,
 	type QdrantEmbedderLike,
 } from "../src/loader.js";
+import { resetSanitizationRulesCache } from "../src/sanitize-rules.js";
 import type { Skill } from "../src/types.js";
+
+/**
+ * The rules of the test.
+ *
+ * The rules of a client live in a local file, outside the repository. The
+ * test uses a fixture with made up names, so that the result of the test
+ * does not depend on the machine it runs on.
+ */
+const FIXTURE = fileURLToPath(
+	new URL("./fixtures/sanitization.json", import.meta.url),
+);
+const originalEnv = process.env.PI_SKILL_SANITIZATION_FILE;
+
+beforeEach(() => {
+	process.env.PI_SKILL_SANITIZATION_FILE = FIXTURE;
+	resetSanitizationRulesCache();
+});
+
+afterEach(() => {
+	resetSanitizationRulesCache();
+	if (originalEnv === undefined) delete process.env.PI_SKILL_SANITIZATION_FILE;
+	else process.env.PI_SKILL_SANITIZATION_FILE = originalEnv;
+});
 
 /** A point of the vector store. */
 interface VectorPoint {
@@ -188,7 +213,7 @@ describe("a hit that carries the shared name of a local skill", () => {
 			embedder: fakeEmbedder,
 			collection: "pi-harness-skills-test",
 		});
-		registry.register(localSkill("client-a-pe-approval-workflow"));
+		registry.register(localSkill("acmecorp-pe-approval-workflow"));
 
 		const results = await registry.findVector("workflow");
 
@@ -196,16 +221,18 @@ describe("a hit that carries the shared name of a local skill", () => {
 		// The skill of this machine stays a local skill - with its own
 		// name and its own body, not the sanitized copy.
 		expect(results[0].source).toBe("local");
-		expect(results[0].skill.id).toBe("client-a-pe-approval-workflow");
-		expect(results[0].skill.body).toBe("the local body of client-a-pe-approval-workflow");
+		expect(results[0].skill.id).toBe("acmecorp-pe-approval-workflow");
+		expect(results[0].skill.body).toBe(
+			"the local body of acmecorp-pe-approval-workflow",
+		);
 	});
 
 	it("resolves the shared name of a local skill in a lookup", () => {
 		const registry = createSkillRegistry({ indexer: null });
-		registry.register(localSkill("client-a-pe-approval-workflow"));
+		registry.register(localSkill("acmecorp-pe-approval-workflow"));
 
 		expect(registry.get("client-a-pe-approval-workflow")?.id).toBe(
-			"client-a-pe-approval-workflow",
+			"acmecorp-pe-approval-workflow",
 		);
 	});
 });

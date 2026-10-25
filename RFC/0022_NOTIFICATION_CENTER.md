@@ -16,7 +16,7 @@ Human-on-the-loop requires the human to know when the runtime is running, paused
 - Email
 - Webhook
 
-OpenClaw can be a later adapter, not an MVP dependency.
+A client specific adapter can be a later one, not an MVP dependency.
 
 ## Notification Events
 

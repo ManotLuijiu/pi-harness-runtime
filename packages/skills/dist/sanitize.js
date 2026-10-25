@@ -9,60 +9,26 @@
  *
  * Both writers therefore build their points with the same rules, and the
  * name of a point is the sanitized name. One skill, one point.
- */
-/**
- * The patterns of the client specific names.
  *
- * The list is about the names of the clients and the projects of the
- * users of the harness - not about the skills themselves.
- *
- * The patterns match a plain fragment, without a word boundary. A client
- * name rarely stands alone: it appears inside a directory name
- * (`th_client-b_erp_chart.json`), inside a Python module (`client-a_pharma`)
- * or in a sentence ("integrated with Paperclip"). A word boundary would
- * miss all of them - and `_` is a word character, so a boundary never
- * follows an underscore.
+ * The rules themselves are not in this file. The names of the clients of
+ * the users of the harness are not in this repository - it is public, and
+ * a list of client names in it is a list of client names in the world.
+ * The rules live in a local file, and `sanitize-rules.ts` reads them. See
+ * that module for the format.
  */
-const SANITIZATION_RULES = [
-    // Client company names (case-insensitive)
-    { pattern: /client-a/gi, replacement: "[Client A]" },
-    { pattern: /client-a/gi, replacement: "[Client A]" },
-    { pattern: /client-a/gi, replacement: "[Client A]" },
-    { pattern: /client-b/gi, replacement: "[Client B]" },
-    // Project/app specific names
-    { pattern: /insurance-project/gi, replacement: "[Insurance Project]" },
-    { pattern: /import-project/gi, replacement: "[Import Project]" },
-    { pattern: /paperclip/gi, replacement: "[Client D]" },
-    { pattern: /openclaw/gi, replacement: "[Client F]" },
-    // Generic replacements
-    { pattern: /Company Name/gi, replacement: "[Client Name]" },
-    { pattern: /your company/gi, replacement: "[Client]" },
-    { pattern: /our client/gi, replacement: "[Client]" },
-    { pattern: /client-specific/gi, replacement: "[Project-specific]" },
-];
-/**
- * The names that are renamed as a whole.
- *
- * A name that would be unreadable after the pattern rules - a name that
- * carries the client name in its middle - is renamed here.
- */
-const SKILL_NAME_MAP = {
-    "insurance-project-step5-slot-filter": "insurance-project-step-filter",
-    "client-a-pe-approval-workflow": "client-a-pe-approval-workflow",
-    "client-a-po-approval-workflow": "client-a-po-approval-workflow",
-    "client-a-pr-approval-workflow": "client-a-pr-approval-workflow",
-    "import-project-clearance-lcv": "import-project-clearance",
-    whispertool: "whisper-tool",
-};
+import { loadSanitizationRules } from "./sanitize-rules.js";
+export { loadSanitizationRules, resetSanitizationRulesCache, sanitizationFilePath, sanitizationStatus, } from "./sanitize-rules.js";
 /**
  * Replace the client specific names of a text.
  *
  * The text stays the same length, so a vector that was built from it
  * keeps its shape.
+ *
+ * The rules are the ones of this installation unless a set is passed in.
  */
-export function sanitizeText(text) {
+export function sanitizeText(text, rules = loadSanitizationRules()) {
     let result = text;
-    for (const rule of SANITIZATION_RULES) {
+    for (const rule of rules.rules) {
         result = result.replace(rule.pattern, rule.replacement);
     }
     return result;
@@ -78,11 +44,11 @@ export function sanitizeText(text) {
  * returns. The replacements of the rules carry a space and brackets,
  * which no skill name may hold.
  */
-export function skillPointName(name) {
-    const mapped = SKILL_NAME_MAP[name];
+export function skillPointName(name, rules = loadSanitizationRules()) {
+    const mapped = rules.nameMap[name];
     if (mapped)
         return mapped;
-    return kebabName(sanitizeText(name));
+    return kebabName(sanitizeText(name, rules));
 }
 /**
  * Bring a name into the shape of a skill name.

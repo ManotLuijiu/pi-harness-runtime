@@ -49,6 +49,7 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 .beads-credential-key
 .write-review/
 .pi/
+.pi/skills/release/*
 .pi-glla/
 
 # Harness generated type/sourcemap files (JS is committed; type files are build artifacts)

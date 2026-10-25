@@ -15,6 +15,7 @@
  * module owns the collection - that is a decision of the skills domain, not
  * of the vector store.
  */
+import type { SanitizationRuleSet } from "./sanitize-rules.js";
 /**
  * The collection the runtime indexes into and searches.
  *
@@ -167,7 +168,12 @@ export declare function skillPointPayload(input: {
     description: string;
     /** The body of the skill. */
     body: string;
-}): SkillPointPayload;
+}, 
+/**
+ * The rules of the installation. They default to the rules of this
+ * machine, and a test passes its own rules in.
+ */
+rules?: SanitizationRuleSet): SkillPointPayload;
 export declare function describeSkillSchemaMismatch(actual: {
     dimensions?: number;
     distance?: string;

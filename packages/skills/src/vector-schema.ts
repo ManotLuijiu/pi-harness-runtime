@@ -17,6 +17,7 @@
  */
 
 import { sanitizeText, skillPointName } from "./sanitize.js";
+import type { SanitizationRuleSet } from "./sanitize-rules.js";
 
 /**
  * The collection the runtime indexes into and searches.
@@ -189,20 +190,27 @@ export function skillQdrantPoint(payload: SkillPointPayload): SkillQdrantPoint {
  * of a user must not travel into it. Both writers use this function, so
  * both write the same sanitized payload for the same skill.
  */
-export function skillPointPayload(input: {
-  /** The name the payload carries - the identity of the skill. */
-  name: string;
-  /** The title of the skill, when it differs from the name. */
-  title?: string;
-  /** What the skill does. */
-  description: string;
-  /** The body of the skill. */
-  body: string;
-}): SkillPointPayload {
-  const name = skillPointName(input.name);
-  const title = input.title ? skillPointName(input.title) : undefined;
-  const description = sanitizeText(input.description);
-  const body = sanitizeText(input.body).slice(0, SKILL_PAYLOAD_BODY_LIMIT);
+export function skillPointPayload(
+  input: {
+    /** The name the payload carries - the identity of the skill. */
+    name: string;
+    /** The title of the skill, when it differs from the name. */
+    title?: string;
+    /** What the skill does. */
+    description: string;
+    /** The body of the skill. */
+    body: string;
+  },
+  /**
+   * The rules of the installation. They default to the rules of this
+   * machine, and a test passes its own rules in.
+   */
+  rules?: SanitizationRuleSet,
+): SkillPointPayload {
+  const name = skillPointName(input.name, rules);
+  const title = input.title ? skillPointName(input.title, rules) : undefined;
+  const description = sanitizeText(input.description, rules);
+  const body = sanitizeText(input.body, rules).slice(0, SKILL_PAYLOAD_BODY_LIMIT);
   return {
     name,
     description,

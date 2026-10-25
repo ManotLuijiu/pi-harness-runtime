@@ -352,15 +352,11 @@ Sync Skills to Qdrant (Sanitized)
 Upload skills to Qdrant for team sharing.
 Client-specific names are REPLACED with placeholders.
 
-Sanitization Rules:
-  client-a         → [Client A]
-  client-a     → [Client A]
-  client-b      → [Client B]
-  cloudshot     → [Client C]
-  paperclip     → [Client D]
-  client-e         → [Client E]
-  openclaw      → [Client F]
-  autoresearch  → [Internal Tool]
+The rules live in the local file of the installation:
+  ~/.pi-harness-runtime/skill-sanitization.json
+They are not in this repository - it is public, and a list of client names
+in it is a list of client names in the world. Set
+PI_SKILL_SANITIZATION_FILE to use another file.
 
 Usage:
   bun scripts/sync-to-qdrant.ts --from <dir>     Sync skills from directory

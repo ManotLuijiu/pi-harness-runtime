@@ -21,6 +21,9 @@ export * from "./skill-versioning.js";
 export * from "./linter.js";
 import { scanForSkillsSync } from "./scanner.js";
 import { getGlobalSkillRegistry } from "./loader.js";
+import { existsSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 /**
  * Initialize skills system
  *
@@ -46,14 +49,19 @@ export function initSkills(config) {
     }
     // Hint: if ~/.pi-harness-runtime/skills/ is empty, suggest the sync script
     checkEmptySkillsDir();
-    return { ...result, registry };
+    // The scan can find the same skill twice: a symlinked directory is
+    // scanned twice, because the scanner follows the path it is given. The
+    // registry keeps one entry per id, so the count of the local skills is
+    // the count of the DISTINCT skills - and not the count of the files
+    // that were read.
+    const distinct = new Map();
+    for (const skill of result.skills)
+        distinct.set(skill.id, skill);
+    return { ...result, skills: [...distinct.values()], registry };
 }
 /** Show sync hint if the harness skills dir is empty. */
 function checkEmptySkillsDir() {
     try {
-        const { readdirSync, existsSync } = require("node:fs");
-        const { join } = require("node:path");
-        const { homedir } = require("node:os");
         const harnessDir = join(homedir(), ".pi-harness-runtime", "skills");
         if (!existsSync(harnessDir))
             return;

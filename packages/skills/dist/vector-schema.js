@@ -125,11 +125,16 @@ export function skillQdrantPoint(payload) {
  * of a user must not travel into it. Both writers use this function, so
  * both write the same sanitized payload for the same skill.
  */
-export function skillPointPayload(input) {
-    const name = skillPointName(input.name);
-    const title = input.title ? skillPointName(input.title) : undefined;
-    const description = sanitizeText(input.description);
-    const body = sanitizeText(input.body).slice(0, SKILL_PAYLOAD_BODY_LIMIT);
+export function skillPointPayload(input, 
+/**
+ * The rules of the installation. They default to the rules of this
+ * machine, and a test passes its own rules in.
+ */
+rules) {
+    const name = skillPointName(input.name, rules);
+    const title = input.title ? skillPointName(input.title, rules) : undefined;
+    const description = sanitizeText(input.description, rules);
+    const body = sanitizeText(input.body, rules).slice(0, SKILL_PAYLOAD_BODY_LIMIT);
     return {
         name,
         description,

@@ -3459,7 +3459,7 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Skills", "initializing", "wait");
 	try {
 		// Dynamically import to avoid circular deps
-		const { initSkills } =
+		const { initSkills, sanitizationStatus } =
 			await import("./packages/skills/dist/index.js");
 
 		// Scan skills from default locations
@@ -3471,6 +3471,37 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 		// shared skill, and a single "N discovered" hides that difference.
 		const local = localSkillsReport(localCount);
 		addHarnessMessage("Skills", local.text, local.status, local.details);
+		// The rules that keep a client name out of the shared collection
+		// live in a local file - they are not in the repository, it is
+		// public. Without them only the generic rules hold, and a client
+		// name travels into the collection. That is a visible state, not
+		// a silent one.
+		try {
+			const rules = sanitizationStatus();
+			if (!rules.configured) {
+				addHarnessMessage(
+					"Skill privacy",
+					"sanitization rules not configured",
+					"warn",
+					[
+						`How to fix: create ${rules.path} with the rules of your client names, or set PI_SKILL_SANITIZATION_FILE to a file that holds them.`,
+						"The rules are not in the repository - it is public, and a list of client names in it is a list of client names in the world.",
+						"A client name can travel into the shared collection until they are.",
+						...(rules.error ? [rules.error] : []),
+					],
+				);
+			}
+		} catch (err) {
+			addHarnessMessage(
+				"Skill privacy",
+				"the sanitization rules could not be read",
+				"warn",
+				[
+					"How to fix: check that ~/.pi-harness-runtime/skill-sanitization.json exists and holds valid JSON.",
+					err instanceof Error ? err.message : String(err),
+				],
+			);
+		}
 		// The server-held skills. The service holds the authoritative
 		// files, so a machine without a local copy can still use a skill.
 		// It is only used when it is configured - a client without a

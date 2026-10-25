@@ -1,0 +1,12 @@
+{
+  "_comment": "A fixture, not the rules of a client. The real rules live in ~/.pi-harness-runtime/skill-sanitization.json, outside the repository.",
+  "rules": [
+    { "pattern": "acmecorp", "replacement": "[Client A]", "flags": "gi" },
+    { "pattern": "globex", "replacement": "[Client B]", "flags": "gi" },
+    { "pattern": "initech", "replacement": "[Insurance Project]", "flags": "gi" }
+  ],
+  "nameMap": {
+    "acmecorp-pe-approval-workflow": "client-a-pe-approval-workflow",
+    "initech-step5-slot-filter": "insurance-project-step-filter"
+  }
+}
