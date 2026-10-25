@@ -95,6 +95,25 @@ jobs:
           fi
           echo "::add-mask::${registry_token}"
           echo "token=${registry_token}" >> "$GITHUB_OUTPUT"
+          # Write the literal token into an npmrc of our own. setup-node's
+          # template relies on npm expanding ${NODE_AUTH_TOKEN}, and a
+          # literal value removes any doubt about that expansion.
+          umask 077
+          printf 'registry=https://registry.npmjs.org/\n' > /tmp/npmrc
+          printf '//registry.npmjs.org/:_authToken=%s\n' \
+            "$registry_token" >> /tmp/npmrc
+          echo "NPM_CONFIG_USERCONFIG=/tmp/npmrc" >> "$GITHUB_ENV"
+          # Prove the credential can read the package with write access
+          # before anything is deleted. This is the same packument request
+          # `npm unpublish` makes first.
+          probe="$(curl -sS -o /tmp/packument.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${registry_token}" \
+            "https://registry.npmjs.org/${PACKAGE_NAME}?write=true")"
+          echo "packument write probe: HTTP ${probe}"
+          if [ "$probe" != "200" ]; then
+            echo "the credential has no write access to ${PACKAGE_NAME}" >&2
+            exit 1
+          fi
           echo "exchanged a registry token for ${PACKAGE_NAME}"
 
       - name: Unpublish versions
