@@ -32,6 +32,26 @@ describe("the sanitization of a text", () => {
 		expect(sanitizeText("your company")).toBe("[Client]");
 		expect(sanitizeText("our client")).toBe("[Client]");
 	});
+
+	test("a client name inside an identifier is replaced", () => {
+		// The name of a client rarely stands alone. A word boundary would
+		// miss every one of these - and an underscore is a word character,
+		// so a boundary never follows one.
+		expect(sanitizeText("client-a_pharma")).toBe("[Client A]_pharma");
+		expect(sanitizeText("th_client-b_erp_chart.json")).toBe(
+			"th_[Client B]_erp_chart.json",
+		);
+		expect(sanitizeText("apps/client-a_pharma/setup")).toBe(
+			"apps/[Client A]_pharma/setup",
+		);
+	});
+
+	test("a client name in a sentence is replaced", () => {
+		expect(sanitizeText("integrated with Paperclip")).toBe(
+			"integrated with [Client D]",
+		);
+		expect(sanitizeText("OpenClaw secrets")).toBe("[Client F] secrets");
+	});
 });
 
 describe("the name of a skill in the shared collection", () => {
@@ -58,6 +78,29 @@ describe("the name of a skill in the shared collection", () => {
 		]) {
 			expect(skillPointName(name)).not.toMatch(/client-a|insurance-project|import-project/i);
 		}
+	});
+
+	test("the name is a valid skill name", () => {
+		// The name of a point is the id of the skill that a search returns,
+		// so it has to be a name that a skill may carry.
+		const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+		for (const name of [
+			"client-a-pe-approval-workflow",
+			"openclaw-channel",
+			"insurance-project-step5-slot-filter",
+			"import-project-clearance-lcv",
+			"whispertool",
+			"code-review",
+		]) {
+			expect(skillPointName(name)).toMatch(NAME);
+		}
+	});
+
+	test("a name that needs no sanitization stays the same", () => {
+		expect(skillPointName("code-review")).toBe("code-review");
+		expect(skillPointName("frappe-doctype-field-order")).toBe(
+			"frappe-doctype-field-order",
+		);
 	});
 });
 

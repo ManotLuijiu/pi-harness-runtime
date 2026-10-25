@@ -54,13 +54,22 @@ test("the script writes into the versioned collection", () => {
 	);
 });
 
-test("the script uses the shared sanitization", () => {
+test("the script uses the shared parser and the shared sanitization", () => {
 	assert.match(
 		script,
-		/from\s+"[^"]*dist\/sanitize\.js"/,
-		"the script must take the sanitization from the shared package",
+		/from\s+"[^"]*dist\/parser\.js"/,
+		"the script must parse a skill the way the runtime parses it",
 	);
-	assert.match(script, /skillPointName\(/, "the script must use the shared name rules");
+	assert.match(
+		script,
+		/parseSkillContent\(/,
+		"the script must take the parser of the shared package",
+	);
+	assert.doesNotMatch(
+		script,
+		/function\s+parseFrontmatter\s*\(/,
+		"a second parser would read a quoted name with the quotes",
+	);
 	assert.doesNotMatch(
 		script,
 		/const\s+SANITIZATION_RULES\s*[:=]/,

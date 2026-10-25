@@ -12,7 +12,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { QdrantClient } from "@qdrant/js-client-rest";
 // The runtime and this script must write into the SAME collection with the
 // SAME vectors: a collection holds vectors of exactly one size, and a vector
@@ -31,13 +31,11 @@ import {
   skillPointPayload,
   skillQdrantPoint,
 } from "../packages/skills/dist/vector-schema.js";
-// The sanitization lives in the shared package: the runtime registry writes
-// into the same collection and needs the same rules, or it would leave the
-// raw name and the raw body of a client skill in a shared cluster.
-import {
-  sanitizeText,
-  skillPointName,
-} from "../packages/skills/dist/sanitize.js";
+// The parser and the sanitization live in the shared package. The runtime
+// registry writes into the same collection and needs the same rules, or it
+// would leave the raw name and the raw body of a client skill in a shared
+// cluster - and a parser of its own would name the same skill differently.
+import { parseSkillContent } from "../packages/skills/dist/parser.js";
 
 // =============================================================================
 // Qdrant Config
@@ -85,44 +83,27 @@ interface SkillDoc {
   text: string;
 }
 
-function parseFrontmatter(content: string): Record<string, string> | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  
-  const fm: Record<string, string> = {};
-  for (const line of match[1].split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx === -1) continue;
-    fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return fm;
-}
-
 function readSkill(dirPath: string): SkillDoc | null {
   const skillPath = join(dirPath, "SKILL.md");
   if (!existsSync(skillPath)) return null;
 
   try {
     const rawContent = readFileSync(skillPath, "utf-8");
-    const fm = parseFrontmatter(rawContent);
-    if (!fm) return null;
-
-    // Get original skill name from directory
-    const originalName = fm.name || basename(dirPath);
-    
-    // Sanitize content
-    const sanitizedContent = sanitizeText(rawContent);
-    
-    // Use name map for known sensitive skill names, otherwise sanitize
-    const name = skillPointName(originalName);
-    
-    const description = sanitizeText(fm.description || "");
-    const body = sanitizedContent.replace(/^---[\s\S]*?---\n/, "").trim();
+    // The SAME parser as the runtime registry. A parser of its own would
+    // read a quoted name with the quotes and write a point that the
+    // runtime never addresses - the two writers would name the same skill
+    // differently.
+    const skill = parseSkillContent(rawContent, skillPath);
 
     // The payload and the text come from the shared schema, so this script
     // and the runtime store the SAME point for the same skill: the point
-    // id is the hash of the name the payload carries.
-    const payload = skillPointPayload({ name, description, body });
+    // id is the hash of the name the payload carries, and the payload
+    // carries no client name.
+    const payload = skillPointPayload({
+      name: skill.id,
+      description: skill.frontmatter.description ?? "",
+      body: skill.body,
+    });
 
     return {
       name: payload.name,

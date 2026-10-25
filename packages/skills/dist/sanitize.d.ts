@@ -22,6 +22,11 @@ export declare function sanitizeText(text: string): string;
  *
  * The name is the identity of the point, so it has to be the same for
  * every writer: the map first, then the pattern rules.
+ *
+ * The result is a skill name - lower case, words separated by a dash -
+ * because the name of a point is also the id of the skill that a search
+ * returns. The replacements of the rules carry a space and brackets,
+ * which no skill name may hold.
  */
 export declare function skillPointName(name: string): string;
 //# sourceMappingURL=sanitize.d.ts.map

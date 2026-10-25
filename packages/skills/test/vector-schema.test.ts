@@ -138,8 +138,21 @@ describe("the identity of a skill point", () => {
 			body: "b",
 		});
 
-		expect(withTitle.text).toContain("A Human Title");
-		expect(withoutTitle.text).not.toContain("A Human Title");
+		// The title is treated like the name: it is sanitized and it is
+		// brought into the shape of a skill name.
+		expect(withTitle.text).toContain("a-human-title");
+		expect(withoutTitle.text).not.toContain("a-human-title");
+	});
+
+	test("a title that is the name is not repeated in the text", () => {
+		const payload = skillPointPayload({
+			name: "a-skill",
+			title: "a-skill",
+			description: "d",
+			body: "b",
+		});
+
+		expect(payload.text.match(/a-skill/g)?.length).toBe(1);
 	});
 });
 
