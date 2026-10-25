@@ -9,11 +9,12 @@
  * 5. Job command written for pi-harness to resume
  */
 
+import { homedir as osHomedir } from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 // Load config
-const keysDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+const keysDir = path.join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
 
 const botToken = fs.readFileSync(path.join(keysDir, "telegram-bot-token.txt"), "utf8").trim();
 const chatId = fs.readFileSync(path.join(keysDir, "telegram-chat-id.txt"), "utf8").trim();

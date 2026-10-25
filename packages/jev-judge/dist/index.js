@@ -34,6 +34,7 @@
  * console.log(result.decisions.isUrgent.noul); // 0.92
  * ```
  */
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 // OpenAI SDK (OpenRouter is OpenAI-compatible)
 // @ts-ignore - openai is installed at workspace root
@@ -146,7 +147,7 @@ function firstNonEmpty(...values) {
     return undefined;
 }
 function defaultKeysDir() {
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+    const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
     return `${homedir}/.pi-harness-runtime/keys`;
 }
 function readKeyFile(keysDir, name) {

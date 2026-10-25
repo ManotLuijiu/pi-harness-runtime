@@ -5,6 +5,7 @@
  * Credentials loaded from key files per sensitive data rules.
  */
 
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -27,7 +28,7 @@ export interface R2Config {
  * Load R2 config from key files
  */
 export function loadR2Config(): R2Config | null {
-  const keysDir = join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+  const keysDir = join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
 
   const accountIdFile = join(keysDir, "r2-account-id.txt");
   const accessKeyFile = join(keysDir, "r2-access-key-id.txt");

@@ -4,12 +4,13 @@
  * Durable storage for delegation receipts.
  * Stores in ignored harness state directory.
  */
+import { homedir as osHomedir } from "node:os";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 /**
  * Store directory path
  */
-const STORE_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime", "delegation-state");
+const STORE_DIR = join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "delegation-state");
 /**
  * Ensure store directory exists
  */

@@ -6,7 +6,7 @@
 /// <reference types="node" />
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { hostname } from "node:os";
+import { hostname, homedir as osHomedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { logError, logInfo, logWarn } from "../file-logger.js";
 import { isAuthorizedTelegramSender } from "../telegram-auth.js";
@@ -238,7 +238,7 @@ export class TelegramAdapter extends BaseChannelAdapter {
      * That is how an inbound text message got delayed by seconds.
      */
     isWebhookConfigured() {
-        const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+        const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
         return existsSync(join(homedir, ".pi-harness-runtime", "keys", "telegram-webhook-url.txt"));
     }
     /**

@@ -5,6 +5,7 @@
  * Uses inline types to avoid cross-package dependency.
  */
 
+import { homedir as osHomedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -81,7 +82,7 @@ export interface DelegationReceipt {
 /**
  * Store directory path
  */
-const STORE_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime", "delegation-state");
+const STORE_DIR = join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "delegation-state");
 
 /**
  * Ensure store directory exists

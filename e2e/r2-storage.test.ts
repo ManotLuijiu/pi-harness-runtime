@@ -13,6 +13,7 @@
  * This test uploads real objects to R2, so it is opt-in.
  */
 
+import { homedir as osHomedir } from "node:os";
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 
 // Real R2 uploads: opt-in via PI_HARNESS_E2E=1.
@@ -20,7 +21,7 @@ const describeE2E = process.env.PI_HARNESS_E2E === "1" ? describe : describe.ski
 
 describeE2E("@e2e R2 Storage", () => {
   // Test configuration
-  const keysDir = process.env.HARNESS_KEYS_DIR || join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+  const keysDir = process.env.HARNESS_KEYS_DIR || join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
   
   // Helper to read key file
   async function readKeyFile(filename: string): Promise<string | null> {

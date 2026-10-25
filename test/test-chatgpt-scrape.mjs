@@ -1,5 +1,7 @@
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
+import { homedir as osHomedir } from "node:os";
+import { join } from "node:path";
 
 async function loadNetscapeCookies(path) {
   const text = readFileSync(path, "utf-8");
@@ -23,7 +25,7 @@ async function loadNetscapeCookies(path) {
 }
 
 async function testChatGPT() {
-  const COOKIE_FILE = "/home/user/.config/openai-cookies.txt";
+  const COOKIE_FILE = process.env.OPENAI_COOKIE_FILE || join(process.env.HOME || osHomedir(), ".config", "openai-cookies.txt");
   const cookies = await loadNetscapeCookies(COOKIE_FILE);
   console.log(`Loaded ${cookies.length} cookies`);
   

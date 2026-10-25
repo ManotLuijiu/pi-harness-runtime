@@ -9,6 +9,7 @@
  * - Notification failure does not crash runtime
  */
 
+import { homedir as osHomedir } from "node:os";
 import { logError, logWarn } from "./file-logger.js";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
@@ -73,7 +74,7 @@ export class NotificationCenter {
 	 * Get SQLite database path
 	 */
 	private static getDatabasePath(): string {
-		const home = process.env.HOME || process.env.USERPROFILE || "/home/user";
+		const home = process.env.HOME || process.env.USERPROFILE || osHomedir();
 		const dir = join(home, ".pi-harness-runtime");
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });

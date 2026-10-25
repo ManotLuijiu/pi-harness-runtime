@@ -11,8 +11,8 @@
  *     → Still failing? → Escalate to human with diagnostic
  */
 
-import { execSync, exec } from "child_process";
-import { setTimeout as setAsyncTimeout, clearTimeout } from "timers";
+import { execSync, exec } from "node:child_process";
+import { setTimeout as setAsyncTimeout, clearTimeout } from "node:timers";
 
 export interface SSHConfig {
 	host: string;
@@ -33,11 +33,42 @@ export interface SSHResult {
 }
 
 const DEFAULT_TIMEOUT = 120_000; // 2 minutes
-const HANG_THRESHOLD_MS = 60_000; // 1 minute = likely hang
 
 /**
- * Sanitize input for shell commands - prevent command injection
+ * A host is either a DNS name, an IPv4 address or a bracketed IPv6 address.
+ * Anything else never reaches the shell.
  */
+const SAFE_HOST = /^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])$/;
+
+/** A login name on the remote machine. */
+const SAFE_USER = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Shell-quote a value for a POSIX shell.
+ *
+ * Every value that reaches the shell goes through here: a value that is
+ * wrapped in single quotes cannot end the quote and cannot start a new
+ * command, whatever it contains.
+ */
+export function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Reject a host or user that is not a plain identifier.
+ *
+ * The host and the user are interpolated into a command line, so they are
+ * validated instead of quoted: a value that does not look like a host is
+ * never a host, and passing it on would only help an attacker.
+ */
+export function assertSafeSshTarget(host: string, user: string): void {
+	if (!SAFE_HOST.test(host)) {
+		throw new Error(`Refusing to use an invalid ssh host: ${JSON.stringify(host)}`);
+	}
+	if (!SAFE_USER.test(user)) {
+		throw new Error(`Refusing to use an invalid ssh user: ${JSON.stringify(user)}`);
+	}
+}
 
 /**
  * Execute SSH command with automatic hang recovery
@@ -54,7 +85,9 @@ export async function sshWithRecovery(
 		strictHostKeyChecking = false,
 	} = config;
 
-	const sshBase = `ssh -o BatchMode=yes -o ConnectTimeout=30 -o StrictHostKeyChecking=${strictHostKeyChecking ? "yes" : "no"} ${user}@${host}`;
+	assertSafeSshTarget(host, user);
+
+	const sshBase = `ssh -o BatchMode=yes -o ConnectTimeout=30 -o StrictHostKeyChecking=${strictHostKeyChecking ? "yes" : "no"} ${shellQuote(user)}@${shellQuote(host)}`;
 
 	let retries = 0;
 	let hungProcessesKilled = false;
@@ -65,7 +98,7 @@ export async function sshWithRecovery(
 		try {
 			// Execute with timeout
 			const result = await execAsync(
-				`${sshBase} '${command.replace(/'/g, "'\\''")}'`,
+				`${sshBase} ${shellQuote(command)}`,
 				timeout,
 			);
 
@@ -129,17 +162,17 @@ export async function sshWithRecovery(
 async function killStuckProcesses(host: string, user: string): Promise<void> {
 	const killCommands = [
 		// Kill stuck SSH sessions
-		`pkill -f "ssh.*${host}" || true`,
+		`pkill -f ${shellQuote(`ssh.*${host}`)} || true`,
 		// Kill stuck PM2 commands
-		`pkill -f "pm2.*amos-saas" || true`,
+		`pkill -f ${shellQuote("pm2.*")} || true`,
 		// Kill stuck sudo commands
-		`pkill -f "sudo.*pm2" || true`,
+		`pkill -f ${shellQuote("sudo.*pm2")} || true`,
 	];
 
 	for (const cmd of killCommands) {
 		try {
 			execSync(
-				`ssh -o BatchMode=yes -o ConnectTimeout=10 ${user}@${host} '${cmd}'`,
+				`ssh -o BatchMode=yes -o ConnectTimeout=10 ${shellQuote(user)}@${shellQuote(host)} ${shellQuote(cmd)}`,
 				{ timeout: 10_000, encoding: "utf-8" },
 			);
 		} catch {
@@ -154,7 +187,7 @@ async function killStuckProcesses(host: string, user: string): Promise<void> {
 function killLocalSSHProcesses(host: string): void {
 	try {
 		// Kill any local SSH processes connecting to this host
-		execSync(`pkill -f "ssh.*${host}" || true`, { timeout: 5000 });
+		execSync(`pkill -f ${shellQuote(`ssh.*${host}`)} || true`, { timeout: 5000 });
 	} catch {
 		// Ignore
 	}
@@ -168,8 +201,9 @@ export async function pingServer(
 	user: string = "frappe",
 ): Promise<boolean> {
 	try {
+		assertSafeSshTarget(host, user);
 		execSync(
-			`ssh -o BatchMode=yes -o ConnectTimeout=5 ${user}@${host} 'echo ok'`,
+			`ssh -o BatchMode=yes -o ConnectTimeout=5 ${shellQuote(user)}@${shellQuote(host)} ${shellQuote("echo ok")}`,
 			{ timeout: 10_000 },
 		);
 		return true;
@@ -186,7 +220,7 @@ export async function getPM2Status(
 	pm2Path?: string,
 ): Promise<SSHResult> {
 	const pm2Cmd = pm2Path || "pm2";
-	const command = `PM2_HOME=/home/user/.pm2 ${pm2Cmd} status`;
+	const command = `PM2_HOME=~/.pm2 ${pm2Cmd} status`;
 
 	return sshWithRecovery(
 		{
@@ -205,7 +239,7 @@ export async function pm2Restart(
 	host: string,
 	app: string,
 ): Promise<SSHResult> {
-	const command = `PM2_HOME=/home/user/.pm2 pm2 restart ${app}`;
+	const command = `PM2_HOME=~/.pm2 pm2 restart ${app}`;
 
 	return sshWithRecovery(
 		{

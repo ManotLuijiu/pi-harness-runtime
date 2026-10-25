@@ -311,7 +311,7 @@ ssh user@host "kill old; sleep 2; uvicorn ... &"
 # CORRECT - SSH exits fast, process continues on server
 ssh -o BatchMode=yes user@host \
   "kill -9 917094 970065 2>/dev/null; sleep 1; \
-   cd /home/user/amos-saas/backend/services/api && \
+   cd ~/amos-saas/backend/services/api && \
    nohup .venv/bin/uvicorn amos_api.main:app --host 0.0.0.0 --port 8100 \
    > /tmp/uvicorn.log 2>&1 & \
    echo 'UVICORN_STARTED'"

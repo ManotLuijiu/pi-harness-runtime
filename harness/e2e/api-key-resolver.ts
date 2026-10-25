@@ -9,14 +9,15 @@
  * Then copies to ~/.pi-harness-runtime/keys/ for easy access.
  */
 
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 /** pi.dev auth file location */
-const PI_AUTH_FILE = join(process.env.HOME || "/home/user", ".pi", "agent", "auth.json");
+const PI_AUTH_FILE = join(process.env.HOME || osHomedir(), ".pi", "agent", "auth.json");
 
 /** Our keys directory */
-const KEYS_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+const KEYS_DIR = join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
 
 /** Key file mappings */
 const KEY_MAPPINGS: Record<string, string> = {

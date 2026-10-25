@@ -12,6 +12,7 @@
  * Uses synchronous directory creation and exception-safe operations.
  */
 
+import { homedir as osHomedir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { execSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, mkdirSync, readlinkSync, realpathSync } from "fs";
@@ -51,7 +52,7 @@ import type {
 	WorkspaceMode,
 } from "./workspace-env-format.js";
 
-const STORE_DIR = join(process.env.HOME || "/home/user", ".pi-harness-runtime");
+const STORE_DIR = join(process.env.HOME || osHomedir(), ".pi-harness-runtime");
 
 /**
  * Ensure store directory exists synchronously

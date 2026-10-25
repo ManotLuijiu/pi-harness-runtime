@@ -54,7 +54,7 @@ function makeFooterData(statuses: Record<string, string>): ReadonlyFooterDataPro
 
 function makeSessionInfo(overrides: Partial<FooterSessionInfo> = {}): FooterSessionInfo {
 	return {
-		cwd: "/home/user/pi-harness-runtime",
+		cwd: "/home/tester/pi-harness-runtime",
 		branch: "main",
 		sessionName: null,
 		modelId: "MiniMax-M2",
@@ -89,11 +89,11 @@ const WORKSPACE =
 function makeLiveCtx(overrides: Record<string, unknown> = {}): ExtensionContext {
 	return {
 		mode: "tui",
-		cwd: "/home/user/pi-harness-runtime",
+		cwd: "/home/tester/pi-harness-runtime",
 		model: { id: "MiniMax-M2", provider: "minimax", contextWindow: 200000 },
 		thinkingLevel: "high",
 		sessionManager: {
-			getCwd: () => "/home/user/pi-harness-runtime",
+			getCwd: () => "/home/tester/pi-harness-runtime",
 			getSessionName: () => "session-1",
 			getEntries: () => [
 				{
@@ -202,7 +202,7 @@ describe("harness footer rows", () => {
 		// `input ?? (0 + cacheRead + cacheWrite)` and reported CH9000.0%.
 		const ctx = makeLiveCtx({
 			sessionManager: {
-				getCwd: () => "/home/user/pi-harness-runtime",
+				getCwd: () => "/home/tester/pi-harness-runtime",
 				getSessionName: () => "session-1",
 				getEntries: () => [
 					{
@@ -440,7 +440,7 @@ describe("harness footer helpers", () => {
 
 	it("breaks a word that is longer than the width", () => {
 		const lines = wrapStatusText(
-			"Workspace: /home/user/a-very-long-directory-name/pi-harness-runtime",
+			"Workspace: /home/tester/a-very-long-directory-name/pi-harness-runtime",
 			20,
 			0,
 		);
@@ -522,14 +522,14 @@ describe("harness footer helpers", () => {
 	});
 
 	it("collapses the home directory to ~", () => {
-		expect(formatCwdForFooter("/home/user/project", "/home/user")).toBe(
+		expect(formatCwdForFooter("/home/tester/project", "/home/tester")).toBe(
 			"~/project",
 		);
-		expect(formatCwdForFooter("/home/user", "/home/user")).toBe("~");
-		expect(formatCwdForFooter("/opt/work", "/home/user")).toBe("/opt/work");
+		expect(formatCwdForFooter("/home/tester", "/home/tester")).toBe("~");
+		expect(formatCwdForFooter("/opt/work", "/home/tester")).toBe("/opt/work");
 		// A sibling directory that merely shares the home prefix is NOT in home.
-		expect(formatCwdForFooter("/home/userX", "/home/user")).toBe(
-			"/home/userX",
+		expect(formatCwdForFooter("/home/testerX", "/home/tester")).toBe(
+			"/home/testerX",
 		);
 	});
 

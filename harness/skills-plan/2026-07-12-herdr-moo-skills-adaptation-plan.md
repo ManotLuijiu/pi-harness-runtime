@@ -13,7 +13,7 @@ Study Herdr's reusable `SKILL.md` distribution model and adapt the idea to `pi-h
 
 ### Local source of truth to protect
 
-- Live skills: `/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+- Live skills: `~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 
 ### Current runtime state
 
@@ -35,7 +35,7 @@ Study Herdr's reusable `SKILL.md` distribution model and adapt the idea to `pi-h
 
 The directory:
 
-`/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+`~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 
 is continuously updated and acts as the operational knowledge base.
 
@@ -85,7 +85,7 @@ Use a **three-tier model**.
 
 Location:
 
-- `/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+- `~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 
 Role:
 

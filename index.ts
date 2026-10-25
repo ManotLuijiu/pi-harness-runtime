@@ -672,8 +672,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Jev", "initializing", "wait");
 	try {
 		// Check if Jev API key is available (env var or keys file)
-		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
-		const keysDir = `${homedir}/.pi-harness-runtime/keys`;
+		const home = process.env.HOME || process.env.USERPROFILE || homedir();
+		const keysDir = `${home}/.pi-harness-runtime/keys`;
 		const { existsSync, mkdirSync } = await import("fs");
 
 		// Auto-create directory if doesn't exist
@@ -1997,7 +1997,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 		const NotificationCenter = notifModule.NotificationCenter;
 		const createConversationBridge = notifModule.createConversationBridge;
 		const { readFileSync, existsSync } = await import("node:fs");
-		const home = process.env.HOME || process.env.USERPROFILE || "/home/user";
+		const home = process.env.HOME || process.env.USERPROFILE || homedir();
 		const keysDir = `${home}/.pi-harness-runtime/keys`;
 
 		const botTokenPath = `${keysDir}/telegram-bot-token.txt`;
@@ -2859,7 +2859,7 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 
 	// Check for API key
 	const { readFileSync, existsSync } = await import("node:fs");
-	const home = process.env.HOME || process.env.USERPROFILE || "/home/user";
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
 	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
 
 	if (!existsSync(keyPath)) {
@@ -2930,7 +2930,7 @@ function initLangChain(pi: {
 	const { dirname } = require("node:path");
 	const readline = require("node:readline");
 
-	const home = process.env.HOME || process.env.USERPROFILE || "/home/user";
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
 	const keysDir = `${home}/.pi-harness-runtime/keys`;
 	const modelsStorePath = `${home}/.pi/agent/models-store.json`;
 	const roleConfigPath = `${keysDir}/langchain-role.json`;
@@ -3973,8 +3973,8 @@ function isOutputLimitResumePromptMessage(message: {
 //   → pi-harness polls GET /api/pending-commands
 //   → pi-harness injects "resume" via steer
 function initJobPipeWatcher(pi: ExtensionAPI): void {
-	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
-	const keysDir = join(homedir, ".pi-harness-runtime", "keys");
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
+	const keysDir = join(home, ".pi-harness-runtime", "keys");
 
 	// Get webhook server URL and API key from config
 	const getWebhookConfig = () => {
@@ -4101,8 +4101,8 @@ function initJobPipeWatcher(pi: ExtensionAPI): void {
 //   → pi-harness polls this file
 //   → pi-harness injects prompt via steer
 function initLineVoiceQueue(pi: ExtensionAPI): void {
-	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
-	const queueFile = join(homedir, ".pi-harness-runtime", "line-voice-queue.jsonl");
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
+	const queueFile = join(home, ".pi-harness-runtime", "line-voice-queue.jsonl");
 
 	const processLineVoiceQueue = async () => {
 		try {

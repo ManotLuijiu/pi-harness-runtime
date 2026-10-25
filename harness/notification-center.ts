@@ -5,6 +5,7 @@
  * Users can configure which channels to use and toggle them via inline buttons.
  */
 
+import { homedir as osHomedir } from "node:os";
 import * as https from "https";
 
 export interface NotificationConfig {
@@ -34,7 +35,7 @@ export interface NotificationButtons {
   style?: "primary" | "secondary" | "danger";
 }
 
-const DEFAULT_CONFIG_FILE = `${process.env.HOME || "/home/user"}/.pi-harness-runtime/notification-config.json`;
+const DEFAULT_CONFIG_FILE = `${process.env.HOME || osHomedir()}/.pi-harness-runtime/notification-config.json`;
 
 /**
  * Load notification configuration

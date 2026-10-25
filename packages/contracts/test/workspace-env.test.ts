@@ -35,7 +35,7 @@ import type { EnvEvidence, WorkspaceEnvResult } from "../src/workspace-env-forma
 
 function makeEnv(overrides: Partial<WorkspaceEnvResult> = {}): WorkspaceEnvResult {
 	return {
-		workspacePath: "/home/user/pi-harness-runtime",
+		workspacePath: "/home/tester/pi-harness-runtime",
 		mode: "unknown",
 		evidence: [],
 		hasDevScript: false,
@@ -125,10 +125,10 @@ describe("the operating system", () => {
 	});
 
 	test("the home directory is shortened on a path boundary only", () => {
-		expect(formatWorkspacePath("/home/user/app", "/home/user")).toBe("~/app");
-		expect(formatWorkspacePath("/home/user", "/home/user")).toBe("~");
-		expect(formatWorkspacePath("/home/userX/app", "/home/user")).toBe("/home/userX/app");
-		expect(formatWorkspacePath("/home/user/app/", "/home/user")).toBe("~/app");
+		expect(formatWorkspacePath("/home/tester/app", "/home/tester")).toBe("~/app");
+		expect(formatWorkspacePath("/home/tester", "/home/tester")).toBe("~");
+		expect(formatWorkspacePath("/home/testerX/app", "/home/tester")).toBe("/home/testerX/app");
+		expect(formatWorkspacePath("/home/tester/app/", "/home/tester")).toBe("~/app");
 		expect(formatWorkspacePath("/app", "/")).toBe("/app");
 	});
 });
@@ -526,7 +526,7 @@ describe("formatEnvStatusLine", () => {
 	test("the line names the workspace path and the operating system", () => {
 		const line = formatEnvStatusLine(makeEnv());
 
-		expect(line).toContain(`Workspace: ${formatWorkspacePath("/home/user/pi-harness-runtime")}`);
+		expect(line).toContain(`Workspace: ${formatWorkspacePath("/home/tester/pi-harness-runtime")}`);
 		expect(line).toContain(`OS: ${describeOs()}`);
 	});
 

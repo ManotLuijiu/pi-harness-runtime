@@ -10,9 +10,12 @@
 
 import { readdir, readFile, writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
+import { homedir as osHomedir } from "node:os";
+import { join } from "node:path";
 
 const SOURCE_DIR =
-	"/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills";
+	process.env.SKILLS_SOURCE_DIR ||
+	join(process.env.HOME || osHomedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills");
 const OUTPUT_DIR = "./OKF/skills";
 
 // Sensitive patterns to sanitize

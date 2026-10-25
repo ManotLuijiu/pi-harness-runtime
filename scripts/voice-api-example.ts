@@ -10,6 +10,7 @@
  *   OPENAI_API_KEY=sk-xxx bun run scripts/voice-api-example.ts
  */
 
+import { homedir as osHomedir } from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { VoiceTranscriber } from "../packages/voice-api/dist/transcriber.js";
@@ -17,7 +18,7 @@ import { TelegramVoiceHandler } from "../packages/voice-api/dist/telegram.js";
 
 // Load API keys from key files
 function loadKey(filename: string): string | null {
-  const keysDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+  const keysDir = path.join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
   const filepath = path.join(keysDir, filename);
   try {
     return fs.readFileSync(filepath, "utf8").trim();

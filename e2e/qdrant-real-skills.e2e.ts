@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { homedir as osHomedir } from "node:os";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 if (process.env.PI_HARNESS_E2E !== "1") {
@@ -114,7 +115,10 @@ async function main() {
   console.error("[2] Reading skills...");
   let skills: SkillDoc[] = [];
   try {
-    skills = readSkills("/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills");
+    skills = readSkills(
+		process.env.SKILLS_SOURCE_DIR ||
+			join(process.env.HOME || osHomedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills"),
+	);
     console.error(`✓ Read ${skills.length} skills:\n`);
     for (const s of skills) {
       console.error(`  - ${s.name}`);

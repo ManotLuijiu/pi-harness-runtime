@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir as osHomedir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -263,7 +263,7 @@ test("every requirement names a candidate file and a fix file", () => {
 });
 
 test("displayKeysDir replaces the home directory with a tilde", () => {
-	const home = process.env.HOME || "/home/user";
+	const home = process.env.HOME || osHomedir();
 	assert.equal(displayKeysDir(join(home, ".pi-harness-runtime", "keys")), join("~", ".pi-harness-runtime", "keys"));
 	assert.equal(displayKeysDir("/opt/keys"), "/opt/keys");
 });

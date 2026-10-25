@@ -6,6 +6,7 @@
  * Run: bun run scripts/test-r2-telegram.ts
  */
 
+import { homedir as osHomedir } from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { uploadLogsToR2 } from "./r2-storage.js";
@@ -16,7 +17,7 @@ async function main() {
   console.log("=".repeat(60));
 
   // Load Telegram config
-  const keysDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
+  const keysDir = path.join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
   const botToken = fs.readFileSync(path.join(keysDir, "telegram-bot-token.txt"), "utf8").trim();
   const chatId = fs.readFileSync(path.join(keysDir, "telegram-chat-id.txt"), "utf8").trim();
 

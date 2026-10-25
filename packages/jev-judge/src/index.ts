@@ -35,6 +35,7 @@
  * ```
  */
 
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import type {
 	JevJudgeConfig,
@@ -182,7 +183,7 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
 }
 
 function defaultKeysDir(): string {
-	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+	const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
 	return `${homedir}/.pi-harness-runtime/keys`;
 }
 

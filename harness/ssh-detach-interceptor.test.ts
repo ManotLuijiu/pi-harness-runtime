@@ -148,14 +148,14 @@ describe("detectSsh", () => {
 });
 
 describe("isForegroundDaemonSsh", () => {
-	// The exact command that caused the 1911.9s hang (2026-09-14)
+	// A synthetic stand-in for the foreground SSH command that used to hang
 	const HANG_CMD =
-		"echo 'manlucha' | ssh -tt frappe@100.101.238.114 \"cd /home/user/amos-saas/backend/services/worker && AMOS_API_URL=https://api.ezsysbot.com AMOS_WORKER_API_KEY=test /home/user/amos-saas/backend/.venv/bin/python -m amos_worker --video 2>&1 | head -10\"";
+		"echo 'synthetic-test-password' | ssh -tt worker@worker.example.com \"cd /srv/app/backend/services/worker && AMOS_API_URL=https://api.example.com AMOS_WORKER_API_KEY=test /srv/app/backend/.venv/bin/python -m amos_worker --video 2>&1 | head -10\"";
 
 	const risky: Array<[string, string]> = [
 		[
 			HANG_CMD,
-			"foreground ssh -tt running amos_worker poller (real 1911.9s hang)",
+			"foreground ssh -tt running amos_worker poller",
 		],
 		[
 			'ssh host "uvicorn main:app --host 0.0.0.0 --port 8100"',

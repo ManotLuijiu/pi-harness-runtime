@@ -57,7 +57,7 @@ describe("message policy", () => {
 
 	test("drops a message with an absolute path", () => {
 		expect(
-			isSanitizedMessage("failed to read /home/user/project/file.ts", DEFAULT_CLASSIFICATION_POLICY),
+			isSanitizedMessage("failed to read /home/tester/project/file.ts", DEFAULT_CLASSIFICATION_POLICY),
 		).toBe(false);
 	});
 
@@ -92,7 +92,7 @@ describe("remote preparation", () => {
 
 	test("drops the message but keeps the event", () => {
 		const prepared = prepareRemoteRecord(
-			record({ event: "service.started", message: "failed at /home/user/x/y.ts" }),
+			record({ event: "service.started", message: "failed at /home/tester/x/y.ts" }),
 		);
 
 		expect(prepared?.message).toBeUndefined();

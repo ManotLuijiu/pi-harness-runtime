@@ -16,6 +16,8 @@
  * Auth: Bearer token (agent API key)
  */
 
+import { homedir as osHomedir } from "node:os";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -282,7 +284,7 @@ export function hasPaperclipConfig(): boolean {
 		process.env.PAPERCLIP_API_KEY ||
 		process.env.PAPERCLIP_API_KEY;
 	if (!apiKey) {
-		const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+		const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
 		try {
 			const { readFileSync, existsSync } = require("fs");
 			const path = `${homedir}/.pi-harness-runtime/keys/paperclip-api-key.txt`;
@@ -301,7 +303,7 @@ export function hasPaperclipConfig(): boolean {
  * Get Paperclip config from environment / keys file
  */
 export function getPaperclipConfig(): PaperclipConfig | null {
-	const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+	const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
 	const keysDir = `${homedir}/.pi-harness-runtime/keys`;
 
 	try {

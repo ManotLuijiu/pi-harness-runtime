@@ -10,7 +10,7 @@ This document turns the high-level Herdr adaptation plan into a concrete design 
 
 This design assumes the live private skill corpus remains here:
 
-- `/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+- `~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 
 That location remains the editable operational knowledge base.
 
@@ -60,7 +60,7 @@ Every public skill should have traceable provenance:
 Outside repo package boundary:
 
 ```text
-/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/
+~/frappe-bench/.claude-plugins/moocoding-skills/skills/
   <skill-name>/
     SKILL.md
 ```
@@ -202,7 +202,7 @@ Example:
 
 ```json
 {
-  "sourceRoot": "/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills",
+  "sourceRoot": "~/frappe-bench/.claude-plugins/moocoding-skills/skills",
   "skills": [
     {
       "sourceName": "bench-commands",
@@ -485,7 +485,7 @@ Document operator workflow
 This design does **not** recommend:
 
 - syncing the whole private corpus into public package directories
-- publishing directly from `/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+- publishing directly from `~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 - replacing the live MooCoding source with `pi-harness-runtime/skills/*`
 - auto-approving sanitized output without human review
 

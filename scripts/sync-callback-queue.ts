@@ -7,16 +7,17 @@
  *   bun run scripts/sync-callback-queue.ts
  * 
  * Or set up a cron job:
- *   * * * * * bun /home/user/pi-harness-runtime/scripts/sync-callback-queue.ts
+ *   * * * * * bun ~/pi-harness-runtime/scripts/sync-callback-queue.ts
  */
 
+import { homedir as osHomedir } from "node:os";
 import { execSync } from "child_process";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const VPS_HOST = process.env.VPS_HOST || "frappe@217.216.37.251";
-const VPS_QUEUE = "/home/user/.pi-harness-runtime/callback-queue.jsonl";
-const LOCAL_QUEUE = join(process.env.HOME || "/home/user", ".pi-harness-runtime", "callback-queue.jsonl");
+const VPS_QUEUE = process.env.VPS_QUEUE || "~/.pi-harness-runtime/callback-queue.jsonl";
+const LOCAL_QUEUE = join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "callback-queue.jsonl");
 
 function syncQueue(): number {
   try {

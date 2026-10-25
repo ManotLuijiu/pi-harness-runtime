@@ -5,6 +5,7 @@
  * Based on pi.dev Agent Skills specification.
  */
 
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -305,7 +306,7 @@ export function getQdrantConfig(): {
   apiKey: string;
   collection: string;
 } | null {
-  const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+  const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
   const keysDir = `${homedir}/.pi-harness-runtime/keys`;
 
   const url =

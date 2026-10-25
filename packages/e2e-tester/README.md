@@ -15,7 +15,7 @@ Simple E2E testing that agents can reliably use without confusion.
 
 ### Test Location
 ```
-Local machine: /home/user/amos-saas/  (or wherever the app is)
+Local machine: ~/amos-saas/  (or wherever the app is)
 Remote server: SSH frappe@217.216.37.251  (NO BROWSER - DO NOT RUN TESTS HERE)
 ```
 

@@ -8,12 +8,13 @@
  * - Quick status - current job at a glance
  */
 
+import { homedir as osHomedir } from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 
-const keysDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime", "keys");
-const dataDir = path.join(process.env.HOME || "/home/user", ".pi-harness-runtime", "data");
+const keysDir = path.join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "keys");
+const dataDir = path.join(process.env.HOME || osHomedir(), ".pi-harness-runtime", "data");
 
 // Load config
 const botToken = fs.readFileSync(path.join(keysDir, "telegram-bot-token.txt"), "utf8").trim();

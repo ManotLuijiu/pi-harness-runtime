@@ -1113,7 +1113,7 @@ Single server handles both Telegram and LINE webhooks on one domain.
    [Service]
    Type=simple
    User=frappe
-   ExecStart=/home/user/.bun/bin/bun run /home/user/unified-webhook-server.ts
+   ExecStart=~/.bun/bin/bun run ~/unified-webhook-server.ts
    Restart=always
    RestartSec=5
 

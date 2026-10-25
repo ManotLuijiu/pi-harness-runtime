@@ -4,6 +4,7 @@
  * Stores and manages skills with progressive disclosure.
  * Based on pi.dev Agent Skills specification.
  */
+import { homedir as osHomedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSkillFile } from "./parser.js";
@@ -93,7 +94,7 @@ function readKeyFile(path) {
  * Returns null if not configured.
  */
 export function getQdrantConfig() {
-    const homedir = process.env.HOME || process.env.USERPROFILE || "/home/user";
+    const homedir = process.env.HOME || process.env.USERPROFILE || osHomedir();
     const keysDir = `${homedir}/.pi-harness-runtime/keys`;
     const url = process.env.QDRANT_CLUSTER_ENDPOINT ||
         readKeyFile(`${keysDir}/qdrant-cluster-url.txt`);

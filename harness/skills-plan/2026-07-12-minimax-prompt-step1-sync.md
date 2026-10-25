@@ -6,7 +6,7 @@ Use this prompt with Minimax to implement the first safe slice of the MooCoding 
 
 You are coding inside this repo:
 
-- `/home/user/pi-harness-runtime`
+- `~/pi-harness-runtime`
 
 Read these planning notes first:
 
@@ -33,7 +33,7 @@ Do **not** implement sanitize or export in this task.
 
 The live private source of truth is:
 
-- `/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
+- `~/frappe-bench/.claude-plugins/moocoding-skills/skills/*`
 
 This source changes often and may contain private or unsanitized content.
 
@@ -68,7 +68,7 @@ Suggested initial shape:
 ```json
 {
   "version": 1,
-  "sourceRoot": "/home/user/frappe-bench/.claude-plugins/moocoding-skills/skills",
+  "sourceRoot": "~/frappe-bench/.claude-plugins/moocoding-skills/skills",
   "skills": []
 }
 ```
