@@ -37,7 +37,7 @@ pi install npm:@juicesharp/rpiv-todo  # Task tracking with bd sync
 
 The `pi-subagents` extension enables delegation assessment and parallel task execution for large refactoring work (10+ files, 50+ call sites).
 
-The `reverse-engineer-anything` skill (via `rea-agents`) enables reverse engineering of binaries, packages, firmware, and browser targets. Skills are not shipped with this package: they are loaded from your own skill store (`~/.pi-harness-runtime/skills`) and from your own Qdrant collection.
+The `reverse-engineer-anything` skill (via `rea-agents`) enables reverse engineering of binaries, packages, firmware, and browser targets. The package ships one skill of its own, `skills/harness-runtime/`, which tells your agent what the harness is. Every other skill is loaded from your own skill store (`~/.pi-harness-runtime/skills`) and from your own Qdrant collection.
 
 Requires Pi v0.37.3+.
 

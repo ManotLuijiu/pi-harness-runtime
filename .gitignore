@@ -52,10 +52,12 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 .pi/skills/release/*
 .pi-glla/
 
-# Skill payloads are not committed: they live in the user's own Qdrant
-# collection and in the installation-local skill store.
+# The package ships exactly one skill: its own, `skills/harness-runtime/`.
+# Every other skill payload lives in the user's own Qdrant collection and in
+# the installation-local skill store, so it is never committed.
 # The runtime implementation lives in packages/skills/ and stays tracked.
-/skills/
+/skills/*
+!/skills/harness-runtime/
 /.agents/skills/
 /.claude/skills/
 

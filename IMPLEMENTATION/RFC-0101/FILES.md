@@ -72,7 +72,7 @@ packages/
 ## Files Modified (out-of-tree)
 
 ```text
-packages/skills/src/skill-commands.ts    # add /runtime command, link RFC-0101
+skills/harness-runtime/SKILL.md    # add /runtime command, link RFC-0101
 README.md                          # reference RFC-0101 + new packages
 MANIFEST.json                      # include autonomous-runtime, privilege-broker, scheduler-adapter
 ```

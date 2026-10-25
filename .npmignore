@@ -2,6 +2,11 @@ node_modules/
 # Per-machine state and local tool policy: never published.
 .pi/
 .pi-lens/
+
+# Only the package's own skill ships. Every other skill payload is the
+# user's and stays out of the tarball.
+skills/*
+!skills/harness-runtime/
 .git/
 .github/
 scripts/

@@ -1,19 +1,21 @@
 /**
- * The published package must not carry a skill payload or a local state
- * directory, and it must carry the plugin that the postinstall copies.
+ * The published package must carry the plugin and the package's own skill,
+ * and it must not carry a private skill payload or a local state directory.
  *
  * The history of this repository shipped three things it should not ship:
  *
  *   1. the `.pi/` directory (per-machine extension state and private skills),
- *   2. the skill payload directories (skill content lives in the user's own
+ *   2. the private skill payloads (skill content lives in the user's own
  *      Qdrant collection and in the installation-local skill store), and
  *   3. the plugin, which was read from `.pi/plugins/` - a directory that is
  *      not committed, so the plugin only reached an installation when the
  *      release happened to run on a machine that had it.
  *
- * The plugin now lives in `plugins/`, which is committed and published. The
- * other two are gone from the index, from the package allowlist and from the
- * ignore rules.
+ * The plugin now lives in `plugins/`, which is committed and published.
+ *
+ * `skills/harness-runtime/` stays: it is the skill of the package itself, it
+ * is written for every user of the package, and it is public content. Every
+ * other directory under `skills/` belongs to a user and is never committed.
  */
 
 import { test } from "node:test";
@@ -32,10 +34,15 @@ const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const FORBIDDEN_PREFIXES = [
 	".pi/",
 	".pi-lens/",
-	"skills/",
 	".agents/skills/",
 	".claude/skills/",
 ];
+
+/** The one skill directory the package owns and publishes. */
+const PACKAGE_SKILL_DIR = "skills/harness-runtime/";
+
+/** The skill files the package must ship. */
+const REQUIRED_SKILL_FILES = ["skills/harness-runtime/SKILL.md"];
 
 /** The plugin files the package must ship. */
 const REQUIRED_PLUGIN_FILES = [
@@ -53,7 +60,13 @@ function trackedFiles() {
 	return out.split("\n").filter(Boolean);
 }
 
-test("the package allowlist ships the plugin and not the skill payloads", () => {
+/** Whether a path is a skill payload the package must not publish. */
+function isForbiddenSkillPath(file) {
+	if (!file.startsWith("skills/")) return false;
+	return !file.startsWith(PACKAGE_SKILL_DIR);
+}
+
+test("the package allowlist ships the plugin and the package's own skill", () => {
 	const files = manifest.files ?? [];
 
 	assert.ok(
@@ -61,36 +74,49 @@ test("the package allowlist ships the plugin and not the skill payloads", () => 
 		"the plugin directory must be in the files allowlist",
 	);
 	assert.ok(
+		files.includes("skills/harness-runtime/**/*"),
+		"the package's own skill must be in the files allowlist",
+	);
+	assert.ok(
 		!files.some((entry) => entry.startsWith(".pi/")),
 		"the .pi directory must not be in the files allowlist",
 	);
 	assert.ok(
-		!files.some((entry) => entry.startsWith("skills/")),
-		"the root skills directory must not be in the files allowlist",
+		!files.some((entry) => entry === "skills/**/*"),
+		"the whole skills directory must not be in the files allowlist - only the package's own skill",
 	);
 });
 
-test("the package declares no skill directory", () => {
-	// `pi.skills` told pi to load skills from a directory of the package.
-	// The package ships no skills, so the declaration would point at
-	// nothing - or, worse, at a directory that a later install fills with
-	// whatever happens to be on the machine.
-	assert.equal(
+test("the package declares the skill directory to pi", () => {
+	// `pi.skills` tells pi where to find the skills of the package. The
+	// package ships exactly one, and this is where it lives.
+	assert.deepEqual(
 		manifest.pi?.skills,
-		undefined,
-		"pi.skills must be gone because the package ships no skills",
+		["./skills"],
+		"pi.skills must point at the directory that holds the package's own skill",
 	);
 });
 
-test("no skill payload and no local state is tracked by git", () => {
-	const offenders = trackedFiles().filter((file) =>
-		FORBIDDEN_PREFIXES.some((prefix) => file.startsWith(prefix)),
+test("no private skill payload and no local state is tracked by git", () => {
+	const tracked = trackedFiles();
+	const offenders = tracked.filter(
+		(file) =>
+			FORBIDDEN_PREFIXES.some((prefix) => file.startsWith(prefix)) ||
+			isForbiddenSkillPath(file),
 	);
 	assert.deepEqual(
 		offenders,
 		[],
 		`these paths must not be committed: ${offenders.join(", ")}`,
 	);
+});
+
+test("the package's own skill is tracked with the files it needs", () => {
+	const tracked = new Set(trackedFiles());
+	for (const required of REQUIRED_SKILL_FILES) {
+		assert.ok(tracked.has(required), `${required} must be tracked`);
+		assert.ok(existsSync(join(ROOT, required)), `${required} must exist`);
+	}
 });
 
 test("the plugin is tracked with every file it needs", () => {
@@ -119,12 +145,20 @@ test("the ignore rules keep the local directories out of the index", () => {
 	const gitignore = readFileSync(join(ROOT, ".gitignore"), "utf8");
 	const lines = gitignore.split("\n").map((line) => line.trim());
 
-	for (const rule of [".pi/", ".pi-lens/", "/skills/", "/.agents/skills/"]) {
+	for (const rule of [".pi/", ".pi-lens/", "/skills/*", "/.agents/skills/"]) {
 		assert.ok(
 			lines.includes(rule),
 			`the .gitignore must contain "${rule}"`,
 		);
 	}
+});
+
+test("the ignore rules let the package's own skill through", () => {
+	const gitignore = readFileSync(join(ROOT, ".gitignore"), "utf8");
+	assert.ok(
+		gitignore.split("\n").map((line) => line.trim()).includes("!/skills/harness-runtime/"),
+		"the .gitignore must un-ignore the package's own skill",
+	);
 });
 
 test("the ignore rules still protect the private release skill", () => {

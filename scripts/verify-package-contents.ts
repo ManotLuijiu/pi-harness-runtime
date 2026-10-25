@@ -74,10 +74,36 @@ const SHIPPED_ROOT_FILES = [
 const FORBIDDEN_PACKAGE_PREFIXES = [
 	".pi/",
 	".pi-lens/",
-	"skills/",
 	".agents/skills/",
 	".claude/skills/",
 ];
+
+/**
+ * The one skill directory the package owns and publishes.
+ *
+ * `skills/harness-runtime/` is the skill of the package itself: it tells an
+ * installed agent what the harness is. It is public content, written for
+ * every user of the package, so it ships.
+ *
+ * Every other directory under `skills/` belongs to a user. Such a skill
+ * lives in that user's own Qdrant collection and in their installation-local
+ * skill store, and it must never reach the published tarball.
+ */
+const PACKAGE_SKILL_DIR = "skills/harness-runtime/";
+
+/** The files the published skill directory must contain. */
+const REQUIRED_SKILL_FILES = ["skills/harness-runtime/SKILL.md"];
+
+/**
+ * Whether a path is a skill payload that the package must not publish.
+ *
+ * A path under `skills/` is forbidden unless it belongs to the package's
+ * own skill directory.
+ */
+function isForbiddenSkillPath(path: string): boolean {
+	if (!path.startsWith("skills/")) return false;
+	return !path.startsWith(PACKAGE_SKILL_DIR);
+}
 
 /** The plugin directory that ships with the package. */
 const PLUGIN_DIR = "plugins";
@@ -161,6 +187,12 @@ function checkPackageLayout(): void {
 				break;
 			}
 		}
+		if (isForbiddenSkillPath(posix)) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${posix} is tracked - only ${PACKAGE_SKILL_DIR} may be committed`,
+			});
+		}
 	}
 
 	for (const required of REQUIRED_PLUGIN_FILES) {
@@ -168,6 +200,15 @@ function checkPackageLayout(): void {
 			problems.push({
 				kind: "missing-plugin",
 				detail: `${required} is not tracked - the plugin would not ship`,
+			});
+		}
+	}
+
+	for (const required of REQUIRED_SKILL_FILES) {
+		if (!files.includes(required)) {
+			problems.push({
+				kind: "missing-plugin",
+				detail: `${required} is not tracked - the package would ship no skill`,
 			});
 		}
 	}
@@ -416,9 +457,24 @@ async function inspectTarball(): Promise<void> {
 				break;
 			}
 		}
+		if (isForbiddenSkillPath(posix)) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${posix} is in the tarball - only ${PACKAGE_SKILL_DIR} may be published`,
+			});
+		}
 	}
 
 	for (const required of REQUIRED_PLUGIN_FILES) {
+		if (!files.includes(required)) {
+			problems.push({
+				kind: "missing-plugin",
+				detail: `${required} is not in the tarball`,
+			});
+		}
+	}
+
+	for (const required of REQUIRED_SKILL_FILES) {
 		if (!files.includes(required)) {
 			problems.push({
 				kind: "missing-plugin",
