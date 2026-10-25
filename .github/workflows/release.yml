@@ -19,11 +19,72 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Dry run (no publish)
+        description: Dry run (no publish, no unpublish)
         required: false
         default: "false"
+      unpublish_versions:
+        description: >-
+          Registry cleanup: space-separated versions to unpublish from npm
+          (e.g. "1.1.390 1.1.391"). Leave empty for a normal release.
+          Unpublishing deletes the tarball and cannot be undone.
+        required: false
+        default: ""
 
 jobs:
+  # Registry cleanup.
+  #
+  # npm Trusted Publishing binds a trusted publisher to a single workflow
+  # filename, so this step has to live in release.yml - a separate workflow
+  # file would be rejected with ENEEDAUTH. It uses the same OIDC credential
+  # as the release job, so no long-lived npm token is needed.
+  #
+  # It runs only on a manual dispatch that names versions, and the release
+  # job is skipped for such a dispatch, so a cleanup dispatch can never
+  # publish.
+  unpublish:
+    name: Unpublish npm versions
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.unpublish_versions != ''
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24" # OIDC requires Node.js 24+ for npm >= 11.5.1
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Unpublish versions
+        env:
+          VERSIONS: ${{ github.event.inputs.unpublish_versions }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          PACKAGE_NAME: pi-harness-runtime
+        run: |
+          set -uo pipefail
+          echo "Authenticated as: $(npm whoami)"
+          failed=""
+          for v in $VERSIONS; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY-RUN: would unpublish $PACKAGE_NAME@$v"
+              continue
+            fi
+            echo "::group::unpublish $PACKAGE_NAME@$v"
+            if npm unpublish "$PACKAGE_NAME@$v"; then
+              echo "OK: unpublished $PACKAGE_NAME@$v"
+            else
+              echo "FAILED: $PACKAGE_NAME@$v"
+              failed="$failed $v"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "Versions that could not be unpublished:$failed"
+            exit 1
+          fi
+
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -31,8 +92,10 @@ jobs:
       id-token: write
       contents: write
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/tags/v')
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/tags/v')) &&
+      (github.event.inputs.unpublish_versions == null ||
+       github.event.inputs.unpublish_versions == '')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,8 +196,10 @@ jobs:
 
       - name: Publish to npm
         if: >-
-          github.event_name != 'workflow_dispatch' ||
-          github.event.inputs.dry_run != 'true'
+          (github.event_name != 'workflow_dispatch' ||
+           github.event.inputs.dry_run != 'true') &&
+          (github.event.inputs.unpublish_versions == null ||
+           github.event.inputs.unpublish_versions == '')
         run: |
           # OIDC handles auth automatically - no token needed
           # Use computed npm_tag (beta for prerelease, latest otherwise)
