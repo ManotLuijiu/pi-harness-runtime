@@ -56,6 +56,30 @@ type McpToolCallResult =
   | { ok: false; error?: Error };
 
 /**
+ * Did the adapter refuse the call?
+ *
+ * The check is a type guard and not a plain `!result.ok`: the root project
+ * runs without strictNullChecks, and there the discriminant of a union is
+ * not narrowed - the guard narrows in every setting.
+ */
+function isToolCallFailure(
+  result: McpToolCallResult
+): result is { ok: false; error?: Error } {
+  return result.ok === false;
+}
+
+/**
+ * Did the adapter refuse the registration?
+ *
+ * The same reason as isToolCallFailure: the guard narrows in every setting.
+ */
+function isRegistrationFailure(
+  result: NonNullable<McpRuntimeRegistrationRequest["result"]>
+): result is { ok: false; error: Error } {
+  return result.ok === false;
+}
+
+/**
  * Honcho session identity
  */
 interface HonchoIdentity {
@@ -154,6 +178,79 @@ let _disposed = false;
 // ---------------------------------------------------------------------------
 
 /**
+ * The payload of a Honcho tool call.
+ *
+ * The MCP server answers with the MCP shape: the payload is the TEXT of the
+ * first content block, and for the tools that answer with data that text is
+ * JSON. The tools that only confirm something ("Peers added to session
+ * successfully") answer with plain text.
+ *
+ * The harness therefore has to unwrap the content block before it can read a
+ * peer id - reading `result.id` on the raw MCP result finds nothing, because
+ * the id lives in the JSON text of the first block.
+ */
+export function honchoPayload(result: unknown): {
+  data: Record<string, unknown> | null;
+  parsed: unknown;
+  text: string;
+} {
+  const content = (result as { content?: unknown })?.content;
+  const first = Array.isArray(content) ? content[0] : undefined;
+  const text = typeof (first as { text?: unknown })?.text === "string" ? (first as { text: string }).text : "";
+  if (text === "") {
+    return { data: null, parsed: null, text: "" };
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return { data: parsed as Record<string, unknown>, parsed, text };
+    }
+    if (parsed !== null && typeof parsed === "object") {
+      return { data: null, parsed, text };
+    }
+  } catch {
+    // Not JSON: the tool confirmed with plain text.
+  }
+  return { data: null, parsed: null, text };
+}
+
+/**
+ * The entries of a list tool ("peers", "sessions").
+ *
+ * The server answers with the list under its own key and the paging beside
+ * it. A bare array is accepted as well.
+ */
+function listEntriesFrom(parsed: unknown, key: string): Record<string, unknown>[] {
+  const list = (parsed as Record<string, unknown> | null)?.[key];
+  if (Array.isArray(list)) {
+    return list.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null);
+  }
+  if (Array.isArray(parsed)) {
+    return parsed.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null);
+  }
+  return [];
+}
+
+/**
+ * The peer id in the answer of a peer tool.
+ *
+ * The server answers with `peer_id`; the answers that carry a nested peer
+ * use `id`. Both are accepted so a server change cannot silently empty the
+ * identity.
+ */
+function peerIdFrom(data: Record<string, unknown> | null): string | null {
+  if (!data) {
+    return null;
+  }
+  const direct = data.peer_id ?? data.id;
+  if (typeof direct === "string" && direct !== "") {
+    return direct;
+  }
+  const nested = (data.peer as { id?: unknown } | undefined)?.id;
+  return typeof nested === "string" && nested !== "" ? nested : null;
+}
+
+/**
  * Call a tool on the Honcho MCP server through the adapter.
  * Returns actual result from the MCP server.
  */
@@ -184,20 +281,28 @@ async function callHonchoTool(
   // Emit tool call
   piEvents.emit(MCP_RUNTIME_TOOL_CALL_EVENT, request);
 
-  // Wait for result - adapter assigns a Promise to request.result
-  if (request.result === undefined) {
+  // Read result immediately after emit. The value goes into a local: reading
+  // the property again after the emit would lose the narrowing, because a
+  // call may change the property.
+  const pending = request.result;
+  if (pending === undefined) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, reason: "no response from adapter" });
     return { success: false, error: "No response from MCP adapter" };
   }
 
-  // request.result is a Promise from the adapter
-  const result = await request.result;
-  
-  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "completed", tool: toolName, result: JSON.stringify(result).slice(0, 200) });
+  // The adapter sets the promise during the emit - await it.
+  const result = await pending;
 
-  if (!result.ok) {
-    return { success: false, error: result.error?.message ?? "Unknown error" };
+  if (isToolCallFailure(result)) {
+    // The adapter hands back an Error instance: JSON.stringify would show an
+    // empty object, so the message goes into the log on its own. Without it
+    // a failing call reads like "Unknown error" and names nothing.
+    const message = result.error?.message ?? "Unknown error";
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, error: message });
+    return { success: false, error: message };
   }
+
+  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "completed", tool: toolName, result: JSON.stringify(result.result).slice(0, 200) });
 
   return { success: true, result: result.result };
 }
@@ -252,7 +357,19 @@ async function ensureWorkspace(workspaceName: string): Promise<string | null> {
   });
 
   if (inspectResult.success && inspectResult.result) {
-    const response = inspectResult.result as { workspace?: { id?: string }; id?: string; metadata?: Record<string, unknown> };
+    // The server answers with the MCP envelope: the JSON sits in the text of
+    // the first content block. Reading the envelope directly would find
+    // nothing and silently fall back to the workspace name.
+    const parsed = honchoPayload(inspectResult.result).parsed as {
+      workspace?: { id?: string };
+      id?: string;
+      metadata?: Record<string, unknown>;
+    } | null;
+    const response: {
+      workspace?: { id?: string };
+      id?: string;
+      metadata?: Record<string, unknown>;
+    } = parsed ?? {};
     const workspaceId = response.workspace?.id ?? response.id ?? workspaceName;
     savePersistedWorkspace(workspaceId, workspaceName);
     
@@ -285,25 +402,31 @@ async function ensureUserPeer(
   workspaceId: string,
   userName: string
 ): Promise<string | null> {
-  const result = await callHonchoTool("create_user", {
+  // The server's peer API: create_peer is a get-or-create.
+  const result = await callHonchoTool("create_peer", {
     workspace_id: workspaceId,
-    name: userName,
+    peer_id: userName,
   });
 
-  if (result.success && result.result) {
-    const response = result.result as { id?: string; user?: { id?: string } };
-    return response.id ?? response.user?.id ?? null;
+  if (result.success) {
+    const peerId = peerIdFrom(honchoPayload(result.result).data);
+    if (peerId) {
+      return peerId;
+    }
   }
 
-  // Try get_or_create_user as fallback
-  const getResult = await callHonchoTool("get_or_create_user", {
+  // The peer may exist already: list the peers and look for it.
+  const listResult = await callHonchoTool("list_peers", {
     workspace_id: workspaceId,
-    name: userName,
+    size: 100,
   });
-
-  if (getResult.success && getResult.result) {
-    const response = getResult.result as { id?: string };
-    return response.id ?? null;
+  if (listResult.success) {
+    for (const peer of listEntriesFrom(honchoPayload(listResult.result).parsed, "peers")) {
+      const peerId = peerIdFrom(peer);
+      if (peerId === userName) {
+        return peerId;
+      }
+    }
   }
 
   logServiceEvent({
@@ -325,14 +448,29 @@ async function ensureAssistantPeer(
   workspaceId: string,
   assistantName: string
 ): Promise<string | null> {
-  const result = await callHonchoTool("create_assistant", {
+  const result = await callHonchoTool("create_peer", {
     workspace_id: workspaceId,
-    name: assistantName,
+    peer_id: assistantName,
   });
 
-  if (result.success && result.result) {
-    const response = result.result as { id?: string; assistant?: { id?: string } };
-    return response.id ?? response.assistant?.id ?? null;
+  if (result.success) {
+    const peerId = peerIdFrom(honchoPayload(result.result).data);
+    if (peerId) {
+      return peerId;
+    }
+  }
+
+  const listResult = await callHonchoTool("list_peers", {
+    workspace_id: workspaceId,
+    size: 100,
+  });
+  if (listResult.success) {
+    for (const peer of listEntriesFrom(honchoPayload(listResult.result).parsed, "peers")) {
+      const peerId = peerIdFrom(peer);
+      if (peerId === assistantName) {
+        return peerId;
+      }
+    }
   }
 
   logServiceEvent({
@@ -356,59 +494,97 @@ async function ensureSession(
   assistantPeerId: string,
   sessionId: string
 ): Promise<string | null> {
+  // The server's session API: create_session is a get-or-create, and the
+  // peers join the session with their own call.
   const result = await callHonchoTool("create_session", {
     workspace_id: workspaceId,
-    user_id: userPeerId,
-    assistant_id: assistantPeerId,
-    id: sessionId,
+    session_id: sessionId,
   });
 
-  if (result.success && result.result) {
-    const response = result.result as { id?: string; session?: { id?: string } };
-    return response.id ?? response.session?.id ?? null;
+  let createdSessionId: string | null = null;
+  if (result.success) {
+    const data = honchoPayload(result.result).data;
+    const id = data?.session_id ?? data?.id;
+    createdSessionId = typeof id === "string" && id !== "" ? id : null;
   }
 
-  // Try get_or_create_session as fallback
-  const getResult = await callHonchoTool("get_or_create_session", {
+  if (!createdSessionId) {
+    // The session may exist already: list the sessions and look for it.
+    const listResult = await callHonchoTool("list_sessions", {
+      workspace_id: workspaceId,
+      size: 100,
+    });
+    if (listResult.success) {
+      for (const session of listEntriesFrom(honchoPayload(listResult.result).parsed, "sessions")) {
+        const id = session.session_id ?? session.id;
+        if (typeof id === "string" && id === sessionId) {
+          createdSessionId = id;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!createdSessionId) {
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "error",
+      service: "honcho",
+      operation: "session_failed",
+      phase: "failed",
+      error: result.error ?? "Unknown error",
+    });
+
+    return null;
+  }
+
+  // The peers have to join the session explicitly.
+  const peersResult = await callHonchoTool("add_peers_to_session", {
     workspace_id: workspaceId,
-    user_id: userPeerId,
-    assistant_id: assistantPeerId,
-    id: sessionId,
+    session_id: createdSessionId,
+    peers: [userPeerId, assistantPeerId],
   });
-
-  if (getResult.success && getResult.result) {
-    const response = getResult.result as { id?: string };
-    return response.id ?? null;
+  if (!peersResult.success) {
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "warn",
+      service: "honcho",
+      operation: "session_peers_failed",
+      phase: "failed",
+      error: peersResult.error ?? "Unknown error",
+      sessionId: createdSessionId,
+    });
   }
 
-  logServiceEvent({
-    ts: new Date().toISOString(),
-    level: "error",
-    service: "honcho",
-    operation: "session_failed",
-    phase: "failed",
-    error: result.error ?? "Unknown error",
-  });
-
-  return null;
+  return createdSessionId;
 }
 
 /**
  * Add a message to the session
  */
 async function addMessage(
+  workspaceId: string,
   sessionId: string,
   peerId: string,
   role: "user" | "assistant",
   content: string,
   messageId?: string
 ): Promise<boolean> {
-  const result = await callHonchoTool("add_message", {
+  // The server takes the messages of a session in one call, and the author
+  // of a message is the peer - the role lives in the metadata.
+  const result = await callHonchoTool("add_messages_to_session", {
+    workspace_id: workspaceId,
     session_id: sessionId,
-    sender_id: peerId,
-    role,
-    content,
-    message_id: messageId,
+    messages: [
+      {
+        peer_id: peerId,
+        content,
+        metadata: {
+          role,
+          ...(messageId ? { message_id: messageId } : {}),
+        },
+      },
+    ],
   });
 
   return result.success;
@@ -423,19 +599,25 @@ async function getContext(
   query: string,
   limit: number = 5
 ): Promise<string | null> {
-  const result = await callHonchoTool("get_context", {
+  // The server has no query-scoped "get_context": the recall is the search,
+  // and the messages it finds are the context.
+  const result = await callHonchoTool("search", {
     workspace_id: workspaceId,
     session_id: sessionId,
     query,
-    limit,
+    message_limit: Math.max(1, Math.min(100, limit)),
   });
 
-  if (result.success && result.result) {
-    const response = result.result as { content?: string; context?: string; text?: string };
-    return response.content ?? response.context ?? response.text ?? null;
+  if (!result.success) {
+    return null;
   }
 
-  return null;
+  const messages = listEntriesFrom(honchoPayload(result.result).parsed, "messages");
+  const texts = messages
+    .map((message) => (typeof message.content === "string" ? message.content : ""))
+    .filter((text) => text !== "");
+
+  return texts.length > 0 ? texts.join("\n") : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -539,16 +721,19 @@ export async function initHoncho(options?: {
   // Emit registration event - adapter writes request.result synchronously
   piEvents.emit(MCP_RUNTIME_REGISTER_EVENT, request);
 
-  // Read result immediately after emit
-  if (request.result === undefined) {
+  // Read result immediately after emit. The value goes into a local: reading
+  // the property again after the emit would lose the narrowing, because a
+  // call may change the property.
+  const registration = request.result;
+  if (registration === undefined) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_register", phase: "failed", reason: "MCP adapter not responding" });
     logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "failed", helpUrl: "pi install npm:pi-mcp-adapter" });
     honchoStatus.recordFailure("init", "no_listener", { error: "No adapter responded" });
     return null;
   }
 
-  if (!request.result.ok) {
-    const errorMsg = request.result.error?.message ?? "Unknown registration error";
+  if (isRegistrationFailure(registration)) {
+    const errorMsg = registration.error?.message ?? "Unknown registration error";
     
     // Check for duplicate name - an existing server may already be registered
     if (errorMsg.includes("already") || errorMsg.includes("duplicate")) {
@@ -561,7 +746,7 @@ export async function initHoncho(options?: {
     }
   } else {
     // Registration accepted - store handle for disposal
-    _honchoRegistration = request.result.registration;
+    _honchoRegistration = registration.registration;
     logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed" });
   }
 
@@ -643,6 +828,9 @@ export async function ensureHonchoIdentity(): Promise<boolean> {
   _honchoMemory.setToolsDiscovered(true);
   _honchoMemory.setWorkspace(workspaceId);
   _honchoMemory.setSession(honchoSessionId);
+  // The peers are the authors of the messages: without them the ingestion
+  // cannot say who said what.
+  _honchoMemory.setPeers(userPeerId, assistantPeerId);
 
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "memory_init", phase: "completed" });
   honchoStatus.recordSuccess("init", undefined, {
@@ -691,6 +879,7 @@ export async function ingestUserMessage(
   }
 
   return await addMessage(
+    _identity.workspaceId,
     _identity.sessionId,
     _identity.userPeerId,
     "user",
@@ -711,6 +900,7 @@ export async function ingestAssistantMessage(
   }
 
   return await addMessage(
+    _identity.workspaceId,
     _identity.sessionId,
     _identity.assistantPeerId,
     "assistant",

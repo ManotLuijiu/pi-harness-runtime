@@ -12,7 +12,7 @@
  */
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
-import { honchoToolCall } from "./honcho-init.js";
+import { honchoPayload, honchoToolCall } from "./honcho-init.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -308,6 +308,8 @@ export class HonchoMemory {
   private toolsDiscovered = false;
   private workspaceId: string | null = null;
   private sessionId: string | null = null;
+  private userPeerId: string | null = null;
+  private assistantPeerId: string | null = null;
   private _disposed = false;
 
   constructor(config: HonchoMemoryConfig) {
@@ -380,6 +382,26 @@ export class HonchoMemory {
       operation: "session_created",
       phase: "completed",
       sessionId,
+    });
+  }
+
+  /**
+   * Set the peers that author the messages.
+   *
+   * The server takes the author of a message as the peer, so the ingestion
+   * cannot say who said what without them.
+   */
+  setPeers(userPeerId: string, assistantPeerId: string): void {
+    this.userPeerId = userPeerId;
+    this.assistantPeerId = assistantPeerId;
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "peers_set",
+      phase: "completed",
+      userPeerId,
+      assistantPeerId,
     });
   }
 
@@ -514,15 +536,28 @@ export class HonchoMemory {
     });
 
     try {
-      // Call Honcho MCP tool through the adapter
+      // The server takes the messages of a session in one call, and the
+      // author of a message is the peer.
       // Use sessionId if available, fall back to workspaceId
       const targetSessionId = this.sessionId ?? this.workspaceId;
-      const result = await this.callHonchoTool("add_message", {
+      const peerId = role === "assistant" ? this.assistantPeerId : this.userPeerId;
+      if (!peerId) {
+        throw new Error("The Honcho peers are not known yet");
+      }
+      const result = await this.callHonchoTool("add_messages_to_session", {
+        workspace_id: this.workspaceId,
         session_id: targetSessionId,
-        role,
-        content: sanitized,
-        message_id: messageId,
-        timestamp: timestamp.toISOString(),
+        messages: [
+          {
+            peer_id: peerId,
+            content: sanitized,
+            metadata: {
+              role,
+              message_id: messageId,
+              timestamp: timestamp.toISOString(),
+            },
+          },
+        ],
       });
 
       if (!result.success) {
@@ -602,27 +637,36 @@ export class HonchoMemory {
     });
 
     try {
-      // Call Honcho get_session_context tool through the adapter
+      // The recall of the server is the search: it answers with the messages
+      // that match the query, and those messages are the context.
       // Use sessionId if available, fall back to workspaceId
       const targetSessionId = this.sessionId ?? this.workspaceId;
-      const result = await this.callHonchoTool("get_context", {
+      const result = await this.callHonchoTool("search", {
+        workspace_id: this.workspaceId,
         session_id: targetSessionId,
         query,
-        limit: 10,
+        message_limit: 10,
       });
 
       if (!result.success) {
         throw new Error(result.error || "Tool call failed");
       }
 
-      // Parse actual response content
+      // Parse the messages the search found.
+      const payload = honchoPayload(result.result);
+      const messages = (payload.parsed as { messages?: unknown } | null)?.messages;
       let context = "";
-      if (result.result && typeof result.result === "object") {
-        const response = result.result as Record<string, unknown>;
-        // Extract context from response based on actual Honcho API shape
-        context = (response.content as string) ||
-                  (response.messages as string[])?.join("\n") ||
-                  JSON.stringify(response);
+      if (Array.isArray(messages)) {
+        context = messages
+          .map((message) => {
+            const text = (message as { content?: unknown })?.content;
+            return typeof text === "string" ? text : "";
+          })
+          .filter((text) => text !== "")
+          .join("\n");
+      }
+      if (context === "" && payload.text !== "") {
+        context = payload.text;
       }
 
       // Apply max context chars limit
