@@ -62,10 +62,19 @@ jobs:
       # its own. The exchange is a documented two-step protocol, so we do it
       # here and hand the resulting registry token to the CLI.
       # Reference implementation: npm/lib/utils/oidc.js
-      - name: Exchange the OIDC credential for a registry token
-        id: oidc
+      #
+      # The OIDC credential is scoped to publish operations, and npm's
+      # registry rejects a packument update made with it
+      # ("OIDC publish authorize: Invalid request"). Unpublishing removes a
+      # version from the packument, so it needs a token with plain write
+      # access. A repository token is preferred when one is configured; the
+      # OIDC credential remains the fallback so the workflow still works for
+      # a publisher.
+      - name: Resolve a registry token
+        id: cred
         env:
           PACKAGE_NAME: pi-harness-runtime
+          REPO_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           cat > /tmp/jget.js <<'EOF'
@@ -74,24 +83,31 @@ jobs:
           const body = JSON.parse(fs.readFileSync(0, "utf8"));
           process.stdout.write(body[key] || "");
           EOF
-          audience="npm:registry.npmjs.org"
-          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}"
-          curl -sSf -H 'Accept: application/json' \
-            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "$url" | node /tmp/jget.js value > /tmp/id_token
-          id_token="$(cat /tmp/id_token)"
-          if [ -z "$id_token" ]; then
-            echo "no id_token returned by the GitHub OIDC endpoint" >&2
-            exit 1
-          fi
-          exchange="https://registry.npmjs.org/-/npm/v1/oidc/token/exchange"
-          exchange="${exchange}/package/${PACKAGE_NAME}"
-          curl -sSf -X POST -H "Authorization: Bearer ${id_token}" \
-            "$exchange" | node /tmp/jget.js token > /tmp/registry_token
-          registry_token="$(cat /tmp/registry_token)"
-          if [ -z "$registry_token" ]; then
-            echo "the token exchange returned no registry token" >&2
-            exit 1
+          registry_token=""
+          if [ -n "$REPO_TOKEN" ]; then
+            echo "credential: repository NPM_TOKEN secret"
+            registry_token="$REPO_TOKEN"
+          else
+            echo "credential: OIDC trusted publisher (publish scope only)"
+            audience="npm:registry.npmjs.org"
+            url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}"
+            curl -sSf -H 'Accept: application/json' \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "$url" | node /tmp/jget.js value > /tmp/id_token
+            id_token="$(cat /tmp/id_token)"
+            if [ -z "$id_token" ]; then
+              echo "no id_token returned by the GitHub OIDC endpoint" >&2
+              exit 1
+            fi
+            exchange="https://registry.npmjs.org/-/npm/v1/oidc/token/exchange"
+            exchange="${exchange}/package/${PACKAGE_NAME}"
+            curl -sSf -X POST -H "Authorization: Bearer ${id_token}" \
+              "$exchange" | node /tmp/jget.js token > /tmp/registry_token
+            registry_token="$(cat /tmp/registry_token)"
+            if [ -z "$registry_token" ]; then
+              echo "the token exchange returned no registry token" >&2
+              exit 1
+            fi
           fi
           echo "::add-mask::${registry_token}"
           echo "token=${registry_token}" >> "$GITHUB_OUTPUT"
@@ -121,7 +137,7 @@ jobs:
           VERSIONS: ${{ github.event.inputs.unpublish_versions }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PACKAGE_NAME: pi-harness-runtime
-          NODE_AUTH_TOKEN: ${{ steps.oidc.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.cred.outputs.token }}
         run: |
           set -uo pipefail
           echo "Authenticated as: $(npm whoami 2>&1)"
