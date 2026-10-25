@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSkillFile } from "./parser.js";
-import { LEGACY_SKILL_COLLECTION, LEGACY_SKILL_COLLECTION_DIMENSIONS, LEGACY_SKILL_COLLECTION_MODEL, SKILL_COLLECTION, describeSkillSchemaMismatch, } from "./vector-schema.js";
+import { LEGACY_SKILL_COLLECTION, LEGACY_SKILL_COLLECTION_DIMENSIONS, LEGACY_SKILL_COLLECTION_MODEL, SKILL_COLLECTION, describeSkillSchemaMismatch, skillPointPayload, skillQdrantPoint, stableHash, } from "./vector-schema.js";
 import { describeRemoteFailure, isStale, skillFromRemote, } from "./remote-source.js";
 /**
  * The vector size of the runtime, used when the installed Qdrant package
@@ -382,13 +382,17 @@ export class SkillRegistry {
     }
     /** The point of a skill in the vector index. */
     _toQdrantPoint(skill) {
-        return {
-            id: this._hashId(skill.id),
+        // The payload and the point id come from the shared schema, so the
+        // runtime and `scripts/sync-to-qdrant.ts` store the same point for the
+        // same skill. A writer that used its own id would leave two points
+        // behind - or overwrite an unrelated one.
+        const payload = skillPointPayload({
             name: skill.id,
+            title: skill.frontmatter.name,
             description: skill.frontmatter.description,
-            body: skill.body.slice(0, 2000),
-            text: [skill.id, skill.frontmatter.name, skill.frontmatter.description, skill.body.slice(0, 1500)].join(" "),
-        };
+            body: skill.body,
+        });
+        return skillQdrantPoint(payload);
     }
     /**
      * The indexer of the registry: the injected one, or the Qdrant cluster.
@@ -445,7 +449,7 @@ export class SkillRegistry {
      */
     _scheduleIndex(skill) {
         const point = this._toQdrantPoint(skill);
-        const hash = this._hashId(point.text);
+        const hash = stableHash(point.payload.text);
         if (this._indexedHashes.get(skill.id) === hash)
             return;
         this._indexedHashes.set(skill.id, hash);
@@ -496,13 +500,13 @@ export class SkillRegistry {
         while (this._indexQueue.length > 0) {
             const batch = this._indexQueue.splice(0, this._batchSize);
             try {
-                const vectors = await indexer.embed(batch.map((item) => item.point.text));
+                const vectors = await indexer.embed(batch.map((item) => item.point.payload.text));
                 const points = [];
                 batch.forEach((item, position) => {
                     const vector = vectors[position];
                     if (!vector || vector.length === 0)
                         return;
-                    points.push({ id: item.point.id, vector, payload: item.point });
+                    points.push({ id: item.point.id, vector, payload: item.point.payload });
                 });
                 if (points.length > 0)
                     await indexer.upsert(points);
@@ -517,14 +521,6 @@ export class SkillRegistry {
                 }
             }
         }
-    }
-    /** Simple deterministic ID for Qdrant (no bigints needed). */
-    _hashId(id) {
-        let h = 0;
-        for (let i = 0; i < id.length; i++) {
-            h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
-        }
-        return Math.abs(h);
     }
     /**
      * Register a skill (auto-indexes to Qdrant if configured).
@@ -823,13 +819,13 @@ export class SkillRegistry {
             const batch = skills.slice(i, i + this._batchSize);
             const points = batch.map((skill) => this._toQdrantPoint(skill));
             try {
-                const vectors = await indexer.embed(points.map((point) => point.text));
+                const vectors = await indexer.embed(points.map((point) => point.payload.text));
                 const payload = [];
                 points.forEach((point, position) => {
                     const vector = vectors[position];
                     if (!vector || vector.length === 0)
                         return;
-                    payload.push({ id: point.id, vector, payload: point });
+                    payload.push({ id: point.id, vector, payload: point.payload });
                 });
                 if (payload.length > 0)
                     await indexer.upsert(payload);

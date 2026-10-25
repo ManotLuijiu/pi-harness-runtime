@@ -28,6 +28,8 @@ import {
 import {
   LEGACY_SKILL_COLLECTION,
   SKILL_COLLECTION,
+  skillPointPayload,
+  skillQdrantPoint,
 } from "../packages/skills/dist/vector-schema.js";
 
 // =============================================================================
@@ -123,7 +125,6 @@ function parseHostPort(url: string): { host: string; port: number } {
 // =============================================================================
 
 interface SkillDoc {
-  id: number;
   name: string;
   description: string;
   body: string;
@@ -163,16 +164,17 @@ function readSkill(dirPath: string): SkillDoc | null {
     
     const description = sanitize(fm.description || "");
     const body = sanitizedContent.replace(/^---[\s\S]*?---\n/, "").trim();
-    
-    // Text for embedding (sanitized)
-    const text = `${name}. ${description}. ${body.slice(0, 1000)}`;
+
+    // The payload and the text come from the shared schema, so this script
+    // and the runtime store the SAME point for the same skill: the point
+    // id is the hash of the name the payload carries.
+    const payload = skillPointPayload({ name, description, body });
 
     return {
-      id: 0,
-      name,
-      description,
-      body: body.slice(0, 2000),
-      text,
+      name: payload.name,
+      description: payload.description,
+      body: payload.body,
+      text: payload.text,
     };
   } catch {
     return null;
@@ -273,12 +275,16 @@ async function upsertSkills(
   }
 
   const points = skills.map((skill, idx) => ({
-    id: idx + 1,
-    payload: {
+    // The point comes from the shared schema, so this script and the
+    // runtime store the SAME point for the same skill. A sequential id
+    // would leave a second point for every skill the runtime also indexes,
+    // and could overwrite an unrelated one.
+    ...skillQdrantPoint({
       name: skill.name,
       description: skill.description,
       body: skill.body,
-    },
+      text: skill.text,
+    }),
     vector: embeddings[idx],
   }));
 
@@ -431,7 +437,7 @@ Usage:
 Environment:
   QDRANT_API_KEY    Your Qdrant Cloud API key
   QDRANT_CLUSTER_ENDPOINT  Qdrant URL
-  QDRANT_COLLECTION Collection name (default: pi-harness-skills)
+  QDRANT_COLLECTION Collection name (default: ${SKILL_COLLECTION})
 
 Or create file:
   ~/.pi-harness-runtime/keys/qdrant-api-key.txt

@@ -5,13 +5,18 @@
  * Based on pi.dev Agent Skills specification.
  */
 import type { Skill, SkillIndex, MatchOptions, MatchResult, LoadOptions, LoadedSkill } from "./types.js";
+import { type SkillPointPayload } from "./vector-schema.js";
 import { type RemoteSkillSource, type RemoteSkillStats } from "./remote-source.js";
 export interface QdrantSkillPoint {
+    /**
+     * The id of the point.
+     *
+     * It is the hash of the name in the payload, so the point id and the
+     * payload name always belong together.
+     */
     id: number;
-    name: string;
-    description: string;
-    body: string;
-    text: string;
+    /** The payload of the point. */
+    payload: SkillPointPayload;
 }
 export interface QdrantClientLike {
     upsert(collection: string, opts: {
@@ -103,7 +108,7 @@ export interface LegacyCollectionInfo {
 export interface SkillVectorPoint {
     id: number;
     vector: number[];
-    payload: QdrantSkillPoint;
+    payload: SkillPointPayload;
 }
 /**
  * The vector index of a registry.
@@ -286,8 +291,6 @@ export declare class SkillRegistry {
      */
     private _runIndexFlush;
     private _flushIndexQueue;
-    /** Simple deterministic ID for Qdrant (no bigints needed). */
-    private _hashId;
     /**
      * Register a skill (auto-indexes to Qdrant if configured).
      */
