@@ -84,27 +84,91 @@ test("the relay line keeps the real cause and the fix commands", () => {
 	assert.ok(report.details.some((detail) => detail.startsWith('echo "<TOKEN>"')));
 });
 
-test("LINE stays silent for a user who never touched it", () => {
+test("LINE is reported on a fresh install", () => {
+	// A user who never touched LINE must still see that LINE is one of the
+	// two notification channels - and how to set it up. The row is never
+	// missing.
 	const report = lineConfigurationReport({
 		audit: auditWith({}),
-		clientKeyFilePresent: false,
 		channelState: "not-started",
 		fixes: [],
 	});
-	assert.equal(report, null);
+	assert.ok(report, "the LINE row must always be reported");
+	assert.equal(report.label, "LINE");
+	assert.equal(report.status, "warn");
+	assert.match(report.text, /credentials missing/);
+});
+
+test("the missing LINE credentials carry the setup steps and both commands", () => {
+	const report = lineConfigurationReport({
+		audit: auditWith({}),
+		channelState: "not-started",
+		fixes: [
+			'echo "<ACCESS_TOKEN>" > ~/.pi-harness-runtime/keys/line-access-token.txt',
+			'echo "<USER_ID>" > ~/.pi-harness-runtime/keys/line-user-id.txt',
+		],
+	});
+	assert.ok(report);
+	// The two steps that produce the values.
+	assert.ok(
+		report.details.some((detail) => /LINE Developers Console/.test(detail)),
+		"the LINE setup step must be shown",
+	);
+	assert.ok(
+		report.details.some((detail) => /Long-term channel access token/.test(detail)),
+		"the token step must be shown",
+	);
+	// The command for BOTH files.
+	assert.ok(
+		report.details.some((detail) => detail.includes("line-access-token.txt")),
+		"the access token command must be shown",
+	);
+	assert.ok(
+		report.details.some((detail) => detail.includes("line-user-id.txt")),
+		"the user id command must be shown",
+	);
+	assert.ok(
+		report.details.some((detail) => /reload Pi/.test(detail)),
+		"the warning must say what to do next",
+	);
+});
+
+test("an explicit LINE opt-out is an information, not a warning", () => {
+	const report = lineConfigurationReport({
+		audit: auditWith({}),
+		disabled: true,
+		channelState: "not-started",
+		fixes: [],
+	});
+	assert.ok(report);
+	assert.equal(report.status, "info");
+	assert.match(report.text, /disabled/);
+});
+
+test("a missing LINE credential is never reported as disabled", () => {
+	// "Disabled" and "not configured" are different states. Only an
+	// explicit opt-out may say "disabled".
+	const report = lineConfigurationReport({
+		audit: auditWith({}),
+		disabled: false,
+		channelState: "not-started",
+		fixes: [],
+	});
+	assert.ok(report);
+	assert.notEqual(report.status, "info");
+	assert.doesNotMatch(report.text, /disabled/);
 });
 
 test("LINE is reported as not configured once a client key file exists", () => {
 	const audit = auditWith({ "line-access-token.txt": "token-value" });
 	const report = lineConfigurationReport({
 		audit,
-		clientKeyFilePresent: true,
 		channelState: "not-started",
 		fixes: ['echo "<USER_ID>" > ~/.pi-harness-runtime/keys/line-user-id.txt'],
 	});
 	assert.ok(report);
 	assert.equal(report.status, "warn");
-	assert.match(report.text, /not configured/);
+	assert.match(report.text, /credentials missing/);
 	assert.ok(report.details.some((detail) => detail.startsWith('echo "<USER_ID>"')));
 });
 
@@ -117,7 +181,6 @@ test("LINE is not reported twice when the channel was started", () => {
 	});
 	const report = lineConfigurationReport({
 		audit,
-		clientKeyFilePresent: true,
 		channelState: "started",
 		fixes: [],
 	});
@@ -135,7 +198,6 @@ test("LINE is not reported as configured when the channel was never started", ()
 	});
 	const report = lineConfigurationReport({
 		audit,
-		clientKeyFilePresent: true,
 		channelState: "not-started",
 		telegramConfigured: true,
 		fixes: [],
@@ -155,7 +217,6 @@ test("LINE names the real cause when Telegram is not configured", () => {
 	});
 	const report = lineConfigurationReport({
 		audit,
-		clientKeyFilePresent: true,
 		channelState: "not-started",
 		telegramConfigured: false,
 		fixes: [],
@@ -176,7 +237,6 @@ test("LINE reports a failed channel instead of a green line", () => {
 	});
 	const report = lineConfigurationReport({
 		audit,
-		clientKeyFilePresent: true,
 		channelState: "failed",
 		fixes: ['echo "<ACCESS_TOKEN>" > ~/.pi-harness-runtime/keys/line-access-token.txt'],
 	});
@@ -189,7 +249,6 @@ test("LINE reports a failed channel instead of a green line", () => {
 test("LINE is never reported as configured when the audit failed", () => {
 	const report = lineConfigurationReport({
 		audit: null,
-		clientKeyFilePresent: true,
 		channelState: "not-started",
 		fixes: ['echo "<ACCESS_TOKEN>" > ~/.pi-harness-runtime/keys/line-access-token.txt'],
 	});

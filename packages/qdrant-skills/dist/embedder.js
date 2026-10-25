@@ -67,6 +67,16 @@ export function getOpenAIApiKey() {
     return readPiAuthToken();
 }
 /**
+ * The embedding model of the skill collection.
+ *
+ * The model decides the vector size, so it is part of the schema of the
+ * collection: a collection built with a different model holds vectors of a
+ * different size and cannot be searched with these vectors.
+ */
+export const EMBEDDING_MODEL = "text-embedding-3-small";
+/** The vector size of {@link EMBEDDING_MODEL}. */
+export const EMBEDDING_DIMENSIONS = 1536;
+/**
  * Create embedding for text using OpenAI
  */
 export async function createEmbedding(text, apiKey) {
@@ -81,7 +91,7 @@ export async function createEmbedding(text, apiKey) {
             "Authorization": `Bearer ${key}`,
         },
         body: JSON.stringify({
-            model: "text-embedding-3-small",
+            model: EMBEDDING_MODEL,
             input: text.slice(0, 8000), // Limit to avoid token limits
         }),
     });
@@ -131,7 +141,7 @@ export async function createEmbeddingsBatch(texts, apiKey, options = {}) {
                 "Authorization": `Bearer ${key}`,
             },
             body: JSON.stringify({
-                model: "text-embedding-3-small",
+                model: EMBEDDING_MODEL,
                 input: chunk,
             }),
         });

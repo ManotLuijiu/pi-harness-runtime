@@ -10,14 +10,29 @@ import { join } from "node:path";
 import type {
   Skill,
   SkillIndex,
-  SkillIndexEntry,
   MatchOptions,
   MatchResult,
   LoadOptions,
   LoadedSkill,
-  DEFAULT_SKILLS_CONFIG,
 } from "./types.js";
-import { parseSkillFile, scanSkillDirectory } from "./parser.js";
+import { parseSkillFile } from "./parser.js";
+import {
+  LEGACY_SKILL_COLLECTION,
+  LEGACY_SKILL_COLLECTION_DIMENSIONS,
+  LEGACY_SKILL_COLLECTION_MODEL,
+  SKILL_COLLECTION,
+  describeSkillSchemaMismatch,
+  type SkillVectorSchema,
+} from "./vector-schema.js";
+import {
+  describeRemoteFailure,
+  isStale,
+  skillFromRemote,
+  type RemoteSkill,
+  type RemoteSkillSource,
+  type RemoteSkillState,
+  type RemoteSkillStats,
+} from "./remote-source.js";
 
 // --- Qdrant integration (optional) -----------------------------------------
 // Loaded dynamically so skills work without Qdrant configured.
@@ -31,7 +46,7 @@ export interface QdrantSkillPoint {
   text: string;
 }
 
-interface QdrantClientLike {
+export interface QdrantClientLike {
   upsert(collection: string, opts: { wait?: boolean; points: unknown[] }): Promise<void>;
   query(collection: string, opts: {
     query?: { text?: string; model?: string };
@@ -39,13 +54,71 @@ interface QdrantClientLike {
     with_payload?: boolean;
     filter?: Record<string, unknown>;
   }): Promise<unknown>;
+  /** Read the description of a collection. Optional. */
+  getCollection?(name: string): Promise<unknown>;
 }
 
-interface QdrantEmbedderLike {
+export interface QdrantEmbedderLike {
   createEmbedding(text: string, apiKey?: string): Promise<{ embedding: number[]; tokens: number }>;
   /** One request for many texts. Absent in an older package build. */
   createEmbeddingsBatch?: (texts: string[], apiKey?: string) => Promise<{ embeddings: number[][]; tokens: number }>;
 }
+
+/** What the vector store is in this run. */
+export type QdrantSkillState =
+  /** No Qdrant credentials on this machine. */
+  | "not-configured"
+  /** The cluster is configured but cannot be reached. */
+  | "unavailable"
+  /** The cluster is reachable but the collection does not exist yet. */
+  | "missing"
+  /** The collection exists but holds no skill. */
+  | "empty"
+  /** The collection holds skills. */
+  | "populated";
+
+/** The state of the skill vector store. */
+export interface QdrantSkillStats {
+  /** What the vector store is in this run. */
+  state: QdrantSkillState;
+  /** The number of skill vectors in the collection. */
+  count: number;
+  /** The collection the numbers belong to. */
+  collection?: string;
+  /** The vector size the collection was created with. */
+  dimensions?: number;
+  /** The distance the collection was created with. */
+  distance?: string;
+  /** Why the collection could not be read. Never a credential. */
+  error?: string;
+  /**
+   * The collection does not match the schema of the runtime.
+   *
+   * The message names the real cause, so a user whose vector search finds
+   * nothing does not have to guess why.
+   */
+  schemaMismatch?: string;
+}
+
+/** The information the Qdrant package can report about a collection. */
+interface QdrantCollectionInfo {
+  exists: boolean;
+  vectorsSize?: number;
+  vectorsDistance?: string;
+  pointsCount?: number;
+}
+
+/**
+ * The vector size of the runtime, used when the installed Qdrant package
+ * does not report the size of its model.
+ *
+ * The embedder owns the real value; this is the fallback for an older
+ * package build.
+ */
+const RUNTIME_VECTOR_DIMENSIONS = 1536;
+
+/** The distance of the runtime skill collection. */
+const RUNTIME_VECTOR_DISTANCE = "Cosine";
 
 /**
  * A point of the vector index: the vector and the payload of one skill.
@@ -86,6 +159,26 @@ export interface SkillRegistryOptions {
    * requests but holds more of them in memory.
    */
   batchSize?: number;
+  /**
+   * The Qdrant client.
+   *
+   * `undefined` (the default) connects to the configured cluster. An object
+   * is used as the client - a test uses a double, so the search path can be
+   * exercised without a network.
+   */
+  qdrantClient?: QdrantClientLike;
+  /**
+   * The embedder that turns a query into a vector.
+   *
+   * Only used together with an injected client.
+   */
+  embedder?: QdrantEmbedderLike;
+  /**
+   * The collection of the injected client.
+   *
+   * Only used together with an injected client.
+   */
+  collection?: string;
 }
 
 /**
@@ -93,25 +186,44 @@ export interface SkillRegistryOptions {
  */
 const DEFAULT_INDEX_BATCH_SIZE = 32;
 
-/** Resolve the Qdrant skill module path (monorepo sibling or npm package) */
-async function resolveQdrantModules(): Promise<{
-  createQdrantClient: (cfg: unknown) => { upsert(c: string, o: unknown): Promise<void>; query(c: string, o: unknown): Promise<unknown>; };
+/** The Qdrant package, as far as the registry needs it. */
+interface QdrantModules {
+  createQdrantClient: (cfg: unknown) => QdrantClientLike;
   createCollection: (client: unknown, name: string, dims: number) => Promise<void>;
   createEmbedding: (text: string, apiKey?: string) => Promise<{ embedding: number[]; tokens: number }>;
+  /** One request for many texts. Absent in an older package build. */
   createEmbeddingsBatch?: (texts: string[], apiKey?: string) => Promise<{ embeddings: number[][]; tokens: number }>;
-} | null> {
+  /** Read the schema and the point count of a collection. */
+  getCollectionInfo?: (client: unknown, name: string) => Promise<QdrantCollectionInfo | null>;
+  /** The embedding model of the installed package. */
+  embeddingModel?: string;
+  /** The vector size of the embedding model. */
+  embeddingDimensions?: number;
+}
+
+/** Resolve the Qdrant skill module path (monorepo sibling or npm package) */
+async function resolveQdrantModules(): Promise<QdrantModules | null> {
   // Try the monorepo sibling first (the compiled package, so the module
   // comes from the same build the app ships).
   for (const base of ["../../../packages/qdrant-skills/dist", "../../packages/qdrant-skills/dist"]) {
     try {
       // A dynamic import: this module is ESM, where `require` does not exist.
-      const mod = (await import(/* @vite-ignore */ base + "/index.js")) as {
-        createQdrantClient: unknown;
-        createCollection: unknown;
-        createEmbedding: unknown;
-        createEmbeddingsBatch?: unknown;
+      const mod = (await import(/* @vite-ignore */ base + "/index.js")) as Record<string, unknown>;
+      return {
+        createQdrantClient: mod.createQdrantClient as QdrantModules["createQdrantClient"],
+        createCollection: mod.createCollection as QdrantModules["createCollection"],
+        createEmbedding: mod.createEmbedding as QdrantModules["createEmbedding"],
+        // Absent in an older package build: the registry falls back to one
+        // request per text, still with a bounded concurrency.
+        createEmbeddingsBatch: typeof mod.createEmbeddingsBatch === "function"
+          ? (mod.createEmbeddingsBatch as QdrantModules["createEmbeddingsBatch"])
+          : undefined,
+        getCollectionInfo: typeof mod.getCollectionInfo === "function"
+          ? (mod.getCollectionInfo as QdrantModules["getCollectionInfo"])
+          : undefined,
+        embeddingModel: typeof mod.EMBEDDING_MODEL === "string" ? mod.EMBEDDING_MODEL : undefined,
+        embeddingDimensions: typeof mod.EMBEDDING_DIMENSIONS === "number" ? mod.EMBEDDING_DIMENSIONS : undefined,
       };
-      return mod as Awaited<ReturnType<typeof resolveQdrantModules>>;
     } catch {
       // Try next path
     }
@@ -121,21 +233,19 @@ async function resolveQdrantModules(): Promise<{
     // The specifier is a variable on purpose: the package is optional and
     // must not be resolved by the type checker.
     const specifier = "@pi-harness/qdrant-skills";
-    const mod = (await import(/* @vite-ignore */ specifier)) as {
-      createQdrantClient: unknown;
-      createCollection: unknown;
-      createEmbedding: unknown;
-      createEmbeddingsBatch?: unknown;
-    };
+    const mod = (await import(/* @vite-ignore */ specifier)) as Record<string, unknown>;
     return {
-      createQdrantClient: (cfg: unknown) => (mod.createQdrantClient as Function)(cfg) as { upsert(c: string, o: unknown): Promise<void>; query(c: string, o: unknown): Promise<unknown> },
-      createCollection: mod.createCollection as (client: unknown, name: string, dims: number) => Promise<void>,
-      createEmbedding: mod.createEmbedding as (text: string, apiKey?: string) => Promise<{ embedding: number[]; tokens: number }>,
-      // Absent in an older package build: the registry falls back to one
-      // request per text, still with a bounded concurrency.
+      createQdrantClient: mod.createQdrantClient as QdrantModules["createQdrantClient"],
+      createCollection: mod.createCollection as QdrantModules["createCollection"],
+      createEmbedding: mod.createEmbedding as QdrantModules["createEmbedding"],
       createEmbeddingsBatch: typeof mod.createEmbeddingsBatch === "function"
-        ? (mod.createEmbeddingsBatch as (texts: string[], apiKey?: string) => Promise<{ embeddings: number[][]; tokens: number }>)
+        ? (mod.createEmbeddingsBatch as QdrantModules["createEmbeddingsBatch"])
         : undefined,
+      getCollectionInfo: typeof mod.getCollectionInfo === "function"
+        ? (mod.getCollectionInfo as QdrantModules["getCollectionInfo"])
+        : undefined,
+      embeddingModel: typeof mod.EMBEDDING_MODEL === "string" ? mod.EMBEDDING_MODEL : undefined,
+      embeddingDimensions: typeof mod.EMBEDDING_DIMENSIONS === "number" ? mod.EMBEDDING_DIMENSIONS : undefined,
     };
   } catch {
     return null;
@@ -176,7 +286,10 @@ export function getQdrantConfig(): {
   return {
     url,
     apiKey,
-    collection: process.env.QDRANT_COLLECTION || "pi-harness-skills",
+    // The collection carries the model in its name: a collection built with
+    // a different embedding model holds vectors of a different size and
+    // cannot be searched with these vectors.
+    collection: process.env.QDRANT_COLLECTION || SKILL_COLLECTION,
   };
 }
 
@@ -185,6 +298,29 @@ export function getQdrantConfig(): {
  */
 export class SkillRegistry {
   private skills: Map<string, Skill> = new Map();
+  /** The options of the registry. */
+  private _options: SkillRegistryOptions;
+  /**
+   * The skills that only exist in the vector store.
+   *
+   * They are kept apart from the local skills on purpose: `list()` must
+   * report the LOCAL skills, so a client can say how many skills it has on
+   * disk and how many it can reach through the vector store.
+   */
+  private remoteSkills: Map<string, Skill> = new Map();
+  /**
+   * The remote skills whose content is COMPLETE.
+   *
+   * A skill that only carries the truncated body of a vector store payload
+   * is not in this set - it is completed on the first load.
+   */
+  private _completeRemote: Set<string> = new Set();
+  /**
+   * The service that holds the server-side skills.
+   *
+   * `undefined` means "no service is configured".
+   */
+  private _remoteSource: RemoteSkillSource | undefined;
   private index: SkillIndex = { entries: [], loadedAt: 0 };
   private loading: Map<string, Promise<Skill>> = new Map();
 
@@ -210,6 +346,7 @@ export class SkillRegistry {
   private _qdrantIndexer: SkillVectorIndexer | null = null;
 
   constructor(options: SkillRegistryOptions = {}) {
+    this._options = options;
     this._indexer = options.indexer;
     this._batchSize = options.batchSize ?? DEFAULT_INDEX_BATCH_SIZE;
   }
@@ -243,6 +380,21 @@ export class SkillRegistry {
   }
 
   private async _doQdrantInit(): Promise<void> {
+    // An injected client replaces the whole connection: a test exercises the
+    // search path without a network and without credentials.
+    const injected = this._options.qdrantClient;
+    if (injected) {
+      this._qdrant = {
+        client: injected,
+        embedder: this._options.embedder ?? {
+          createEmbedding: async () => ({ embedding: [], tokens: 0 }),
+        },
+        collection: this._options.collection ?? "pi-harness-skills-test",
+        ready: true,
+      };
+      return;
+    }
+
     const config = getQdrantConfig();
     if (!config) {
       this._qdrantInitFailed = true;
@@ -261,7 +413,11 @@ export class SkillRegistry {
         url: config.url,
         apiKey: config.apiKey,
       });
-      await mods.createCollection(client, config.collection, 1536);
+      // The collection must hold vectors of the size the embedder produces.
+      // An existing collection with a different size is NOT recreated here:
+      // that would destroy the skills of another model. The mismatch is
+      // reported instead (see getQdrantStats).
+      await mods.createCollection(client, config.collection, this._expectedVectorSchema(mods).dimensions);
       this._qdrant = {
         client,
         embedder: {
@@ -274,6 +430,110 @@ export class SkillRegistry {
     } catch (err) {
       console.error("[skills] Qdrant init failed:", err instanceof Error ? err.message : String(err));
       this._qdrantInitFailed = true;
+    }
+  }
+
+  /**
+   * The schema the runtime expects of the skill collection.
+   *
+   * The installed Qdrant package knows the size of its own model; an older
+   * build does not, and the fallback is used then.
+   */
+  private _expectedVectorSchema(mods: QdrantModules): SkillVectorSchema {
+    return {
+      dimensions: mods.embeddingDimensions ?? RUNTIME_VECTOR_DIMENSIONS,
+      distance: RUNTIME_VECTOR_DISTANCE,
+      model: mods.embeddingModel,
+    };
+  }
+
+  /**
+   * The state of the skill vector store.
+   *
+   * The numbers are what the startup summary shows next to the local skill
+   * count, and the state says WHY there is no number: no credentials, an
+   * unreachable cluster, a collection that does not exist yet.
+   *
+   * The collection schema is checked here as well: a collection built with a
+   * different embedding model holds vectors the runtime cannot search with,
+   * and the reason has to be named - otherwise the vector search simply
+   * finds nothing.
+   */
+  async getQdrantStats(): Promise<QdrantSkillStats> {
+    const injected = this._options.qdrantClient;
+    const config = injected
+      ? {
+          url: "",
+          apiKey: "",
+          collection: this._options.collection ?? "pi-harness-skills-test",
+        }
+      : getQdrantConfig();
+    if (!config) return { state: "not-configured", count: 0 };
+
+    const mods = await resolveQdrantModules();
+    if (!mods) {
+      return {
+        state: "unavailable",
+        count: 0,
+        collection: config.collection,
+        error: "the Qdrant package is not available",
+      };
+    }
+    if (!mods.getCollectionInfo) {
+      return {
+        state: "unavailable",
+        count: 0,
+        collection: config.collection,
+        error: "the installed Qdrant package cannot read a collection",
+      };
+    }
+
+    try {
+      const client = injected ?? mods.createQdrantClient({ url: config.url, apiKey: config.apiKey });
+      const info = await mods.getCollectionInfo(client, config.collection);
+      if (!info) {
+        return {
+          state: "unavailable",
+          count: 0,
+          collection: config.collection,
+          error: "the collection could not be read",
+        };
+      }
+      if (!info.exists) {
+        return { state: "missing", count: 0, collection: config.collection };
+      }
+
+      const count = info.pointsCount ?? 0;
+      const stats: QdrantSkillStats = {
+        state: count > 0 ? "populated" : "empty",
+        count,
+        collection: config.collection,
+        dimensions: info.vectorsSize,
+        distance: info.vectorsDistance,
+      };
+
+      const mismatch = describeSkillSchemaMismatch(
+        { dimensions: info.vectorsSize, distance: info.vectorsDistance },
+        this._expectedVectorSchema(mods),
+      );
+      if (mismatch) {
+        stats.schemaMismatch = mismatch;
+        // The legacy collection is a known cause - name it, so the reader
+        // does not have to know the history of the collection names.
+        if (config.collection === LEGACY_SKILL_COLLECTION) {
+          stats.schemaMismatch +=
+            ` - the collection ${LEGACY_SKILL_COLLECTION} was created by scripts/sync-to-qdrant.ts` +
+            ` with ${LEGACY_SKILL_COLLECTION_MODEL} (${LEGACY_SKILL_COLLECTION_DIMENSIONS} dimensions)`;
+        }
+      }
+      return stats;
+    } catch (err) {
+      return {
+        state: "unavailable",
+        count: 0,
+        collection: config.collection,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -453,7 +713,97 @@ export class SkillRegistry {
    * Get a skill by ID
    */
   get(skillId: string): Skill | undefined {
-    return this.skills.get(skillId);
+    // A server skill is only known after a vector search found it, so it is
+    // looked up second - the local skill always wins.
+    return this.skills.get(skillId) ?? this.remoteSkills.get(skillId);
+  }
+
+  /**
+   * The skills that only exist in the vector store.
+   *
+   * They are not part of `list()`: the local count must stay local.
+   */
+  listRemote(): Skill[] {
+    return Array.from(this.remoteSkills.values());
+  }
+
+  /**
+   * The service that holds the server-side skills.
+   *
+   * `undefined` means "no service is configured". Setting a source clears
+   * the cached remote skills: a new service is a new authority, so the old
+   * content must not survive it.
+   */
+  setRemoteSource(source: RemoteSkillSource | undefined): void {
+    this._remoteSource = source;
+    this.remoteSkills.clear();
+    this._completeRemote.clear();
+  }
+
+  /**
+   * Ask the service for the skills it holds.
+   *
+   * A skill whose version changed is replaced by the new one. A record
+   * without a version never replaces a cached skill - an unknown version is
+   * not evidence of a change.
+   */
+  async refreshRemoteSkills(options?: {
+    search?: string;
+    limit?: number;
+  }): Promise<RemoteSkillStats> {
+    if (!this._remoteSource) {
+      return { state: "not-configured", count: 0 };
+    }
+
+    let records: RemoteSkill[];
+    try {
+      records = await this._remoteSource.list(options);
+    } catch (error) {
+      return {
+        state: this._remoteFailureState(error),
+        count: 0,
+        error: describeRemoteFailure(error),
+      };
+    }
+
+    for (const record of records) {
+      const cached = this.remoteSkills.get(record.id);
+      if (!isStale(cached, record)) continue;
+      const skill = skillFromRemote(record);
+      this.remoteSkills.set(skill.id, skill);
+      if (record.contentComplete) this._completeRemote.add(skill.id);
+    }
+
+    return {
+      state: records.length > 0 ? "populated" : "empty",
+      count: records.length,
+    };
+  }
+
+  /**
+   * The state of the service that holds the server-side skills.
+   *
+   * The states stay apart: a refused call is not an unreachable service and
+   * not an empty service.
+   */
+  async getRemoteStats(): Promise<RemoteSkillStats> {
+    if (!this._remoteSource) {
+      return { state: "not-configured", count: 0 };
+    }
+    return this.refreshRemoteSkills();
+  }
+
+  /**
+   * The state a failed call stands for.
+   *
+   * A refusal of the service is "denied" - the service answered, it just
+   * did not allow this call. Everything else is a service that could not be
+   * reached.
+   */
+  private _remoteFailureState(error: unknown): RemoteSkillState {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === "denied" || code === -32001 || code === -32002) return "denied";
+    return "unavailable";
   }
 
   /**
@@ -568,8 +918,36 @@ export class SkillRegistry {
   // --- Qdrant vector search --------------------------------------------------
 
   /**
+   * A skill that only exists in the vector store.
+   *
+   * The payload carries the name, the description and the body - enough to
+   * USE the skill on a machine that has no local copy of it.
+   */
+  private static skillFromPayload(payload: Record<string, unknown>, name: string): Skill | null {
+    const description = typeof payload.description === "string" ? payload.description : "";
+    const body = typeof payload.body === "string" ? payload.body : "";
+    if (!description && !body) return null;
+    return {
+      id: name,
+      // A server skill has no directory on this machine.
+      path: "",
+      frontmatter: { name, description },
+      body,
+      references: [],
+      examples: [],
+      metadata: { name, description },
+      loaded: true,
+    };
+  }
+
+  /**
    * Search skills by semantic similarity using Qdrant.
    * Falls back to an empty result if Qdrant is not available.
+   *
+   * A hit that belongs to no local skill is a SERVER skill: it is returned
+   * with its payload instead of being dropped. Dropping it would make a
+   * shared skill invisible on every machine that has no local copy of it -
+   * which is exactly the case the vector store exists for.
    *
    * @param query Natural-language query
    * @param limit Max results (default 5)
@@ -579,7 +957,7 @@ export class SkillRegistry {
     query: string,
     limit = 5,
     threshold = 0.5,
-  ): Promise<Array<{ skill: Skill; score: number }>> {
+  ): Promise<Array<{ skill: Skill; score: number; source: "local" | "remote" }>> {
     await this._ensureQdrant();
     if (!this._qdrant?.ready) return [];
 
@@ -593,12 +971,21 @@ export class SkillRegistry {
       const raw = await this._qdrant.client.query(this._qdrant.collection, queryOpts) as {
         points?: Array<{ id: number; score: number; payload?: Record<string, unknown> }> };
 
-      const results: Array<{ skill: Skill; score: number }> = [];
+      const results: Array<{ skill: Skill; score: number; source: "local" | "remote" }> = [];
       for (const pt of raw.points ?? []) {
         if (pt.score < threshold) continue;
-        const name = pt.payload?.name as string | undefined;
-        const skill = name ? this.skills.get(name) : undefined;
-        if (skill) results.push({ skill, score: pt.score });
+        const payload = pt.payload ?? {};
+        const name = typeof payload.name === "string" ? payload.name : undefined;
+        if (!name) continue;
+        const local = this.skills.get(name);
+        if (local) {
+          results.push({ skill: local, score: pt.score, source: "local" });
+          continue;
+        }
+        const remote = SkillRegistry.skillFromPayload(payload, name);
+        if (!remote) continue;
+        this.remoteSkills.set(remote.id, remote);
+        results.push({ skill: remote, score: pt.score, source: "remote" });
       }
       return results;
     } catch (err) {
@@ -648,7 +1035,36 @@ export class SkillRegistry {
    * Load a skill's full content (progressive disclosure)
    */
   async load(skillId: string, options?: LoadOptions): Promise<LoadedSkill | null> {
-    const skill = this.skills.get(skillId);
+    let skill = this.skills.get(skillId) ?? this.remoteSkills.get(skillId);
+
+    // A skill that is not known yet may still live on the server. The
+    // service decides whether this user may see it - a refusal is not an
+    // error, it is an answer.
+    if (!skill && this._remoteSource) {
+      const record = await this._remoteSource.get(skillId);
+      if (!record) return null;
+      skill = skillFromRemote(record);
+      this.remoteSkills.set(skill.id, skill);
+      if (record.contentComplete) this._completeRemote.add(skill.id);
+    }
+
+    // A cached remote skill may carry only a truncated body. The service
+    // holds the complete content, so it is fetched once.
+    if (
+      skill &&
+      !this.skills.has(skillId) &&
+      this._remoteSource &&
+      !this._completeRemote.has(skillId)
+    ) {
+      const record = await this._remoteSource.get(skillId);
+      if (record) {
+        const complete = skillFromRemote(record);
+        this.remoteSkills.set(complete.id, complete);
+        if (record.contentComplete) this._completeRemote.add(complete.id);
+        skill = complete;
+      }
+    }
+
     if (!skill) {
       return null;
     }
@@ -685,10 +1101,12 @@ export class SkillRegistry {
     options?: LoadOptions
   ): Promise<LoadedSkill> {
     const loadedSkill: LoadedSkill = { ...skill };
-    const skillMdPath = join(skill.path, "SKILL.md");
+    // A server skill has no directory on this machine - its body comes from
+    // the vector store, so nothing is read from the disk.
+    const skillMdPath = skill.path ? join(skill.path, "SKILL.md") : "";
 
     // Re-parse to get fresh content
-    if (existsSync(skillMdPath)) {
+    if (skillMdPath && existsSync(skillMdPath)) {
       const parsed = parseSkillFile(skillMdPath);
       loadedSkill.body = parsed.body;
       loadedSkill.frontmatter = parsed.frontmatter;
@@ -770,6 +1188,7 @@ export class SkillRegistry {
    */
   clear(): void {
     this.skills.clear();
+    this.remoteSkills.clear();
     this.index = { entries: [], loadedAt: 0 };
     this.loading.clear();
   }
@@ -785,7 +1204,7 @@ export class SkillRegistry {
    * Check if skill exists
    */
   has(skillId: string): boolean {
-    return this.skills.has(skillId);
+    return this.skills.has(skillId) || this.remoteSkills.has(skillId);
   }
 }
 

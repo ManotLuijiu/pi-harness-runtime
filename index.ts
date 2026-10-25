@@ -19,7 +19,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { HarnessStartupStatus, harnessStatusMarker } from "./harness-startup-status.ts";
+import { HarnessStartupStatus, harnessStatusMarker, type HarnessStatus } from "./harness-startup-status.ts";
 import {
 	auditKeyFiles,
 	fallbackKeyFileFixes,
@@ -38,6 +38,8 @@ import {
 	relayEndpointReport,
 	relayShouldBeReported,
 } from "./harness/startup-report.ts";
+import { localSkillsReport, skillsReport } from "./harness/skills-startup.ts";
+import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
@@ -2102,7 +2104,14 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			if (center.isChannelHealthy("line")) {
 				lineChannelState = "started";
 				lineChannelDiagnostic = null;
-				addHarnessMessage("LINE", "configured and enabled (tap Toggle LINE to disable)", "ok");
+				// The LINE line belongs directly after the Telegram line: the
+				// two notification channels are one topic.
+				addHarnessMessageAfter(
+					"Telegram",
+					"LINE",
+					"configured and enabled (tap Toggle LINE to disable)",
+					"ok",
+				);
 			} else {
 				lineChannelState = "failed";
 				// Keep the reason: "the token is wrong" and "LINE is down"
@@ -2199,8 +2208,14 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					} else if (parsed.action === "toggle_line") {
 						const lineEnabled = (center as any).isChannelEnabled?.("line") ?? true;
 						(center as any).setChannelEnabled?.("line", !lineEnabled);
+						// The decision must survive a restart: the startup
+						// summary has to know that the channel was turned off
+						// on purpose.
+						persistChannelDecision("line", !lineEnabled);
 						logToFile("[TelegramCallback]", `LINE ${!lineEnabled ? "enabled" : "disabled"}`);
 						await acknowledge(`LINE notifications ${!lineEnabled ? "enabled" : "disabled"}`);
+						// The startup line must tell the truth.
+						reportLineConfiguration();
 					} else {
 						logToFile("[TelegramCallback]", `Unknown action: ${parsed.action}`);
 					}
@@ -2223,7 +2238,13 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					const targetChannels = channel === "all" ? ["telegram", "line"] : [channel];
 					for (const ch of targetChannels) {
 						(center as any).setChannelEnabled?.(ch, isEnabled);
+						// The decision must survive a restart.
+						persistChannelDecision(ch, isEnabled);
 						logToFile("[NotifySettings]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
+					}
+					if (targetChannels.includes("line")) {
+						// The startup line must tell the truth.
+						reportLineConfiguration();
 					}
 				}
 
@@ -2507,6 +2528,48 @@ function reportRelayConfiguration(): void {
 }
 
 /**
+ * Put a startup line directly after another one.
+ *
+ * The notification channels belong together: the Telegram line and the LINE
+ * line must not be separated by a line that another feature added in
+ * between.
+ */
+function addHarnessMessageAfter(
+	anchorLabel: string,
+	label: string,
+	text: string,
+	status: HarnessStatus = "wait",
+	details?: string[],
+): void {
+	startupStatus.updateAfter(anchorLabel, label, text, status, details);
+}
+
+/**
+ * Remember an explicit channel decision.
+ *
+ * The notification center keeps the state in memory (and in its own
+ * database). The startup summary needs the decision BEFORE any channel is
+ * initialized, and it must survive a restart - so it is written to the
+ * notification settings.
+ */
+function persistChannelDecision(channel: string, enabled: boolean): void {
+	if (!setChannelDisabled(channel, !enabled)) {
+		logToFile("[NotifySettings]", `Could not persist the ${channel} decision`);
+	}
+}
+
+/**
+ * Did the user explicitly turn the LINE channel off?
+ *
+ * Only an explicit decision counts. A missing key file means the channel
+ * was never configured - that is a different state with a different
+ * meaning, and it must not be shown as "disabled".
+ */
+function lineIsExplicitlyDisabled(): boolean {
+	return isChannelDisabled("line");
+}
+
+/**
  * Report the LINE configuration in the startup summary.
  *
  * Like the relay line this is reported from the top-level init (not from
@@ -2514,20 +2577,23 @@ function reportRelayConfiguration(): void {
  * configured - that is exactly the fresh-install case where the user needs
  * the instructions. The "configured" line stays with initTelegram, which owns
  * the channel.
+ *
+ * The line is always reported: a fresh install must show that LINE is one
+ * of the two notification channels, together with the steps that make it
+ * work.
  */
 function reportLineConfiguration(): void {
-	// A user who never touched LINE must not see a warning on every start.
-	// The line appears as soon as a LINE client key file exists.
 	const report = lineConfigurationReport({
 		audit: getKeyFileAudit(),
-		clientKeyFilePresent: hasLineClientKeyFile(),
+		// An explicit opt-out is the only thing that makes the channel
+		// "disabled".
+		disabled: lineIsExplicitlyDisabled(),
 		channelState: lineChannelState,
 		telegramConfigured: telegramIsConfigured(),
-		// The fallback makes sure that a warning always carries a command,
-		// even when the audit could not answer. It names the ACCESS TOKEN
-		// only - the user id is the recipient of the messages, not the cause
-		// of a failed startup check.
-		fixes: keyFileFixesOrFallback("LINE", ["channel access token"]),
+		// Both credentials are named: a LINE channel needs the access token
+		// AND the user id. The fallback makes sure that a warning always
+		// carries a command, even when the audit could not answer.
+		fixes: keyFileFixesOrFallback("LINE", ["channel access token", "user id"]),
 		// The startup check validates the access token - the user id is only
 		// the recipient, so it must not be named as the cause.
 		accessTokenFixes: keyFileFixesOrFallback("LINE", ["channel access token"]),
@@ -2538,7 +2604,7 @@ function reportLineConfiguration(): void {
 		telegramFixes: keyFileFixesOrFallback("Telegram", ["bot token", "chat id"]),
 	});
 	if (!report) return;
-	addHarnessMessage(report.label, report.text, report.status, report.details);
+	addHarnessMessageAfter("Telegram", report.label, report.text, report.status, report.details);
 }
 
 /**
@@ -2570,24 +2636,6 @@ function hasAnyRelayKeyFile(): boolean {
 				entry === "relay-ws-url.txt" ||
 				entry === "relay-auth-token.txt" ||
 				entry === "telegram-webhook-url.txt",
-		);
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Does the key directory hold a LINE client credential?
- *
- * The LINE warning is only relevant for a user who started to set LINE up
- * (a line-access-token.txt or a line-user-id.txt file exists) but did not
- * finish. The channel secret (line-channel-secret.txt) does not count: it
- * is only needed on the host that runs the webhook server.
- */
-function hasLineClientKeyFile(): boolean {
-	try {
-		return readdirSync(harnessKeysDir()).some(
-			(entry) => entry === "line-access-token.txt" || entry === "line-user-id.txt",
 		);
 	} catch {
 		return false;
@@ -3416,8 +3464,54 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 
 		// Scan skills from default locations
 		const result = initSkills();
-		logStartup(`[pi-harness] Scanned ${result.skills.length} skills`);
-		addHarnessMessage("Skills", `${result.skills.length} discovered`, "ok");
+		const localCount = result.skills.length;
+		logStartup(`[pi-harness] Scanned ${localCount} local skills`);
+		// The line carries the local count AND the count of the vector
+		// store: a machine without local skill files can still reach a
+		// shared skill, and a single "N discovered" hides that difference.
+		const local = localSkillsReport(localCount);
+		addHarnessMessage("Skills", local.text, local.status, local.details);
+		// The server-held skills. The service holds the authoritative
+		// files, so a machine without a local copy can still use a skill.
+		// It is only used when it is configured - a client without a
+		// service never calls out.
+		let remoteConfigured = false;
+		try {
+			const { isSkillSyncConfigured } = await import(
+				"./harness/skill-sync.js"
+			);
+			remoteConfigured = isSkillSyncConfigured();
+			if (remoteConfigured) {
+				const { SkillServiceSource } = await import(
+					"./harness/skill-remote-source.js"
+				);
+				result.registry.setRemoteSource(new SkillServiceSource());
+			}
+		} catch (err) {
+			logStartup(
+				`[pi-harness] Could not prepare the skill service: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+
+		// The count of the vector store needs the cluster, so it is fetched
+		// in the background - the startup must not wait for the network.
+		void (async () => {
+			const stats = await result.registry.getQdrantStats();
+			// The service is asked for its own state, so a refused
+			// service and an unreachable one stay apart.
+			const remote = remoteConfigured
+				? await result.registry.getRemoteStats().catch(() => ({
+						state: "unavailable" as const,
+						count: 0,
+					}))
+				: undefined;
+			const report = skillsReport(localCount, stats, remote);
+			addHarnessMessage("Skills", report.text, report.status, report.details);
+		})().catch((err) => {
+			logStartup(
+				`[pi-harness] Could not read the skill vector store: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		});
 
 		// Register /skill commands
 		try {

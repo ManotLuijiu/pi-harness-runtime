@@ -13,7 +13,7 @@
 
 import type { KeyFileAuditResult } from "./key-file-audit.ts";
 
-export type StartupStatus = "wait" | "ok" | "warn" | "err";
+export type StartupStatus = "wait" | "ok" | "info" | "warn" | "err";
 
 export interface StartupReport {
 	/** The label of the startup line ("Jev", "Relay", "LINE"). */
@@ -142,11 +142,27 @@ export function relayEndpointReport(options: {
 }
 
 /**
+ * The two steps that create a usable LINE channel.
+ *
+ * They are shown whenever the credentials are missing: a warning that names
+ * only the key files leaves the user without a way to get the values.
+ */
+export const LINE_SETUP_STEPS: readonly string[] = [
+	"Create a LINE Messaging API channel in LINE Developers Console.",
+	"Issue a Long-term channel access token and get Your user ID from Basic settings.",
+];
+
+/**
  * The LINE line.
  *
- * Returns null when LINE must not be reported at all: a user who never
- * touched LINE must not see a warning on every start. The line appears as
- * soon as one of the LINE client key files exists.
+ * The line is ALWAYS reported: Telegram and LINE are the two notification
+ * channels, and a fresh install must show both of them next to each other -
+ * a user who has never heard of LINE cannot miss the channel they do not
+ * have yet.
+ *
+ * "Disabled" is never inferred from the absence of key files. Only an
+ * explicit opt-out (the user turned the channel off) produces the
+ * informational disabled state.
  *
  * The audit is passed in (and not read here) so that the rule "never report
  * LINE as configured when the audit failed" can be tested.
@@ -154,8 +170,13 @@ export function relayEndpointReport(options: {
 export function lineConfigurationReport(options: {
 	/** The audit result, or null when the audit could not run. */
 	audit: KeyFileAuditResult | null;
-	/** Does a LINE client key file exist (line-access-token.txt / line-user-id.txt)? */
-	clientKeyFilePresent: boolean;
+	/**
+	 * Did the user explicitly turn the LINE channel off?
+	 *
+	 * A missing key file is NOT a disabled channel - it is a channel that was
+	 * never configured.
+	 */
+	disabled?: boolean;
 	/**
 	 * The fix commands for Telegram.
 	 *
@@ -196,8 +217,22 @@ export function lineConfigurationReport(options: {
 	 */
 	channelDiagnostic?: string | null;
 }): StartupReport | null {
-	if (!options.clientKeyFilePresent) return null;
 	const channelState = options.channelState ?? "not-started";
+
+	// An explicit opt-out is an information, not a warning: the user asked
+	// for it and the channel works as told.
+	if (options.disabled) {
+		return {
+			label: "LINE",
+			text: "disabled",
+			status: "info",
+			details: [
+				"The LINE channel is turned off in the notification settings.",
+				"Turn it on again with: /notify-settings line on",
+			],
+		};
+	}
+
 	if (!options.audit) {
 		// The audit failed: LINE must not be reported as configured.
 		const details = options.fixes.length > 0 ? options.fixes : [];
@@ -214,64 +249,71 @@ export function lineConfigurationReport(options: {
 		};
 	}
 	const missing = options.audit.byFeature.get("LINE") ?? [];
-	if (missing.length === 0) {
-		if (channelState === "started") {
-			// The runtime reported the green line itself ("configured and
-			// enabled") - a second LINE line would only overwrite it.
-			return null;
-		}
-		if (channelState === "failed") {
-			// The credentials are there but the channel did not start - the
-			// channel access token is what the startup check validates, so
-			// the user id must not be named as the cause.
-			const details = [
-				...(options.accessTokenFixes && options.accessTokenFixes.length > 0
-					? options.accessTokenFixes
-					: options.fixes),
-			];
-			if (options.channelDiagnostic) {
-				details.push(options.channelDiagnostic);
-			}
-			details.push(
-				"The startup check validates the channel access token - the user id is only the recipient of the messages.",
-			);
-			details.push(
-				"Fix the file, then reload Pi so the channel is checked again.",
-			);
-			return {
-				label: "LINE",
-				text: "configured but the LINE channel did not start",
-				status: "warn",
-				details,
-			};
-		}
-		// The credentials are there but the channel was never started in this
-		// run - say so instead of showing a green line. The cause differs:
-		// without Telegram the channel cannot start at all, with Telegram the
-		// credentials were simply created after the harness was loaded.
-		const cause = options.telegramConfigured
-			? "The LINE channel starts together with the Telegram channel - the key files were created after Pi was loaded."
-			: "The LINE channel starts together with the Telegram channel - it cannot start before Telegram works.";
+	if (missing.length > 0) {
+		// The credentials are missing (no key file at all, or a file the
+		// reader rejects). The warning names the two files AND the two steps
+		// that produce their values - otherwise the user is stuck.
 		return {
 			label: "LINE",
-			// The text names the action - a reload only helps when Telegram
-			// works; otherwise the user has to configure Telegram first.
-			text: options.telegramConfigured
-				? "configured; reload Pi to enable the channel"
-				: "configured; Telegram must be configured first",
+			text: "credentials missing; notifications unavailable",
 			status: "warn",
 			details: [
-				cause,
-				// Without Telegram the user needs the Telegram commands - the
-				// line must not be the only warning without an action.
-				...(options.telegramConfigured ? [] : (options.telegramFixes ?? [])),
+				...LINE_SETUP_STEPS,
+				...options.fixes,
+				"Then reload Pi so the channel is checked again.",
 			],
 		};
 	}
+	if (channelState === "started") {
+		// The runtime reported the green line itself ("configured and
+		// enabled") - a second LINE line would only overwrite it.
+		return null;
+	}
+	if (channelState === "failed") {
+		// The credentials are there but the channel did not start - the
+		// channel access token is what the startup check validates, so
+		// the user id must not be named as the cause.
+		const details = [
+			...(options.accessTokenFixes && options.accessTokenFixes.length > 0
+				? options.accessTokenFixes
+				: options.fixes),
+		];
+		if (options.channelDiagnostic) {
+			details.push(options.channelDiagnostic);
+		}
+		details.push(
+			"The startup check validates the channel access token - the user id is only the recipient of the messages.",
+		);
+		details.push(
+			"Fix the file, then reload Pi so the channel is checked again.",
+		);
+		return {
+			label: "LINE",
+			text: "configured but the LINE channel did not start",
+			status: "warn",
+			details,
+		};
+	}
+	// The credentials are there but the channel was never started in this
+	// run - say so instead of showing a green line. The cause differs:
+	// without Telegram the channel cannot start at all, with Telegram the
+	// credentials were simply created after the harness was loaded.
+	const cause = options.telegramConfigured
+		? "The LINE channel starts together with the Telegram channel - the key files were created after Pi was loaded."
+		: "The LINE channel starts together with the Telegram channel - it cannot start before Telegram works.";
 	return {
 		label: "LINE",
-		text: "not configured",
+		// The text names the action - a reload only helps when Telegram
+		// works; otherwise the user has to configure Telegram first.
+		text: options.telegramConfigured
+			? "configured; reload Pi to enable the channel"
+			: "configured; Telegram must be configured first",
 		status: "warn",
-		details: [...options.fixes, "Configure LINE in ~/.pi-harness-runtime/keys/, then reload Pi."],
+		details: [
+			cause,
+			// Without Telegram the user needs the Telegram commands - the
+			// line must not be the only warning without an action.
+			...(options.telegramConfigured ? [] : (options.telegramFixes ?? [])),
+		],
 	};
 }

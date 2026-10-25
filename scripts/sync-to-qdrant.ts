@@ -14,6 +14,21 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { QdrantClient } from "@qdrant/js-client-rest";
+// The runtime and this script must write into the SAME collection with the
+// SAME vectors: a collection holds vectors of exactly one size, and a vector
+// of a different size cannot be searched with the vectors of the other one.
+// The embedder and the collection name are therefore imported from the
+// packages that own them - they are not repeated here.
+import {
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_MODEL,
+  createEmbedding,
+  createEmbeddingsBatch,
+} from "../packages/qdrant-skills/dist/index.js";
+import {
+  LEGACY_SKILL_COLLECTION,
+  SKILL_COLLECTION,
+} from "../packages/skills/dist/vector-schema.js";
 
 // =============================================================================
 // SANITIZATION: Replace client-specific names with placeholders
@@ -81,17 +96,17 @@ interface QdrantConfig {
 function getQdrantConfig(): QdrantConfig | null {
   let apiKey = process.env.QDRANT_API_KEY;
   const url = process.env.QDRANT_CLUSTER_ENDPOINT || "https://api.qdrant.tech";
-  const collection = process.env.QDRANT_COLLECTION || "pi-harness-skills";
-  
+  const collection = process.env.QDRANT_COLLECTION || SKILL_COLLECTION;
+
   if (!apiKey) {
     const keyPath = `${process.env.HOME}/.pi-harness-runtime/keys/qdrant-api-key.txt`;
     if (existsSync(keyPath)) {
       apiKey = readFileSync(keyPath, "utf-8").trim();
     }
   }
-  
+
   if (!apiKey) return null;
-  
+
   return { url, apiKey, collection };
 }
 
@@ -180,12 +195,55 @@ function findSkillDirs(dir: string): string[] {
 // =============================================================================
 
 async function ensureCollection(client: QdrantClient, name: string): Promise<void> {
+  const existing = await collectionSchema(client, name);
+  if (existing?.dimensions !== undefined && existing.dimensions !== EMBEDDING_DIMENSIONS) {
+    // The collection holds vectors of another size. Writing into it would
+    // fail, and recreating it would destroy the skills of the other model.
+    // The name says so the user can act.
+    console.error(
+      `[Sync] The collection ${name} holds ${existing.dimensions}-dimensional vectors,` +
+        ` but the runtime embeds with ${EMBEDDING_DIMENSIONS} (${EMBEDDING_MODEL}).`,
+    );
+    if (name === LEGACY_SKILL_COLLECTION) {
+      console.error(
+        `[Sync] ${LEGACY_SKILL_COLLECTION} is the legacy collection of the MiniLM model.`,
+      );
+    }
+    console.error(
+      `[Sync] Use a different collection (QDRANT_COLLECTION) or re-create this one.`,
+    );
+    process.exit(1);
+  }
   try {
     await client.createCollection(name, {
-      vectors: { size: 384, distance: "Cosine" }
+      vectors: { size: EMBEDDING_DIMENSIONS, distance: "Cosine" }
     });
   } catch {
     // Already exists - OK
+  }
+}
+
+/**
+ * The vector size and the distance of a collection.
+ *
+ * `null` means the collection does not exist (or cannot be read).
+ */
+async function collectionSchema(
+  client: QdrantClient,
+  name: string,
+): Promise<{ dimensions?: number; distance?: string } | null> {
+  try {
+    // SAFETY: the Qdrant client answers with the collection description;
+    // the shape below is the one field this function reads. The cast is
+    // needed because the generated client types the response as `unknown`.
+    const info = (await client.getCollection(name)) as unknown as {
+      config?: { params?: { vectors?: { size?: number; distance?: string } } };
+    };
+    const vectors = info?.config?.params?.vectors;
+    if (!vectors) return { };
+    return { dimensions: vectors.size, distance: vectors.distance };
+  } catch {
+    return null;
   }
 }
 
@@ -203,6 +261,17 @@ async function upsertSkills(
   collectionName: string,
   skills: SkillDoc[]
 ): Promise<void> {
+  // The vectors are produced by the same embedder the runtime uses, so the
+  // two can search each other's points. The embedding happens in batches:
+  // one request per 64 skills instead of one per skill.
+  const { embeddings } = await createEmbeddingsBatch(skills.map((skill) => skill.text));
+  if (embeddings.length !== skills.length) {
+    console.error(
+      `[Sync] The embedder returned ${embeddings.length} vectors for ${skills.length} skills.`,
+    );
+    process.exit(1);
+  }
+
   const points = skills.map((skill, idx) => ({
     id: idx + 1,
     payload: {
@@ -210,12 +279,9 @@ async function upsertSkills(
       description: skill.description,
       body: skill.body,
     },
-    vector: {
-      text: skill.text,
-      model: "sentence-transformers/all-MiniLM-L6-v2"
-    }
+    vector: embeddings[idx],
   }));
-  
+
   await client.upsert(collectionName, { wait: true, points });
 }
 
@@ -224,11 +290,10 @@ async function searchSkills(
   collectionName: string,
   query: string
 ): Promise<void> {
+  // The query is embedded with the same model as the stored vectors.
+  const { embedding } = await createEmbedding(query);
   const results = await client.query(collectionName, {
-    query: {
-      text: query,
-      model: "sentence-transformers/all-MiniLM-L6-v2"
-    },
+    query: embedding,
     limit: 10,
     with_payload: true,
   } as Parameters<typeof client.query>[1]);

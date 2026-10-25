@@ -46,17 +46,30 @@ export async function createCollection(client, name, dimensions = 384 // all-Min
 export async function getCollectionInfo(client, name) {
     try {
         const info = await client.getCollection(name);
-        // Vectors config can be a named config or default { size, distance }
-        const vectorsConfig = info.vectors;
+        // Qdrant reports the vector configuration under
+        // `config.params.vectors` - NOT at the top level. Reading `info.vectors`
+        // always yields undefined, which turns every schema check into a
+        // "dimension mismatch: got undefined" that names no real cause.
+        const config = info.config;
+        const params = config?.params;
+        const vectors = (params?.vectors ?? info.vectors);
         let vectorsSize;
         let vectorsDistance;
-        if (vectorsConfig) {
-            // Handle both { size: number, distance: string } and named config { config: { size, distance } }
-            vectorsSize = (vectorsConfig.size ?? vectorsConfig.config?.size);
-            vectorsDistance = (vectorsConfig.distance ?? vectorsConfig.config?.distance);
+        if (vectors) {
+            // A named vector configuration keeps the size in every named vector.
+            const named = vectors.named;
+            const firstNamed = named ? Object.values(named)[0] : undefined;
+            const nested = vectors.config;
+            const size = vectors.size ?? firstNamed?.size ?? nested?.size;
+            const distance = vectors.distance ?? firstNamed?.distance ?? nested?.distance;
+            if (typeof size === "number")
+                vectorsSize = size;
+            if (typeof distance === "string")
+                vectorsDistance = distance;
         }
-        // Points count might be in different locations depending on Qdrant version
-        const pointsCount = (info.points ?? info.num_points ?? info.points_count);
+        // The point count lives in `points_count`; the other names are the ones
+        // other Qdrant versions and proxies use.
+        const pointsCount = (info.points_count ?? info.num_points ?? info.points);
         return {
             exists: true,
             vectorsSize,

@@ -29,6 +29,16 @@ export interface BatchEmbeddingResult {
  */
 export declare function getOpenAIApiKey(): string | null;
 /**
+ * The embedding model of the skill collection.
+ *
+ * The model decides the vector size, so it is part of the schema of the
+ * collection: a collection built with a different model holds vectors of a
+ * different size and cannot be searched with these vectors.
+ */
+export declare const EMBEDDING_MODEL = "text-embedding-3-small";
+/** The vector size of {@link EMBEDDING_MODEL}. */
+export declare const EMBEDDING_DIMENSIONS = 1536;
+/**
  * Create embedding for text using OpenAI
  */
 export declare function createEmbedding(text: string, apiKey?: string): Promise<EmbeddingResult>;

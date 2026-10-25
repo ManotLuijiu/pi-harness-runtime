@@ -41,6 +41,8 @@ export {
   embedSkillDocument,
   embedSkillsBatch,
   getOpenAIApiKey,
+  EMBEDDING_MODEL,
+  EMBEDDING_DIMENSIONS,
   type BatchEmbeddingResult,
   type EmbeddingRequestOptions,
   type EmbeddingResult,

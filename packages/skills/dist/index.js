@@ -12,6 +12,8 @@ export * from "./types.js";
 export * from "./parser.js";
 export * from "./scanner.js";
 export * from "./loader.js";
+export * from "./vector-schema.js";
+export * from "./remote-source.js";
 export * from "./skill-commands.js";
 export * from "./skill-tool.js";
 export * from "./skill-versioning.js";
@@ -43,7 +45,7 @@ export function initSkills(config) {
     }
     // Hint: if ~/.pi-harness-runtime/skills/ is empty, suggest the sync script
     checkEmptySkillsDir();
-    return result;
+    return { ...result, registry };
 }
 /** Show sync hint if the harness skills dir is empty. */
 function checkEmptySkillsDir() {

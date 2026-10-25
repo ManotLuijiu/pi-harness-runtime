@@ -5,7 +5,7 @@
  * Falls back gracefully if backend is unavailable.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type {
@@ -13,6 +13,8 @@ import type {
 	GetSkillResult,
 } from "../packages/skill-mcp-client/src/types.js";
 import { SkillAPIError } from "../packages/skill-mcp-client/dist/errors.js";
+import { atomicWriteFileSync } from "../packages/cookie-sanitizer/dist/index.js";
+import { centralWarn } from "../packages/logging/dist/index.js";
 
 type SkillMCPClient = InstanceType<
 	typeof import("../packages/skill-mcp-client/dist/client.js").SkillMCPClient
@@ -52,7 +54,11 @@ async function getClient(): Promise<SkillMCPClient | null> {
 		});
 		return clientInstance;
 	} catch {
-		console.warn("[skill-sync] Failed to import skill-mcp-client");
+		centralWarn(
+			"harness.skill-sync",
+			"service.sync-failed",
+			"the skill client package could not be loaded",
+		);
 		return null;
 	}
 }
@@ -73,6 +79,22 @@ interface SkillSyncResult {
 	skillCount: number;
 	source: "saas" | "cache" | "none";
 	error?: string;
+	/**
+	 * The skills the service holds.
+	 *
+	 * The list is carried along with the count, so a caller that needs
+	 * the skills does not have to ask the service a second time.
+	 */
+	skills?: SkillInfo[];
+	/**
+	 * Why the service could not be reached.
+	 *
+	 * "denied" means the service ANSWERED and refused the call - the
+	 * token is missing or the plan does not cover the skill. That is a
+	 * different situation than a service that could not be reached at
+	 * all, and the user needs a different fix for each.
+	 */
+	failure?: "denied" | "unavailable";
 }
 
 /**
@@ -102,22 +124,28 @@ function getCachedSkills(): CacheData | null {
  */
 function saveCache(data: CacheData): void {
 	try {
-		if (!existsSync(CACHE_DIR)) {
-			mkdirSync(CACHE_DIR, { recursive: true });
-		}
-		writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+		// The write is atomic: a crash in the middle leaves the previous
+		// cache intact instead of a half written file.
+		atomicWriteFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
 	} catch {
-		console.warn("[skill-sync] Failed to save cache");
+		centralWarn(
+			"harness.skill-sync",
+			"service.cache-write-failed",
+			"the skill cache could not be written",
+		);
 	}
 }
 
 /**
  * Fetch and cache skills from SaaS backend
  */
-async function fetchFromSaaS(): Promise<CacheData | null> {
+async function fetchFromSaaS(): Promise<{
+	data: CacheData | null;
+	failure?: "denied" | "unavailable";
+}> {
 	const client = await getClient();
 	if (!client) {
-		return null;
+		return { data: null, failure: "unavailable" };
 	}
 
 	try {
@@ -128,16 +156,26 @@ async function fetchFromSaaS(): Promise<CacheData | null> {
 			version: "1.0.0",
 		};
 		saveCache(cacheData);
-		return cacheData;
+		return { data: cacheData };
 	} catch (error) {
 		if (error instanceof SkillAPIError) {
-			console.warn(
-				`[skill-sync] API error: ${error.message} (code: ${error.code})`,
+			centralWarn(
+				"harness.skill-sync",
+				"service.sync-failed",
+				`the skill service answered with an error (code ${error.code})`,
 			);
+			// The service answered and refused the call.
+			if (error.isAuthError() || error.isTierRestricted()) {
+				return { data: null, failure: "denied" };
+			}
 		} else {
-			console.warn("[skill-sync] Failed to fetch from SaaS");
+			centralWarn(
+				"harness.skill-sync",
+				"service.sync-failed",
+				"the skill service could not be reached",
+			);
 		}
-		return null;
+		return { data: null, failure: "unavailable" };
 	}
 }
 
@@ -162,6 +200,7 @@ export async function syncSkillsFromSaaS(
 			success: true,
 			skillCount: 0,
 			source: "none",
+			skills: [],
 			error: "SKILLS_SAAS_API_KEY not configured",
 		};
 	}
@@ -174,17 +213,19 @@ export async function syncSkillsFromSaaS(
 				success: true,
 				skillCount: cached.skills.length,
 				source: "cache",
+				skills: cached.skills,
 			};
 		}
 	}
 
 	// Fetch from SaaS
-	const data = await fetchFromSaaS();
-	if (data) {
+	const fetched = await fetchFromSaaS();
+	if (fetched.data) {
 		return {
 			success: true,
-			skillCount: data.skills.length,
+			skillCount: fetched.data.skills.length,
 			source: "saas",
+			skills: fetched.data.skills,
 		};
 	}
 
@@ -195,16 +236,23 @@ export async function syncSkillsFromSaaS(
 			success: true,
 			skillCount: staleCache.skills.length,
 			source: "cache",
+			skills: staleCache.skills,
 			error: "Using stale cache (SaaS unavailable)",
+			failure: fetched.failure,
 		};
 	}
 
 	// Everything failed, return empty
 	return {
-		success: true,
+		success: false,
 		skillCount: 0,
 		source: "none",
-		error: "Could not reach Skills SaaS backend",
+		skills: [],
+		error:
+			fetched.failure === "denied"
+				? "The skill service refused the call - the token or the plan does not allow it"
+				: "Could not reach Skills SaaS backend",
+		failure: fetched.failure,
 	};
 }
 
@@ -226,7 +274,11 @@ export async function getSkillFromSaaS(identifier: {
 		return await client.getSkill(identifier);
 	} catch (error) {
 		if (error instanceof SkillAPIError) {
-			console.warn(`[skill-sync] Failed to get skill: ${error.message}`);
+			centralWarn(
+				"harness.skill-sync",
+				"service.skill-fetch-failed",
+				`the skill service could not deliver a skill (code ${error.code})`,
+			);
 		}
 		return null;
 	}
@@ -236,7 +288,7 @@ export async function getSkillFromSaaS(identifier: {
  * Check if skill sync is configured
  */
 export function isSkillSyncConfigured(): boolean {
-	return !!process.env.SKILLS_SAAS_API_KEY;
+	return Boolean(process.env.SKILLS_SAAS_API_KEY);
 }
 
 /**
@@ -250,7 +302,7 @@ export function getSyncStatus(): {
 	const cache = getCachedSkills();
 	return {
 		configured: isSkillSyncConfigured(),
-		cacheValid: !!cache,
+		cacheValid: Boolean(cache),
 		cachedSkills: cache?.skills.length ?? 0,
 	};
 }

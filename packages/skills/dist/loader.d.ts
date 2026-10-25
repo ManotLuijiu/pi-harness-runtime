@@ -5,12 +5,75 @@
  * Based on pi.dev Agent Skills specification.
  */
 import type { Skill, SkillIndex, MatchOptions, MatchResult, LoadOptions, LoadedSkill } from "./types.js";
+import { type RemoteSkillSource, type RemoteSkillStats } from "./remote-source.js";
 export interface QdrantSkillPoint {
     id: number;
     name: string;
     description: string;
     body: string;
     text: string;
+}
+export interface QdrantClientLike {
+    upsert(collection: string, opts: {
+        wait?: boolean;
+        points: unknown[];
+    }): Promise<void>;
+    query(collection: string, opts: {
+        query?: {
+            text?: string;
+            model?: string;
+        };
+        limit?: number;
+        with_payload?: boolean;
+        filter?: Record<string, unknown>;
+    }): Promise<unknown>;
+    /** Read the description of a collection. Optional. */
+    getCollection?(name: string): Promise<unknown>;
+}
+export interface QdrantEmbedderLike {
+    createEmbedding(text: string, apiKey?: string): Promise<{
+        embedding: number[];
+        tokens: number;
+    }>;
+    /** One request for many texts. Absent in an older package build. */
+    createEmbeddingsBatch?: (texts: string[], apiKey?: string) => Promise<{
+        embeddings: number[][];
+        tokens: number;
+    }>;
+}
+/** What the vector store is in this run. */
+export type QdrantSkillState = 
+/** No Qdrant credentials on this machine. */
+"not-configured"
+/** The cluster is configured but cannot be reached. */
+ | "unavailable"
+/** The cluster is reachable but the collection does not exist yet. */
+ | "missing"
+/** The collection exists but holds no skill. */
+ | "empty"
+/** The collection holds skills. */
+ | "populated";
+/** The state of the skill vector store. */
+export interface QdrantSkillStats {
+    /** What the vector store is in this run. */
+    state: QdrantSkillState;
+    /** The number of skill vectors in the collection. */
+    count: number;
+    /** The collection the numbers belong to. */
+    collection?: string;
+    /** The vector size the collection was created with. */
+    dimensions?: number;
+    /** The distance the collection was created with. */
+    distance?: string;
+    /** Why the collection could not be read. Never a credential. */
+    error?: string;
+    /**
+     * The collection does not match the schema of the runtime.
+     *
+     * The message names the real cause, so a user whose vector search finds
+     * nothing does not have to guess why.
+     */
+    schemaMismatch?: string;
 }
 /**
  * A point of the vector index: the vector and the payload of one skill.
@@ -49,6 +112,26 @@ export interface SkillRegistryOptions {
      * requests but holds more of them in memory.
      */
     batchSize?: number;
+    /**
+     * The Qdrant client.
+     *
+     * `undefined` (the default) connects to the configured cluster. An object
+     * is used as the client - a test uses a double, so the search path can be
+     * exercised without a network.
+     */
+    qdrantClient?: QdrantClientLike;
+    /**
+     * The embedder that turns a query into a vector.
+     *
+     * Only used together with an injected client.
+     */
+    embedder?: QdrantEmbedderLike;
+    /**
+     * The collection of the injected client.
+     *
+     * Only used together with an injected client.
+     */
+    collection?: string;
 }
 /**
  * Get Qdrant config from env or keys files.
@@ -64,6 +147,29 @@ export declare function getQdrantConfig(): {
  */
 export declare class SkillRegistry {
     private skills;
+    /** The options of the registry. */
+    private _options;
+    /**
+     * The skills that only exist in the vector store.
+     *
+     * They are kept apart from the local skills on purpose: `list()` must
+     * report the LOCAL skills, so a client can say how many skills it has on
+     * disk and how many it can reach through the vector store.
+     */
+    private remoteSkills;
+    /**
+     * The remote skills whose content is COMPLETE.
+     *
+     * A skill that only carries the truncated body of a vector store payload
+     * is not in this set - it is completed on the first load.
+     */
+    private _completeRemote;
+    /**
+     * The service that holds the server-side skills.
+     *
+     * `undefined` means "no service is configured".
+     */
+    private _remoteSource;
     private index;
     private loading;
     private _indexer;
@@ -92,6 +198,26 @@ export declare class SkillRegistry {
      */
     private _ensureQdrant;
     private _doQdrantInit;
+    /**
+     * The schema the runtime expects of the skill collection.
+     *
+     * The installed Qdrant package knows the size of its own model; an older
+     * build does not, and the fallback is used then.
+     */
+    private _expectedVectorSchema;
+    /**
+     * The state of the skill vector store.
+     *
+     * The numbers are what the startup summary shows next to the local skill
+     * count, and the state says WHY there is no number: no credentials, an
+     * unreachable cluster, a collection that does not exist yet.
+     *
+     * The collection schema is checked here as well: a collection built with a
+     * different embedding model holds vectors the runtime cannot search with,
+     * and the reason has to be named - otherwise the vector search simply
+     * finds nothing.
+     */
+    getQdrantStats(): Promise<QdrantSkillStats>;
     /** The point of a skill in the vector index. */
     private _toQdrantPoint;
     /**
@@ -145,6 +271,46 @@ export declare class SkillRegistry {
      */
     get(skillId: string): Skill | undefined;
     /**
+     * The skills that only exist in the vector store.
+     *
+     * They are not part of `list()`: the local count must stay local.
+     */
+    listRemote(): Skill[];
+    /**
+     * The service that holds the server-side skills.
+     *
+     * `undefined` means "no service is configured". Setting a source clears
+     * the cached remote skills: a new service is a new authority, so the old
+     * content must not survive it.
+     */
+    setRemoteSource(source: RemoteSkillSource | undefined): void;
+    /**
+     * Ask the service for the skills it holds.
+     *
+     * A skill whose version changed is replaced by the new one. A record
+     * without a version never replaces a cached skill - an unknown version is
+     * not evidence of a change.
+     */
+    refreshRemoteSkills(options?: {
+        search?: string;
+        limit?: number;
+    }): Promise<RemoteSkillStats>;
+    /**
+     * The state of the service that holds the server-side skills.
+     *
+     * The states stay apart: a refused call is not an unreachable service and
+     * not an empty service.
+     */
+    getRemoteStats(): Promise<RemoteSkillStats>;
+    /**
+     * The state a failed call stands for.
+     *
+     * A refusal of the service is "denied" - the service answered, it just
+     * did not allow this call. Everything else is a service that could not be
+     * reached.
+     */
+    private _remoteFailureState;
+    /**
      * List all registered skills
      */
     list(): Skill[];
@@ -161,8 +327,20 @@ export declare class SkillRegistry {
      */
     findBestMatch(query: string, options?: MatchOptions): MatchResult | null;
     /**
+     * A skill that only exists in the vector store.
+     *
+     * The payload carries the name, the description and the body - enough to
+     * USE the skill on a machine that has no local copy of it.
+     */
+    private static skillFromPayload;
+    /**
      * Search skills by semantic similarity using Qdrant.
      * Falls back to an empty result if Qdrant is not available.
+     *
+     * A hit that belongs to no local skill is a SERVER skill: it is returned
+     * with its payload instead of being dropped. Dropping it would make a
+     * shared skill invisible on every machine that has no local copy of it -
+     * which is exactly the case the vector store exists for.
      *
      * @param query Natural-language query
      * @param limit Max results (default 5)
@@ -171,6 +349,7 @@ export declare class SkillRegistry {
     findVector(query: string, limit?: number, threshold?: number): Promise<Array<{
         skill: Skill;
         score: number;
+        source: "local" | "remote";
     }>>;
     /**
      * Sync all registered skills to Qdrant.

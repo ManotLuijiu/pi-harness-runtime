@@ -13,6 +13,8 @@ export * from "./types.js";
 export * from "./parser.js";
 export * from "./scanner.js";
 export * from "./loader.js";
+export * from "./vector-schema.js";
+export * from "./remote-source.js";
 export * from "./skill-commands.js";
 export * from "./skill-tool.js";
 export * from "./skill-versioning.js";
@@ -21,6 +23,18 @@ export * from "./linter.js";
 import type { SkillsConfig, ScanResult, ScanOptions } from "./types.js";
 import { scanForSkillsSync } from "./scanner.js";
 import { getGlobalSkillRegistry, type SkillRegistry } from "./loader.js";
+
+/**
+ * The result of the skill initialization.
+ *
+ * The registry is part of the result so a caller can ask the vector store
+ * about its state (how many skills it holds) without reaching for the
+ * global registry.
+ */
+export interface SkillsInitResult extends ScanResult {
+  /** The registry the skills were registered in. */
+  registry: SkillRegistry;
+}
 
 /**
  * Initialize skills system
@@ -36,7 +50,7 @@ export function initSkills(
       registry?: SkillRegistry;
     }
   >
-): ScanResult {
+): SkillsInitResult {
   const registry = config?.registry ?? getGlobalSkillRegistry();
 
   // Scan for skills
@@ -58,7 +72,7 @@ export function initSkills(
   // Hint: if ~/.pi-harness-runtime/skills/ is empty, suggest the sync script
   checkEmptySkillsDir();
 
-  return result;
+  return { ...result, registry };
 }
 
 /** Show sync hint if the harness skills dir is empty. */

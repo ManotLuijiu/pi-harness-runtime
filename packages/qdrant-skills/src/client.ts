@@ -86,19 +86,30 @@ export async function getCollectionInfo(
 } | null> {
   try {
     const info = await client.getCollection(name) as Record<string, unknown>;
-    // Vectors config can be a named config or default { size, distance }
-    const vectorsConfig = info.vectors as Record<string, unknown> | undefined;
+    // Qdrant reports the vector configuration under
+    // `config.params.vectors` - NOT at the top level. Reading `info.vectors`
+    // always yields undefined, which turns every schema check into a
+    // "dimension mismatch: got undefined" that names no real cause.
+    const config = info.config as Record<string, unknown> | undefined;
+    const params = config?.params as Record<string, unknown> | undefined;
+    const vectors = (params?.vectors ?? info.vectors) as Record<string, unknown> | undefined;
     let vectorsSize: number | undefined;
     let vectorsDistance: string | undefined;
 
-    if (vectorsConfig) {
-      // Handle both { size: number, distance: string } and named config { config: { size, distance } }
-      vectorsSize = (vectorsConfig.size ?? (vectorsConfig.config as Record<string, unknown>)?.size) as number | undefined;
-      vectorsDistance = (vectorsConfig.distance ?? (vectorsConfig.config as Record<string, unknown>)?.distance) as string | undefined;
+    if (vectors) {
+      // A named vector configuration keeps the size in every named vector.
+      const named = vectors.named as Record<string, Record<string, unknown>> | undefined;
+      const firstNamed = named ? Object.values(named)[0] : undefined;
+      const nested = vectors.config as Record<string, unknown> | undefined;
+      const size = vectors.size ?? firstNamed?.size ?? nested?.size;
+      const distance = vectors.distance ?? firstNamed?.distance ?? nested?.distance;
+      if (typeof size === "number") vectorsSize = size;
+      if (typeof distance === "string") vectorsDistance = distance;
     }
 
-    // Points count might be in different locations depending on Qdrant version
-    const pointsCount = (info.points ?? info.num_points ?? info.points_count) as number | undefined;
+    // The point count lives in `points_count`; the other names are the ones
+    // other Qdrant versions and proxies use.
+    const pointsCount = (info.points_count ?? info.num_points ?? info.points) as number | undefined;
 
     return {
       exists: true,
