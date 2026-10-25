@@ -74,7 +74,10 @@ jobs:
         id: cred
         env:
           PACKAGE_NAME: pi-harness-runtime
-          REPO_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TOK_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TOK_NPM_UNPUBLISH_TOKEN: ${{ secrets.NPM_UNPUBLISH_TOKEN }}
+          TOK_NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          TOK_NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
         run: |
           set -euo pipefail
           cat > /tmp/jget.js <<'EOF'
@@ -84,10 +87,20 @@ jobs:
           process.stdout.write(body[key] || "");
           EOF
           registry_token=""
-          if [ -n "$REPO_TOKEN" ]; then
-            echo "credential: repository NPM_TOKEN secret"
-            registry_token="$REPO_TOKEN"
-          else
+          declare -A candidates=(
+            [NPM_TOKEN]="$TOK_NPM_TOKEN"
+            [NPM_UNPUBLISH_TOKEN]="$TOK_NPM_UNPUBLISH_TOKEN"
+            [NPM_PUBLISH_TOKEN]="$TOK_NPM_PUBLISH_TOKEN"
+            [NPM_AUTH_TOKEN]="$TOK_NPM_AUTH_TOKEN"
+          )
+          for name in "${!candidates[@]}"; do
+            if [ -n "${candidates[$name]}" ]; then
+              echo "credential: repository secret ${name}"
+              registry_token="${candidates[$name]}"
+              break
+            fi
+          done
+          if [ -z "$registry_token" ]; then
             echo "credential: OIDC trusted publisher (publish scope only)"
             audience="npm:registry.npmjs.org"
             url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}"
