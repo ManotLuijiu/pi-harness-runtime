@@ -53,3 +53,22 @@ test("the script writes into the versioned collection", () => {
 		"the legacy collection holds vectors of another model",
 	);
 });
+
+test("the script uses the shared sanitization", () => {
+	assert.match(
+		script,
+		/from\s+"[^"]*dist\/sanitize\.js"/,
+		"the script must take the sanitization from the shared package",
+	);
+	assert.match(script, /skillPointName\(/, "the script must use the shared name rules");
+	assert.doesNotMatch(
+		script,
+		/const\s+SANITIZATION_RULES\s*[:=]/,
+		"a second copy of the rules would drift from the ones of the runtime",
+	);
+	assert.doesNotMatch(
+		script,
+		/const\s+SKILL_NAME_MAP\s*[:=]/,
+		"a second copy of the name map would drift from the one of the runtime",
+	);
+});

@@ -31,59 +31,13 @@ import {
   skillPointPayload,
   skillQdrantPoint,
 } from "../packages/skills/dist/vector-schema.js";
-
-// =============================================================================
-// SANITIZATION: Replace client-specific names with placeholders
-// =============================================================================
-
-interface SanitizationRule {
-  pattern: RegExp;
-  replacement: string;
-}
-
-const SANITIZATION_RULES: SanitizationRule[] = [
-  // Client company names (case-insensitive)
-  { pattern: /\bclient-a\b/gi, replacement: "[Client A]" },
-  { pattern: /\bclient-a\b/gi, replacement: "[Client A]" },
-  { pattern: /\bclient-a\b/gi, replacement: "[Client A]" },
-  { pattern: /\bclient-b\b/gi, replacement: "[Client B]" },
-
-  // Project/app specific names
-  { pattern: /\binsurance-project\b/gi, replacement: "[Insurance Project]" },
-  { pattern: /\bimport-project\b/gi, replacement: "[Import Project]" },
-  { pattern: /\bclient-b_erp\b/gi, replacement: "[Client B Erp]" },
-  { pattern: /\bclient-a\b/gi, replacement: "[Client A]" },
-  { pattern: /\bclient-a_\b/gi, replacement: "[Client A]_" },
-  { pattern: /\bpaperclip_\b/gi, replacement: "[Client D]_" },
-  { pattern: /\bopenclaw_\b/gi, replacement: "[Client F]_" },
-
-  // Generic replacements
-  { pattern: /Company Name/gi, replacement: "[Client Name]" },
-  { pattern: /your company/gi, replacement: "[Client]" },
-  { pattern: /our client/gi, replacement: "[Client]" },
-  { pattern: /client-specific/gi, replacement: "[Project-specific]" },
-];
-
-// Skill name sanitization (for skill directory name -> sanitized display name)
-const SKILL_NAME_MAP: Record<string, string> = {
-  'insurance-project-step5-slot-filter': 'insurance-project-step-filter',
-  'client-a-pe-approval-workflow': 'client-a-pe-approval-workflow',
-  'client-a-po-approval-workflow': 'client-a-po-approval-workflow',
-  'client-a-pr-approval-workflow': 'client-a-pr-approval-workflow',
-  'import-project-clearance-lcv': 'import-project-clearance',
-  'whispertool': 'whisper-tool',
-};
-
-/**
- * Sanitize text by replacing client-specific patterns
- */
-function sanitize(text: string): string {
-  let result = text;
-  for (const rule of SANITIZATION_RULES) {
-    result = result.replace(rule.pattern, rule.replacement);
-  }
-  return result;
-}
+// The sanitization lives in the shared package: the runtime registry writes
+// into the same collection and needs the same rules, or it would leave the
+// raw name and the raw body of a client skill in a shared cluster.
+import {
+  sanitizeText,
+  skillPointName,
+} from "../packages/skills/dist/sanitize.js";
 
 // =============================================================================
 // Qdrant Config
@@ -157,12 +111,12 @@ function readSkill(dirPath: string): SkillDoc | null {
     const originalName = fm.name || basename(dirPath);
     
     // Sanitize content
-    const sanitizedContent = sanitize(rawContent);
+    const sanitizedContent = sanitizeText(rawContent);
     
     // Use name map for known sensitive skill names, otherwise sanitize
-    const name = SKILL_NAME_MAP[originalName] || sanitize(originalName);
+    const name = skillPointName(originalName);
     
-    const description = sanitize(fm.description || "");
+    const description = sanitizeText(fm.description || "");
     const body = sanitizedContent.replace(/^---[\s\S]*?---\n/, "").trim();
 
     // The payload and the text come from the shared schema, so this script

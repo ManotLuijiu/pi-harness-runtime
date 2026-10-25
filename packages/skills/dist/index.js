@@ -13,6 +13,7 @@ export * from "./parser.js";
 export * from "./scanner.js";
 export * from "./loader.js";
 export * from "./vector-schema.js";
+export * from "./sanitize.js";
 export * from "./remote-source.js";
 export * from "./skill-commands.js";
 export * from "./skill-tool.js";

@@ -125,6 +125,10 @@ export interface SkillQdrantPoint {
 export declare function skillQdrantPoint(payload: SkillPointPayload): SkillQdrantPoint;
 /**
  * The payload of a skill point.
+ *
+ * The payload is sanitized: the collection is shared, so the client names
+ * of a user must not travel into it. Both writers use this function, so
+ * both write the same sanitized payload for the same skill.
  */
 export declare function skillPointPayload(input: {
     /** The name the payload carries - the identity of the skill. */

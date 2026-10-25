@@ -169,6 +169,47 @@ describe("a skill that only exists in the vector store", () => {
 	});
 });
 
+describe("a hit that carries the shared name of a local skill", () => {
+	it("resolves to the local skill", async () => {
+		// The collection is shared, so the point carries the SANITIZED name.
+		const client = fakeClient([
+			{
+				id: 1,
+				score: 0.9,
+				payload: {
+					name: "client-a-pe-approval-workflow",
+					description: "the workflow",
+					body: "the body",
+				},
+			},
+		]);
+		const registry = createSkillRegistry({
+			qdrantClient: client,
+			embedder: fakeEmbedder,
+			collection: "pi-harness-skills-test",
+		});
+		registry.register(localSkill("client-a-pe-approval-workflow"));
+
+		const results = await registry.findVector("workflow");
+
+		expect(results).toHaveLength(1);
+		// The skill of this machine stays a local skill - with its own
+		// name and its own body, not the sanitized copy.
+		expect(results[0].source).toBe("local");
+		expect(results[0].skill.id).toBe("client-a-pe-approval-workflow");
+		expect(results[0].skill.body).toBe("the local body of client-a-pe-approval-workflow");
+	});
+
+	it("resolves the shared name of a local skill in a lookup", () => {
+		const registry = createSkillRegistry({ indexer: null });
+		registry.register(localSkill("client-a-pe-approval-workflow"));
+
+		expect(registry.get("client-a-pe-approval-workflow")?.id).toBe(
+			"client-a-pe-approval-workflow",
+		);
+	});
+});
+
 describe("the state of the vector store", () => {
 	it("reports the number of skills", async () => {
 		const client = fakeClient([], {

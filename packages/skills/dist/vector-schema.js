@@ -15,6 +15,7 @@
  * module owns the collection - that is a decision of the skills domain, not
  * of the vector store.
  */
+import { sanitizeText, skillPointName } from "./sanitize.js";
 /**
  * The collection the runtime indexes into and searches.
  *
@@ -91,13 +92,21 @@ export function skillQdrantPoint(payload) {
 }
 /**
  * The payload of a skill point.
+ *
+ * The payload is sanitized: the collection is shared, so the client names
+ * of a user must not travel into it. Both writers use this function, so
+ * both write the same sanitized payload for the same skill.
  */
 export function skillPointPayload(input) {
+    const name = skillPointName(input.name);
+    const title = input.title ? skillPointName(input.title) : undefined;
+    const description = sanitizeText(input.description);
+    const body = sanitizeText(input.body).slice(0, SKILL_PAYLOAD_BODY_LIMIT);
     return {
-        name: input.name,
-        description: input.description,
-        body: input.body.slice(0, SKILL_PAYLOAD_BODY_LIMIT),
-        text: skillPointText(input),
+        name,
+        description,
+        body,
+        text: skillPointText({ name, title, description, body }),
     };
 }
 export function describeSkillSchemaMismatch(actual, expected) {

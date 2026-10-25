@@ -28,6 +28,7 @@ import {
   type SkillPointPayload,
   type SkillVectorSchema,
 } from "./vector-schema.js";
+import { skillPointName } from "./sanitize.js";
 import {
   describeRemoteFailure,
   isStale,
@@ -339,6 +340,15 @@ export class SkillRegistry {
    * disk and how many it can reach through the vector store.
    */
   private remoteSkills: Map<string, Skill> = new Map();
+  /**
+   * The local skills by their name in the shared collection.
+   *
+   * The name of a point is the SANITIZED name of the skill, because the
+   * collection is shared. A hit of the collection therefore carries a name
+   * that this machine does not use - the registry is keyed by the name on
+   * this machine. This map bridges the two.
+   */
+  private _skillsByPointName: Map<string, Skill> = new Map();
   /**
    * The remote skills whose content is COMPLETE.
    *
@@ -766,6 +776,8 @@ export class SkillRegistry {
    */
   register(skill: Skill): void {
     this.skills.set(skill.id, skill);
+    // The shared collection knows the skill by its sanitized name.
+    this._skillsByPointName.set(skillPointName(skill.id), skill);
     this.updateIndex(skill);
     // Queue the skill for the vector index without blocking registration.
     this._scheduleIndex(skill);
@@ -778,6 +790,12 @@ export class SkillRegistry {
     const skill = this.skills.get(skillId);
     if (skill) {
       this.skills.delete(skillId);
+      // Only drop the shared name when it still points at this skill: two
+      // skills may share a sanitized name.
+      const pointName = skillPointName(skill.id);
+      if (this._skillsByPointName.get(pointName) === skill) {
+        this._skillsByPointName.delete(pointName);
+      }
       this.index.entries = this.index.entries.filter(
         (e) => e.id !== skillId
       );
@@ -791,8 +809,13 @@ export class SkillRegistry {
    */
   get(skillId: string): Skill | undefined {
     // A server skill is only known after a vector search found it, so it is
-    // looked up second - the local skill always wins.
-    return this.skills.get(skillId) ?? this.remoteSkills.get(skillId);
+    // looked up second - the local skill always wins. The shared name of a
+    // skill resolves to the local skill as well.
+    return (
+      this.skills.get(skillId) ??
+      this._skillsByPointName.get(skillId) ??
+      this.remoteSkills.get(skillId)
+    );
   }
 
   /**
@@ -1054,7 +1077,7 @@ export class SkillRegistry {
         const payload = pt.payload ?? {};
         const name = typeof payload.name === "string" ? payload.name : undefined;
         if (!name) continue;
-        const local = this.skills.get(name);
+        const local = this._skillsByPointName.get(name) ?? this.skills.get(name);
         if (local) {
           results.push({ skill: local, score: pt.score, source: "local" });
           continue;

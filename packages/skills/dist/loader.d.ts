@@ -185,6 +185,15 @@ export declare class SkillRegistry {
      */
     private remoteSkills;
     /**
+     * The local skills by their name in the shared collection.
+     *
+     * The name of a point is the SANITIZED name of the skill, because the
+     * collection is shared. A hit of the collection therefore carries a name
+     * that this machine does not use - the registry is keyed by the name on
+     * this machine. This map bridges the two.
+     */
+    private _skillsByPointName;
+    /**
      * The remote skills whose content is COMPLETE.
      *
      * A skill that only carries the truncated body of a vector store payload

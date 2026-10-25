@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSkillFile } from "./parser.js";
 import { LEGACY_SKILL_COLLECTION, LEGACY_SKILL_COLLECTION_DIMENSIONS, LEGACY_SKILL_COLLECTION_MODEL, SKILL_COLLECTION, describeSkillSchemaMismatch, skillPointPayload, skillQdrantPoint, stableHash, } from "./vector-schema.js";
+import { skillPointName } from "./sanitize.js";
 import { describeRemoteFailure, isStale, skillFromRemote, } from "./remote-source.js";
 /**
  * The vector size of the runtime, used when the installed Qdrant package
@@ -124,6 +125,15 @@ export class SkillRegistry {
      * disk and how many it can reach through the vector store.
      */
     remoteSkills = new Map();
+    /**
+     * The local skills by their name in the shared collection.
+     *
+     * The name of a point is the SANITIZED name of the skill, because the
+     * collection is shared. A hit of the collection therefore carries a name
+     * that this machine does not use - the registry is keyed by the name on
+     * this machine. This map bridges the two.
+     */
+    _skillsByPointName = new Map();
     /**
      * The remote skills whose content is COMPLETE.
      *
@@ -527,6 +537,8 @@ export class SkillRegistry {
      */
     register(skill) {
         this.skills.set(skill.id, skill);
+        // The shared collection knows the skill by its sanitized name.
+        this._skillsByPointName.set(skillPointName(skill.id), skill);
         this.updateIndex(skill);
         // Queue the skill for the vector index without blocking registration.
         this._scheduleIndex(skill);
@@ -538,6 +550,12 @@ export class SkillRegistry {
         const skill = this.skills.get(skillId);
         if (skill) {
             this.skills.delete(skillId);
+            // Only drop the shared name when it still points at this skill: two
+            // skills may share a sanitized name.
+            const pointName = skillPointName(skill.id);
+            if (this._skillsByPointName.get(pointName) === skill) {
+                this._skillsByPointName.delete(pointName);
+            }
             this.index.entries = this.index.entries.filter((e) => e.id !== skillId);
             return true;
         }
@@ -548,8 +566,11 @@ export class SkillRegistry {
      */
     get(skillId) {
         // A server skill is only known after a vector search found it, so it is
-        // looked up second - the local skill always wins.
-        return this.skills.get(skillId) ?? this.remoteSkills.get(skillId);
+        // looked up second - the local skill always wins. The shared name of a
+        // skill resolves to the local skill as well.
+        return (this.skills.get(skillId) ??
+            this._skillsByPointName.get(skillId) ??
+            this.remoteSkills.get(skillId));
     }
     /**
      * The skills that only exist in the vector store.
@@ -784,7 +805,7 @@ export class SkillRegistry {
                 const name = typeof payload.name === "string" ? payload.name : undefined;
                 if (!name)
                     continue;
-                const local = this.skills.get(name);
+                const local = this._skillsByPointName.get(name) ?? this.skills.get(name);
                 if (local) {
                     results.push({ skill: local, score: pt.score, source: "local" });
                     continue;
