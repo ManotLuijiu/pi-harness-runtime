@@ -84,7 +84,8 @@
     "@earendil-works/pi-ai": "^1.3.0",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "typebox": "*",
+    "pi-mcp-adapter": ">=6.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
@@ -114,8 +115,12 @@
     "chokidar": "^5.0.0",
     "deepagents": "^1.10.5",
     "langchain": "^1.5.10",
-    "pi-mcp-adapter": "3.3.0",
     "ws": "^8.22.0",
     "zod": "^4.5.4"
+  },
+  "peerDependenciesMeta": {
+    "pi-mcp-adapter": {
+      "optional": true
+    }
   }
 }
