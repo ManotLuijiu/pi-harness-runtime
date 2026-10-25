@@ -1,4 +1,7 @@
 node_modules/
+# Per-machine state and local tool policy: never published.
+.pi/
+.pi-lens/
 .git/
 .github/
 scripts/

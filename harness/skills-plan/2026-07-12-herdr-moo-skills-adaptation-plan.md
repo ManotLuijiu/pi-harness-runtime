@@ -17,11 +17,14 @@ Study Herdr's reusable `SKILL.md` distribution model and adapt the idea to `pi-h
 
 ### Current runtime state
 
-- `pi-harness-runtime` already exposes bundled skills via:
-  - `package.json` -> `pi.skills = ["./skills"]`
-- Current bundled repo skill set is minimal:
-  - `skills/harness-runtime/SKILL.md`
-- `packages/skill-registry` is currently an in-memory registry, not a filesystem `SKILL.md` loader.
+- `pi-harness-runtime` ships **no** bundled skills:
+  - the package has no `pi.skills` field and no `skills/` directory
+  - skill payloads live in the user's own Qdrant collection and in the
+    installation-local skill store, never in the published package
+- `packages/skills` is the runtime implementation: it discovers, sanitizes,
+  embeds and queries skills.
+- The scanner still reads the `skills/` and `.agents/skills/` directories of
+  the *working* project, so a project may keep its own skills on disk.
 
 ---
 
@@ -192,7 +195,7 @@ Success criteria:
 
 Once a sanitized skill exists inside `pi-harness-runtime/skills/<name>/SKILL.md`:
 
-- expose it through the existing `pi.skills` package field
+- expose it through the skill runtime (Qdrant + the local store), not through a bundled `pi.skills` directory
 - document Herdr-style installation ergonomics for the public subset
 
 This gives the benefit of Herdr's distribution model without risking raw private content leakage.

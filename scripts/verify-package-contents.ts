@@ -35,7 +35,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifyTarball = process.argv.includes("--pack");
 
 interface Problem {
-	kind: "missing-dist" | "missing-import" | "missing-tarball" | "missing-package";
+	kind:
+		| "missing-dist"
+		| "missing-import"
+		| "missing-tarball"
+		| "missing-package"
+		| "forbidden-path"
+		| "missing-plugin";
 	detail: string;
 }
 
@@ -51,6 +57,37 @@ const SHIPPED_ROOT_FILES = [
 	"status-parsers.ts",
 	"tracker.ts",
 	"windows.ts",
+];
+
+/**
+ * Paths that must never reach the published package.
+ *
+ * `.pi/` holds per-machine extension state and the user's private skills.
+ * `.pi-lens/` holds a local tool policy directory. The skill payload
+ * directories hold skill content: skills live in the user's own Qdrant
+ * collection and in the installation-local skill store, never in the
+ * published repository.
+ *
+ * `packages/skills/` is NOT in this list: that package is the runtime
+ * implementation that loads, queries and indexes skills.
+ */
+const FORBIDDEN_PACKAGE_PREFIXES = [
+	".pi/",
+	".pi-lens/",
+	"skills/",
+	".agents/skills/",
+	".claude/skills/",
+];
+
+/** The plugin directory that ships with the package. */
+const PLUGIN_DIR = "plugins";
+
+/** The files a shipped herdr plugin must contain. */
+const REQUIRED_PLUGIN_FILES = [
+	"plugins/herdr-clipboard/herdr-plugin.toml",
+	"plugins/herdr-clipboard/paste.sh",
+	"plugins/herdr-clipboard/start-bridge.sh",
+	"plugins/herdr-clipboard/tmux-watch.sh",
 ];
 
 function listFiles(dir: string, filter: (file: string) => boolean): string[] {
@@ -97,6 +134,68 @@ function shippedSourceFiles(): string[] {
 const STATIC_IMPORT = /import\s+(type\s+)?[^;]*?from\s*["']([^"']+)["']/g;
 const DYNAMIC_IMPORT = /import\s*\(\s*["']([^"']+)["']\s*\)/g;
 const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s*["']([^"']+)["']/g;
+
+/**
+ * The published package must not carry a skill payload or a local state
+ * directory, and it must carry the plugin that the postinstall copies.
+ *
+ * The check runs on the git index, because that is what the release commits
+ * and what npm packs from.
+ */
+function checkPackageLayout(): void {
+	const tracked = spawnSync("git", ["ls-files"], {
+		cwd: ROOT,
+		encoding: "utf8",
+	});
+	const files =
+		tracked.status === 0 ? tracked.stdout.split("\n").filter(Boolean) : [];
+
+	for (const file of files) {
+		const posix = file.split("\\").join("/");
+		for (const prefix of FORBIDDEN_PACKAGE_PREFIXES) {
+			if (posix.startsWith(prefix)) {
+				problems.push({
+					kind: "forbidden-path",
+					detail: `${posix} is tracked - ${prefix} must not be committed`,
+				});
+				break;
+			}
+		}
+	}
+
+	for (const required of REQUIRED_PLUGIN_FILES) {
+		if (!files.includes(required)) {
+			problems.push({
+				kind: "missing-plugin",
+				detail: `${required} is not tracked - the plugin would not ship`,
+			});
+		}
+	}
+}
+
+/**
+ * The postinstall copies the plugin from the package root.
+ *
+ * When the source directory moved to `plugins/` the copy script kept its
+ * old path, and the plugin silently stopped being installed.
+ */
+function checkPluginCopySource(): void {
+	const script = join(ROOT, "scripts", "copy-plugins.js");
+	if (!existsSync(script)) {
+		problems.push({
+			kind: "missing-plugin",
+			detail: "scripts/copy-plugins.js is missing - the plugin would not be installed",
+		});
+		return;
+	}
+	const source = readFileSync(script, "utf8");
+	if (!source.includes(`"${PLUGIN_DIR}"`)) {
+		problems.push({
+			kind: "missing-plugin",
+			detail: `scripts/copy-plugins.js does not read from the ${PLUGIN_DIR}/ directory`,
+		});
+	}
+}
 
 function checkImports(): void {
 	for (const file of shippedSourceFiles()) {
@@ -306,6 +405,28 @@ async function inspectTarball(): Promise<void> {
 		return;
 	}
 
+	for (const file of files) {
+		const posix = file.split("\\").join("/");
+		for (const prefix of FORBIDDEN_PACKAGE_PREFIXES) {
+			if (posix.startsWith(prefix)) {
+				problems.push({
+					kind: "forbidden-path",
+					detail: `${posix} is in the tarball - ${prefix} must not be published`,
+				});
+				break;
+			}
+		}
+	}
+
+	for (const required of REQUIRED_PLUGIN_FILES) {
+		if (!files.includes(required)) {
+			problems.push({
+				kind: "missing-plugin",
+				detail: `${required} is not in the tarball`,
+			});
+		}
+	}
+
 	const inTarball = new Set(files);
 	for (const { file, specifier, target } of runtimeImports.values()) {
 		const relativeTarget = relative(ROOT, target).split("\\").join("/");
@@ -321,6 +442,8 @@ async function inspectTarball(): Promise<void> {
 	}
 }
 
+checkPackageLayout();
+checkPluginCopySource();
 checkImports();
 checkPackageEntries();
 checkStaleOutputs();

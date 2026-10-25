@@ -52,6 +52,13 @@ harness/skills-plan/ACTION-PLAN-DAYS-3-PLUS.md
 .pi/skills/release/*
 .pi-glla/
 
+# Skill payloads are not committed: they live in the user's own Qdrant
+# collection and in the installation-local skill store.
+# The runtime implementation lives in packages/skills/ and stays tracked.
+/skills/
+/.agents/skills/
+/.claude/skills/
+
 # Harness generated type/sourcemap files (JS is committed; type files are build artifacts)
 harness/*.d.ts
 harness/*.d.ts.map

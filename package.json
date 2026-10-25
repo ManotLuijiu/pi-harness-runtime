@@ -38,10 +38,9 @@
     "harness/**/*.ts",
     "packages/**/src/**/*.{ts,js}",
     "packages/**/dist/**/*.{js,d.ts,js.map,d.ts.map}",
-    "skills/**/*",
     "prompts/**/*",
     "scripts/**/*",
-    ".pi/plugins/**/*",
+    "plugins/**/*",
     "package.json",
     "README.md",
     "AGENTS.md",
@@ -72,9 +71,6 @@
   "pi": {
     "extensions": [
       "./index.ts"
-    ],
-    "skills": [
-      "./skills"
     ],
     "prompts": [
       "./prompts"

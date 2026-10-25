@@ -61,10 +61,11 @@ const GENERIC_RULES = [
  *
  * A name that would be unreadable after the pattern rules - a name that
  * carries the client name in its middle - is renamed here.
+ *
+ * The map is empty: a name that belongs to a client is that client's, so it
+ * lives in the local file next to the other rules of the installation.
  */
-const GENERIC_NAME_MAP = {
-    whispertool: "whisper-tool",
-};
+const GENERIC_NAME_MAP = {};
 /** Where the rules of this installation live. */
 export function sanitizationFilePath() {
     const override = process.env.PI_SKILL_SANITIZATION_FILE;

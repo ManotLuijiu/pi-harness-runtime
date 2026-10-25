@@ -1,18 +1,22 @@
 /**
  * Copy herdr plugins to runtime directory
  * 
- * Copies herdr plugins from .pi/plugins/ to ~/.config/herdr/plugins/
- * The source .pi/plugins/ is gitignored but included in npm package via files array.
+ * Copies herdr plugins from plugins/ to ~/.config/herdr/plugins/
+ * The source plugins/ directory is tracked in git and included in the npm
+ * package via the files array.
+ *
+ * Skill payloads are NOT shipped: they live in the user's own Qdrant
+ * collection and in the installation-local skill store.
  */
 
-import { copyFileSync, mkdirSync, existsSync, readdirSync, cpSync } from "node:fs";
+import { mkdirSync, existsSync, readdirSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SOURCE_PLUGINS_DIR = join(__dirname, "..", ".pi", "plugins");
+const SOURCE_PLUGINS_DIR = join(__dirname, "..", "plugins");
 const HERDR_PLUGINS_DIR = join(process.env.HOME || "~", ".config", "herdr", "plugins");
 
 function ensureDir(dir) {
@@ -38,7 +42,7 @@ function copyPlugin(pluginName) {
 
 function main() {
   if (!existsSync(SOURCE_PLUGINS_DIR)) {
-    console.log("[copy-plugins] No .pi/plugins/ directory found, skipping");
+    console.log("[copy-plugins] No plugins/ directory found, skipping");
     return;
   }
   

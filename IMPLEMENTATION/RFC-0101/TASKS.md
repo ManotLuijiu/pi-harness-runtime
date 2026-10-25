@@ -81,7 +81,7 @@
 - [ ] Write `packages/privilege-broker/README.md` (incl. how to add a new capability).
 - [ ] Write `packages/scheduler-adapter/README.md` (per-adapter install guide).
 - [ ] Update root `README.md` with reference to RFC-0101.
-- [ ] Update bundled `skills/harness-runtime/SKILL.md` with `/runtime` slash-command doc.
+- [ ] Document the `/runtime` slash command in the skill command runtime (`packages/skills/src/skill-commands.ts`).
 
 ## Phase 10 — Acceptance
 
