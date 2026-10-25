@@ -21,9 +21,48 @@
  * - WS   /ws                  - WebSocket for real-time events
  */
 import { EventEmitter } from "node:events";
-import type { JobStateMachine } from "../../harness/job-state-machine.js";
-import type { TaskGraphManager } from "../../../harness/task-graph.js";
-import type { CheckpointManager } from "../../harness/job-state-machine.js";
+import type { JobStatus, RuntimeCheckpoint, RuntimeEvent, RuntimeTask } from "../../types/dist/runtime-types.js";
+/**
+ * The outcome of a job transition, as reported by the registered machine.
+ */
+export interface JobTransitionResult {
+    success: boolean;
+    checkpoint?: RuntimeCheckpoint;
+    error?: string;
+}
+/**
+ * The job state machine the harness registers.
+ *
+ * The runtime API does not implement a job: it stores the machine the
+ * harness already runs and reports on it. The package therefore describes
+ * the shape it uses instead of importing the harness - the harness is the
+ * app root, a package may not reach into it, and the import also dragged
+ * the whole harness program into this package's compilation.
+ */
+export interface JobStateMachineLike {
+    getStatusSummary(): {
+        status: JobStatus;
+        isTerminal: boolean;
+        canResume: boolean;
+    } | null;
+    getCheckpoint(): RuntimeCheckpoint | null | Promise<RuntimeCheckpoint | null>;
+    resumeJob(jobId: string): Promise<JobTransitionResult>;
+    transition(to: JobStatus, data?: Partial<RuntimeCheckpoint>): Promise<JobTransitionResult>;
+}
+/**
+ * The task graph the harness registers.
+ */
+export interface TaskGraphLike {
+    getAllTasks(): RuntimeTask[];
+}
+/**
+ * The checkpoint manager the harness registers.
+ */
+export interface CheckpointManagerLike {
+    save(checkpoint: RuntimeCheckpoint): Promise<void>;
+    load(jobId: string): Promise<RuntimeCheckpoint | null>;
+    appendEvent(jobId: string, event: RuntimeEvent): Promise<void>;
+}
 export interface RuntimeApiConfig {
     /** Port to listen on (default: 3849) */
     port?: number;
@@ -93,6 +132,13 @@ export declare class RuntimeApi extends EventEmitter {
     private requestCounter;
     constructor(config?: RuntimeApiConfig);
     /**
+     * The port the API listens on.
+     *
+     * The operating system picks the port when the API was started on port
+     * 0, so the running port is not always the configured one.
+     */
+    getPort(): number | null;
+    /**
      * Start the Runtime API server
      */
     start(): Promise<void>;
@@ -103,15 +149,15 @@ export declare class RuntimeApi extends EventEmitter {
     /**
      * Register a job machine
      */
-    registerJob(jobId: string, machine: JobStateMachine): void;
+    registerJob(jobId: string, machine: JobStateMachineLike): void;
     /**
      * Register a task graph
      */
-    registerTaskGraph(jobId: string, graph: TaskGraphManager): void;
+    registerTaskGraph(jobId: string, graph: TaskGraphLike): void;
     /**
      * Register a checkpoint manager
      */
-    registerCheckpointManager(jobId: string, manager: CheckpointManager): void;
+    registerCheckpointManager(jobId: string, manager: CheckpointManagerLike): void;
     /**
      * Emit an event to all WebSocket clients
      */
@@ -125,6 +171,15 @@ export declare class RuntimeApi extends EventEmitter {
     private handleListJobs;
     private handleCreateJob;
     private handleJob;
+    /**
+     * Move a job to a new state.
+     *
+     * The machine keeps the active checkpoint in memory, so it has to be
+     * activated for the job before it can transition. The transition itself
+     * validates the move against the state machine's rules and reports the
+     * outcome, so a refused move never becomes a false success.
+     */
+    private moveJob;
     private handleGetQuota;
     private handleGetConfig;
     private sendJson;

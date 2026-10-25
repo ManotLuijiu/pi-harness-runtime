@@ -32,7 +32,7 @@ const BASELINES = new Map([
 	["provider-router", 0],
 	["providers", 0],
 	["quota-manager", 0],
-	["runtime", 5],
+	["runtime", 0],
 	["voice-api", 16],
 	["worktree", 0],
 	["harness", 20],

@@ -24,6 +24,28 @@ import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { URL } from "node:url";
 import { EventEmitter } from "node:events";
+/**
+ * The job actions the API exposes.
+ *
+ * The states are the ones the job state machine actually has:
+ * `paused_quota` is its only paused state and a paused job returns to
+ * `running`. There is no plain `paused` status, so the API must not
+ * pretend there is one.
+ */
+const JOB_ACTIONS = {
+    start: { status: "running", message: "Job started", event: "job.started" },
+    pause: {
+        status: "paused_quota",
+        message: "Job paused",
+        event: "job.paused",
+    },
+    resume: { status: "running", message: "Job resumed", event: "job.resumed" },
+    cancel: {
+        status: "cancelled",
+        message: "Job cancelled",
+        event: "job.cancelled",
+    },
+};
 const DEFAULT_CONFIG = {
     port: 3849,
     host: "localhost",
@@ -46,6 +68,18 @@ export class RuntimeApi extends EventEmitter {
         super();
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.startTime = Date.now();
+    }
+    /**
+     * The port the API listens on.
+     *
+     * The operating system picks the port when the API was started on port
+     * 0, so the running port is not always the configured one.
+     */
+    getPort() {
+        const address = this.server?.address();
+        if (!address || typeof address === "string")
+            return null;
+        return address.port;
     }
     /**
      * Start the Runtime API server
@@ -198,13 +232,22 @@ export class RuntimeApi extends EventEmitter {
     }
     setCorsHeaders(req, res) {
         const origin = req.headers.origin;
-        const allowedOrigins = this.config.corsOrigins ?? ["*"];
-        if (allowedOrigins.includes("*") ||
-            (origin && allowedOrigins.includes(origin))) {
-            res.setHeader("Access-Control-Allow-Origin", origin ?? "*");
-            res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key");
+        if (!origin) {
+            // Only a browser request carries an Origin header, and only a
+            // browser request is affected by the CORS headers.
+            return;
         }
+        const allowedOrigins = this.config.corsOrigins ?? ["*"];
+        if (!allowedOrigins.includes("*") &&
+            !allowedOrigins.includes(origin)) {
+            return;
+        }
+        // The request origin is reflected instead of the wildcard: the API
+        // never enables credentialed requests, and a reflected origin keeps
+        // the response usable for a browser client.
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key");
     }
     async handleRequest(req, res, requestId) {
         const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
@@ -266,8 +309,7 @@ export class RuntimeApi extends EventEmitter {
             if (summary) {
                 if (summary.status === "running")
                     status.jobs.active++;
-                else if (summary.status === "paused" ||
-                    summary.status === "paused_quota")
+                else if (summary.status === "paused_quota")
                     status.jobs.paused++;
                 else if (summary.isTerminal)
                     status.jobs.completed++;
@@ -332,7 +374,7 @@ export class RuntimeApi extends EventEmitter {
             requirement: data.requirement,
         }, requestId);
     }
-    async handleJob(jobId, method, url, req, res, requestId) {
+    async handleJob(jobId, method, url, _req, res, requestId) {
         const machine = this.jobMachines.get(jobId);
         if (!machine) {
             this.sendJson(res, 404, { error: "Job not found" }, requestId);
@@ -372,34 +414,45 @@ export class RuntimeApi extends EventEmitter {
         // Job actions
         const action = url.searchParams.get("action");
         switch (method) {
-            case "POST":
-                if (action === "start") {
-                    await machine.resumeJob(jobId);
-                    this.broadcast("job.started", { jobId });
-                    this.sendJson(res, 200, { message: "Job started", jobId }, requestId);
-                }
-                else if (action === "pause") {
-                    const result = await machine.transition("paused");
-                    this.broadcast("job.paused", { jobId });
-                    this.sendJson(res, 200, { message: "Job paused", jobId, result }, requestId);
-                }
-                else if (action === "resume") {
-                    await machine.resumeJob(jobId);
-                    this.broadcast("job.resumed", { jobId });
-                    this.sendJson(res, 200, { message: "Job resumed", jobId }, requestId);
-                }
-                else if (action === "cancel") {
-                    const result = await machine.transition("cancelled");
-                    this.broadcast("job.cancelled", { jobId });
-                    this.sendJson(res, 200, { message: "Job cancelled", jobId, result }, requestId);
-                }
-                else {
+            case "POST": {
+                const target = JOB_ACTIONS[action ?? ""];
+                if (!target) {
                     this.sendJson(res, 400, { error: "Unknown action" }, requestId);
+                    break;
                 }
+                const result = await this.moveJob(machine, jobId, target.status);
+                if (!result.success) {
+                    this.sendJson(res, 409, {
+                        error: result.error ?? `Cannot ${target.message.toLowerCase()}`,
+                        jobId,
+                    }, requestId);
+                    break;
+                }
+                this.broadcast(target.event, { jobId });
+                this.sendJson(res, 200, { message: target.message, jobId }, requestId);
                 break;
+            }
             default:
                 this.sendJson(res, 405, { error: "Method not allowed" }, requestId);
         }
+    }
+    /**
+     * Move a job to a new state.
+     *
+     * The machine keeps the active checkpoint in memory, so it has to be
+     * activated for the job before it can transition. The transition itself
+     * validates the move against the state machine's rules and reports the
+     * outcome, so a refused move never becomes a false success.
+     */
+    async moveJob(machine, jobId, to) {
+        const activated = await machine.resumeJob(jobId);
+        if (!activated.success) {
+            return {
+                success: false,
+                error: activated.error ?? `Job ${jobId} is not available`,
+            };
+        }
+        return machine.transition(to);
     }
     async handleGetQuota(res, requestId) {
         // In a real implementation, this would query the quota manager
