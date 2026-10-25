@@ -57,14 +57,55 @@ jobs:
           node-version: "24" # OIDC requires Node.js 24+ for npm >= 11.5.1
           registry-url: "https://registry.npmjs.org"
 
+      # npm CLI only performs the OIDC exchange inside `npm publish`
+      # (lib/commands/publish.js), so `npm unpublish` cannot authenticate on
+      # its own. The exchange is a documented two-step protocol, so we do it
+      # here and hand the resulting registry token to the CLI.
+      # Reference implementation: npm/lib/utils/oidc.js
+      - name: Exchange the OIDC credential for a registry token
+        id: oidc
+        env:
+          PACKAGE_NAME: pi-harness-runtime
+        run: |
+          set -euo pipefail
+          cat > /tmp/jget.js <<'EOF'
+          const fs = require("fs");
+          const key = process.argv[2];
+          const body = JSON.parse(fs.readFileSync(0, "utf8"));
+          process.stdout.write(body[key] || "");
+          EOF
+          audience="npm:registry.npmjs.org"
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}"
+          curl -sSf -H 'Accept: application/json' \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" | node /tmp/jget.js value > /tmp/id_token
+          id_token="$(cat /tmp/id_token)"
+          if [ -z "$id_token" ]; then
+            echo "no id_token returned by the GitHub OIDC endpoint" >&2
+            exit 1
+          fi
+          exchange="https://registry.npmjs.org/-/npm/v1/oidc/token/exchange"
+          exchange="${exchange}/package/${PACKAGE_NAME}"
+          curl -sSf -X POST -H "Authorization: Bearer ${id_token}" \
+            "$exchange" | node /tmp/jget.js token > /tmp/registry_token
+          registry_token="$(cat /tmp/registry_token)"
+          if [ -z "$registry_token" ]; then
+            echo "the token exchange returned no registry token" >&2
+            exit 1
+          fi
+          echo "::add-mask::${registry_token}"
+          echo "token=${registry_token}" >> "$GITHUB_OUTPUT"
+          echo "exchanged a registry token for ${PACKAGE_NAME}"
+
       - name: Unpublish versions
         env:
           VERSIONS: ${{ github.event.inputs.unpublish_versions }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PACKAGE_NAME: pi-harness-runtime
+          NODE_AUTH_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           set -uo pipefail
-          echo "Authenticated as: $(npm whoami)"
+          echo "Authenticated as: $(npm whoami 2>&1)"
           failed=""
           for v in $VERSIONS; do
             if [ "$DRY_RUN" = "true" ]; then
