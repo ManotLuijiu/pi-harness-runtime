@@ -116,7 +116,7 @@
     "deepagents": "^1.10.5",
     "langchain": "^1.5.10",
     "ws": "^8.22.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.7"
   },
   "peerDependenciesMeta": {
     "pi-mcp-adapter": {

@@ -5,7 +5,11 @@ import { z } from 'zod';
 /**
  * Project status
  */
-export declare const ProjectStatus: z.ZodEnum<["active", "archived", "deleted"]>;
+export declare const ProjectStatus: z.ZodEnum<{
+    active: "active";
+    archived: "archived";
+    deleted: "deleted";
+}>;
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
 /**
  * Project definition
@@ -14,33 +18,17 @@ export declare const Project: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;
     path: z.ZodString;
-    status: z.ZodDefault<z.ZodEnum<["active", "archived", "deleted"]>>;
+    status: z.ZodDefault<z.ZodEnum<{
+        active: "active";
+        archived: "archived";
+        deleted: "deleted";
+    }>>;
     workspaceId: z.ZodString;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
     lastAccessedAt: z.ZodOptional<z.ZodString>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
-}, "strip", z.ZodTypeAny, {
-    id: string;
-    name: string;
-    path: string;
-    status: "active" | "archived" | "deleted";
-    workspaceId: string;
-    createdAt: string;
-    updatedAt: string;
-    lastAccessedAt?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
-}, {
-    id: string;
-    name: string;
-    path: string;
-    status?: "active" | "archived" | "deleted" | undefined;
-    workspaceId: string;
-    createdAt: string;
-    updatedAt: string;
-    lastAccessedAt?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
-}>;
+}, z.core.$strip>;
 export type Project = z.infer<typeof Project>;
 /**
  * Project creation input
@@ -50,57 +38,35 @@ export declare const ProjectCreate: z.ZodObject<{
     path: z.ZodString;
     workspaceId: z.ZodString;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
-}, "strip", z.ZodTypeAny, {
-    name: string;
-    path: string;
-    workspaceId: string;
-    metadata?: Record<string, unknown> | undefined;
-}, {
-    name: string;
-    path: string;
-    workspaceId: string;
-    metadata?: Record<string, unknown> | undefined;
-}>;
+}, z.core.$strip>;
 export type ProjectCreate = z.infer<typeof ProjectCreate>;
 /**
  * Project update input
  */
 export declare const ProjectUpdate: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
-    status: z.ZodOptional<z.ZodEnum<["active", "archived", "deleted"]>>;
+    status: z.ZodOptional<z.ZodEnum<{
+        active: "active";
+        archived: "archived";
+        deleted: "deleted";
+    }>>;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
-}, "strip", z.ZodTypeAny, {
-    name?: string | undefined;
-    status?: "active" | "archived" | "deleted" | undefined;
-    metadata?: Record<string, unknown> | undefined;
-}, {
-    name?: string | undefined;
-    status?: "active" | "archived" | "deleted" | undefined;
-    metadata?: Record<string, unknown> | undefined;
-}>;
+}, z.core.$strip>;
 export type ProjectUpdate = z.infer<typeof ProjectUpdate>;
 /**
  * Project filter
  */
 export declare const ProjectFilter: z.ZodObject<{
     workspaceId: z.ZodOptional<z.ZodString>;
-    status: z.ZodOptional<z.ZodEnum<["active", "archived", "deleted"]>>;
+    status: z.ZodOptional<z.ZodEnum<{
+        active: "active";
+        archived: "archived";
+        deleted: "deleted";
+    }>>;
     search: z.ZodOptional<z.ZodString>;
     limit: z.ZodDefault<z.ZodNumber>;
     cursor: z.ZodOptional<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    workspaceId?: string | undefined;
-    status?: "active" | "archived" | "deleted" | undefined;
-    search?: string | undefined;
-    limit: number;
-    cursor?: string | undefined;
-}, {
-    workspaceId?: string | undefined;
-    status?: "active" | "archived" | "deleted" | undefined;
-    search?: string | undefined;
-    limit?: number | undefined;
-    cursor?: string | undefined;
-}>;
+}, z.core.$strip>;
 export type ProjectFilter = z.infer<typeof ProjectFilter>;
 /**
  * Project list response
@@ -110,62 +76,18 @@ export declare const ProjectList: z.ZodObject<{
         id: z.ZodString;
         name: z.ZodString;
         path: z.ZodString;
-        status: z.ZodDefault<z.ZodEnum<["active", "archived", "deleted"]>>;
+        status: z.ZodDefault<z.ZodEnum<{
+            active: "active";
+            archived: "archived";
+            deleted: "deleted";
+        }>>;
         workspaceId: z.ZodString;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
         lastAccessedAt: z.ZodOptional<z.ZodString>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
-    }, "strip", z.ZodTypeAny, {
-        id: string;
-        name: string;
-        path: string;
-        status: "active" | "archived" | "deleted";
-        workspaceId: string;
-        createdAt: string;
-        updatedAt: string;
-        lastAccessedAt?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-    }, {
-        id: string;
-        name: string;
-        path: string;
-        status?: "active" | "archived" | "deleted" | undefined;
-        workspaceId: string;
-        createdAt: string;
-        updatedAt: string;
-        lastAccessedAt?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-    }>, "many">;
+    }, z.core.$strip>>;
     nextCursor: z.ZodOptional<z.ZodString>;
     total: z.ZodOptional<z.ZodNumber>;
-}, "strip", z.ZodTypeAny, {
-    items: {
-        id: string;
-        name: string;
-        path: string;
-        status: "active" | "archived" | "deleted";
-        workspaceId: string;
-        createdAt: string;
-        updatedAt: string;
-        lastAccessedAt?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-    }[];
-    nextCursor?: string | undefined;
-    total?: number | undefined;
-}, {
-    items: {
-        id: string;
-        name: string;
-        path: string;
-        status?: "active" | "archived" | "deleted" | undefined;
-        workspaceId: string;
-        createdAt: string;
-        updatedAt: string;
-        lastAccessedAt?: string | undefined;
-        metadata?: Record<string, unknown> | undefined;
-    }[];
-    nextCursor?: string | undefined;
-    total?: number | undefined;
-}>;
+}, z.core.$strip>;
 export type ProjectList = z.infer<typeof ProjectList>;
