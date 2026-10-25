@@ -657,8 +657,8 @@ tarball. A user never runs `npm install @pi-harness/<anything>`.
   (`../packages/<name>/dist/...`). A `packages/<name>/src/<file>.js` specifier only
   exists when somebody compiled a package in place and is never valid in shipped code.
 - A package manifest points at the built output (`main`/`exports` -> `./dist/...`).
-  The exception is the vendored `packages/telegram` app: it ships compiled JavaScript
-  upstream, so its entry point stays in `src/` and the files are committed.
+  There is no exception: a package that ships compiled JavaScript has no buildable
+  entry point, so it is not a package.
 - Compiled JavaScript never lives next to a TypeScript source: Bun resolves the
   literal `.js` file first, so a stale artifact silently shadows the current source.
 - `npm run build` (`scripts/build-packages.ts`) builds every package and fails when a

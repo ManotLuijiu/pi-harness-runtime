@@ -718,10 +718,6 @@
         "@types/node": "^20.14.0",
       },
     },
-    "packages/telegram": {
-      "name": "@pi-harness/telegram",
-      "version": "1.1.168",
-    },
     "packages/tencentdb-memory": {
       "name": "@moocoding/tencentdb-memory",
       "version": "1.1.71-1",
@@ -1123,8 +1119,6 @@
     "@pi-harness/skills": ["@pi-harness/skills@workspace:packages/skills"],
 
     "@pi-harness/task-compiler": ["@pi-harness/task-compiler@workspace:packages/task-compiler"],
-
-    "@pi-harness/telegram": ["@pi-harness/telegram@workspace:packages/telegram"],
 
     "@pi-harness/tencentdb-sync": ["@pi-harness/tencentdb-sync@workspace:packages/tencentdb-sync"],
 

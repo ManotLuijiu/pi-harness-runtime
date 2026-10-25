@@ -33,11 +33,6 @@ packages/*/src/*.d.ts
 packages/*/src/*.d.ts.map
 packages/*/src/*.js.map
 
-# The vendored telegram app ships compiled JavaScript upstream - it has no
-# TypeScript source, so its build output is the published artifact.
-!packages/telegram/src/*.js
-!packages/telegram/src/*.d.ts
-
 
 # Build outputs
 .pi-subagents/

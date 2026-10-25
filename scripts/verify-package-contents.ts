@@ -30,6 +30,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { execFile, spawnSync } from "node:child_process";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	extractRelativeValueImports,
+	resolveRelativeImport,
+} from "./lib/runtime-imports.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifyTarball = process.argv.includes("--pack");
@@ -38,6 +42,7 @@ interface Problem {
 	kind:
 		| "missing-dist"
 		| "missing-import"
+		| "broken-import"
 		| "missing-tarball"
 		| "missing-package"
 		| "forbidden-path"
@@ -406,8 +411,13 @@ function checkStaleOutputs(): void {
 	}
 }
 
-/** The tarball npm would publish must contain the built output. */
-async function inspectTarball(): Promise<void> {
+/**
+ * The files npm would publish.
+ *
+ * The list comes from npm itself, so a check sees exactly what a consumer
+ * gets - not what the repository happens to contain.
+ */
+async function packFileList(): Promise<string[]> {
 	const stdout = await new Promise<string>((resolveText, rejectText) => {
 		execFile(
 			"npm",
@@ -423,29 +433,59 @@ async function inspectTarball(): Promise<void> {
 		);
 	});
 
-	let files: string[] = [];
 	try {
 		// `npm pack --json` returns an array with one entry per packed tarball.
 		const parsed = JSON.parse(stdout) as
 			| { files?: { path: string }[] }[]
 			| { files?: { path: string }[] };
 		const entries = Array.isArray(parsed) ? parsed : [parsed];
-		files = entries.flatMap((entry) => entry?.files ?? []).map((file) => file.path);
-		if (files.length === 0) {
-			problems.push({
-				kind: "missing-tarball",
-				detail: "npm pack --dry-run did not return a file list",
-			});
-			return;
-		}
+		return entries.flatMap((entry) => entry?.files ?? []).map((file) => file.path);
 	} catch {
-		problems.push({
-			kind: "missing-tarball",
-			detail: "npm pack --dry-run did not return a file list",
-		});
-		return;
+		return [];
 	}
+}
 
+/**
+ * Every relative import of a published file must resolve.
+ *
+ * The published app reaches its internal packages through relative paths,
+ * so an import that does not resolve is a module graph that breaks when it
+ * runs. A published `.js` file has to reach a published file: a consumer
+ * never sees the repository. A published `.ts` file is resolved by the
+ * compiler, so it may reach a source file in the repository.
+ *
+ * The earlier import check only followed specifiers that contained
+ * "packages/" and never looked at the compiled output, so an import inside
+ * a package was never verified. That is how a package whose entry point
+ * could not be imported reached the registry.
+ */
+function checkRelativeImports(files: string[]): void {
+	const published = new Set(files);
+	for (const path of files) {
+		if (!/\.(ts|mts|cts|mjs|js|cjs)$/.test(path)) continue;
+		if (path.endsWith(".d.ts") || path.endsWith(".d.mts")) continue;
+		const full = join(ROOT, path);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		for (const specifier of extractRelativeValueImports(content)) {
+			const result = resolveRelativeImport({
+				importer: full,
+				specifier,
+				exists: existsSync,
+				isPublished: (candidate) =>
+					published.has(relative(ROOT, candidate).split("\\").join("/")),
+			});
+			if (result.ok) continue;
+			problems.push({
+				kind: "broken-import",
+				detail: `${path} imports ${specifier} but ${result.reason}`,
+			});
+		}
+	}
+}
+
+/** The tarball npm would publish must contain the built output. */
+function inspectTarball(files: string[]): void {
 	for (const file of files) {
 		const posix = file.split("\\").join("/");
 		for (const prefix of FORBIDDEN_PACKAGE_PREFIXES) {
@@ -503,7 +543,19 @@ checkPluginCopySource();
 checkImports();
 checkPackageEntries();
 checkStaleOutputs();
-if (verifyTarball) await inspectTarball();
+
+// The published file list drives both the import check and the tarball
+// check: it is what a consumer receives.
+const publishedFiles = await packFileList();
+if (publishedFiles.length === 0) {
+	problems.push({
+		kind: "missing-tarball",
+		detail: "npm pack --dry-run did not return a file list",
+	});
+} else {
+	checkRelativeImports(publishedFiles);
+	if (verifyTarball) inspectTarball(publishedFiles);
+}
 
 if (problems.length > 0) {
 	console.error(`[verify-package-contents] FAILED with ${problems.length} problem(s):`);
@@ -518,7 +570,7 @@ if (problems.length > 0) {
 }
 
 console.log(
-	`[verify-package-contents] OK - ${runtimeImports.size} runtime import(s) resolved${
-		verifyTarball ? ", tarball verified" : ""
-	}`,
+	`[verify-package-contents] OK - ${runtimeImports.size} runtime import(s) resolved, ${
+		publishedFiles.length
+	} published file(s) checked${verifyTarball ? ", tarball verified" : ""}`,
 );
