@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { getGlobalSkillRegistry } from "./loader.js";
 import { scanForSkillsSync } from "./scanner.js";
+import { SKILL_MIN_SCORE } from "./vector-schema.js";
 /**
  * Default configuration
  */
@@ -186,7 +187,7 @@ async function handleSkillSearch(registry, query, ctx, useVector = false) {
     let results = [];
     // Try vector search if requested and available
     if (useVector && registry.isQdrantReady) {
-        const vectorResults = await registry.findVector(query, 5, 0.5);
+        const vectorResults = await registry.findVector(query, 5, SKILL_MIN_SCORE);
         if (vectorResults.length > 0) {
             backend = "vector";
             results = vectorResults.map(r => ({ skill: r.skill, score: r.score }));

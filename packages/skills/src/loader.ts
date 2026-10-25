@@ -21,6 +21,7 @@ import {
   LEGACY_SKILL_COLLECTION_DIMENSIONS,
   LEGACY_SKILL_COLLECTION_MODEL,
   SKILL_COLLECTION,
+  SKILL_MIN_SCORE,
   describeSkillSchemaMismatch,
   skillPointPayload,
   skillQdrantPoint,
@@ -1051,12 +1052,13 @@ export class SkillRegistry {
    *
    * @param query Natural-language query
    * @param limit Max results (default 5)
-   * @param threshold Minimum cosine score (default 0.5)
+   * @param threshold Minimum cosine score (default: the score of the model
+   *   of the runtime collection - see SKILL_MIN_SCORE)
    */
   async findVector(
     query: string,
     limit = 5,
-    threshold = 0.5,
+    threshold = SKILL_MIN_SCORE,
   ): Promise<Array<{ skill: Skill; score: number; source: "local" | "remote" }>> {
     await this._ensureQdrant();
     if (!this._qdrant?.ready) return [];

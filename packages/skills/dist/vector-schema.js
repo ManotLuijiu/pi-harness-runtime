@@ -37,6 +37,34 @@ export const LEGACY_SKILL_COLLECTION_MODEL = "sentence-transformers/all-MiniLM-L
 /** The vector size of the legacy collection. */
 export const LEGACY_SKILL_COLLECTION_DIMENSIONS = 384;
 /**
+ * The score below which a hit of the runtime collection is not a hit.
+ *
+ * The score of a vector search is a cosine between two vectors, and its
+ * scale belongs to the model that produced them. Measured against the
+ * runtime collection (123 skills, `text-embedding-3-small`):
+ *
+ *   - a query that names a skill scores 0.31 to 0.56,
+ *   - a query about something else scores 0.10 to 0.23, and the wrong
+ *     skill that it matched tops out at 0.2305.
+ *
+ * The threshold sits between the two (0.27). The old value of 0.5 belonged
+ * to the MiniLM collection, whose vectors are not comparable, and it
+ * threw away even a clear match (0.47) - so a search of the runtime
+ * collection returned nothing at all.
+ *
+ * It lives here, next to the model and the collection, so that the two
+ * cannot drift apart.
+ */
+export const SKILL_MIN_SCORE = 0.27;
+/**
+ * The score below which a hit of the legacy collection is not a hit.
+ *
+ * The legacy collection holds MiniLM vectors. Their scale was never
+ * measured against a query, so the old value is kept. It is named here
+ * so it is not mistaken for the threshold of the runtime.
+ */
+export const LEGACY_SKILL_MIN_SCORE = 0.5;
+/**
  * The body of a payload is truncated.
  *
  * A payload is an index, not a file store - the complete skill comes from

@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getGlobalSkillRegistry } from "./loader.js";
 import { scanForSkillsSync } from "./scanner.js";
+import { SKILL_MIN_SCORE } from "./vector-schema.js";
 
 /**
  * Skill command configuration
@@ -244,7 +245,7 @@ async function handleSkillSearch(
 
   // Try vector search if requested and available
   if (useVector && registry.isQdrantReady) {
-    const vectorResults = await registry.findVector(query, 5, 0.5);
+    const vectorResults = await registry.findVector(query, 5, SKILL_MIN_SCORE);
     if (vectorResults.length > 0) {
       backend = "vector";
       results = vectorResults.map(r => ({ skill: r.skill, score: r.score }));
