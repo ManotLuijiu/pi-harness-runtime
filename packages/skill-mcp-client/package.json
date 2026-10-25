@@ -16,7 +16,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "undici": "^6.0.0"
+    "undici": "^6.29.1"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
