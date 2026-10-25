@@ -16,7 +16,9 @@
  *   1. A TYPE-only import is erased at runtime, so it does not need a
  *      runtime target. It is skipped.
  *   2. Comments are removed before the scan, so a commented-out import is
- *      not a broken import.
+ *      not a broken import. The same holds for text inside a string or a
+ *      template literal: documentation that shows an import is not an
+ *      import.
  *   3. A relative import resolves when the target file exists:
  *        - the specifier as written (`./x.js` -> `x.js`),
  *        - the TypeScript source of a `.js` specifier (`./x.js` -> `x.ts`),
@@ -25,35 +27,59 @@
  *   4. A compiled file (`.js`) must reach a file that is PUBLISHED. A
  *      TypeScript source (`.ts`) is resolved at compile time, so it may
  *      reach a source file in the repository.
+ *   5. A bare import that names a WORKSPACE package cannot resolve: the
+ *      workspace packages ship inside this one tarball and are never
+ *      installed as separate packages, so the name does not exist at
+ *      runtime. Such an import must point at the built artifact instead.
  */
 
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-/** The quoting state of the comment scanner. */
+/** The quoting state of the scanner. */
 type Quote = "" | '"' | "'" | "`";
 
+/** A source with its comments removed and its string content marked. */
+export interface ScannedSource {
+	/** The source without its comments. */
+	code: string;
+	/**
+	 * Whether the character at the given index of {@link code} is code.
+	 *
+	 * The content of a string or a template literal is not code, so an
+	 * import that only appears inside one is documentation, not an import.
+	 */
+	isCodeAt: (index: number) => boolean;
+}
+
 /**
- * Remove the comments from a source file.
+ * Remove the comments from a source file and mark its string content.
  *
  * A string or a template literal may contain something that looks like a
  * comment, so the scanner tracks the quoting state instead of using a
  * regular expression.
  */
-export function stripComments(source: string): string {
-	let out = "";
+export function scanSource(source: string): ScannedSource {
+	let code = "";
+	const isCode: boolean[] = [];
 	let i = 0;
 	let quote: Quote = "";
+
+	const emit = (char: string, isCodeChar: boolean) => {
+		code += char;
+		isCode.push(isCodeChar);
+	};
 
 	while (i < source.length) {
 		const char = source[i];
 		const next = source[i + 1];
 
 		if (quote) {
-			out += char;
+			// The content of a literal is not code. The quotes are.
+			emit(char, char === quote && source[i - 1] !== "\\");
 			if (char === "\\") {
 				// An escaped character cannot end the literal.
-				out += next ?? "";
+				emit(next ?? "", false);
 				i += 2;
 				continue;
 			}
@@ -64,7 +90,7 @@ export function stripComments(source: string): string {
 
 		if (char === '"' || char === "'" || char === "`") {
 			quote = char;
-			out += char;
+			emit(char, true);
 			i += 1;
 			continue;
 		}
@@ -84,50 +110,88 @@ export function stripComments(source: string): string {
 			}
 			// Keep the newlines, so a line number stays meaningful.
 			for (let k = i; k < end; k += 1) {
-				if (source[k] === "\n") out += "\n";
+				if (source[k] === "\n") emit("\n", false);
 			}
 			i = end + 2;
 			continue;
 		}
 
-		out += char;
+		emit(char, true);
 		i += 1;
 	}
 
-	return out;
+	return { code, isCodeAt: (index: number) => isCode[index] === true };
 }
 
 /**
- * Every RELATIVE value import of a source file.
+ * Remove the comments from a source file.
+ */
+export function stripComments(source: string): string {
+	return scanSource(source).code;
+}
+
+/** The import forms that carry a specifier. */
+const IMPORT_PATTERNS: RegExp[] = [
+	// import ... from "..." / export ... from "..."
+	/(?:^|[\n;])[ \t]*(import|export)\s+(type\s+)?[^;\n]*?from\s*["']([^"']+)["']/g,
+	// import "..." (side effect)
+	/(?:^|[\n;])[ \t]*import\s*["']([^"']+)["']/g,
+	// import("...") (dynamic)
+	/import\s*\(\s*["']([^"']+)["']\s*\)/g,
+];
+
+/**
+ * Every VALUE import of a source file.
  *
  * A type-only import is skipped: `import type { X } from "..."` is erased
- * by the compiler and never reaches the runtime.
+ * by the compiler and never reaches the runtime. An import that only
+ * appears inside a string or a template literal is skipped as well: that
+ * is documentation, not an import.
  */
-export function extractRelativeValueImports(source: string): string[] {
-	const code = stripComments(source);
+export function extractValueImports(source: string): string[] {
+	const { code, isCodeAt } = scanSource(source);
 	const specifiers: string[] = [];
 
-	const patterns: RegExp[] = [
-		// import ... from "..." / export ... from "..."
-		/(?:^|[\n;])[ \t]*(import|export)\s+(type\s+)?[^;\n]*?from\s*["']([^"']+)["']/g,
-		// import "..." (side effect)
-		/(?:^|[\n;])[ \t]*import\s*["']([^"']+)["']/g,
-		// import("...") (dynamic)
-		/import\s*\(\s*["']([^"']+)["']\s*\)/g,
-	];
-
-	for (const pattern of patterns) {
+	for (const pattern of IMPORT_PATTERNS) {
 		for (const match of code.matchAll(pattern)) {
+			// The match must start in code, not inside a literal.
+			if (match.index === undefined || !isCodeAt(match.index)) continue;
 			// `type` marks an import that the compiler erases.
 			if (match[2] && match[2].trim() === "type") continue;
 			const specifier = match[3] ?? match[1];
 			if (!specifier) continue;
-			if (!specifier.startsWith(".")) continue;
 			specifiers.push(specifier);
 		}
 	}
 
 	return [...new Set(specifiers)];
+}
+
+/**
+ * Every RELATIVE value import of a source file.
+ */
+export function extractRelativeValueImports(source: string): string[] {
+	return extractValueImports(source).filter((specifier) => specifier.startsWith("."));
+}
+
+/**
+ * Every BARE value import of a source file.
+ *
+ * A bare import names a package, not a file in this repository.
+ */
+export function extractBareImports(source: string): string[] {
+	return extractValueImports(source).filter((specifier) => !specifier.startsWith("."));
+}
+
+/**
+ * The package a specifier names.
+ *
+ * `@scope/name/sub/path` and `name/sub/path` both name `@scope/name` and
+ * `name`.
+ */
+export function packageNameOf(specifier: string): string {
+	if (specifier.startsWith("@")) return specifier.split("/").slice(0, 2).join("/");
+	return specifier.split("/")[0];
 }
 
 /**

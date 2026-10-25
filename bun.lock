@@ -127,7 +127,6 @@
       "name": "@pi/clipboard-plugin",
       "version": "1.1.71-1",
       "dependencies": {
-        "@pi/clipboard": "workspace:*",
         "@pi/framework-plugin-sdk": "workspace:*",
       },
     },

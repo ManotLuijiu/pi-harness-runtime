@@ -17,15 +17,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { TelegramCallbackQuery } from "@pi-harness/notification";
-import { TelegramAdapter } from "@pi-harness/notification";
+// The workspace packages ship inside the one published tarball and are
+// never installed under their own name, so an import names no module that
+// exists at runtime. The example reaches the built artifact instead.
+import type { TelegramCallbackQuery } from "../packages/notification/dist/index.js";
 import {
+	TelegramAdapter,
 	buildCallbackData,
 	parseCallbackData,
 	createYesNoHandler,
 	createTelegramWebhookHandler,
 	CallbackActions,
-} from "@pi-harness/notification";
+} from "../packages/notification/dist/index.js";
 
 // ---------------------------------------------------------------------------
 // Configuration

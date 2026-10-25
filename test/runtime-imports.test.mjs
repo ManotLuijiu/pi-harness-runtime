@@ -30,6 +30,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
@@ -38,7 +39,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	extractBareImports,
 	extractRelativeValueImports,
+	extractValueImports,
+	packageNameOf,
 	resolveRelativeImport,
 	stripComments,
 } from "../scripts/lib/runtime-imports.js";
@@ -84,6 +88,49 @@ function publishedFiles() {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * The names of the workspace packages.
+ *
+ * They ship inside this one tarball and are never installed as separate
+ * packages, so a bare import that names one of them cannot resolve.
+ */
+function workspacePackageNames() {
+	const names = new Set();
+	const packagesDir = join(ROOT, "packages");
+	if (!existsSync(packagesDir)) return names;
+	for (const name of readdirSync(packagesDir)) {
+		const manifestPath = join(packagesDir, name, "package.json");
+		if (!existsSync(manifestPath)) continue;
+		try {
+			const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+			if (manifest.name) names.add(manifest.name);
+		} catch {
+			// A manifest that cannot be read names no package.
+		}
+	}
+	return names;
+}
+
+/**
+ * Every bare import of the given files that names a workspace package.
+ */
+function bareWorkspaceImports(files) {
+	const workspace = workspacePackageNames();
+	const problems = [];
+	for (const file of files) {
+		if (!isScannable(file)) continue;
+		const full = join(ROOT, file);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		for (const specifier of extractBareImports(content)) {
+			const name = packageNameOf(specifier);
+			if (!workspace.has(name)) continue;
+			problems.push(`${file} imports ${specifier} but ${name} is never installed`);
+		}
+	}
+	return problems;
 }
 
 /**
@@ -229,6 +276,49 @@ test("a compiled file must reach a published file", () => {
 		isPublished: () => false,
 	});
 	assert.equal(source.ok, true);
+});
+
+test("an import inside a template literal is documentation, not an import", () => {
+	const source = [
+		"const doc = `",
+		"## Usage",
+		"",
+		"\\`\\`\\`typescript",
+		'import { WebMCPTester } from "@pi-harness/e2e-tester";',
+		"\\`\\`\\`",
+		"`;",
+		'import { run } from "./runner.js";',
+	].join("\n");
+	assert.deepEqual(extractValueImports(source), ["./runner.js"]);
+});
+
+test("a bare import is separated from a relative one", () => {
+	const source = [
+		'import { readFile } from "node:fs/promises";',
+		'import { skill } from "@pi-harness/skills";',
+		'import { local } from "./local.js";',
+	].join("\n");
+	assert.deepEqual(extractBareImports(source), ["node:fs/promises", "@pi-harness/skills"]);
+	assert.deepEqual(extractRelativeValueImports(source), ["./local.js"]);
+	assert.equal(packageNameOf("@pi-harness/skills"), "@pi-harness/skills");
+	assert.equal(packageNameOf("@pi-harness/skills/sub/path.js"), "@pi-harness/skills");
+	assert.equal(packageNameOf("zod"), "zod");
+});
+
+test("no tracked file names a workspace package in a bare import", () => {
+	const files = trackedFiles();
+	if (files === null) {
+		return; // not a Git checkout - nothing to scan
+	}
+	assert.deepEqual(bareWorkspaceImports(files), []);
+});
+
+test("no published file names a workspace package in a bare import", () => {
+	const files = publishedFiles();
+	if (files === null) {
+		return; // npm is not available - the CI verifier covers it
+	}
+	assert.deepEqual(bareWorkspaceImports(files), []);
 });
 
 test("no tracked file carries a relative import that does not resolve", () => {

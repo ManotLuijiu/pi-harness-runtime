@@ -4,7 +4,7 @@
  * Provides clipboard bridge functionality as a pi plugin.
  * Integrates paste-from-bridge and paste shortcut registration.
  */
-import { pasteFromBridge, registerPasteShortcut } from "@pi/clipboard";
+import { pasteFromBridge, registerPasteShortcut } from "../../clipboard/dist/src/index.js";
 /**
  * Create a clipboard bridge tool plugin.
  * Provides paste-from-bridge functionality.

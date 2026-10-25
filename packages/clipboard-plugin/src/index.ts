@@ -6,7 +6,7 @@
  */
 
 import type { FrameworkExtension, ToolExtension } from "@pi/framework-plugin-sdk";
-import { pasteFromBridge, registerPasteShortcut } from "@pi/clipboard";
+import { pasteFromBridge, registerPasteShortcut } from "../../clipboard/dist/src/index.js";
 
 export type { ClipboardBridgeConfig } from "./types.js";
 

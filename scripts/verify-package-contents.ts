@@ -31,7 +31,9 @@ import { execFile, spawnSync } from "node:child_process";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	extractBareImports,
 	extractRelativeValueImports,
+	packageNameOf,
 	resolveRelativeImport,
 } from "./lib/runtime-imports.js";
 
@@ -446,6 +448,34 @@ async function packFileList(): Promise<string[]> {
 }
 
 /**
+ * The names of the workspace packages.
+ *
+ * The workspace packages ship inside this one tarball and are never
+ * installed as separate packages, so a bare import that names one of them
+ * cannot resolve at runtime - not in a consumer's installation, and not in
+ * the repository either, because the workspace is never linked into
+ * `node_modules` under its own name.
+ */
+function workspacePackageNames(): Set<string> {
+	const names = new Set<string>();
+	const packagesDir = join(ROOT, "packages");
+	if (!existsSync(packagesDir)) return names;
+	for (const name of readdirSync(packagesDir)) {
+		const manifestPath = join(packagesDir, name, "package.json");
+		if (!existsSync(manifestPath)) continue;
+		try {
+			const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+				name?: string;
+			};
+			if (manifest.name) names.add(manifest.name);
+		} catch {
+			// A manifest that cannot be read names no package.
+		}
+	}
+	return names;
+}
+
+/**
  * Every relative import of a published file must resolve.
  *
  * The published app reaches its internal packages through relative paths,
@@ -461,6 +491,7 @@ async function packFileList(): Promise<string[]> {
  */
 function checkRelativeImports(files: string[]): void {
 	const published = new Set(files);
+	const workspaceNames = workspacePackageNames();
 	for (const path of files) {
 		if (!/\.(ts|mts|cts|mjs|js|cjs)$/.test(path)) continue;
 		if (path.endsWith(".d.ts") || path.endsWith(".d.mts")) continue;
@@ -479,6 +510,17 @@ function checkRelativeImports(files: string[]): void {
 			problems.push({
 				kind: "broken-import",
 				detail: `${path} imports ${specifier} but ${result.reason}`,
+			});
+		}
+		// A bare import that names a workspace package names something that
+		// is never installed: the workspace packages are inside this one
+		// tarball. Such an import has to point at the built artifact.
+		for (const specifier of extractBareImports(content)) {
+			const name = packageNameOf(specifier);
+			if (!workspaceNames.has(name)) continue;
+			problems.push({
+				kind: "broken-import",
+				detail: `${path} imports ${specifier} but ${name} is a workspace package: it ships inside this tarball and is never installed, so the name cannot resolve`,
 			});
 		}
 	}
