@@ -188,10 +188,10 @@ test("a bot token in an error body is redacted", async () => {
 		join(packageRoot, "dist", "adapters", "line-adapter.js")
 	);
 	const sanitized = sanitizeLineText(
-		"failed for https://api.telegram.org/bot0000000000:REDACTED-TOKEN/getMe",
+		"failed for https://api.telegram.org/bot9999999999:synthetic-test-token-secret/getMe",
 	);
 
-	assert.equal(sanitized.includes("AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"), false);
+	assert.equal(sanitized.includes("synthetic-test-token-secret"), false);
 	assert.match(sanitized, /<redacted>/);
 	// The machine readable output stays ASCII.
 	assert.equal(/[^\x20-\x7e]/.test(sanitized), false);
