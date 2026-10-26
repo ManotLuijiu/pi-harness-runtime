@@ -1312,6 +1312,19 @@ bun scripts/release-all.ts --release-as patch   # prepare the version on develop
 bun scripts/release-all.ts --tag                 # tag the tip of main after the merge
 ```
 
+**The merge gate**: the workflow merges the pull request itself, with
+the commit whose checks it read, so a push to the pull request after
+the check has to pass the gates again. The workflow runs the script of
+the base branch and no code of the pull request, so a pull request
+cannot change the rule that judges it.
+
+A pull request that a workflow opened starts no workflow of its own, so
+the manual run takes the work over:
+
+```bash
+gh workflow run auto-merge.yml --ref develop -f open_release_pr=true
+```
+
 ## License
 
 MIT © 2026 MooCoding

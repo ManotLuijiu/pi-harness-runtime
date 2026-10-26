@@ -117,9 +117,10 @@ git push origin develop
 #    request into main.
 bun scripts/release-all.ts --release-as patch
 
-# 3. The auto merge workflow merges develop into main as soon as the
-#    gates are green: "No sensitive terms" and "Tests".
-#    A pull request that is not green waits for a human.
+# 3. The auto merge workflow merges the pull request into main as soon
+#    as the gates are green: "No sensitive terms" and "Tests".
+#    The workflow merges the pull request itself, with the commit that
+#    was checked. A pull request that is not green waits for a human.
 
 # 4. After the merge, the tag is created on the tip of main.
 bun scripts/release-all.ts --tag
@@ -127,6 +128,26 @@ bun scripts/release-all.ts --tag
 # 5. The tag triggers release.yml, which publishes to npm through OIDC
 #    and creates the GitHub release.
 ```
+
+**The merge gate**: `.github/workflows/auto-merge.yml` runs on a pull
+request into `main`. It reads the checks of the head commit of the pull
+request and merges the pull request when `No sensitive terms` and
+`Tests` are both green. The merge is the GraphQL mutation
+`mergePullRequest`, with the head commit that was checked - a push to
+the pull request after the check has to pass the gates again. The
+workflow checks out the base branch and runs no code of the pull
+request, so a pull request cannot change the rule that judges it.
+
+**The manual path**: a pull request that a workflow opened starts no
+workflow of its own, so the manual run takes that work over.
+
+```bash
+gh workflow run auto-merge.yml --ref develop -f open_release_pr=true
+```
+
+The manual run opens the pull request from `develop` into `main` when
+there is none, reads the same gates and merges the pull request when
+they are green.
 
 **Rules**:
 
