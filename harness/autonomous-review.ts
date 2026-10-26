@@ -10,6 +10,7 @@ import {
 	publishReviewCompletedSimple,
 	publishReviewRequestedSimple,
 } from "../packages/event-bus/dist/src/herdr-bus.js";
+import { pathToFileURL } from "node:url";
 
 const AGENT_ID = "review-agent";
 const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
@@ -88,4 +89,7 @@ async function main(): Promise<void> {
 	console.log(`[${AGENT_ID}] Polling for code.written...`);
 }
 
-main().catch(logError);
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+	main().catch(logError);
+}

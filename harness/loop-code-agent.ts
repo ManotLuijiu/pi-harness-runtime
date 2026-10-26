@@ -16,6 +16,7 @@ import {
 import { SharedBlackboard } from "./blackboard.js";
 import type { LoopNextAction } from "./loop-types.js";
 import type { BlackboardRecord } from "../packages/types/src/runtime-types.js";
+import { pathToFileURL } from "node:url";
 
 const AGENT_ID = "code-agent";
 const AGENT_TYPE = "code";
@@ -286,4 +287,7 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((r) => setTimeout(r, ms));
 }
 
-main().catch(logError);
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+	main().catch(logError);
+}

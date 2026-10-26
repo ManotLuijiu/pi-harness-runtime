@@ -5,9 +5,10 @@
  * Controller creates blackboard, sets first nextAction, monitors progress.
  */
 
-import { writeFileSync } from "fs";
-import { join } from "path";
-import { randomUUID } from "crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import {
 	createHerdrBus,
 	ensureHerdrWorkspace,
@@ -187,15 +188,18 @@ async function runLoop(args: string[]): Promise<void> {
 
 // ─── CLI ──────────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
-if (!args.length || args[0] === "--help" || args[0] === "-h") {
-	console.log(
-		'Usage: bun harness/loop-controller.ts <write_count> <review_count> --prompt="..."\nExample: bun harness/loop-controller.ts 3 2 --prompt="build REST API"',
-	);
-	process.exit(0);
-}
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+	const args = process.argv.slice(2);
+	if (!args.length || args[0] === "--help" || args[0] === "-h") {
+		console.log(
+			'Usage: bun harness/loop-controller.ts <write_count> <review_count> --prompt="..."\nExample: bun harness/loop-controller.ts 3 2 --prompt="build REST API"',
+		);
+		process.exit(0);
+	}
 
-runLoop(args).catch((err) => {
-	console.error("[controller] Fatal:", err);
-	process.exit(1);
-});
+	runLoop(args).catch((err) => {
+		console.error("[controller] Fatal:", err);
+		process.exit(1);
+	});
+}

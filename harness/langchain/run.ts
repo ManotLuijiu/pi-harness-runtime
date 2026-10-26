@@ -22,6 +22,7 @@ import {
 	buildWriteReviewLoop,
 } from "./graph.js";
 import { loadKeys } from "../key-loader.js";
+import { pathToFileURL } from "node:url";
 interface CliArgs {
 	mode: "graph" | "supervisor";
 	request: string;
@@ -119,4 +120,7 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch(console.error);
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+	main().catch(console.error);
+}

@@ -22,6 +22,7 @@ import { existsSync, openSync, readFileSync, readSync, fstatSync, closeSync } fr
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { classifyMessage, parseNewMessages } from "./parser.js";
+import { detectReviewMarker } from "./parser.js";
 import { getAllSessions, getLatestSession } from "./session.js";
 import type {
 	CodexMessage,
@@ -32,7 +33,6 @@ import type {
 
 export type { CodexMessage, CodexSession, WatcherHandle, WatcherOptions };
 export { classifyMessage, detectReviewMarker, getAllSessions, getLatestSession };
-import { detectReviewMarker } from "./parser.js";
 
 // ---------------------------------------------------------------------------
 // One-shot API
