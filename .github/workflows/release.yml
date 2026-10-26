@@ -418,6 +418,27 @@ jobs:
           tar -xzf "$PACK_DIR"/*.tgz -C "$PACK_DIR"
           node scripts/check-sensitive-terms.mjs --tree "$PACK_DIR/package"
 
+      # GitHub builds the release notes from the commit messages of the
+      # release, so a client name in a message would be published in the
+      # release body and in the notes of every later release that names
+      # this one. The messages of the released range are checked before
+      # anything is published.
+      - name: Verify the commit messages hold no client name
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
+        run: |
+          set -euo pipefail
+          # The tag before this one. The first release has none, and then
+          # the whole history is checked - it is clean, and the check
+          # says so.
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF}^{commit}^" 2>/dev/null || true)"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            RANGE="${PREVIOUS_TAG}..${GITHUB_REF}^{commit}"
+          else
+            RANGE="${GITHUB_REF}^{commit}"
+          fi
+          node scripts/check-sensitive-terms.mjs --commits "$RANGE"
+
       - name: Publish to npm
         if: >-
           (github.event_name != 'workflow_dispatch' ||

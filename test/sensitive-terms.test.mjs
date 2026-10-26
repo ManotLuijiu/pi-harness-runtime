@@ -35,6 +35,8 @@ import {
 	formatReport,
 	listTreeFiles,
 	scanTree,
+	commitMessages,
+	scanCommitMessages,
 	scanPullRequest,
 	repositoryFromRemote,
 	EXIT_CLEAN,
@@ -260,6 +262,16 @@ test("a pull request is scanned through its files, its title and its body", asyn
 				],
 			};
 		}
+		if (url.includes("/commits?")) {
+			// The commit messages of the pull request. They are public
+			// as well, and GitHub builds the release notes from them.
+			return {
+				ok: true,
+				json: async () => [
+					{ sha: "a".repeat(40), commit: { message: `a commit with ${TERM}` } },
+				],
+			};
+		}
 		return {
 			ok: true,
 			json: async () => ({ title: "a title", body: `a body with ${TERM}` }),
@@ -278,7 +290,9 @@ test("a pull request is scanned through its files, its title and its body", asyn
 	const paths = result.hits.map((hit) => hit.path);
 	assert.ok(paths.includes("src/app.ts"), "the added line is a hit");
 	assert.ok(paths.includes("pull request body"), "the body is a hit");
-	assert.equal(calls.length, 2);
+	assert.ok(paths.includes("a".repeat(40)), "the commit message is a hit");
+	// The pull request, its files and its commits.
+	assert.equal(calls.length, 3);
 });
 
 test("a pull request that cannot be read is not a clean pull request", async () => {
@@ -436,6 +450,79 @@ test("a tree with a term fails the command", () => {
 		);
 		assert.equal(result.status, 1, "the exit code says a term was found");
 		assert.equal(result.stdout.includes("placeholder"), false, "the term is not printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// The commit messages of a range.
+//
+// A commit message is public the moment the commit is pushed, and it
+// travels further than the change does: GitHub builds the release notes
+// from the commit messages, and the release notes are public too.
+
+/** A repository with one commit that carries a message. */
+function repoWithMessage(message) {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-git-"));
+	const env = {
+		...process.env,
+		GIT_AUTHOR_NAME: "harness test",
+		GIT_AUTHOR_EMAIL: "test@example.com",
+		GIT_COMMITTER_NAME: "harness test",
+		GIT_COMMITTER_EMAIL: "test@example.com",
+	};
+	const git = (args) =>
+		spawnSync("git", args, { cwd: dir, encoding: "utf8", timeout: 60000, env });
+	git(["init", "--quiet"]);
+	writeFileSync(join(dir, "a.txt"), "content\n", "utf8");
+	git(["add", "a.txt"]);
+	const committed = git(["commit", "--quiet", "-m", message]);
+	assert.equal(committed.status, 0, committed.stderr);
+	return dir;
+}
+
+test("a term in a commit message is found", () => {
+	const dir = repoWithMessage("fix: the placeholder in the title\n");
+	try {
+		const result = scanCommitMessages("HEAD", ["placeholder"], dir);
+		assert.equal(result.hits.length, 1);
+		assert.equal(result.hits[0].line, 1);
+		// The place is the commit, not a file.
+		assert.match(result.hits[0].path, /^[0-9a-f]{40}$/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a clean commit message is no hit", () => {
+	const dir = repoWithMessage("fix: something ordinary\n");
+	try {
+		const result = scanCommitMessages("HEAD", ["placeholder"], dir);
+		assert.equal(result.hits.length, 0);
+		assert.equal(result.scanned, 1);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the commit messages of a range are read with their commit", () => {
+	const dir = repoWithMessage("fix: the placeholder in the body\n\nand more of it\n");
+	try {
+		const commits = commitMessages("HEAD", dir);
+		assert.equal(commits.length, 1);
+		assert.match(commits[0].sha, /^[0-9a-f]{40}$/);
+		assert.match(commits[0].message, /the placeholder in the body/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the report of a commit message scan never prints the term", () => {
+	const dir = repoWithMessage("fix: the placeholder in the title\n");
+	try {
+		const result = scanCommitMessages("HEAD", ["placeholder"], dir);
+		const report = formatReport({ ...result, terms: ["placeholder"] });
+		assert.equal(report.includes("placeholder"), false, "the term is not printed");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

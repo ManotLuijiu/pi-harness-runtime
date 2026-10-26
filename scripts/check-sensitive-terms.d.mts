@@ -87,6 +87,27 @@ export function scanRange(
 	cwd?: string,
 ): SensitiveScanResult;
 
+/** A commit of a range. */
+export interface SensitiveCommit {
+	/** The commit id. */
+	sha: string;
+	/** The message of the commit. */
+	message: string;
+}
+
+/** The commits of a range, with their messages. */
+export function commitMessages(
+	range: string,
+	cwd?: string,
+): SensitiveCommit[];
+
+/** Scan the commit messages of a range for the terms. */
+export function scanCommitMessages(
+	range: string,
+	terms: string[],
+	cwd?: string,
+): SensitiveScanResult;
+
 /** The exit code of a clean run. */
 export const EXIT_CLEAN: number;
 /** The exit code of a run that found a term. */

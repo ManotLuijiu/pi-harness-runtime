@@ -222,3 +222,20 @@ test("the CI carries the list, so the content scan runs on every push", () => {
 		"the CI verification has the list",
 	);
 });
+
+test("the release checks the commit messages before it publishes", () => {
+	// GitHub builds the release notes from the commit messages of the
+	// release, so a name in a message would be published in the release
+	// body and in the notes of every later release.
+	const body = jobBody("release");
+	const gate = stepBody("release", "Verify the commit messages hold no client name");
+	assert.match(gate, /SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/);
+	assert.match(gate, /check-sensitive-terms\.mjs --commits/);
+	assert.match(gate, /set -euo pipefail/);
+	const publish = body.indexOf("- name: Publish to npm");
+	assert.notEqual(publish, -1, "the release publishes");
+	assert.ok(
+		body.indexOf("- name: Verify the commit messages hold no client name") < publish,
+		"the gate runs after the publish",
+	);
+});

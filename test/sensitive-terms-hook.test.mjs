@@ -51,7 +51,7 @@ function run(command, args, extra = {}) {
  * The commit is made from a tree that is written into a temporary
  * index, so the branch and the files of the repository are untouched.
  */
-function commitWith(file, content) {
+function commitWith(file, content, message = "a test commit") {
 	// The index is a file inside a directory of its own - git writes
 	// the index as a file, and a directory of that name is not one.
 	const dir = mkdtempSync(join(tmpdir(), "hook-index-"));
@@ -84,7 +84,7 @@ function commitWith(file, content) {
 		);
 		assert.equal(updated.status, 0, updated.stderr);
 		const tree = run("git", ["write-tree"], { env }).stdout.trim();
-		const committed = run("git", ["commit-tree", tree, "-p", "HEAD", "-m", "a test commit"], {
+		const committed = run("git", ["commit-tree", tree, "-p", "HEAD", "-m", message], {
 			env,
 		});
 		assert.equal(committed.status, 0, committed.stderr);
@@ -176,4 +176,27 @@ test("without a list the hook does not pretend to have checked", () => {
 	// A machine that does not know the names cannot check for them.
 	assert.equal(result.status, 0);
 	assert.match(`${result.stdout}${result.stderr}`, /the push was not checked/);
+});
+
+test("the hook stops a push whose commit message holds a term", () => {
+	// A commit message is public the moment the commit is pushed, and it
+	// travels further than the change does: GitHub builds the release
+	// notes from the commit messages. A name in a message is therefore a
+	// name in the release notes of every later release.
+	const dir = mkdtempSync(join(tmpdir(), "hook-terms-"));
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+		const commit = commitWith("clean.txt", "nothing to see here\n", `fix: ${TERM} in the title`);
+		const result = run("sh", [HOOK], {
+			input: pushOf(commit, base),
+			env: { ...process.env, PI_SENSITIVE_TERMS_FILE: termsFile },
+		});
+		assert.equal(result.status, 1, "the push was not stopped");
+		const output = `${result.stdout}${result.stderr}`;
+		assert.equal(output.includes(TERM), false, "the term was printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

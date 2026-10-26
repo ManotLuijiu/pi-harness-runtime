@@ -36,6 +36,7 @@
  *   node scripts/check-sensitive-terms.mjs --file README.md
  *   node scripts/check-sensitive-terms.mjs --text "a name"
  *   node scripts/check-sensitive-terms.mjs --tree path/to/the/published/files
+ *   node scripts/check-sensitive-terms.mjs --commits v1.0.0..HEAD
  *
  * The terms come from, in this order:
  *
@@ -380,6 +381,43 @@ async function fileContentAtRef({ owner, repo, path, ref, token, fetchImpl }) {
 /**
  * The scan of a pull request.
  */
+/**
+ * The commits of a pull request.
+ *
+ * A commit message is public the moment the commit is pushed, and it
+ * travels further than the change does: GitHub builds the release notes
+ * from the commit messages, and the release notes are public too.
+ */
+async function pullRequestCommits({ owner, repo, number, token, fetchImpl }) {
+	const commits = [];
+	let page = 1;
+	for (;;) {
+		const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/commits?per_page=100&page=${page}`;
+		const response = await fetchImpl(url, {
+			headers: {
+				accept: "application/vnd.github+json",
+				authorization: `Bearer ${token}`,
+				"user-agent": "pi-harness-runtime-sensitive-terms",
+				"x-github-api-version": "2022-11-28",
+			},
+		});
+		if (!response.ok) {
+			throw new Error(`the pull request commits could not be read: HTTP ${response.status}`);
+		}
+		const batch = await response.json();
+		if (!Array.isArray(batch) || batch.length === 0) break;
+		for (const commit of batch) {
+			commits.push({
+				sha: commit?.sha ?? "",
+				message: commit?.commit?.message ?? "",
+			});
+		}
+		if (batch.length < 100) break;
+		page += 1;
+	}
+	return commits;
+}
+
 export async function scanPullRequest({ owner, repo, number, token, terms, fetchImpl = fetch }) {
 	const hits = [];
 	let scanned = 0;
@@ -414,7 +452,21 @@ export async function scanPullRequest({ owner, repo, number, token, terms, fetch
 		}
 	}
 
-	return { hits, scanned, mode: "files, added lines, and the pull request title and body" };
+	// The commit messages of the pull request. They are public, and
+	// GitHub builds the release notes from them.
+	const commits = await pullRequestCommits({ owner, repo, number, token, fetchImpl });
+	for (const commit of commits) {
+		for (const { line, text } of fileLines(commit.message)) {
+			if (lineHasTerm(text, terms)) hits.push(hit(commit.sha, line));
+		}
+		scanned += 1;
+	}
+
+	return {
+		hits,
+		scanned,
+		mode: "files, added lines, commit messages, and the pull request title and body",
+	};
 }
 
 /**
@@ -426,6 +478,55 @@ function gitRangeDiff(range, cwd) {
 		encoding: "utf8",
 		maxBuffer: 64 * 1024 * 1024,
 	});
+}
+
+/**
+ * The commit messages of a range.
+ *
+ * A commit message is public the moment the commit is pushed, and it
+ * travels further than the change does: GitHub builds the release notes
+ * from the commit messages, and the release notes are public too. A
+ * name in a message is therefore a name in the release notes.
+ *
+ * The result is a list of { sha, message }. The sha is the place the
+ * term is in, and it says nothing private.
+ */
+export function commitMessages(range, cwd = process.cwd()) {
+	let output;
+	try {
+		output = execFileSync(
+			"git",
+			["log", "--format=%H%x1f%B%x1e", range],
+			{ cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+		);
+	} catch {
+		return [];
+	}
+	const commits = [];
+	for (const record of output.split("\x1e")) {
+		const trimmed = record.replace(/^\n/, "");
+		if (!trimmed.trim()) continue;
+		const separator = trimmed.indexOf("\x1f");
+		if (separator === -1) continue;
+		const sha = trimmed.slice(0, separator).trim();
+		const message = trimmed.slice(separator + 1);
+		if (!sha) continue;
+		commits.push({ sha, message });
+	}
+	return commits;
+}
+
+/**
+ * The scan of the commit messages of a range.
+ */
+export function scanCommitMessages(range, terms, cwd = process.cwd()) {
+	const hits = [];
+	for (const commit of commitMessages(range, cwd)) {
+		for (const { line, text } of fileLines(commit.message)) {
+			if (lineHasTerm(text, terms)) hits.push(hit(commit.sha, line));
+		}
+	}
+	return { hits, scanned: commitMessages(range, cwd).length, mode: "commit messages" };
 }
 
 /**
@@ -451,7 +552,15 @@ export function scanRange(range, terms, cwd = process.cwd()) {
 	for (const file of files) {
 		hits.push(...scanPatch(file.patch, file.path, terms));
 	}
-	return { hits, scanned: files.length, mode: "changed files" };
+	// The commit messages of the range are public as well, and GitHub
+	// builds the release notes from them.
+	const messages = scanCommitMessages(range, terms, cwd);
+	hits.push(...messages.hits);
+	return {
+		hits,
+		scanned: files.length + messages.scanned,
+		mode: "changed files and commit messages",
+	};
 }
 
 /**
@@ -522,6 +631,7 @@ function parseArgs(argv) {
 		else if (arg === "--text") args.mode = "text", (args.text = next());
 		else if (arg === "--range") args.mode = "range", (args.range = next());
 		else if (arg === "--tree") args.mode = "tree", (args.path = next());
+		else if (arg === "--commits") args.mode = "commits", (args.range = next());
 		else if (arg === "--terms-file") args.termsFile = next();
 		else if (arg === "--repo") args.repo = next();
 	}
@@ -586,6 +696,8 @@ async function main() {
 		result = { hits: scanText(args.text, "(text)", terms), scanned: 1, mode: "text" };
 	} else if (args.mode === "range") {
 		result = scanRange(args.range, terms);
+	} else if (args.mode === "commits") {
+		result = scanCommitMessages(args.range, terms);
 	} else if (args.mode === "tree") {
 		if (!existsSync(args.path) || !statSync(args.path).isDirectory()) {
 			console.error(`the directory ${args.path} does not exist.`);
@@ -593,7 +705,9 @@ async function main() {
 		}
 		result = scanTree(args.path, terms);
 	} else {
-		console.error("nothing to check. use --pr, --diff, --file, --text, --range or --tree.");
+		console.error(
+			"nothing to check. use --pr, --diff, --file, --text, --range, --commits or --tree.",
+		);
 		return EXIT_UNAVAILABLE;
 	}
 
