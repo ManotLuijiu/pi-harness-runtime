@@ -24,6 +24,10 @@
  * The rule is the same as for the compiled modules: a module that a
  * consumer may import does nothing at import time, and it loads.
  *
+ * The loader writes "LOADED" when the import returned. The sweep reads it,
+ * so a module that ends the importing process - `process.exit(0)` at
+ * module scope - is a failure even though the exit code is zero.
+ *
  * One child process per file, with a timeout, because a file that blocks
  * at import time must not block the sweep, and one broken file must not
  * hide the others.
@@ -32,7 +36,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readdirSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { readdirSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,12 +60,39 @@ const TEST_TIMEOUT_MS = 300_000;
 const CONCURRENCY = 8;
 
 /**
+ * The published scripts.
+ *
+ * The scripts directory holds programs, and a program that is not
+ * published is not a consumer's surface. The published ones are: the
+ * manifest names them, so a consumer can import them, and an import
+ * must not run the program.
+ */
+function collectPublishedScripts() {
+	const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+	const entries = Array.isArray(manifest.files) ? manifest.files : [];
+	const files = [];
+	for (const entry of entries) {
+		if (typeof entry !== "string") continue;
+		// a root-anchored entry carries the leading slash
+		const relative = entry.replace(/^\/+/, "");
+		if (!relative.startsWith("scripts/")) continue;
+		if (!relative.endsWith(".ts") && !relative.endsWith(".js")) continue;
+		const full = join(repo, relative);
+		if (!existsSync(full)) continue;
+		files.push(full);
+	}
+	return files;
+}
+
+/**
  * The published source surface.
  *
  * The root files and the harness are the runtime; the entry source of
  * every package is what a consumer reaches when the package is used
  * from source. The `scripts/` directory holds programs: they are meant
- * to be run, and a script that runs when it is imported is not a defect.
+ * to be run, and a script that runs when it is imported is not a defect
+ * - unless the manifest publishes it, and then it is a consumer's
+ * surface like any other published module.
  */
 function collectSourceFiles() {
 	const files = [];
@@ -101,6 +132,10 @@ function collectSourceFiles() {
 		if (existsSync(index)) files.push(index);
 	}
 
+	for (const file of collectPublishedScripts()) {
+		files.push(file);
+	}
+
 	return files;
 }
 
@@ -131,9 +166,13 @@ function loadOne(file) {
 		const child = spawn(process.execPath, [loader, file], {
 			cwd: repo,
 			env: { ...process.env, HOME: scratch, USERPROFILE: scratch },
-			stdio: ["ignore", "ignore", "pipe"],
+			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stderr = "";
+		let stdout = "";
+		child.stdout.on("data", (chunk) => {
+			stdout += chunk.toString();
+		});
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk.toString();
 		});
@@ -142,11 +181,14 @@ function loadOne(file) {
 		}, TIMEOUT_MS);
 		child.on("close", (code, signal) => {
 			clearTimeout(timer);
+			const loaded = stdout.includes("LOADED");
 			resolve({
 				file,
-				ok: code === 0 && !signal,
+				ok: code === 0 && !signal && loaded,
 				signal,
-				reason: stderr.split("\n").filter((line) => line.trim()).slice(0, 3).join(" | "),
+				reason: loaded
+					? stderr.split("\n").filter((line) => line.trim()).slice(0, 3).join(" | ")
+					: `the import did not return${stderr.trim() ? `: ${stderr.split("\n").filter((line) => line.trim()).slice(0, 3).join(" | ")}` : ""}`,
 			});
 		});
 	});

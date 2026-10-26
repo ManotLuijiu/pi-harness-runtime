@@ -13,6 +13,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { QdrantClient } from "@qdrant/js-client-rest";
 // The runtime and this script must write into the SAME collection with the
 // SAME vectors: a collection holds vectors of exactly one size, and a vector
@@ -343,10 +344,19 @@ async function search(query: string): Promise<void> {
 // Main
 // =============================================================================
 
-const args = process.argv.slice(2);
+/**
+ * The program runs only when the file is the entry point.
+ *
+ * The script is published in the npm package, so a consumer may import it.
+ * An import must not talk to Qdrant, and it must not end the importing
+ * process - the same rule the harness programs and the command modules
+ * follow.
+ */
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
 
-if (args.includes("--help")) {
-  console.log(`
+  if (args.includes("--help")) {
+    console.log(`
 Sync Skills to Qdrant (Sanitized)
 ──────────────────────────────────
 Upload skills to Qdrant for team sharing.
@@ -373,28 +383,34 @@ Environment:
 Or create file:
   ~/.pi-harness-runtime/keys/qdrant-api-key.txt
 `);
-  process.exit(0);
+    process.exit(0);
+  }
+
+  if (args.includes("--list")) {
+    await listSkills();
+    process.exit(0);
+  }
+
+  const searchIdx = args.indexOf("--search");
+  if (searchIdx !== -1 && args[searchIdx + 1]) {
+    await search(args[searchIdx + 1]);
+    process.exit(0);
+  }
+
+  const fromIdx = args.indexOf("--from");
+  if (fromIdx === -1 || !args[fromIdx + 1]) {
+    console.error("Error: --from <directory> is required");
+    console.error("Use --help for usage information.");
+    process.exit(1);
+  }
+
+  const sourceDir = args[fromIdx + 1];
+  const clear = args.includes("--clear");
+
+  await syncToQdrant(sourceDir, clear);
 }
 
-if (args.includes("--list")) {
-  await listSkills();
-  process.exit(0);
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+  await main();
 }
-
-const searchIdx = args.indexOf("--search");
-if (searchIdx !== -1 && args[searchIdx + 1]) {
-  await search(args[searchIdx + 1]);
-  process.exit(0);
-}
-
-const fromIdx = args.indexOf("--from");
-if (fromIdx === -1 || !args[fromIdx + 1]) {
-  console.error("Error: --from <directory> is required");
-  console.error("Use --help for usage information.");
-  process.exit(1);
-}
-
-const sourceDir = args[fromIdx + 1];
-const clear = args.includes("--clear");
-
-await syncToQdrant(sourceDir, clear);

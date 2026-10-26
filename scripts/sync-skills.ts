@@ -11,8 +11,9 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, statSync, copyFileSync, rmSync } from "node:fs";
-import { join, basename, dirname } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 // Default paths
 const DEFAULT_TARGET = join(homedir(), ".pi-harness-runtime", "skills");
@@ -270,6 +271,20 @@ function syncSkills(options: SyncOptions): void {
   console.log(`  3. List skills: /skill list`);
 }
 
-// Main
-const options = parseArgs();
-syncSkills(options);
+/**
+ * The program runs only when the file is the entry point.
+ *
+ * The script is published in the npm package, so a consumer may import it.
+ * An import must not sync skills, and it must not end the importing
+ * process - the same rule the harness programs and the command modules
+ * follow.
+ */
+function main(): void {
+  const options = parseArgs();
+  syncSkills(options);
+}
+
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+  main();
+}

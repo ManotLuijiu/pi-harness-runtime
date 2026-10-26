@@ -86,8 +86,9 @@ async function main(): Promise<void> {
 			agentId: AGENT_ID,
 			taskId: action.taskId,
 			status: "success",
-			message: verdict,
-		} as unknown as Parameters<typeof blackboard.writeReport>[0]);
+			summary: verdict,
+			createdAt: new Date().toISOString(),
+		});
 		blackboard.updateAgentStatus(AGENT_ID, "idle");
 
 		// Decide next action based on verdict
@@ -117,11 +118,13 @@ async function main(): Promise<void> {
 				);
 				console.log(`[${AGENT_ID}] CHANGES — nextAction: code ${nextWrite}`);
 			} else {
-				blackboard.setNextAction({
-					taskId: "report",
-					agentType: "review",
-					iteration: 0,
-				} as unknown as ReturnType<typeof encodeNextAction>);
+				blackboard.setNextAction(
+					encodeNextAction({
+						taskId: "report",
+						agentType: "review",
+						iteration: 0,
+					}),
+				);
 				console.log(`[${AGENT_ID}] CHANGES — nextAction: report`);
 			}
 		}

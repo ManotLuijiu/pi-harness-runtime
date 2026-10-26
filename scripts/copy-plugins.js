@@ -11,7 +11,7 @@
 
 import { mkdirSync, existsSync, readdirSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -57,4 +57,14 @@ function main() {
   console.log("[copy-plugins] Done!");
 }
 
-main();
+/**
+ * The program runs only when the file is the entry point.
+ *
+ * The script is published in the npm package and is the postinstall hook,
+ * so a consumer may import it. An import must not copy files into the
+ * home directory of the machine that imported it.
+ */
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+  main();
+}
