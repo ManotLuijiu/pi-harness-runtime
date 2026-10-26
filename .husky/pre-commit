@@ -67,7 +67,9 @@ fi
 # the staged change above does not depend on the file types of this one.
 if [ "${PI_SENSITIVE_TERMS_SKIP:-}" != "1" ]; then
 	if [ -f "$root/package.json" ] && [ -d "$root/node_modules/lint-staged" ]; then
-		if ! (cd "$root" && bunx lint-staged); then
+		# npx is used with --no-install: the task runs the lint-staged
+		# of this repository and never reaches the network.
+		if ! (cd "$root" && npx --no-install lint-staged); then
 			echo "lint-staged: the staged files did not pass."
 			exit 1
 		fi

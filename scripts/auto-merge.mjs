@@ -2,11 +2,15 @@
 /**
  * Merge a pull request - but only when every gate is green.
  *
- * The change is merged by GitHub itself, not by this script: the script
- * turns the auto merge on when the gates are green and turns it off when
- * they are not. GitHub merges a pull request with the auto merge on as
- * soon as it may, so the auto merge is only ever on while the gates say
- * yes.
+ * The change is merged by this script, when the gates are green. The
+ * auto merge of GitHub is not used: it merges a pull request as soon as
+ * it may, and "as soon as it may" is not "when the gates of this
+ * repository are green" - the gates of this repository are the required
+ * checks of the branch only when an administrator made them so.
+ *
+ * The merge names the head commit that was checked. A pull request that
+ * moved on after the check is refused by GitHub, so the commit that was
+ * checked is the commit that is merged.
  *
  * The gates are the checks of the head commit of the pull request. Two
  * of them decide:
@@ -31,9 +35,9 @@ import {
 	CI_CHECK,
 	SENSITIVE_TERMS_CHECK,
 	disableAutoMerge,
-	enableAutoMerge,
 	evaluateChecks,
 	fetchPullRequest,
+	mergePullRequest,
 	waitForChecks,
 } from "./lib/github-checks.mjs";
 
@@ -45,7 +49,7 @@ export const REQUIRED_CHECKS = [SENSITIVE_TERMS_CHECK, CI_CHECK];
  *
  * The release branch is `main`, and `main` is the branch that npm
  * publishes. A change reaches it from `develop` through the merge gate,
- * so the auto merge is what moves a reviewed change from `develop` into
+ * so the merge gate is what moves a reviewed change from `develop` into
  * `main`. A pull request into `develop` is merged by a human: the
  * working branch is where the work happens, and a change there is
  * reviewed by the person who wrote it.
@@ -53,7 +57,7 @@ export const REQUIRED_CHECKS = [SENSITIVE_TERMS_CHECK, CI_CHECK];
 export const MERGE_TARGETS = ["main"];
 
 /**
- * What to do with the auto merge of a pull request.
+ * What to do with a pull request: merge it, or let it wait.
  *
  * The decision is a pure function of what is known about the pull
  * request and about its checks, so it can be tested without a network.
@@ -219,22 +223,49 @@ async function main() {
 	}
 
 	if (decision.action === "enable") {
-		await enableAutoMerge({
-			nodeId: pullRequest.node_id,
+		// The merge is done here, with the head commit that was
+		// checked.
+		//
+		// The auto merge of GitHub is not used: it merges a pull
+		// request as soon as it may, and "as soon as it may" is not
+		// "when the gates of this repository are green" - the gates of
+		// this repository are not the required checks of the branch
+		// unless an administrator made them so. The merge here happens
+		// only after the gates were read and found green, and the head
+		// commit that was checked is the head commit that is merged.
+		const merged = await mergePullRequest({
+			repo: repository,
+			number,
 			headSha,
 			token,
 		});
-		console.log(
-			"The auto merge is on. GitHub merges the pull request as soon as it may.",
-		);
-		return;
+		if (merged.merged) {
+			console.log("The pull request is merged.");
+			return;
+		}
+		console.log(`The pull request was not merged: ${merged.message}`);
+		console.log("It waits for a human.");
+		// The job did not merge anything, and a job that merged nothing
+		// is not a success. A red check on the pull request says so.
+		process.exit(1);
 	}
 
 	if (decision.action === "disable") {
-		await disableAutoMerge({ nodeId: pullRequest.node_id, token });
-		console.log(
-			"The auto merge is off. The pull request waits for a human.",
-		);
+		try {
+			await disableAutoMerge({ nodeId: pullRequest.node_id, token });
+			console.log(
+				"The auto merge is off. The pull request waits for a human.",
+			);
+		} catch (error) {
+			// The auto merge could not be taken back - the token is not
+			// allowed to. There was no auto merge of this workflow, so
+			// there is nothing that has to be taken back.
+			const message = String(
+				error && error.message ? error.message : error,
+			);
+			console.log(`The auto merge was left as it is: ${message}`);
+			console.log("The pull request waits for a human.");
+		}
 		// The job did not merge anything, and a job that merged nothing
 		// is not a success. A red check on the pull request says so.
 		process.exit(1);

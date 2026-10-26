@@ -186,6 +186,46 @@ test("the hook lets a clean push through", () => {
 	}
 });
 
+test("a new tag on a commit that is already pushed is let through", () => {
+	// A tag is not a commit: the object a tag points at is the tag
+	// itself. The hook has to look at the commit behind it, and a tag
+	// that adds no commit has nothing to check - the check of that
+	// commit already ran on the push that brought it here.
+	const head = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+	// The identity is set for the tag. A checkout on a build machine
+	// has no git identity configured, and an annotated tag refuses to be
+	// written without one.
+	const env = {
+		...process.env,
+		GIT_AUTHOR_NAME: "harness test",
+		GIT_AUTHOR_EMAIL: "test@example.com",
+		GIT_COMMITTER_NAME: "harness test",
+		GIT_COMMITTER_EMAIL: "test@example.com",
+	};
+	// The hook reads a list of its own. The list of the machine that
+	// runs the test is not used: a build machine has no list, and the
+	// test has to say the same thing everywhere.
+	const dir = mkdtempSync(join(tmpdir(), "hook-terms-"));
+	const termsFile = join(dir, "terms.txt");
+	writeFileSync(termsFile, `${TERM}\n`);
+	env.PI_SENSITIVE_TERMS_FILE = termsFile;
+	const created = run("git", ["tag", "-a", "hook-test-tag", "-m", "a tag", head], {
+		env,
+	});
+	assert.equal(created.status, 0, created.stderr);
+	try {
+		const tagSha = run("git", ["rev-parse", "refs/tags/hook-test-tag"]).stdout.trim();
+		const input =
+			`refs/tags/hook-test-tag ${tagSha} refs/tags/hook-test-tag ` +
+			"0000000000000000000000000000000000000000\n";
+		const result = run(HOOK, [], { input, env });
+		assert.equal(result.status, 0, result.stderr + result.stdout);
+	} finally {
+		run("git", ["tag", "-d", "hook-test-tag"], { env });
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("without a list the push is stopped and the way out is named", () => {
 	const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
 	const commit = commitWith("clean.txt", "nothing to see here\n");

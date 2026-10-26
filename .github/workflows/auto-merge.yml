@@ -1,9 +1,12 @@
 # Merge a pull request - but only when every gate is green.
 #
-# The merge is GitHub's own auto merge: this workflow turns it on when the
-# gates are green and turns it off when they are not. GitHub merges a
-# pull request with the auto merge on as soon as it may, so the auto merge
-# is only ever on while the gates say yes.
+# The merge is done by this workflow, not by the auto merge of GitHub.
+# The auto merge of GitHub merges a pull request as soon as it may, and
+# "as soon as it may" is not "when the gates of this repository are
+# green" - the gates of this repository are the required checks of the
+# branch only when an administrator made them so. The merge here happens
+# after the gates were read and found green, and the head commit that was
+# checked is the head commit that is merged.
 #
 # The gates are the checks of the head commit of the pull request:
 #
@@ -14,8 +17,8 @@
 # The trigger is `pull_request_target`, so the workflow runs with the
 # permissions of this repository. A normal pull request workflow gets a
 # read only token for a fork, and a fork is where a pull request often
-# comes from. The token of this workflow can turn the auto merge on, so
-# the workflow must never run the code of the pull request. It therefore
+# comes from. The token of this workflow can merge, so the workflow must
+# never run the code of the pull request. It therefore
 #
 #   - checks out the base branch, never the head of the pull request,
 #   - persists no credential,
@@ -42,8 +45,8 @@ on:
         type: boolean
         default: false
 
-# The workflow reads the checks of a commit and turns the auto merge of a
-# pull request on or off. It writes nothing else, apart from the pull
+# The workflow reads the checks of a commit and merges a pull request
+# when they are green. It writes nothing else, apart from the pull
 # request a manual run can ask for.
 permissions:
   contents: read
@@ -65,6 +68,13 @@ jobs:
     # The merger waits for the checks of the head commit to finish. The
     # CI of this repository runs for minutes, so the wait is long.
     timeout-minutes: 30
+    permissions:
+      # The merge of a pull request writes to the repository. The job
+      # runs the merger of the base branch and nothing of the pull
+      # request, so the permission is only used for the merge itself.
+      contents: write
+      pull-requests: write
+      checks: read
     steps:
       # The base branch. The head of the pull request is never checked
       # out - it would be untrusted code in a job that can merge.
@@ -80,8 +90,8 @@ jobs:
         run: test -f scripts/auto-merge.mjs
 
       # The only step that decides. It reads the checks of the head
-      # commit, waits for them to finish, and turns the auto merge on or
-      # off. It runs no code of the pull request.
+      # commit, waits for them to finish, and merges the pull request
+      # when they are green. It runs no code of the pull request.
       - name: Merge or hold
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,6 +106,14 @@ jobs:
     # The job waits for the checks of the pull request, so it has to
     # outlive the CI of this repository.
     timeout-minutes: 45
+    permissions:
+      # The job merges the pull request it opened. The merge of a pull
+      # request writes to the repository contents. The job runs the
+      # merger of the branch it checked out and nothing of the pull
+      # request, so the permission is only used for the merge itself.
+      contents: write
+      pull-requests: write
+      checks: read
     steps:
       # The branch the release is prepared on. A manual run has no pull
       # request, so it has no base branch to check out.
@@ -152,8 +170,8 @@ jobs:
       # not create a run. The pull request event of the pull request
       # therefore never comes, and the merge job of the workflow never
       # runs for it. The manual run takes that work over: it reads the
-      # checks of the head commit of the pull request and turns the
-      # auto merge on when they are green.
+      # checks of the head commit of the pull request and merges it when
+      # they are green.
       - name: Merge or hold
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

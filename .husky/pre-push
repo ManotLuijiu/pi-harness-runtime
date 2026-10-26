@@ -59,18 +59,24 @@ echo "$pushed" | while read -r local_ref local_sha remote_ref remote_sha; do
 	# character class looked right and behaved differently in every
 	# shell: `[^...]` is a literal caret in a POSIX shell, and only
 	# `[!...]` negates.
-	if ! git rev-parse --verify --quiet "${local_sha}^{commit}" >/dev/null 2>&1; then
+	#
+	# A tag is not a commit. The commit a tag points at is what is
+	# checked, and that is also what the range is built from - a range
+	# that ends in a tag object holds nothing and would look like a
+	# check that could not run.
+	local_commit=$(git rev-parse --verify --quiet "${local_sha}^{commit}" 2>/dev/null || true)
+	if [ -z "$local_commit" ]; then
 		continue
 	fi
 
 	if [ "${remote_sha:-}" = "0000000000000000000000000000000000000000" ]; then
 		# A new branch. The base is the branch it came from.
-		base=$(git merge-base "$local_sha" origin/develop 2>/dev/null || true)
+		base=$(git merge-base "$local_commit" origin/develop 2>/dev/null || true)
 		if [ -z "$base" ]; then
-			base=$(git merge-base "$local_sha" origin/main 2>/dev/null || true)
+			base=$(git merge-base "$local_commit" origin/main 2>/dev/null || true)
 		fi
 		if [ -z "$base" ]; then
-			base=$(git rev-list --max-parents=0 "$local_sha" 2>/dev/null | tail -1)
+			base=$(git rev-list --max-parents=0 "$local_commit" 2>/dev/null | tail -1)
 		fi
 		if [ -z "$base" ]; then
 			continue
@@ -79,11 +85,19 @@ echo "$pushed" | while read -r local_ref local_sha remote_ref remote_sha; do
 		base=$remote_sha
 	fi
 
-	if [ "$base" = "$local_sha" ]; then
+	if [ "$base" = "$local_commit" ]; then
 		continue
 	fi
 
-	if node "$scanner" --terms-file "$terms_file" --range "$base..$local_sha"; then
+	# A range that holds no new commit is a range that holds nothing
+	# to check. A tag on a commit that is already on the remote adds
+	# nothing, and the check of that commit already ran on the push
+	# that brought it here.
+	if [ -z "$(git rev-list "$base..$local_commit" 2>/dev/null)" ]; then
+		continue
+	fi
+
+	if node "$scanner" --terms-file "$terms_file" --range "$base..$local_commit"; then
 		:
 	else
 		code=$?
