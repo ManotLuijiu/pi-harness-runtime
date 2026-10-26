@@ -147,7 +147,7 @@ test("a green pull request is merged", () => {
 		pullRequest: pullRequest(),
 		repository: "ManotLuijiu/pi-harness-runtime",
 	});
-	assert.equal(decision.action, "enable");
+	assert.equal(decision.action, "merge");
 });
 
 test("a change from another repository waits for a human", () => {
@@ -203,7 +203,7 @@ test("a missing gate turns the auto merge off", () => {
 		pullRequest: pullRequest(),
 		repository: "ManotLuijiu/pi-harness-runtime",
 	});
-	assert.equal(decision.action, "disable");
+	assert.equal(decision.action, "hold");
 });
 
 test("a failed gate turns the auto merge off", () => {
@@ -222,7 +222,7 @@ test("a failed gate turns the auto merge off", () => {
 		pullRequest: pullRequest(),
 		repository: "ManotLuijiu/pi-harness-runtime",
 	});
-	assert.equal(decision.action, "disable");
+	assert.equal(decision.action, "hold");
 });
 
 test("a gate that is still running turns the auto merge off", () => {
@@ -241,7 +241,7 @@ test("a gate that is still running turns the auto merge off", () => {
 		pullRequest: pullRequest(),
 		repository: "ManotLuijiu/pi-harness-runtime",
 	});
-	assert.equal(decision.action, "disable");
+	assert.equal(decision.action, "hold");
 });
 
 test("the report names the checks and never the terms", () => {
@@ -255,7 +255,7 @@ test("the report names the checks and never the terms", () => {
 	});
 	assert.match(summary, /No sensitive terms/);
 	assert.match(summary, /Tests/);
-	assert.match(summary, /enable/);
+	assert.match(summary, /merge/);
 });
 
 test("the workflow runs on the pull request, not on its code", () => {
@@ -361,42 +361,50 @@ test("the merge is bound to the head commit that was checked", async () => {
 		return {
 			ok: true,
 			status: 200,
-			text: async () => JSON.stringify({ merged: true, message: "Pull Request successfully merged" }),
+			json: async () => ({
+				data: { mergePullRequest: { pullRequest: { number: 7, state: "MERGED", merged: true } } },
+			}),
 		};
 	};
 
 	const result = await mergePullRequest({
-		repo: "owner/repo",
-		number: 7,
+		nodeId: "PR_1",
 		headSha: "abc123",
 		token: "t",
 		fetchImpl,
 	});
 
 	assert.equal(result.merged, true);
-	assert.equal(seen.url, "https://api.github.com/repos/owner/repo/pulls/7/merge");
-	assert.equal(seen.body.sha, "abc123");
-	assert.equal(seen.body.merge_method, "merge");
+	// The merge is the GraphQL mutation. The REST endpoint of this
+	// repository answers 404 for a merge, so a workflow that used it
+	// never merged anything.
+	assert.match(seen.url, /\/graphql$/);
+	assert.match(seen.body.query, /mergePullRequest/);
+	assert.deepEqual(seen.body.variables, {
+		pr: "PR_1",
+		method: "MERGE",
+		head: "abc123",
+	});
 });
 
 test("a refused merge is a report and not a crash", async () => {
 	// A branch rule can refuse the merge. That is not an error of the
 	// script: the pull request waits for a human.
 	const fetchImpl = async () => ({
-		ok: false,
-		status: 405,
-		text: async () => JSON.stringify({ message: "Pull Request is not mergeable" }),
+		ok: true,
+		status: 200,
+		json: async () => ({
+			errors: [{ message: "Pull Request is not mergeable" }],
+		}),
 	});
 
 	const result = await mergePullRequest({
-		repo: "owner/repo",
-		number: 7,
+		nodeId: "PR_1",
 		headSha: "abc123",
 		token: "t",
 		fetchImpl,
 	});
 
 	assert.equal(result.merged, false);
-	assert.equal(result.status, 405);
 	assert.match(result.message, /not mergeable/);
 });

@@ -8,6 +8,11 @@
 # after the gates were read and found green, and the head commit that was
 # checked is the head commit that is merged.
 #
+# The merge itself is the GraphQL mutation `mergePullRequest`. The REST
+# endpoint of this repository answers 404 for a merge, with every token
+# that was tried, while the mutation merges the same pull request - a
+# workflow that used the endpoint never merged anything.
+#
 # The gates are the checks of the head commit of the pull request:
 #
 #   - "No sensitive terms" - the check that keeps a client name out of

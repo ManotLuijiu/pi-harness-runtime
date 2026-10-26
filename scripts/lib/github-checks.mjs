@@ -216,109 +216,58 @@ export async function graphql({
 }
 
 /**
- * Take the auto merge back.
- *
- * GitHub answers with an error when there is no auto merge to take back.
- * That is not a failure of this script: the state it wanted is the state
- * it found.
- *
- * @param {{nodeId: string, token: string, fetchImpl?: typeof fetch}} options
- */
-export async function disableAutoMerge({
-	nodeId,
-	token,
-	fetchImpl = fetch,
-}) {
-	try {
-		return await graphql({
-			token,
-			fetchImpl,
-			query: `mutation Disable($pr: ID!) {
-				disablePullRequestAutoMerge(input: { pullRequestId: $pr }) {
-					pullRequest { number }
-				}
-			}`,
-			variables: { pr: nodeId },
-		});
-	} catch (error) {
-		const message = String(error && error.message ? error.message : error);
-		if (/not enabled|no auto merge/i.test(message)) {
-			return { skipped: true, reason: message };
-		}
-		throw error;
-	}
-}
-
-/**
  * Merge a pull request.
  *
- * The auto merge of GitHub is not always available to the token of a
- * workflow. When it is not, the merge is done here - with the head
- * commit that was checked, so a pull request that moved on after the
- * check is not merged.
+ * The merge is the GraphQL mutation `mergePullRequest`, not the REST
+ * endpoint. The REST endpoint of this repository answers 404 for a
+ * merge, with every token that was tried, while the mutation merges
+ * the same pull request - so a workflow that used the endpoint never
+ * merged anything and only reported a failure.
  *
- * The answer of the merge says whether the pull request was merged.
- * GitHub refuses a merge that a branch rule does not allow, and that
- * refusal is not an error of this script: the pull request waits for
- * a human, and the report says so.
+ * `expectedHeadOid` binds the merge to the commit that was checked. A
+ * push to the pull request changes the head, the merge is refused for
+ * the new head, and the new head has to pass the gates again.
  *
- * @param {{repo: string, number: number, headSha: string, token: string, method?: string, fetchImpl?: typeof fetch}} options
+ * The answer says whether the pull request was merged. A refusal is not
+ * an error of this script: the pull request waits for a human, and the
+ * report says so.
+ *
+ * @param {{nodeId: string, headSha: string, token: string, method?: string, fetchImpl?: typeof fetch}} options
  */
 export async function mergePullRequest({
-	repo,
-	number,
+	nodeId,
 	headSha,
 	token,
-	method = "merge",
+	method = "MERGE",
 	fetchImpl = fetch,
 }) {
-	const response = await fetchImpl(
-		`https://api.github.com/repos/${repo}/pulls/${number}/merge`,
-		{
-			method: "POST",
-			headers: {
-				Accept: "application/vnd.github+json",
-				Authorization: `Bearer ${token}`,
-				"Content-Type": "application/json",
-				"X-GitHub-Api-Version": "2022-11-28",
-			},
-			body: JSON.stringify({
-				merge_method: method,
-				// The head commit that was checked. GitHub refuses the
-				// merge when the head is another commit, so a push that
-				// came after the check invalidates the merge.
-				sha: headSha,
-			}),
-		},
-	);
-
-	const text = await response.text();
-	let body = {};
 	try {
-		body = text ? JSON.parse(text) : {};
-	} catch {
-		body = {};
-	}
-
-	if (!response.ok) {
+		await graphql({
+			token,
+			fetchImpl,
+			query: `mutation Merge($pr: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+				mergePullRequest(input: {
+					pullRequestId: $pr,
+					mergeMethod: $method,
+					expectedHeadOid: $head
+				}) {
+					pullRequest { number state merged }
+				}
+			}`,
+			variables: {
+				pr: nodeId,
+				method,
+				head: headSha,
+			},
+		});
 		return {
-			merged: false,
-			status: response.status,
-			message:
-				typeof body.message === "string"
-					? body.message
-					: `the merge was refused with ${response.status}`,
+			merged: true,
+			message: "the pull request is merged",
 		};
+	} catch (error) {
+		const message = String(error && error.message ? error.message : error);
+		// A pull request that GitHub refuses to merge is not merged.
+		// That is a report, not a crash.
+		return { merged: false, message };
 	}
-
-	return {
-		merged: body.merged === true,
-		status: response.status,
-		message:
-			typeof body.message === "string"
-				? body.message
-				: body.merged === true
-					? "the pull request is merged"
-					: "the pull request was not merged",
-	};
 }

@@ -34,7 +34,6 @@ import { pathToFileURL } from "node:url";
 import {
 	CI_CHECK,
 	SENSITIVE_TERMS_CHECK,
-	disableAutoMerge,
 	evaluateChecks,
 	fetchPullRequest,
 	mergePullRequest,
@@ -100,7 +99,7 @@ export function decideAutoMerge({ evaluation, pullRequest, repository }) {
 	}
 	if (evaluation.failed.length > 0) {
 		return {
-			action: "disable",
+			action: "hold",
 			reasons: evaluation.failed.map(
 				(failure) => `${failure.name} concluded ${failure.conclusion}`,
 			),
@@ -114,9 +113,9 @@ export function decideAutoMerge({ evaluation, pullRequest, repository }) {
 		if (evaluation.pending.length > 0) {
 			reasons.push(`${evaluation.pending.join(", ")} did not finish`);
 		}
-		return { action: "disable", reasons };
+		return { action: "hold", reasons };
 	}
-	return { action: "enable", reasons: ["every gate is green"] };
+	return { action: "merge", reasons: ["every gate is green"] };
 }
 
 /**
@@ -222,7 +221,7 @@ async function main() {
 		console.log(reason);
 	}
 
-	if (decision.action === "enable") {
+	if (decision.action === "merge") {
 		// The merge is done here, with the head commit that was
 		// checked.
 		//
@@ -234,8 +233,7 @@ async function main() {
 		// only after the gates were read and found green, and the head
 		// commit that was checked is the head commit that is merged.
 		const merged = await mergePullRequest({
-			repo: repository,
-			number,
+			nodeId: pullRequest.node_id,
 			headSha,
 			token,
 		});
@@ -250,22 +248,11 @@ async function main() {
 		process.exit(1);
 	}
 
-	if (decision.action === "disable") {
-		try {
-			await disableAutoMerge({ nodeId: pullRequest.node_id, token });
-			console.log(
-				"The auto merge is off. The pull request waits for a human.",
-			);
-		} catch (error) {
-			// The auto merge could not be taken back - the token is not
-			// allowed to. There was no auto merge of this workflow, so
-			// there is nothing that has to be taken back.
-			const message = String(
-				error && error.message ? error.message : error,
-			);
-			console.log(`The auto merge was left as it is: ${message}`);
-			console.log("The pull request waits for a human.");
-		}
+	if (decision.action === "hold") {
+		// The pull request waits for a human. There is no auto merge of
+		// GitHub to take back: this workflow merges the pull request
+		// itself, and it only does so when the gates are green.
+		console.log("The pull request waits for a human.");
 		// The job did not merge anything, and a job that merged nothing
 		// is not a success. A red check on the pull request says so.
 		process.exit(1);
