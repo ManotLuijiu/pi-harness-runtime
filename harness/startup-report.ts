@@ -11,7 +11,7 @@
  * - LINE must not be reported as configured when the audit could not run.
  */
 
-import type { KeyFileAuditResult } from "./key-file-audit.ts";
+import type { ExposedKeyFile, KeyFileAuditResult } from "./key-file-audit.ts";
 
 export type StartupStatus = "wait" | "ok" | "info" | "warn" | "err";
 
@@ -139,6 +139,37 @@ export function relayEndpointReport(options: {
 		status: "warn",
 		details,
 	};
+}
+
+/**
+ * The line for key files that other users on this machine can read.
+ *
+ * A key file is a secret, and a secret that the group or the others can
+ * read is published to every account on the machine. Nothing else notices:
+ * the harness reads the file successfully, so no feature fails and no other
+ * line warns. This line is the only place where the fact can surface.
+ *
+ * The line names the count and the command. It never names a value.
+ */
+export function exposedKeyFilesReport(options: {
+	/** The key files that other users can read. */
+	exposed: ExposedKeyFile[];
+	/** The `chmod` command for each of them. */
+	fixes: string[];
+}): StartupReport | null {
+	if (options.exposed.length === 0) return null;
+	const count = options.exposed.length;
+	const text =
+		count === 1
+			? "1 key file can be read by other users on this machine"
+			: `${count} key files can be read by other users on this machine`;
+	const details = [...options.fixes];
+	if (details.length === 0) {
+		details.push(
+			"Make the key directory private: chmod 700 ~/.pi-harness-runtime/keys",
+		);
+	}
+	return { label: "Keys", text, status: "warn", details };
 }
 
 /**

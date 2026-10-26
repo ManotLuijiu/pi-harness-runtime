@@ -23,6 +23,7 @@ import { HarnessStartupStatus, harnessStatusMarker, type HarnessStatus } from ".
 import {
 	auditKeyFiles,
 	fallbackKeyFileFixes,
+	formatExposedKeyFileFixes,
 	formatKeyFileFixes,
 	selectKeyFileFixes,
 	type KeyFileAuditResult,
@@ -32,6 +33,7 @@ import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-aut
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
 import {
+	exposedKeyFilesReport,
 	jevMissingKeyReport,
 	lineConfigurationReport,
 	oneLineError,
@@ -198,6 +200,26 @@ function getKeyFileAudit(): KeyFileAuditResult | null {
 		keyFileAudit = null;
 	}
 	return keyFileAudit;
+}
+
+/**
+ * Report the key files that other users on this machine can read.
+ *
+ * A key file is a secret. The harness reads its own key files, so a file
+ * that the group or the others can read works perfectly - and is published
+ * to every account on the machine. No other line notices, so this is the
+ * only place where the fact can surface.
+ */
+function reportExposedKeyFiles(): void {
+	const audit = getKeyFileAudit();
+	const exposed = audit?.exposed ?? [];
+	if (exposed.length === 0) return;
+	const report = exposedKeyFilesReport({
+		exposed,
+		fixes: formatExposedKeyFileFixes(exposed, harnessKeysDir()),
+	});
+	if (!report) return;
+	addHarnessMessage(report.label, report.text, report.status, report.details);
 }
 
 /**
@@ -4240,6 +4262,11 @@ export default async function (pi: ExtensionAPI) {
 	// Telegram is not configured at all - that is the fresh-install case.
 	reportRelayConfiguration();
 
+	// The key files that other users can read. The audit is read by
+	// every other line, so this is the only place where a published
+	// secret can surface.
+	reportExposedKeyFiles();
+
 	// --- console-guard: keep the TUI prompt input field clean ----
 	// A library that writes to the console would put its text into the
 	// prompt input field. The guard sends it to the harness log instead.
@@ -6186,6 +6213,7 @@ Run \`bd ready\` to see current bd issues.
 		keyFileAuditDone = false;
 		reportRelayConfiguration();
 		reportLineConfiguration();
+		reportExposedKeyFiles();
 		// Service states survive session changes; initialization runs once per extension load.
 		harnessWidgetRegistered = false; // Reset for new session
 

@@ -15,7 +15,7 @@
  * state of a file (missing / empty).
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -303,6 +303,22 @@ function isDerivableWebhookUrl(value: string): boolean {
 	}
 }
 
+/**
+ * A key file that other users on this machine can read.
+ *
+ * A key file is a secret. A secret that the group or the others can read
+ * is not a secret - it is published to every account on the machine. The
+ * audit does not read the content of such a file; it looks at the mode.
+ */
+export interface ExposedKeyFile {
+	/** The name of the file, relative to the key directory. */
+	file: string;
+	/** The mode of the file, as an octal string ("644"). */
+	mode: string;
+	/** Who can read the file besides the owner. */
+	readableBy: "group" | "others" | "group and others";
+}
+
 export interface KeyFileAuditOptions {
 	/** The key directory to scan (e.g. ~/.pi-harness-runtime/keys). */
 	keysDir: string;
@@ -312,6 +328,10 @@ export interface KeyFileAuditOptions {
 	readFile?: (path: string) => string | undefined;
 	/** Existence check override (used by the tests). */
 	exists?: (path: string) => boolean;
+	/** Directory reader override (used by the tests). */
+	readdir?: (path: string) => string[];
+	/** File information override (used by the tests). */
+	stat?: (path: string) => { mode: number; isFile: boolean } | undefined;
 }
 
 export interface KeyFileAuditResult {
@@ -319,6 +339,61 @@ export interface KeyFileAuditResult {
 	missing: MissingCredential[];
 	/** The unresolved credentials grouped by their owning feature. */
 	byFeature: Map<string, MissingCredential[]>;
+	/** The key files that other users on this machine can read. */
+	exposed: ExposedKeyFile[];
+}
+
+/**
+ * The key files that other users on this machine can read.
+ *
+ * A key file with the mode 600 is a secret. Every other bit in the group
+ * or the others column publishes it to the accounts on the machine, and
+ * nothing in the harness notices - the file is read successfully by the
+ * owner, so nothing fails and nothing is reported.
+ *
+ * The whole directory is scanned, not only the files of the inventory: a
+ * key file that the inventory does not know yet is a secret too.
+ */
+export function scanExposedKeyFiles(options: KeyFileAuditOptions): ExposedKeyFile[] {
+	const readdir =
+		options.readdir ??
+		((path: string) => {
+			try {
+				return readdirSync(path);
+			} catch {
+				return [];
+			}
+		});
+	const stat =
+		options.stat ??
+		((path: string) => {
+			try {
+				const info = statSync(path);
+				return { mode: info.mode & 0o777, isFile: info.isFile() };
+			} catch {
+				return undefined;
+			}
+		});
+
+	const exposed: ExposedKeyFile[] = [];
+	for (const name of readdir(options.keysDir).sort()) {
+		const info = stat(join(options.keysDir, name));
+		if (!info || !info.isFile) continue;
+		const group = info.mode & 0o070;
+		const others = info.mode & 0o007;
+		if (group === 0 && others === 0) continue;
+		exposed.push({
+			file: name,
+			mode: info.mode.toString(8).padStart(3, "0"),
+			readableBy:
+				group !== 0 && others !== 0
+					? "group and others"
+					: group !== 0
+						? "group"
+						: "others",
+		});
+	}
+	return exposed;
 }
 
 /**
@@ -396,10 +471,35 @@ export function auditKeyFiles(options: KeyFileAuditOptions): KeyFileAuditResult 
 		byFeature.set(entry.requirement.feature, list);
 	}
 
-	return { missing, byFeature };
+	return { missing, byFeature, exposed: scanExposedKeyFiles(options) };
 }
 
-/** The key directory as it is shown to the user (~ instead of the home path). */
+/**
+ * The command that makes a key file private again.
+ *
+ * The file keeps its content - the command changes the mode, not the
+ * value.
+ */
+export function formatExposedKeyFileFix(
+	entry: ExposedKeyFile,
+	keysDir: string,
+): string {
+	return `chmod 600 ${join(displayKeysDir(keysDir), entry.file)}`;
+}
+
+/**
+ * The fix commands for every key file that other users can read.
+ */
+export function formatExposedKeyFileFixes(
+	entries: ExposedKeyFile[] | undefined,
+	keysDir: string,
+): string[] {
+	if (!entries || entries.length === 0) return [];
+	return entries.map((entry) => formatExposedKeyFileFix(entry, keysDir));
+}
+
+/**
+ * The key directory as it is shown to the user (~ instead of the home path). */
 export function displayKeysDir(keysDir: string): string {
 	const home = homedir();
 	return keysDir.startsWith(home) ? join("~", keysDir.slice(home.length)) : keysDir;

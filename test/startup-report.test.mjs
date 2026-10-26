@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+	exposedKeyFilesReport,
 	jevMissingKeyReport,
 	lineConfigurationReport,
 	relayEndpointReport,
@@ -481,4 +482,50 @@ test("a short header value is redacted and the rest of the url survives", () => 
 		const redacted = oneLineError(new Error(`request failed ${header}`));
 		assert.ok(!/: x$/.test(redacted), `the value is redacted: ${redacted}`);
 	}
+});
+
+// The line for key files that other users on this machine can read.
+//
+// A key file is a secret, and the harness reads its own key files, so a
+// file that everybody can read works perfectly. Nothing else notices, which
+// makes this line the only place where the fact can surface.
+
+test("a key file that other users can read gets a line with the command", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "group and others" }],
+		fixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+	});
+	assert.ok(report, "the line is reported");
+	assert.equal(report.label, "Keys");
+	assert.equal(report.status, "warn");
+	assert.match(report.text, /1 key file can be read by other users/);
+	assert.equal(report.details.length, 1);
+	assert.match(report.details[0], /^chmod 600 /);
+});
+
+test("several key files that other users can read are counted", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [
+			{ file: "openai-api-key.txt", mode: "644", readableBy: "group and others" },
+			{ file: "telegram-bot-token.txt", mode: "660", readableBy: "group and others" },
+		],
+		fixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+	});
+	assert.ok(report);
+	assert.match(report.text, /2 key files can be read by other users/);
+});
+
+test("no exposed key file means no line", () => {
+	// A line that has nothing to say would push the real lines down.
+	assert.equal(exposedKeyFilesReport({ exposed: [], fixes: [] }), null);
+});
+
+test("the line never names a value", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "others" }],
+		fixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+	});
+	assert.ok(report);
+	const text = [report.text, ...report.details].join("\n");
+	assert.equal(text.includes("sk-"), false);
 });

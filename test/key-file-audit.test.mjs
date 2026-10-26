@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, chmod, mkdir } from "node:fs/promises";
 import { tmpdir, homedir as osHomedir } from "node:os";
 import { join } from "node:path";
 
@@ -15,8 +15,11 @@ import {
 	auditKeyFiles,
 	displayKeysDir,
 	fallbackKeyFileFixes,
+	formatExposedKeyFileFix,
+	formatExposedKeyFileFixes,
 	formatKeyFileFix,
 	formatKeyFileFixes,
+	scanExposedKeyFiles,
 	selectKeyFileFixes,
 	KEY_REQUIREMENTS,
 } from "../harness/key-file-audit.ts";
@@ -681,4 +684,150 @@ test("a command for an existing file says that the file is replaced", () => {
 	);
 	assert.match(fix, /the file exists but is empty/);
 	assert.match(fix, /replaces it/);
+});
+
+// The mode of a key file.
+//
+// A key file is a secret. The harness reads its own key files, so a file
+// that the group or the others can read works perfectly - and is published
+// to every account on the machine. Nothing else in the harness notices,
+// because nothing fails.
+
+test("a key file that other users can read is reported", async () => {
+	const dir = await makeKeysDir({ "telegram-bot-token.txt": "123:abc\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["telegram-bot-token.txt"],
+			stat: () => ({ mode: 0o644, isFile: true }),
+		});
+		assert.equal(audit.exposed.length, 1);
+		assert.equal(audit.exposed[0].file, "telegram-bot-token.txt");
+		assert.equal(audit.exposed[0].mode, "644");
+		// 644 is the mode a key file usually ends up with: the group and
+		// the others can read it.
+		assert.equal(audit.exposed[0].readableBy, "group and others");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a key file that only the others can read names the others", async () => {
+	const dir = await makeKeysDir({ "telegram-bot-token.txt": "123:abc\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["telegram-bot-token.txt"],
+			stat: () => ({ mode: 0o604, isFile: true }),
+		});
+		assert.equal(audit.exposed[0].readableBy, "others");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a key file that only the owner can read is not reported", async () => {
+	const dir = await makeKeysDir({ "telegram-bot-token.txt": "123:abc\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["telegram-bot-token.txt"],
+			stat: () => ({ mode: 0o600, isFile: true }),
+		});
+		assert.deepEqual(audit.exposed, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a file that the group can read names the group", async () => {
+	const dir = await makeKeysDir({ "openai-api-key.txt": "sk-example\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["openai-api-key.txt"],
+			stat: () => ({ mode: 0o640, isFile: true }),
+		});
+		assert.equal(audit.exposed[0].readableBy, "group");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a file that everybody can read names both", async () => {
+	const dir = await makeKeysDir({ "openai-api-key.txt": "sk-example\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["openai-api-key.txt"],
+			stat: () => ({ mode: 0o646, isFile: true }),
+		});
+		assert.equal(audit.exposed[0].readableBy, "group and others");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a directory in the key directory is not a key file", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await mkdir(join(dir, "sub"), { recursive: true });
+		const exposed = scanExposedKeyFiles({
+			keysDir: dir,
+			readdir: () => ["sub"],
+			stat: () => ({ mode: 0o755, isFile: false }),
+		});
+		assert.deepEqual(exposed, []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("the mode of a real key file is what decides", async () => {
+	const dir = await makeKeysDir({ "openai-api-key.txt": "sk-example\n" });
+	try {
+		await chmod(join(dir, "openai-api-key.txt"), 0o644);
+		const exposed = scanExposedKeyFiles({ keysDir: dir });
+		assert.equal(exposed.length, 1);
+		assert.equal(exposed[0].file, "openai-api-key.txt");
+		assert.equal(exposed[0].mode, "644");
+
+		await chmod(join(dir, "openai-api-key.txt"), 0o600);
+		assert.deepEqual(scanExposedKeyFiles({ keysDir: dir }), []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a key file that other users can read gets a command that makes it private", async () => {
+	const dir = await makeKeysDir({ "openai-api-key.txt": "sk-example\n" });
+	try {
+		const audit = auditKeyFiles({
+			keysDir: dir,
+			env: {},
+			readdir: () => ["openai-api-key.txt"],
+			stat: () => ({ mode: 0o644, isFile: true }),
+		});
+		const fixes = formatExposedKeyFileFixes(audit.exposed, dir);
+		assert.equal(fixes.length, 1);
+		assert.match(fixes[0], /^chmod 600 /);
+		assert.match(fixes[0], /openai-api-key\.txt$/);
+		// The command changes the mode, not the value.
+		assert.equal(fixes[0].includes("sk-example"), false);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a single key file gets a command of its own", () => {
+	const fix = formatExposedKeyFileFix(
+		{ file: "openai-api-key.txt", mode: "644", readableBy: "others" },
+		"/home/user/.pi-harness-runtime/keys",
+	);
+	assert.equal(fix, "chmod 600 /home/user/.pi-harness-runtime/keys/openai-api-key.txt");
 });
