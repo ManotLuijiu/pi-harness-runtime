@@ -47,15 +47,38 @@ concurrency:
 jobs:
   scan:
     name: No sensitive terms
+    # Only a pull request against a merge target is scanned. The tree
+    # that is checked out below is the base branch, and the script that
+    # runs comes out of that tree - so the base has to be one of the two
+    # branches a change is merged into.
+    #
+    # This is not what protects the secret. A pull request from a fork
+    # always has a base branch in this repository, and a branch in this
+    # repository can only be pushed by someone who can already read the
+    # secret. The condition keeps the checked out tree to the two merge
+    # targets, and it keeps the check from running for a pull request
+    # against an internal branch.
+    if: >-
+      github.event.pull_request.base.ref == 'develop' ||
+      github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     steps:
-      # The base commit. The head of the pull request is never checked
+      # The base branch. The head of the pull request is never checked
       # out - it would be untrusted code in a job that holds a secret.
       - name: Checkout the base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # The current tip of the base branch. `base.sha` is the
+          # commit the pull request was opened against, which can be
+          # months old - the check would then run a scanner that is not
+          # in that tree, and it would fail for the wrong reason.
+          ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
+
+      # The scanner is read from the checkout. If it is not there, the
+      # run says so instead of failing with a module error.
+      - name: The scanner is there
+        run: test -f scripts/check-sensitive-terms.mjs
 
       # The only step that sees the terms.
       - name: Scan the pull request

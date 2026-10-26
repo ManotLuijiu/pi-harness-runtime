@@ -47,7 +47,37 @@ test("the head of the pull request is never checked out", () => {
 	// run it.
 	assert.equal(workflow.includes("pull_request.head.sha"), false);
 	assert.equal(workflow.includes("pull_request.head.ref"), false);
-	assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+	assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/);
+});
+
+test("the checkout is the current base branch and not the stale base commit", () => {
+	// `base.sha` is the commit the pull request was opened against. It
+	// can be months old, and the tree at that commit does not hold the
+	// scanner - the check failed for exactly that reason on the first
+	// run against a real pull request.
+	assert.equal(workflow.includes("pull_request.base.sha"), false);
+	// The current tip of the base branch.
+	assert.match(workflow, /github\.event\.pull_request\.base\.ref/);
+});
+
+test("the check only runs for a pull request against a merge target", () => {
+	// The tree that is checked out is the base branch, and the script
+	// that runs comes out of that tree. A pull request against an
+	// internal branch must not be scanned with it.
+	assert.match(
+		workflow,
+		/github\.event\.pull_request\.base\.ref == 'develop'/,
+	);
+	assert.match(
+		workflow,
+		/github\.event\.pull_request\.base\.ref == 'main'/,
+	);
+});
+
+test("the run says when the scanner is missing instead of failing on it", () => {
+	// A missing scanner is a different fact from a finding, and the
+	// log should say which one it is.
+	assert.match(workflow, /test -f scripts\/check-sensitive-terms\.mjs/);
 });
 
 test("the checkout does not keep a credential", () => {

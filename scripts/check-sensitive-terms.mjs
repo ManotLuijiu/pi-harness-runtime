@@ -96,6 +96,27 @@ export function readTermsFile(path) {
 }
 
 /**
+ * The repository, when it is not given.
+ *
+ * The workflow always has GITHUB_REPOSITORY. A local run in a checkout
+ * does not, and the origin remote names the same thing.
+ */
+export function repositoryFromRemote(cwd = process.cwd()) {
+	try {
+		const url = execFileSync("git", ["remote", "get-url", "origin"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(url);
+		if (!match) return null;
+		return `${match[1]}/${match[2]}`;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * The terms of the environment.
  *
  * The repository secret arrives as SENSITIVE_TERMS. The local file
@@ -350,7 +371,7 @@ async function fileContentAtRef({ owner, repo, path, ref, token, fetchImpl }) {
 		return null;
 	}
 	// A binary file is not text. It is not a place a name would be.
-	if (text.includes(" ")) return null;
+	if (text.includes("\u0000")) return null;
 	return text;
 }
 
@@ -471,11 +492,12 @@ async function main() {
 
 	let result;
 	if (args.mode === "pr") {
-		const repo = args.repo ?? process.env.GITHUB_REPOSITORY;
+		const repo = args.repo ?? process.env.GITHUB_REPOSITORY ?? repositoryFromRemote();
 		const token = process.env.GITHUB_TOKEN;
 		const number = args.number ?? process.env.PR_NUMBER;
 		if (!repo || !number) {
 			console.error("the pull request or the repository is unknown.");
+			console.error("pass --repo <owner>/<name> and --pr <number>.");
 			return EXIT_UNAVAILABLE;
 		}
 		if (!token) {

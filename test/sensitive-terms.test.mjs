@@ -15,7 +15,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -34,6 +34,7 @@ import {
 	redactTerms,
 	formatReport,
 	scanPullRequest,
+	repositoryFromRemote,
 	EXIT_CLEAN,
 	EXIT_FOUND,
 	EXIT_UNAVAILABLE,
@@ -292,4 +293,31 @@ test("a pull request that cannot be read is not a clean pull request", async () 
 			}),
 		/HTTP 503/,
 	);
+});
+
+test("the repository of a checkout comes from its origin remote", () => {
+	// A local run has no GITHUB_REPOSITORY, and the origin remote
+	// names the same thing.
+	const repo = repositoryFromRemote(ROOT);
+	assert.match(repo ?? "", /^[^/]+\/[^/]+$/);
+});
+
+test("a directory without a remote has no repository", () => {
+	const dir = mkdtempSync(join(tmpdir(), "no-remote-"));
+	try {
+		assert.equal(repositoryFromRemote(dir), null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the source of the check is text, so the tools can read it", () => {
+	// A raw NUL byte in a source file makes it a binary file for grep,
+	// for diff and for every editor. The check for a binary payload
+	// used to carry one, written as the byte itself instead of the
+	// escape sequence.
+	const source = readFileSync(
+		join(ROOT, "scripts", "check-sensitive-terms.mjs"),
+	);
+	assert.equal(source.includes(0), false, "the source holds no NUL byte");
 });
