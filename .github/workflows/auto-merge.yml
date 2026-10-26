@@ -1,0 +1,82 @@
+# Merge a pull request - but only when every gate is green.
+#
+# The merge is GitHub's own auto merge: this workflow turns it on when the
+# gates are green and turns it off when they are not. GitHub merges a
+# pull request with the auto merge on as soon as it may, so the auto merge
+# is only ever on while the gates say yes.
+#
+# The gates are the checks of the head commit of the pull request:
+#
+#   - "No sensitive terms" - the check that keeps a client name out of
+#     the change. A change that holds a name is never merged.
+#   - "Tests" - the CI of this repository.
+#
+# The trigger is `pull_request_target`, so the workflow runs with the
+# permissions of this repository. A normal pull request workflow gets a
+# read only token for a fork, and a fork is where a pull request often
+# comes from. The token of this workflow can turn the auto merge on, so
+# the workflow must never run the code of the pull request. It therefore
+#
+#   - checks out the base branch, never the head of the pull request,
+#   - persists no credential,
+#   - reads the checks of the head commit through the API,
+#   - runs nothing but the merger of the base branch.
+#
+# The script it runs is the one of the base branch, so a pull request
+# cannot change the rule that judges it.
+#
+# A change from another repository is never merged by this workflow. The
+# gates of this repository say nothing about what a stranger wrote, so
+# such a pull request waits for a human.
+
+name: Auto merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+    branches: [main]
+
+# The workflow reads the checks of a commit and turns the auto merge of a
+# pull request on or off. It writes nothing else.
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+
+# One pull request, one run. A second push to the same pull request
+# cancels the first run, so a queue of stale runs cannot delay the
+# author.
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: Merge when every gate is green
+    runs-on: ubuntu-latest
+    # The merger waits for the checks of the head commit to finish. The
+    # CI of this repository runs for minutes, so the wait is long.
+    timeout-minutes: 30
+    steps:
+      # The base branch. The head of the pull request is never checked
+      # out - it would be untrusted code in a job that can merge.
+      - name: Checkout the base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          persist-credentials: false
+
+      # The merger is read from the checkout. If it is not there, the run
+      # says so instead of failing with a module error.
+      - name: The merger is there
+        run: test -f scripts/auto-merge.mjs
+
+      # The only step that decides. It reads the checks of the head
+      # commit, waits for them to finish, and turns the auto merge on or
+      # off. It runs no code of the pull request.
+      - name: Merge or hold
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/auto-merge.mjs

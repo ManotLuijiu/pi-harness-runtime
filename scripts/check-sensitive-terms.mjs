@@ -199,9 +199,17 @@ export function fileLines(content) {
  * The place is a path and a line number. Both are already visible in
  * the pull request, so naming them leaks nothing that the pull request
  * does not already show - and it tells the author where to look.
+ *
+ * A hit can also be a file that could not be read. That is not a term,
+ * but it is a place that was not checked, and a report that calls it a
+ * term would send the author looking for the wrong thing.
+ *
+ * @param {string} path
+ * @param {number} line
+ * @param {string} [reason]
  */
-function hit(path, line) {
-	return { path, line };
+function hit(path, line, reason) {
+	return reason ? { path, line, reason } : { path, line };
 }
 
 /**
@@ -279,15 +287,31 @@ export function formatReport({ hits, scanned, mode, terms = [] }) {
 		lines.push("no sensitive term was found");
 		return lines.join("\n");
 	}
-	lines.push("this change holds a term from the repository's sensitive list.");
-	lines.push("the term is not printed here: the list is a repository secret and this log is public.");
+	const unreadable = hits.filter((found) => found.reason);
+	const termHits = hits.filter((found) => !found.reason);
+	if (termHits.length > 0) {
+		lines.push(
+			"this change holds a term from the repository's sensitive list.",
+		);
+		lines.push(
+			"the term is not printed here: the list is a repository secret and this log is public.",
+		);
+	}
+	if (unreadable.length > 0) {
+		lines.push("some files could not be read, so they were not checked.");
+	}
 	lines.push("the places to look:");
 	for (const found of hits) {
 		// A path can be the place the term is in, so the path is
 		// printed with the terms hidden.
-		lines.push(`  ${redactTerms(found.path, terms)}:${found.line}`);
+		const place = `${redactTerms(found.path, terms)}:${found.line}`;
+		lines.push(found.reason ? `  ${place} - ${found.reason}` : `  ${place}`);
 	}
-	lines.push("remove the term from the change, or keep the discussion out of the public repository.");
+	if (termHits.length > 0) {
+		lines.push(
+			"remove the term from the change, or keep the discussion out of the public repository.",
+		);
+	}
 	return lines.join("\n");
 }
 
@@ -532,8 +556,12 @@ export function scanCommitMessages(range, terms, cwd = process.cwd()) {
 /**
  * The scan of a range of commits.
  */
-export function scanRange(range, terms, cwd = process.cwd()) {
-	const diff = gitRangeDiff(range, cwd);
+/**
+ * The files of a diff, with the patch of each one.
+ *
+ * @param {string} diff
+ */
+export function parseDiffFiles(diff) {
 	const files = [];
 	let current = null;
 	for (const raw of diff.split("\n")) {
@@ -548,6 +576,68 @@ export function scanRange(range, terms, cwd = process.cwd()) {
 			current.patch += `${raw}\n`;
 		}
 	}
+	return files;
+}
+
+/**
+ * The diff of the staged change: the index against HEAD.
+ */
+export function stagedDiff(cwd = process.cwd()) {
+	return execFileSync("git", ["diff", "--cached", "--unified=0"], {
+		cwd,
+		encoding: "utf8",
+		maxBuffer: 64 * 1024 * 1024,
+	});
+}
+
+/**
+ * The paths of the staged change.
+ */
+export function stagedPaths(cwd = process.cwd()) {
+	try {
+		const output = execFileSync("git", ["diff", "--cached", "--name-only"], {
+			cwd,
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+		});
+		return output
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The scan of the staged change.
+ *
+ * This is what a pre-commit hook checks: the lines that are about to be
+ * committed, and the paths of the files they are in. A name in the path
+ * of a file leaks just as well as a name in the file.
+ *
+ * @param {string[]} terms
+ */
+export function scanStaged(terms, cwd = process.cwd()) {
+	const files = parseDiffFiles(stagedDiff(cwd));
+	const paths = stagedPaths(cwd);
+	const hits = [];
+	for (const file of files) {
+		hits.push(...scanPatch(file.patch, file.path, terms));
+	}
+	for (const path of paths) {
+		if (pathHasTerm(path, terms)) hits.push(hit(path, 0));
+	}
+	return {
+		hits,
+		scanned: files.length + paths.length,
+		mode: "the staged change and the paths of the staged files",
+	};
+}
+
+export function scanRange(range, terms, cwd = process.cwd()) {
+	const diff = gitRangeDiff(range, cwd);
+	const files = parseDiffFiles(diff);
 	const hits = [];
 	for (const file of files) {
 		hits.push(...scanPatch(file.patch, file.path, terms));
@@ -606,6 +696,38 @@ export function listTreeFiles(dir, root = dir, out = []) {
 }
 
 /**
+ * The scan of a list of files.
+ *
+ * The file is scanned as a whole, and the path of the file is scanned
+ * with it: a file that carries a name in its name leaks the name just
+ * as well as a file that carries it in its content.
+ *
+ * @param {string[]} paths
+ * @param {string[]} terms
+ */
+export function scanFiles(paths, terms) {
+	const hits = [];
+	let scanned = 0;
+	for (const path of paths) {
+		let content;
+		try {
+			content = readFileSync(path, "utf8");
+		} catch {
+			// A file that cannot be read is a file that was not
+			// checked, so it is reported instead of skipped. It is
+			// reported as what it is - an unreadable file, not a
+			// term.
+			hits.push(hit(path, 0, "the file could not be read"));
+			continue;
+		}
+		scanned += 1;
+		hits.push(...scanText(content, path, terms));
+		if (pathHasTerm(path, terms)) hits.push(hit(path, 0));
+	}
+	return { hits, scanned, mode: "the files" };
+}
+
+/**
  * The scan of a directory tree.
  *
  * Every file is scanned as a whole, and the path of the file is scanned
@@ -642,7 +764,15 @@ function parseArgs(argv) {
 		else if (arg === "--range") args.mode = "range", (args.range = next());
 		else if (arg === "--tree") args.mode = "tree", (args.path = next());
 		else if (arg === "--commits") args.mode = "commits", (args.range = next());
-		else if (arg === "--terms-file") args.termsFile = next();
+		else if (arg === "--staged") args.mode = "staged";
+		else if (arg === "--files") {
+			// Every path that follows belongs to the scan.
+			args.mode = "files";
+			args.paths = args.paths ?? [];
+			while (index + 1 < argv.length && !argv[index + 1].startsWith("--")) {
+				args.paths.push(argv[++index]);
+			}
+		} else if (arg === "--terms-file") args.termsFile = next();
 		else if (arg === "--repo") args.repo = next();
 	}
 	return args;
@@ -721,6 +851,12 @@ async function main() {
 		result = { hits, scanned: files.length, mode: "changed files" };
 	} else if (args.mode === "file") {
 		result = { hits: scanText(readFileSync(args.path, "utf8"), args.path, terms), scanned: 1, mode: "file" };
+	} else if (args.mode === "files") {
+		result = scanFiles(args.paths, terms);
+		if (result.scanned === 0) {
+			console.log("no file was given, so there is nothing to check.");
+			return EXIT_CLEAN;
+		}
 	} else if (args.mode === "text") {
 		result = { hits: scanText(args.text, "(text)", terms), scanned: 1, mode: "text" };
 	} else if (args.mode === "range") {
@@ -742,6 +878,14 @@ async function main() {
 			console.error(`the range ${args.range} holds no commit, so nothing could be checked.`);
 			return EXIT_UNAVAILABLE;
 		}
+	} else if (args.mode === "staged") {
+		result = scanStaged(terms);
+		// A staged change that holds nothing is an empty commit, and
+		// there is nothing to check in it.
+		if (result.scanned === 0) {
+			console.log("the staged change holds nothing, so there is nothing to check.");
+			return EXIT_CLEAN;
+		}
 	} else if (args.mode === "tree") {
 		if (!existsSync(args.path) || !statSync(args.path).isDirectory()) {
 			console.error(`the directory ${args.path} does not exist.`);
@@ -750,7 +894,7 @@ async function main() {
 		result = scanTree(args.path, terms);
 	} else {
 		console.error(
-			"nothing to check. use --pr, --diff, --file, --text, --range, --commits or --tree.",
+			"nothing to check. use --pr, --diff, --file, --files, --text, --range, --commits, --staged or --tree.",
 		);
 		return EXIT_UNAVAILABLE;
 	}

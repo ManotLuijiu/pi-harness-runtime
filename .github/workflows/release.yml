@@ -1,8 +1,19 @@
 name: Release
 
-# Publishes pi-harness-runtime to npm on git tag push (e.g. v0.2.0).
+# Publishes pi-harness-runtime to npm on a git tag push (e.g. v1.2.3).
 #
-# Also triggers on push to main branch (after auto-merge from develop).
+# `main` is the release branch and `develop` is the branch the work is
+# done on. A release is a tag that sits on a commit of `main`, and that
+# commit is what npm receives. A tag that does not sit on `main` is
+# refused, so the published tree is always the tree of the release
+# branch and a release can never be cut from `develop`.
+#
+# The tag is created after the change was merged into `main`, so the
+# published version is the version that `main` carries.
+#
+# "No code changed in main means npm gets nothing" is the whole point
+# of the trigger: without a tag there is no publish, and a tag names one
+# version.
 #
 # npm Trusted Publishing is enabled via GitHub Actions OIDC.
 # No long-lived npm token is required in CI once each package is configured
@@ -290,6 +301,10 @@ jobs:
     permissions:
       id-token: write
       contents: write
+    # A release is a tag, or a manual dispatch that names the versions to
+    # remove from the registry. The unpublish job only runs for the
+    # second one, and the release job only runs when no version was
+    # named, so a cleanup dispatch can never publish.
     if: >-
       (github.event_name == 'workflow_dispatch' ||
        startsWith(github.ref, 'refs/tags/v')) &&
@@ -320,6 +335,47 @@ jobs:
         run: |
           bun scripts/build-packages.ts
 
+      # The commit the release publishes. A tag can be annotated, and
+      # the object a tag points at is then the tag itself - the commit
+      # is what the release is about, so it is resolved here and used
+      # everywhere below.
+      - name: Resolve the released commit
+        id: commit
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse "${GITHUB_REF}^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "the release publishes $sha"
+
+      # The release comes from `main`. The work is done on `develop`, and
+      # a change reaches `main` through the merge gate - the pull
+      # request that the auto-merge workflow merges once the sensitive
+      # terms check and the tests pass. A tag that sits somewhere else
+      # is refused: the published tree is always the tree of `main`.
+      - name: Verify the release comes from main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # A manual run publishes the tree of the ref it runs on, so
+            # it has to be the release branch.
+            if [ "$REF_NAME" != "refs/heads/main" ]; then
+              echo "a manual release has to run on main."
+              exit 1
+            fi
+            echo "a manual release on main is allowed."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$COMMIT_SHA" "origin/main"; then
+            echo "the tagged commit is not on main, so it is not published."
+            exit 1
+          fi
+          echo "the tagged commit is on main."
+
       - name: Bump version with standard-version
         run: |
           # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
@@ -332,6 +388,11 @@ jobs:
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
             const newVersion = '$TAG_VERSION';
             pkg.version = newVersion;
+            // The `prepare` script installs the git hooks of the
+            // repository. It is repository tooling, and the published
+            // manifest is the consumer facing surface, so it does not
+            // travel with the package.
+            if (pkg.scripts) delete pkg.scripts.prepare;
             fs.writeFileSync('package.json',
               JSON.stringify(pkg, null, 2) + '\\n');
             console.log('Updated version to:', newVersion);
@@ -352,6 +413,30 @@ jobs:
               "
             fi
           done
+
+      # The version of the release is the version that the tag names, and
+      # the manifest of the checkout carries it now.
+      #
+      # The registry is asked what it has. A version that is already
+      # published cannot be published again: npm refuses it. A version
+      # that is not newer than the newest published one is a manifest
+      # that was not kept up to date. Neither is a failure of the
+      # release - the tag can name a release that is already out - so the
+      # script reports them and nothing is published.
+      - name: Verify the version
+        id: version
+        run: node scripts/verify-release-version.mjs
+
+      # The repository checks every push for a client name. The release
+      # publishes the tree of this commit, so the release waits for the
+      # check of this commit and stops when it did not pass. A check that
+      # never ran is not a passed check.
+      - name: Verify the sensitive terms check passed for this commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        run: node scripts/verify-sensitive-check.mjs
 
       - name: Compute release metadata
         id: meta
@@ -450,6 +535,7 @@ jobs:
 
       - name: Publish to npm
         if: >-
+          steps.version.outputs.publishable == 'true' &&
           (github.event_name != 'workflow_dispatch' ||
            github.event.inputs.dry_run != 'true') &&
           (github.event.inputs.unpublish_versions == null ||
@@ -468,6 +554,9 @@ jobs:
           npm publish --ignore-scripts --access public \
             --dry-run --tag ${{ steps.meta.outputs.npm_tag }}
 
+      # The release names the version that was published. The tag sits on
+      # the published commit, so the tag and the published tree are the
+      # same commit.
       - name: Create GitHub Release
         if: >-
           startsWith(github.ref, 'refs/tags/v')
@@ -477,7 +566,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.meta.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ steps.commit.outputs.sha }}
           generate_release_notes: true
           make_latest: true
           prerelease: >-

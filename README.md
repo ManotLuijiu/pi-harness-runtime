@@ -1268,6 +1268,50 @@ callbacks are queued on disk instead.
 > **Note:** the token value is never logged, only the name of the source it came
 > from (`env RELAY_AUTH_TOKEN`, `keys/relay-auth-token.txt`, …).
 
+## Contributing
+
+The repository is public, and it holds the guard that keeps a client name
+out of it. Three layers do that work:
+
+| Layer | What it does |
+| ----- | ------------ |
+| `.husky/pre-commit` | Scans the staged change and the staged paths, and runs `lint-staged` on the staged files. |
+| `.husky/pre-push` | Scans the whole pushed range. |
+| `.github/workflows/sensitive-terms.yml` | Scans every push and every pull request. |
+
+**Local setup**:
+
+```bash
+bun install        # installs the dependencies and the git hooks
+bunx husky         # only when the hooks are not installed yet
+```
+
+The terms live in a private file outside the repository:
+
+```bash
+mkdir -p ~/.pi-harness-runtime
+chmod 700 ~/.pi-harness-runtime
+printf '%s\n' "the term" >> ~/.pi-harness-runtime/sensitive-terms.txt
+chmod 600 ~/.pi-harness-runtime/sensitive-terms.txt
+```
+
+**Without a list the hooks stop the commit** and name the way out. The
+list is a private thing, so a contributor who does not have it sets
+`PI_SENSITIVE_TERMS_SKIP=1` and lets the check of the repository do that
+work. `git commit --no-verify` and `git push --no-verify` skip the hooks
+too — they are an escape hatch for a broken checkout, not a way to work.
+
+**The release path**: the work is committed to `develop`, the version is
+prepared there, the pull request into `main` is merged by the auto merge
+workflow once `No sensitive terms` and `Tests` are green, and the tag on
+`main` publishes to npm through OIDC. A tag that is not on `main`
+publishes nothing.
+
+```bash
+bun scripts/release-all.ts --release-as patch   # prepare the version on develop
+bun scripts/release-all.ts --tag                 # tag the tip of main after the merge
+```
+
 ## License
 
 MIT © 2026 MooCoding

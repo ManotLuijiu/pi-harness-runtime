@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 # The guard that keeps a client name off the remote.
 #
 # The workflow `sensitive-terms.yml` stops a pull request from being
@@ -11,28 +11,40 @@
 # repository that is public has no business holding a list of client
 # names.
 #
-# The hook is opt-in. It runs when the repository uses this directory
-# as its hooks path:
+# The scan fails closed: a machine that cannot check does not let the
+# push through. The exception is the documented skip below, which is
+# for a contributor without the private list - the check of the
+# repository does that work for them.
 #
-#   git config core.hooksPath .githooks
+#   PI_SENSITIVE_TERMS_SKIP=1   skip the local scan
 #
-# Without a local term list the hook does nothing and lets the push
-# through. A machine that does not know the names cannot check for
-# them, and a check that cannot run must not pretend to pass.
+# `git push --no-verify` skips the whole hook. It is an escape hatch
+# for a broken checkout, not a way to work.
 
 set -eu
 
 root=$(git rev-parse --show-toplevel)
 scanner="$root/scripts/check-sensitive-terms.mjs"
+terms_file=${PI_SENSITIVE_TERMS_FILE:-"$HOME/.pi-harness-runtime/sensitive-terms.txt"}
 
-if [ ! -f "$scanner" ]; then
+if [ "${PI_SENSITIVE_TERMS_SKIP:-}" = "1" ]; then
+	echo "sensitive terms: the local scan was skipped (PI_SENSITIVE_TERMS_SKIP=1)"
 	exit 0
 fi
 
-terms_file=${PI_SENSITIVE_TERMS_FILE:-"$HOME/.pi-harness-runtime/sensitive-terms.txt"}
+if [ ! -f "$scanner" ]; then
+	echo "sensitive terms: the scanner is missing, so the push was not checked."
+	exit 1
+fi
+
 if [ ! -f "$terms_file" ]; then
-	echo "sensitive terms: no local list, the push was not checked"
-	exit 0
+	echo "sensitive terms: the term list is missing, so the push was not checked."
+	echo "  the list holds one term per line and lives outside the repository:"
+	echo "    $terms_file"
+	echo "  create it with mode 600, or point PI_SENSITIVE_TERMS_FILE at it."
+	echo "  a contributor without the list can set PI_SENSITIVE_TERMS_SKIP=1;"
+	echo "  the check of the repository does that work for them."
+	exit 1
 fi
 
 # The refs that are being pushed, one per line, as git hands them over.
@@ -46,7 +58,7 @@ echo "$pushed" | while read -r local_ref local_sha remote_ref remote_sha; do
 	# whether the object is a commit - a pattern that looked like a
 	# character class looked right and behaved differently in every
 	# shell: `[^...]` is a literal caret in a POSIX shell, and only
-	# `}[!...]` negates.
+	# `[!...]` negates.
 	if ! git rev-parse --verify --quiet "${local_sha}^{commit}" >/dev/null 2>&1; then
 		continue
 	fi

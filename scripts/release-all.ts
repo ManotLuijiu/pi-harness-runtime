@@ -96,6 +96,162 @@ async function setWorkspaceVersion(
 	console.log(`  Updated ${name}`);
 }
 
+/**
+ * Open the pull request from `develop` into `main`.
+ *
+ * `main` is the branch npm publishes, so a release reaches it through a
+ * pull request. The auto merge workflow merges that request once the
+ * sensitive terms check and the tests pass.
+ *
+ * The pull request is a convenience, not a gate: when it cannot be
+ * opened the command says so and the release continues. A release that
+ * is prepared but not merged publishes nothing, because the tag is only
+ * created on `main`.
+ *
+ * @param {string} version
+ */
+function openReleasePullRequest(version: string): void {
+	const title = `Release ${version}`;
+	const body = [
+		`The release ${version} is prepared on \`develop\`.`,
+		"",
+		"This pull request is merged by the auto merge workflow once the",
+		"required checks pass. The tag is created on `main` after the",
+		"merge, and the tag is what publishes to npm.",
+	].join("\n");
+	try {
+		const output = execSync(
+			"gh pr create --base main --head develop --title " +
+				JSON.stringify(title) +
+				" --body " +
+				JSON.stringify(body),
+			{ cwd: ROOT, encoding: "utf-8" },
+		);
+		console.log(`   ${output.trim()}`);
+	} catch (err) {
+		const detail =
+			err && typeof err === "object" && "stderr" in err
+				? String((err as { stderr?: unknown }).stderr ?? "").trim()
+				: "";
+		console.log("   The pull request was not opened automatically.");
+		if (detail) console.log(`   ${detail.split("\n")[0]}`);
+		console.log("   Open it by hand:");
+		console.log(
+			`     gh pr create --base main --head develop --title "${title}"`,
+		);
+	}
+}
+
+/**
+ * The version that the release branch carries.
+ *
+ * The version of the release is the version of `main`, because `main` is
+ * what npm receives. The local manifest can be ahead of it or behind it,
+ * so the branch is the truth here.
+ *
+ * @returns {{ version: string, sha: string }}
+ */
+function releaseBranchVersion(): { version: string; sha: string } {
+	try {
+		execSync("git fetch --quiet origin main", { cwd: ROOT });
+		const raw = execSync("git show origin/main:package.json", {
+			cwd: ROOT,
+			encoding: "utf-8",
+		});
+		const manifest = JSON.parse(raw);
+		if (!manifest.version) {
+			throw new Error("origin/main has no version in its package.json");
+		}
+		const sha = execSync("git rev-parse origin/main", {
+			cwd: ROOT,
+			encoding: "utf-8",
+		}).trim();
+		return { version: manifest.version, sha };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		throw new Error(`the release branch could not be read: ${message}`);
+	}
+}
+
+/**
+ * Is the version already on the registry?
+ *
+ * A version that is published cannot be published again. The tag for it
+ * would publish nothing, and the release would look like a failure
+ * without saying why.
+ *
+ * @param {string} version
+ * @returns {boolean}
+ */
+function versionIsPublished(version: string): boolean {
+	try {
+		const output = execSync(
+			`npm view pi-harness-runtime versions --json`,
+			{ cwd: ROOT, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+		);
+		const versions = JSON.parse(output);
+		const list = Array.isArray(versions) ? versions : [versions];
+		return list.includes(version);
+	} catch {
+		// The registry could not be read. The release workflow checks
+		// the registry again and stops when it cannot read it, so the
+		// tag is not the only gate.
+		return false;
+	}
+}
+
+/**
+ * Tag the release branch and push the tag.
+ *
+ * The tag is the release: it names the version and it triggers the
+ * release workflow, which publishes to npm. It sits on `main`, because
+ * `main` is the branch npm publishes, and the workflow refuses a tag
+ * that is somewhere else.
+ */
+async function tagReleaseBranch(): Promise<void> {
+	console.log("\n🏷️  Tagging the release branch...\n");
+	try {
+		const { version, sha } = releaseBranchVersion();
+		const tag = `v${version}`;
+		console.log(
+			`   The release branch carries ${version} at ${sha.slice(0, 8)}.`,
+		);
+
+		const existing = execSync(
+			`git ls-remote --tags origin "refs/tags/${tag}"`,
+			{ cwd: ROOT, encoding: "utf-8" },
+		).trim();
+		if (existing) {
+			console.log(`   The tag ${tag} is already on the remote.`);
+			console.log("   Nothing was pushed.");
+			return;
+		}
+
+		if (versionIsPublished(version)) {
+			console.log(`   ${version} is already on the registry.`);
+			console.log(
+				"   The tag would publish nothing, so it was not created.",
+			);
+			return;
+		}
+
+		execSync(`git tag -a ${tag} ${sha} -m "Release ${version}"`, {
+			cwd: ROOT,
+			stdio: "inherit",
+		});
+		execSync(`git push origin ${tag}`, { cwd: ROOT, stdio: "inherit" });
+		console.log(`\n✅ The tag ${tag} is pushed.`);
+		console.log(
+			"   The release workflow publishes it to npm and creates the",
+		);
+		console.log("   GitHub release.\n");
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		console.error(`   The tag was not pushed: ${message}`);
+		process.exitCode = 1;
+	}
+}
+
 function gitAmendCommit(): void {
 	try {
 		execSync("git add packages/*/package.json", { cwd: ROOT });
@@ -128,12 +284,23 @@ function gitAmendCommit(): void {
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 	const isDryRun = args.includes("--dry-run");
+
+	// The tag step runs alone. It happens after the merge, and it does
+	// not change anything but the tag.
+	if (args.includes("--tag")) {
+		await tagReleaseBranch();
+		return;
+	}
+
 	const releaseArgs = args.filter((a) => a !== "--dry-run");
 	const cmdParts = releaseArgs.filter((a) => !a.startsWith("--dry-run"));
+	// The tag is not created here. A tag names a release, and a release
+	// is a version of `main` - the branch npm publishes. The tag is
+	// created on the tip of `main`, after the merge, by `--tag`.
 	const stdCmd =
 		cmdParts.length > 0
-			? `npx standard-version ${cmdParts.join(" ")}`
-			: "npx standard-version";
+			? `npx standard-version ${cmdParts.join(" ")} --skip.tag`
+			: "npx standard-version --skip.tag";
 	const cmd = isDryRun ? `${stdCmd} --dry-run` : stdCmd;
 
 	console.log("\n🚀 Synced monorepo release\n");
@@ -180,7 +347,7 @@ async function main(): Promise<void> {
 	if (!isDryRun) {
 		console.log("\n🚀 Step 5: Pushing to origin...");
 		try {
-			execSync("git push --follow-tags origin develop", {
+			execSync("git push origin develop", {
 				cwd: ROOT,
 				stdio: "inherit",
 			});
@@ -190,13 +357,19 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Step 6: Publish to npm (root package only, not workspaces)
+	// Step 6: Build and verify the package
+	//
+	// Nothing is published here. npm is published by the release
+	// workflow, from `main`, with the OIDC credential of the registry.
+	// A version that is published from a branch that is not the release
+	// branch is a version that no gate ever saw.
+	//
+	// The build and the verification still run here, so a broken package
+	// is found before the merge and not after it.
 	if (!isDryRun) {
-		console.log("\n📦 Step 6: Publishing to npm (pi-harness-runtime only)...");
-		// The manifest has no prepublish hook: the published package
-		// names only files it ships, and a hook that runs the build
-		// would name a repository-only script. The build and the
-		// verification therefore run here, right before the publish.
+		console.log(
+			"\n📦 Step 6: Building and verifying the package (no publish)...",
+		);
 		try {
 			execSync("bun scripts/build-packages.ts", {
 				cwd: ROOT,
@@ -210,18 +383,32 @@ async function main(): Promise<void> {
 			console.error("The build or the package verification failed.");
 			process.exit(1);
 		}
-		try {
-			execSync("npm publish --workspaces=false", {
-				cwd: ROOT,
-				stdio: "inherit",
-			});
-		} catch (err) {
-			console.error("npm publish failed. Check that you're logged in (npm login) and the version hasn't already been published.");
-			process.exit(1);
-		}
 	}
 
-	console.log(`\n✅ Release ${newVersion} complete.\n`);
+	// Step 7: Open the pull request into the release branch.
+	//
+	// `main` is the branch npm publishes, so a change reaches it
+	// through a pull request. The auto merge workflow merges that
+	// request once the sensitive terms check and the tests pass.
+	if (!isDryRun) {
+		console.log(
+			"\n🚀 Step 7: Opening the pull request from develop into main...",
+		);
+		openReleasePullRequest(newVersion);
+	}
+
+	console.log(`\n✅ Release ${newVersion} is prepared on develop.\n`);
+	console.log("   The next steps are:");
+	console.log(
+		"   1. The pull request into main is merged once the gates pass.",
+	);
+	console.log(
+		`   2. After the merge: bun scripts/release-all.ts --tag  (tags v${newVersion} on main)`,
+	);
+	console.log(
+		"      The tag triggers the release workflow, which publishes to",
+	);
+	console.log("      npm through OIDC and creates the GitHub release.\n");
 }
 
 main().catch((err) => {

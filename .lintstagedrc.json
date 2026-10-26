@@ -1,0 +1,4 @@
+{
+	"**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,json,jsonc,md,mdx,yml,yaml,toml,sh,bash,zsh,sql,txt,html,css,scss,xml,ini,cfg,conf,env,py,go,rs,java,kt,swift,php,lua,pl,ps1,bat,cmd}": "node scripts/check-sensitive-terms.mjs --files",
+	"**/.*": "node scripts/check-sensitive-terms.mjs --files"
+}

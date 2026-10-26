@@ -1,0 +1,119 @@
+#!/usr/bin/env sh
+# The guard that keeps a client name out of the commit.
+#
+# This repository is public. A name that is committed here is a name
+# that is on the internet, and the history rewrite that would be needed
+# to take it back is a last resort, not a repair.
+#
+# The scan runs on the staged snapshot: the lines that are about to be
+# committed, and the paths of the files they are in. A name in the path
+# of a file leaks as well as a name in the file, and a name in a
+# Markdown or a JSON file leaks just as well as a name in a TypeScript
+# file.
+#
+# The terms live in a private file outside the repository. A public
+# repository has no business holding a list of client names.
+#
+# The scan fails closed: a machine that cannot check does not let the
+# commit through. The exception is the documented skip below, which is
+# for a contributor without the private list - the check of the
+# repository does that work for them.
+#
+#   PI_SENSITIVE_TERMS_SKIP=1   skip the local scan
+#
+# `git commit --no-verify` skips the whole hook. It is an escape hatch
+# for a broken checkout, not a way to work.
+
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+scanner="$root/scripts/check-sensitive-terms.mjs"
+terms_file=${PI_SENSITIVE_TERMS_FILE:-"$HOME/.pi-harness-runtime/sensitive-terms.txt"}
+
+if [ "${PI_SENSITIVE_TERMS_SKIP:-}" = "1" ]; then
+	echo "sensitive terms: the local scan was skipped (PI_SENSITIVE_TERMS_SKIP=1)"
+else
+	if [ ! -f "$scanner" ]; then
+		echo "sensitive terms: the scanner is missing, so the commit was not checked."
+		exit 1
+	fi
+
+	if [ ! -f "$terms_file" ]; then
+		echo "sensitive terms: the term list is missing, so the commit was not checked."
+		echo "  the list holds one term per line and lives outside the repository:"
+		echo "    $terms_file"
+		echo "  create it with mode 600, or point PI_SENSITIVE_TERMS_FILE at it."
+		echo "  a contributor without the list can set PI_SENSITIVE_TERMS_SKIP=1;"
+		echo "  the check of the repository does that work for them."
+		exit 1
+	fi
+
+	# The staged change: the added lines and the staged paths.
+	if ! node "$scanner" --staged --terms-file "$terms_file"; then
+		echo "sensitive terms: the commit was stopped - the staged change holds a term"
+		echo "sensitive terms: the term is not printed here"
+		exit 1
+	fi
+
+	# The list is passed on to the tasks of lint-staged, which read it
+	# from the environment.
+	PI_SENSITIVE_TERMS_FILE="$terms_file"
+	export PI_SENSITIVE_TERMS_FILE
+fi
+
+# The staged files, one by one. This is the task of lint-staged: it
+# runs on the files of the commit and not on the whole repository, so
+# it is fast. It is a second layer over the same guard - the scan of
+# the staged change above does not depend on the file types of this one.
+if [ "${PI_SENSITIVE_TERMS_SKIP:-}" != "1" ]; then
+	if [ -f "$root/package.json" ] && [ -d "$root/node_modules/lint-staged" ]; then
+		if ! (cd "$root" && bunx lint-staged); then
+			echo "lint-staged: the staged files did not pass."
+			exit 1
+		fi
+	fi
+fi
+
+# The React component size check. A component that grew past the limit
+# is split before it is committed.
+MAX_LINES=300
+YELLOW_LINES=150
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+blocked=0
+warnings=0
+for file in $staged_files; do
+	case "$file" in
+	*.tsx | *.jsx) ;;
+	*) continue ;;
+	esac
+	if [ ! -f "$file" ]; then
+		continue
+	fi
+	lines=$(wc -l < "$file")
+	if [ "$lines" -eq 0 ]; then
+		continue
+	fi
+	if grep -qE '(function [A-Z]|const [A-Z]|export default|React\.Component|useState|useEffect)' "$file" 2>/dev/null; then
+		if [ "$lines" -gt "$MAX_LINES" ]; then
+			echo "BLOCKED: $file ($lines lines) - exceeds $MAX_LINES lines"
+			blocked=$((blocked + 1))
+		elif [ "$lines" -gt "$YELLOW_LINES" ]; then
+			echo "WARNING: $file ($lines lines) - consider extracting sub-components"
+			warnings=$((warnings + 1))
+		fi
+	fi
+done
+
+if [ "$blocked" -gt 0 ]; then
+	echo "$blocked file(s) blocked - React components exceeding $MAX_LINES lines"
+	echo "   Extract sub-components before committing."
+	exit 1
+fi
+
+if [ "$warnings" -gt 0 ]; then
+	echo "$warnings file(s) with warnings - consider extracting sub-components"
+fi
+
+exit 0

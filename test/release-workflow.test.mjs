@@ -294,3 +294,97 @@ test("the pull request check and the release check both carry the list", () => {
 		);
 	}
 });
+
+/**
+ * The release comes from `main`, and only from `main`.
+ *
+ * `develop` is the branch the work is done on and `main` is the branch
+ * npm publishes. A tag that does not sit on `main` names a version that
+ * no gate ever saw, so the workflow refuses it. The tests below are
+ * about that boundary and about the order of the gates: a gate that
+ * runs after the publish is no gate at all.
+ */
+
+test("the release is triggered by a tag", () => {
+	// Without a tag there is no publish, and a tag names one version.
+	assert.match(workflow, /push:\n\s+tags:\n\s+- "v\*"/);
+});
+
+test("the release job runs for a tag and for a manual dispatch", () => {
+	const body = jobBody("release");
+	const gate = body.slice(body.indexOf("if:"));
+	assert.match(gate, /startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+	assert.match(gate, /github\.event_name == 'workflow_dispatch'/);
+});
+
+test("the release refuses a tag that is not on main", () => {
+	const step = stepBody("release", "Verify the release comes from main");
+	// The commit of the tag is compared with the release branch.
+	assert.match(step, /git merge-base --is-ancestor "\$COMMIT_SHA" "origin\/main"/);
+	// And a manual release has to run on the release branch too.
+	assert.match(step, /refs\/heads\/main/);
+});
+
+test("the released commit is the commit of the tag", () => {
+	const step = stepBody("release", "Resolve the released commit");
+	// A tag can be annotated, and then the object it points at is the
+	// tag itself. The release is about the commit.
+	assert.match(step, /git rev-parse "\$\{GITHUB_REF\}\^\{commit\}"/);
+});
+
+test("the version gate and the sensitive check stand before the publish", () => {
+	const body = jobBody("release");
+	const publish = body.indexOf("- name: Publish to npm");
+	assert.notEqual(publish, -1, "the release publishes");
+	for (const gate of [
+		"- name: Verify the version",
+		"- name: Verify the sensitive terms check passed for this commit",
+		"- name: Verify the published files hold no client name",
+		"- name: Verify the commit messages hold no client name",
+	]) {
+		const at = body.indexOf(gate);
+		assert.notEqual(at, -1, `the release has no step "${gate}"`);
+		assert.ok(at < publish, `the step "${gate}" runs after the publish`);
+	}
+});
+
+test("the publish needs a version that can be published", () => {
+	const body = jobBody("release");
+	const publish = body.slice(body.indexOf("- name: Publish to npm"));
+	// A version that is already on the registry, or one that is older
+	// than the newest published one, publishes nothing.
+	assert.match(publish, /steps\.version\.outputs\.publishable == 'true'/);
+});
+
+test("the sensitive check is verified for the commit that is published", () => {
+	const step = stepBody("release", "Verify the sensitive terms check passed for this commit");
+	assert.match(step, /COMMIT_SHA: \$\{\{ steps\.commit\.outputs\.sha \}\}/);
+	assert.match(step, /verify-sensitive-check\.mjs/);
+});
+
+test("the version gate and the check of the commit are in the repository", () => {
+	for (const script of [
+		"verify-release-version.mjs",
+		"verify-sensitive-check.mjs",
+	]) {
+		assert.ok(
+			existsSync(join(ROOT, "scripts", script)),
+			`the repository has no scripts/${script}`,
+		);
+	}
+});
+
+test("the published manifest does not carry the hooks of the repository", () => {
+	const step = stepBody("release", "Bump version with standard-version");
+	// The `prepare` script installs the git hooks. It is repository
+	// tooling, and the published manifest is the consumer facing
+	// surface.
+	assert.match(step, /delete pkg\.scripts\.prepare/);
+});
+
+test("the GitHub release points at the published commit", () => {
+	const body = jobBody("release");
+	const release = body.slice(body.indexOf("- name: Create GitHub Release"));
+	assert.match(release, /target_commitish: \$\{\{ steps\.commit\.outputs\.sha \}\}/);
+	assert.match(release, /tag_name: \$\{\{ steps\.meta\.outputs\.release_tag \}\}/);
+});

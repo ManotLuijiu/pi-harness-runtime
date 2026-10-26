@@ -88,7 +88,7 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
 
 ## Versioning Convention
 
-**Only patch-level updates (`0.10.x`)** — no minor/major bumps until the app is fully functional.
+**Only patch-level updates (`1.1.x`)** — no minor/major bumps until the app is fully functional.
 
 When releasing:
 
@@ -98,25 +98,77 @@ bun scripts/release-all.ts --release-as minor   # only if explicitly requested
 bun scripts/release-all.ts --release-as major   # only if explicitly requested
 ```
 
-## Release Tag Convention (CRITICAL)
+The version of a release follows the published history, not the manifest.
+The script reads the last tag and bumps from there, so a release that
+follows `v1.1.447` is `v1.1.448`.
 
-**ALWAYS release a tag after ANY code change.** Use patch version bump (0.10.x → 0.10.x+1).
+## Release Path: develop -> main -> npm (CRITICAL)
 
-This repo uses tag-based GitHub Actions builds — no CI on push. Every code change should be tagged for release.
+`develop` is the branch the work is done on. `main` is the branch npm
+publishes. A release is a **tag on `main`**, and only such a tag
+publishes.
 
 ```bash
-# After git push, immediately tag and push:
-git tag v0.10.32 && git push origin v0.10.32
+# 1. The work is committed to develop and pushed.
+git push origin develop
 
-# Or use the release script:
+# 2. The version is prepared on develop. The script bumps the manifest,
+#    syncs the workspace, commits, pushes develop, and opens the pull
+#    request into main.
 bun scripts/release-all.ts --release-as patch
+
+# 3. The auto merge workflow merges develop into main as soon as the
+#    gates are green: "No sensitive terms" and "Tests".
+#    A pull request that is not green waits for a human.
+
+# 4. After the merge, the tag is created on the tip of main.
+bun scripts/release-all.ts --tag
+
+# 5. The tag triggers release.yml, which publishes to npm through OIDC
+#    and creates the GitHub release.
 ```
 
-**Rule**: Every `git push` should be followed by a tag push. No code change should go unreleased.
+**Rules**:
+
+- **Never publish from `develop`.** The release workflow refuses a tag
+  that is not reachable from `main`.
+- **Never run a local `npm publish`.** The registry is published by the
+  release workflow, with the OIDC credential of the repository.
+- **A tag is a release.** The tag names the version, and the version in
+  the manifest of `main` has to be the one the tag names.
+- **The npm Trusted Publisher is bound to `release.yml` on `main`.** A
+  tag or a branch push cannot publish on its own.
+
+## Local Hooks: Husky (CRITICAL)
+
+The hooks of the repository live in `.husky/` and are managed by
+[Husky](https://typicode.github.io/husky/). There is no second hook
+mechanism: `core.hooksPath` is `.husky/_`.
+
+```bash
+bunx husky            # install the hooks (also done by `bun install`)
+```
+
+- **`.husky/pre-commit`** scans the staged change for a client name and
+  runs `lint-staged` on the staged files.
+- **`.husky/pre-push`** scans the whole pushed range.
+- The terms live in `~/.pi-harness-runtime/sensitive-terms.txt` (mode
+  `600`), outside the repository. The list is never committed and never
+  printed.
+- The hooks **fail closed**: a machine without the list stops the commit
+  and names the way out. `PI_SENSITIVE_TERMS_SKIP=1` is the documented
+  way out for a contributor without the private list — the check of the
+  repository does that work for them.
+- `git commit --no-verify` and `git push --no-verify` skip the hooks.
+  They are an escape hatch for a broken checkout, not a way to work.
+
+**The local hook is the primary protection.** This repository and
+`develop` are public: a name that is pushed there is disclosed, and the
+check of the repository can only keep it from being merged.
 
 ## npm Publish Authentication
 
-- **Normal release path: do NOT run local `npm publish`.** Push the code and release tag; GitHub Actions will sync/publish to npm.
+- **Normal release path: do NOT run local `npm publish`.** Push the change to `develop`, merge it into `main`, and tag `main`; the release workflow publishes through OIDC.
 - **GitHub Actions OIDC release path should not require `npm login`.**
 - If a **local/manual npm publish fallback** is needed and `npm whoami` fails, ask the user to run:
 

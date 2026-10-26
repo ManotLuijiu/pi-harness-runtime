@@ -21,7 +21,16 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
+import {
+	mkdtempSync,
+	writeFileSync,
+	rmSync,
+	existsSync,
+	statSync,
+	mkdirSync,
+	copyFileSync,
+	chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -30,7 +39,8 @@ import { dirname } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
-const HOOK = join(ROOT, ".githooks", "pre-push");
+const HOOK = join(ROOT, ".husky", "pre-push");
+const PRE_COMMIT_HOOK = join(ROOT, ".husky", "pre-commit");
 
 /** A term that is not a real name. */
 const TERM = "zzplaceholdername";
@@ -101,10 +111,20 @@ function pushOf(commit, base) {
 	return `refs/heads/test ${commit} refs/heads/test ${base}\n`;
 }
 
-test("the hook is there and it is executable", () => {
-	assert.ok(existsSync(HOOK), "the hook file is missing");
-	// Git only runs a hook that is executable.
-	assert.ok(statSync(HOOK).mode & 0o111, "the hook is not executable");
+test("the hooks are there and they are executable", () => {
+	for (const hook of [HOOK, PRE_COMMIT_HOOK]) {
+		assert.ok(existsSync(hook), `the hook file is missing: ${hook}`);
+		// Git only runs a hook that is executable.
+		assert.ok(statSync(hook).mode & 0o111, "the hook is not executable");
+	}
+});
+
+test("the repository uses the husky hooks path", () => {
+	// Husky owns the hooks of the repository. A second mechanism would
+	// be a second place where a guard can be forgotten.
+	const hooksPath = run("git", ["config", "--get", "core.hooksPath"]).stdout.trim();
+	assert.equal(hooksPath, ".husky/_");
+	assert.equal(existsSync(join(ROOT, ".githooks")), false, "the old hook directory is still there");
 });
 
 test("the hook stops a push that holds a term", () => {
@@ -166,16 +186,38 @@ test("the hook lets a clean push through", () => {
 	}
 });
 
-test("without a list the hook does not pretend to have checked", () => {
+test("without a list the push is stopped and the way out is named", () => {
 	const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
 	const commit = commitWith("clean.txt", "nothing to see here\n");
 	const result = run("sh", [HOOK], {
 		input: pushOf(commit, base),
 		env: { ...process.env, PI_SENSITIVE_TERMS_FILE: "/nonexistent/terms.txt" },
 	});
-	// A machine that does not know the names cannot check for them.
-	assert.equal(result.status, 0);
-	assert.match(`${result.stdout}${result.stderr}`, /the push was not checked/);
+	// The owner pushes straight to the working branch, so the local
+	// hook is the gate that runs before the bytes leave the machine.
+	// A machine that cannot check does not let the push through.
+	assert.equal(result.status, 1);
+	const output = `${result.stdout}${result.stderr}`;
+	assert.match(output, /the term list is missing/);
+	// The way out is named, so the fix is one command away.
+	assert.match(output, /PI_SENSITIVE_TERMS_FILE/);
+});
+
+test("the documented skip lets a push through without the list", () => {
+	const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+	const commit = commitWith("clean.txt", "nothing to see here\n");
+	const result = run("sh", [HOOK], {
+		input: pushOf(commit, base),
+		env: {
+			...process.env,
+			PI_SENSITIVE_TERMS_FILE: "/nonexistent/terms.txt",
+			PI_SENSITIVE_TERMS_SKIP: "1",
+		},
+	});
+	// A contributor without the private list works this way, and the
+	// check of the repository does the work for them.
+	assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+	assert.match(`${result.stdout}${result.stderr}`, /the local scan was skipped/);
 });
 
 test("the hook stops a push whose commit message holds a term", () => {
@@ -196,6 +238,140 @@ test("the hook stops a push whose commit message holds a term", () => {
 		assert.equal(result.status, 1, "the push was not stopped");
 		const output = `${result.stdout}${result.stderr}`;
 		assert.equal(output.includes(TERM), false, "the term was printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+/**
+ * A scratch repository with the hook and the scanner in it.
+ *
+ * The hook reads the staged change of the repository it runs in, so
+ * the test needs a repository of its own: staging a file in the
+ * repository of the owner would touch the work of whoever runs the
+ * test.
+ */
+function scratchRepo() {
+	const dir = mkdtempSync(join(tmpdir(), "hook-repo-"));
+	run("git", ["init", "-q", dir]);
+	run("git", ["-C", dir, "config", "user.email", "test@example.com"]);
+	run("git", ["-C", dir, "config", "user.name", "harness test"]);
+	mkdirSync(join(dir, "scripts"), { recursive: true });
+	copyFileSync(
+		join(ROOT, "scripts", "check-sensitive-terms.mjs"),
+		join(dir, "scripts", "check-sensitive-terms.mjs"),
+	);
+	mkdirSync(join(dir, ".husky"), { recursive: true });
+	copyFileSync(PRE_COMMIT_HOOK, join(dir, ".husky", "pre-commit"));
+	chmodSync(join(dir, ".husky", "pre-commit"), 0o755);
+	writeFileSync(join(dir, "README.md"), "# scratch\n");
+	run("git", ["-C", dir, "add", "README.md"]);
+	run("git", ["-C", dir, "commit", "-q", "-m", "first"]);
+	return dir;
+}
+
+/** The pre-commit hook of a scratch repository, with a staged file. */
+function stageAndRun(dir, file, content, env = {}) {
+	// The file can live in a directory that does not exist yet.
+	mkdirSync(dirname(join(dir, file)), { recursive: true });
+	writeFileSync(join(dir, file), content);
+	const added = run("git", ["-C", dir, "add", "--", file]);
+	assert.equal(added.status, 0, added.stderr);
+	return run("sh", [join(dir, ".husky", "pre-commit")], {
+		cwd: dir,
+		env: { ...process.env, ...env },
+	});
+}
+
+test("the pre-commit hook stops a commit whose staged file holds a term", () => {
+	const dir = scratchRepo();
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		const result = stageAndRun(dir, "leak.txt", `const client = "${TERM}";\n`, {
+			PI_SENSITIVE_TERMS_FILE: termsFile,
+		});
+		assert.equal(result.status, 1, "the commit was not stopped");
+		const output = `${result.stdout}${result.stderr}`;
+		assert.equal(output.includes(TERM), false, "the term was printed");
+		// The place is named, so the author knows where to look.
+		assert.match(output, /leak\.txt/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the pre-commit hook scans every kind of staged file", () => {
+	const dir = scratchRepo();
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		// A name in a document is a name in a public repository just
+		// as much as a name in a source file.
+		const result = stageAndRun(dir, "docs/plan.md", `# ${TERM}\n`, {
+			PI_SENSITIVE_TERMS_FILE: termsFile,
+		});
+		assert.equal(result.status, 1, "the commit was not stopped");
+		const output = `${result.stdout}${result.stderr}`;
+		assert.equal(output.includes(TERM), false, "the term was printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the pre-commit hook stops a commit whose staged path holds a term", () => {
+	const dir = scratchRepo();
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		const result = stageAndRun(dir, `docs/${TERM}.md`, "clean content\n", {
+			PI_SENSITIVE_TERMS_FILE: termsFile,
+		});
+		assert.equal(result.status, 1, "the commit was not stopped");
+		const output = `${result.stdout}${result.stderr}`;
+		assert.equal(output.includes(TERM), false, "the term was printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the pre-commit hook lets a clean commit through", () => {
+	const dir = scratchRepo();
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		const result = stageAndRun(dir, "clean.txt", "nothing to see here\n", {
+			PI_SENSITIVE_TERMS_FILE: termsFile,
+		});
+		assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the pre-commit hook stops a commit when the list is missing", () => {
+	const dir = scratchRepo();
+	try {
+		const result = stageAndRun(dir, "clean.txt", "nothing to see here\n", {
+			PI_SENSITIVE_TERMS_FILE: join(dir, "no-such-list.txt"),
+		});
+		assert.equal(result.status, 1, "the commit was not stopped");
+		const output = `${result.stdout}${result.stderr}`;
+		assert.match(output, /the term list is missing/);
+		assert.match(output, /PI_SENSITIVE_TERMS_FILE/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the documented skip lets a commit through without the list", () => {
+	const dir = scratchRepo();
+	try {
+		const result = stageAndRun(dir, "clean.txt", "nothing to see here\n", {
+			PI_SENSITIVE_TERMS_FILE: join(dir, "no-such-list.txt"),
+			PI_SENSITIVE_TERMS_SKIP: "1",
+		});
+		assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
