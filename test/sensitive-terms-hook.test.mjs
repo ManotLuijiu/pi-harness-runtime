@@ -186,6 +186,26 @@ test("the hook lets a clean push through", () => {
 	}
 });
 
+test("a new tag on a commit that is already pushed is let through", () => {
+	// A tag is not a commit: the object a tag points at is the tag
+	// itself. The hook has to look at the commit behind it, and a tag
+	// that adds no commit has nothing to check - the check of that
+	// commit already ran on the push that brought it here.
+	const head = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+	const created = run("git", ["tag", "-a", "hook-test-tag", "-m", "a tag", head]);
+	assert.equal(created.status, 0, created.stderr);
+	try {
+		const tagSha = run("git", ["rev-parse", "refs/tags/hook-test-tag"]).stdout.trim();
+		const input =
+			`refs/tags/hook-test-tag ${tagSha} refs/tags/hook-test-tag ` +
+			"0000000000000000000000000000000000000000\n";
+		const result = run(HOOK, [], { input });
+		assert.equal(result.status, 0, result.stderr + result.stdout);
+	} finally {
+		run("git", ["tag", "-d", "hook-test-tag"]);
+	}
+});
+
 test("without a list the push is stopped and the way out is named", () => {
 	const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
 	const commit = commitWith("clean.txt", "nothing to see here\n");
