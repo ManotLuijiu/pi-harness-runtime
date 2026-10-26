@@ -7,9 +7,10 @@
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, basename, extname } from "node:path";
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { createTencentDBClient } from "./client.js";
 
-interface CliOptions {
+export interface CliOptions {
 	source: string;
 	serverUrl: string;
 	userKey: string;
@@ -17,6 +18,7 @@ interface CliOptions {
 	watch: boolean;
 	dryRun: boolean;
 	force: boolean;
+	help: boolean;
 }
 
 interface SkillInfo {
@@ -113,10 +115,39 @@ function loadSkills(sourcePath: string): SkillInfo[] {
 }
 
 /**
- * Parse CLI arguments
+ * The help text of the command.
  */
-function parseArgs(): CliOptions {
-	const args = process.argv.slice(2);
+export const HELP_TEXT = `
+TencentDB Sync CLI
+
+Usage:
+  tencentdb-sync [options]
+
+Options:
+  --source, -s <path>    Skills directory to sync (required)
+  --server, --url <url>  TencentDB server URL (from TENANTDB_URL env)
+  --key, -k <key>      User key (from TENANTDB_USER_KEY env)
+  --service-id <id>     Service ID (default: "default")
+  --watch, -w          Watch for file changes
+  --dry-run, -n         Show what would be synced
+  --force, -f           Force sync even if unchanged
+  --help, -h           Show this help
+
+Environment:
+  TENANTDB_URL       Server URL (e.g., https://memory.example.com)
+  TENANTDB_USER_KEY  User key (sk-mem-xxx)
+  TENANTDB_SERVICE_ID Service ID (default: default)
+  TENANTDB_SOURCE    Default skills source path
+`;
+
+/**
+ * Parse CLI arguments.
+ *
+ * The parser does not print and does not exit: the command decides what
+ * to do with `--help`, and a caller that imports this module gets a
+ * description of the options instead of a terminated process.
+ */
+export function parseArgs(args: string[] = process.argv.slice(2)): CliOptions {
 	const options: CliOptions = {
 		source: "",
 		serverUrl: process.env.TENANTDB_URL || process.env.MEMORY_SERVER_URL || "",
@@ -128,6 +159,7 @@ function parseArgs(): CliOptions {
 		watch: false,
 		dryRun: false,
 		force: false,
+		help: false,
 	};
 
 	for (let i = 0; i < args.length; i++) {
@@ -162,29 +194,8 @@ function parseArgs(): CliOptions {
 				break;
 			case "--help":
 			case "-h":
-				console.log(`
-TencentDB Sync CLI
-
-Usage:
-  tencentdb-sync [options]
-
-Options:
-  --source, -s <path>    Skills directory to sync (required)
-  --server, --url <url>  TencentDB server URL (from TENANTDB_URL env)
-  --key, -k <key>      User key (from TENANTDB_USER_KEY env)
-  --service-id <id>     Service ID (default: "default")
-  --watch, -w          Watch for file changes
-  --dry-run, -n         Show what would be synced
-  --force, -f           Force sync even if unchanged
-  --help, -h           Show this help
-
-Environment:
-  TENANTDB_URL       Server URL (e.g., https://memory.example.com)
-  TENANTDB_USER_KEY  User key (sk-mem-xxx)
-  TENANTDB_SERVICE_ID Service ID (default: default)
-  TENANTDB_SOURCE    Default skills source path
-        `);
-				process.exit(0);
+				options.help = true;
+				break;
 		}
 	}
 
@@ -285,11 +296,9 @@ async function sync(options: CliOptions): Promise<void> {
 	console.log();
 
 	if (!options.serverUrl || !options.userKey) {
-		console.error("Error: Missing TENANTDB_URL or TENANTDB_USER_KEY");
-		console.error(
-			`\nSet environment variables or use --server and --key options`,
+		throw new Error(
+			"Missing TENANTDB_URL or TENENTDB_USER_KEY\n\nSet environment variables or use --server and --key options",
 		);
-		process.exit(1);
 	}
 
 	// Create client
@@ -305,8 +314,7 @@ async function sync(options: CliOptions): Promise<void> {
 		console.log(`Server status: ${health.status}`);
 		if (health.version) console.log(`Version: ${health.version}`);
 	} catch (error) {
-		console.error(`Error: Cannot connect to server: ${error}`);
-		process.exit(1);
+		throw new Error(`Cannot connect to server: ${error}`);
 	}
 
 	// Load skills
@@ -348,16 +356,44 @@ async function sync(options: CliOptions): Promise<void> {
  * Watch mode
  */
 async function watch(_options: CliOptions): Promise<void> {
-	console.log("Watch mode not implemented yet.");
-	console.log("Use --dry-run to preview what would be synced.");
-	process.exit(1);
+	throw new Error(
+		"Watch mode not implemented yet. Use --dry-run to preview what would be synced.",
+	);
 }
 
-// Main
-const options = parseArgs();
+/**
+ * Run the command.
+ *
+ * The command reports a failure by throwing, not by terminating the
+ * process: the caller decides what a failure means.
+ */
+export async function main(
+	args: string[] = process.argv.slice(2),
+): Promise<void> {
+	const options = parseArgs(args);
 
-if (options.watch) {
-	watch(options);
-} else {
-	sync(options);
+	if (options.help) {
+		console.log(HELP_TEXT);
+		return;
+	}
+
+	if (options.watch) {
+		await watch(options);
+		return;
+	}
+
+	await sync(options);
+}
+
+// The command runs only when this file is the entry point. A module that
+// imports it must not start a sync, and must not terminate the process
+// of the importer.
+const entry = process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
+	main().catch((error: unknown) => {
+		console.error(
+			`Error: ${error instanceof Error ? error.message : String(error)}`,
+		);
+		process.exit(1);
+	});
 }
