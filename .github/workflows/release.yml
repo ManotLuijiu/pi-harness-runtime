@@ -408,7 +408,13 @@ jobs:
         run: |
           set -euo pipefail
           PACK_DIR="$(mktemp -d)"
-          npm pack --pack-destination "$PACK_DIR" --ignore-scripts > /dev/null
+          # npm prints the file list of the tarball to stderr. That is
+          # thousands of lines in a public log, and it says nothing the
+          # check does not say. A failure is still reported.
+          if ! npm pack --pack-destination "$PACK_DIR" --ignore-scripts > /dev/null 2> "$PACK_DIR/pack.err"; then
+            cat "$PACK_DIR/pack.err"
+            exit 1
+          fi
           tar -xzf "$PACK_DIR"/*.tgz -C "$PACK_DIR"
           node scripts/check-sensitive-terms.mjs --tree "$PACK_DIR/package"
 
