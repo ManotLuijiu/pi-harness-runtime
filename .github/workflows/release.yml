@@ -146,20 +146,23 @@ jobs:
           echo "exchanged a registry token for ${PACKAGE_NAME}"
 
       # Report which second factor the account actually uses, so the
-      # operator knows which credential can unpublish. Only booleans are
-      # printed - no token value, no email, no username.
+      # operator knows which credential can unpublish. Only booleans and
+      # field names are printed - no token value, no email, no username.
       - name: Report the account's second-factor requirements
         env:
           TOK: ${{ steps.cred.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.cred.outputs.token }}
+          NPM_CONFIG_USERCONFIG: /tmp/npmrc
         run: |
           set -uo pipefail
           curl -sS -H "Authorization: Bearer ${TOK}" \
             "https://registry.npmjs.org/-/npm/v1/user" > /tmp/user.json || true
           node -e '
             const fs = require("fs");
-            let u = {};
             const raw = fs.readFileSync("/tmp/user.json", "utf8");
+            let u = {};
             try { u = JSON.parse(raw); } catch {}
+            console.log("user fields: " + Object.keys(u).join(", "));
             const totp = u.totp && u.totp.enabled === true;
             const web = u.webauth && u.webauth.enabled === true;
             console.log(`second factor: totp=${totp} webauth=${web}`);
@@ -173,6 +176,11 @@ jobs:
               console.log("no second factor is enabled on the account");
             }
           '
+          echo "--- npm's own view ---"
+          npm profile get 2>/dev/null \
+            | grep -iE "two-factor|webauth|totp" \
+            | sed -E "s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<email>/g" \
+            || echo "npm profile get returned no two-factor lines"
 
       - name: Unpublish versions
         env:
