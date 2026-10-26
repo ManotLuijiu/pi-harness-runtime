@@ -35,13 +35,17 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	extractBareImports,
 	extractRelativeValueImports,
+	extractStaticBareImports,
 	extractValueImports,
+	findModuleScopeRequires,
+	hasLocalRequire,
 	packageNameOf,
 	resolveRelativeImport,
 	stripComments,
@@ -319,6 +323,77 @@ test("a bare import is separated from a relative one", () => {
  */
 const TEST_TIMEOUT_MS = 120_000;
 
+/**
+ * The packages the published package declares.
+ *
+ * The consumer installs one package, so that package has to carry the
+ * dependencies of every module it ships.
+ */
+function declaredDependencyNames() {
+	const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+	const names = new Set();
+	for (const group of [
+		manifest.dependencies,
+		manifest.optionalDependencies,
+		manifest.peerDependencies,
+	]) {
+		for (const name of Object.keys(group ?? {})) names.add(name);
+	}
+	return names;
+}
+
+/**
+ * Every static import of the given files that names a package the
+ * published package does not declare.
+ *
+ * A dynamic import is a different case: it is resolved when the code
+ * reaches it, so a module may treat the package as optional. Only a
+ * static import breaks the import of the module.
+ */
+function undeclaredImports(files) {
+	const declared = declaredDependencyNames();
+	const workspace = workspacePackageNames();
+	const builtins = new Set([
+		...builtinModules,
+		...builtinModules.map((name) => `node:${name}`),
+	]);
+	const problems = [];
+	for (const file of files) {
+		if (!isScannable(file)) continue;
+		const full = join(ROOT, file);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		for (const specifier of extractStaticBareImports(content)) {
+			const name = packageNameOf(specifier);
+			if (!name || builtins.has(name)) continue;
+			if (declared.has(name) || workspace.has(name)) continue;
+			problems.push(`${file} imports ${name}, which the package does not declare`);
+		}
+	}
+	return problems;
+}
+
+/**
+ * Every published module that calls `require` when it is loaded.
+ *
+ * The published package is an ES module, and Node has no `require` there.
+ */
+function moduleScopeRequires(files) {
+	const problems = [];
+	for (const file of files) {
+		if (!/\.js$/.test(file)) continue;
+		const full = join(ROOT, file);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		// A module that builds its own `require` owns a working one.
+		if (hasLocalRequire(content)) continue;
+		for (const specifier of findModuleScopeRequires(content)) {
+			problems.push(`${file} calls require(${specifier}) when the module is loaded`);
+		}
+	}
+	return problems;
+}
+
 test("no tracked file names a workspace package in a bare import", { timeout: TEST_TIMEOUT_MS }, () => {
 	const files = trackedFiles();
 	if (files === null) {
@@ -351,4 +426,55 @@ test("no published file carries a relative import that does not resolve", { time
 	}
 	const published = new Set(files);
 	assert.deepEqual(brokenImports(files, published), []);
+});
+
+test("no published file imports a package the package does not declare", { timeout: TEST_TIMEOUT_MS }, () => {
+	const files = publishedFiles();
+	if (files === null) {
+		return; // npm is not available - the CI verifier covers it
+	}
+	assert.deepEqual(undeclaredImports(files), []);
+});
+
+test("no published module calls require when it is loaded", { timeout: TEST_TIMEOUT_MS }, () => {
+	const files = publishedFiles();
+	if (files === null) {
+		return; // npm is not available - the CI verifier covers it
+	}
+	assert.deepEqual(moduleScopeRequires(files), []);
+});
+
+test("a static import is separated from a dynamic one", () => {
+	const source = [
+		'import { execa } from "execa";',
+		'import type { Browser } from "playwright";',
+		'const { chromium } = await import("playwright");',
+		'import "./side-effect.js";',
+	].join("\n");
+	// A type-only import is erased at compile time and a relative import
+	// is never a package, so neither names a dependency.
+	assert.deepEqual(extractStaticBareImports(source), ["execa"]);
+	assert.deepEqual(extractBareImports(source), ["execa", "playwright"]);
+});
+
+test("a require inside a function is not a module scope require", () => {
+	const inside = [
+		"export function read() {",
+		'\tconst { readFileSync } = require("node:fs");',
+		"\treturn readFileSync;",
+		"}",
+	].join("\n");
+	assert.deepEqual(findModuleScopeRequires(inside), []);
+
+	const outside = [
+		'import { spawn } from "node:child_process";',
+		'const exec = promisify(require("node:child_process").exec);',
+	].join("\n");
+	assert.deepEqual(findModuleScopeRequires(outside), ["node:child_process"]);
+
+	const documented = [
+		'// const { readFile } = require("node:fs");',
+		'const text = "require(\'node:fs\')";',
+	].join("\n");
+	assert.deepEqual(findModuleScopeRequires(documented), []);
 });

@@ -18,17 +18,40 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline/promises";
-import {
-	chromium,
-	type Browser,
-	type BrowserContext,
-	type Page,
+import type {
+	Browser,
+	BrowserContext,
+	Page,
 } from "playwright";
 
 // ESM __dirname shim (not available in ESM without this)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const _require = createRequire(import.meta.url);
+
+/**
+ * The Playwright module, loaded when a browser is actually needed.
+ *
+ * Playwright is not a dependency of the published package: it pulls in a
+ * browser download that most installs do not need. A static import would
+ * make this module - and with it the whole `auth` package - impossible to
+ * import without it, so it is loaded here, on demand, and the error says
+ * what to install.
+ */
+let playwrightModule: typeof import("playwright") | null = null;
+
+async function getChromium(): Promise<typeof import("playwright")["chromium"]> {
+	if (!playwrightModule) {
+		try {
+			playwrightModule = await import("playwright");
+		} catch {
+			throw new Error(
+				"Playwright is not installed. Install it with: npm install playwright (or bun add playwright), then install the browser with: npx playwright install chromium",
+			);
+		}
+	}
+	return playwrightModule.chromium;
+}
 
 export interface MinimaxAuthStatus {
 	provider: "minimax";
@@ -314,6 +337,7 @@ async function connectToChromeOverCdp(
 	const endpoint = `http://127.0.0.1:${port}`;
 	const deadline = Date.now() + timeoutMs;
 	let lastError: unknown;
+	const chromium = await getChromium();
 	while (Date.now() < deadline) {
 		try {
 			return await chromium.connectOverCDP(endpoint);
@@ -978,6 +1002,7 @@ export async function scrapeWithExistingProfile(
 
 	log("Launching headless browser with saved profile...");
 
+	const chromium = await getChromium();
 	let context: BrowserContext | null = null;
 	try {
 		context = await chromium.launchPersistentContext(profileDir, {

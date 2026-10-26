@@ -11,6 +11,8 @@
 
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 const SCHEDULES = ["every-5m", "every-10m", "every-30m", "hourly", "daily", "weekly"] as const;
 type Schedule = typeof SCHEDULES[number];

@@ -30,13 +30,10 @@
  */
 
 import { spawn, ChildProcess } from "child_process";
-import { promisify } from "util";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
-
-const exec = promisify(require("child_process").exec);
 
 // ---------------------------------------------------------------------------
 // Types

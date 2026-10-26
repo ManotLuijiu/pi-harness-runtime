@@ -37,8 +37,11 @@
     "*.ts",
     "*.md",
     "harness/**/*.ts",
+    "!harness/**/*.test.ts",
     "packages/**/src/**/*.{ts,js}",
     "packages/**/dist/**/*.{js,d.ts,js.map,d.ts.map}",
+    "!packages/**/test/**",
+    "!packages/**/tests/**",
     "prompts/**/*",
     "scripts/**/*",
     "plugins/**/*",
@@ -115,8 +118,11 @@
     "@qdrant/js-client-rest": "^1.20.0",
     "chokidar": "^5.0.0",
     "deepagents": "^1.10.5",
+    "execa": "^10.0.1",
     "langchain": "^1.5.10",
+    "openai": "^4.77.0",
     "ws": "^8.22.0",
+    "yaml": "^2.5.0",
     "zod": "^4.6.7"
   },
   "peerDependenciesMeta": {

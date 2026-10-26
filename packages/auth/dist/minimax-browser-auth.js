@@ -17,11 +17,31 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
-import { chromium, } from "playwright";
 // ESM __dirname shim (not available in ESM without this)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const _require = createRequire(import.meta.url);
+/**
+ * The Playwright module, loaded when a browser is actually needed.
+ *
+ * Playwright is not a dependency of the published package: it pulls in a
+ * browser download that most installs do not need. A static import would
+ * make this module - and with it the whole `auth` package - impossible to
+ * import without it, so it is loaded here, on demand, and the error says
+ * what to install.
+ */
+let playwrightModule = null;
+async function getChromium() {
+    if (!playwrightModule) {
+        try {
+            playwrightModule = await import("playwright");
+        }
+        catch {
+            throw new Error("Playwright is not installed. Install it with: npm install playwright (or bun add playwright), then install the browser with: npx playwright install chromium");
+        }
+    }
+    return playwrightModule.chromium;
+}
 const DEFAULT_USAGE_KEYWORDS = [
     "Usage",
     "Token",
@@ -202,6 +222,7 @@ async function connectToChromeOverCdp(port, timeoutMs = 15000) {
     const endpoint = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + timeoutMs;
     let lastError;
+    const chromium = await getChromium();
     while (Date.now() < deadline) {
         try {
             return await chromium.connectOverCDP(endpoint);
@@ -762,6 +783,7 @@ export async function scrapeWithExistingProfile(config = {}) {
         };
     }
     log("Launching headless browser with saved profile...");
+    const chromium = await getChromium();
     let context = null;
     try {
         context = await chromium.launchPersistentContext(profileDir, {

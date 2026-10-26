@@ -6,6 +6,8 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 // --- Detection ----------------------------------------------------------------
 /**
  * Detect if a directory is a generic web project

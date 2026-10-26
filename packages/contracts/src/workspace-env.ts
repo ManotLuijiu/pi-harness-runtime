@@ -13,7 +13,7 @@
  */
 
 import { homedir as osHomedir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { execSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, mkdirSync, readlinkSync, realpathSync } from "fs";
 import { join } from "path";
@@ -72,9 +72,28 @@ function getDbPath(): string {
 }
 
 /**
+ * Load the SQLite binding lazily.
+ *
+ * `node:sqlite` does not exist in every runtime (Bun 1.3 has no
+ * `node:sqlite`), and a static import makes the whole module unloadable
+ * there. The store is a cache: without the database the detector still
+ * works, it just does not remember what it found.
+ */
+function loadDatabaseSync(): typeof import("node:sqlite").DatabaseSync | null {
+	try {
+		const require = createRequire(import.meta.url);
+		return require("node:sqlite").DatabaseSync;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Initialize workspace environment database
  */
-function initDatabase(): DatabaseSync {
+function initDatabase(): import("node:sqlite").DatabaseSync | null {
+	const DatabaseSync = loadDatabaseSync();
+	if (!DatabaseSync) return null;
 	ensureStoreDir();
 	const db = new DatabaseSync(getDbPath());
 	db.exec(`
@@ -813,9 +832,14 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
 	};
 
 	// Store in SQLite (synchronously, exception-safe)
-	let db: DatabaseSync | null = null;
+	let db: import("node:sqlite").DatabaseSync | null = null;
 	try {
 		db = initDatabase();
+		if (!db) {
+			// No SQLite in this runtime: the result is still correct, it is
+			// just not cached.
+			return result;
+		}
 		db.prepare(`
 			INSERT OR REPLACE INTO workspace_env 
 			(workspace_path, mode, evidence, has_dev_script, has_build_script, package_manager,
@@ -862,9 +886,10 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
  * Load cached workspace environment
  */
 export function loadWorkspaceEnv(workspacePath: string): WorkspaceEnvResult | null {
-	let db: DatabaseSync | null = null;
+	let db: import("node:sqlite").DatabaseSync | null = null;
 	try {
 		db = initDatabase();
+		if (!db) return null;
 		const row = db.prepare("SELECT * FROM workspace_env WHERE workspace_path = ?").get(workspacePath) as {
 			workspace_path: string;
 			mode: string;

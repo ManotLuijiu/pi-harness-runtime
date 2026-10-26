@@ -15,6 +15,8 @@ import { normalizeRequest } from "./normalize.js";
 import { renderForProvider } from "./render.js";
 import { buildSections } from "./section-builder.js";
 import { validateSections, validateTokenBudget } from "./validate.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 /**
  * Dependencies required by the compiler.

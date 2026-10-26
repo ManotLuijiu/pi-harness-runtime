@@ -6,7 +6,15 @@
  */
 
 import { homedir as osHomedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "fs";
 import { join } from "path";
 import type { DelegationReceipt } from "./delegation.js";
 
@@ -47,7 +55,6 @@ export function saveDelegationReceipt(receipt: DelegationReceipt): void {
   
   // Rename is atomic on POSIX
   try {
-    const { renameSync } = require("fs");
     renameSync(tempPath, path);
   } catch {
     // Fallback: just move the file
@@ -99,7 +106,6 @@ export function deleteDelegationReceipt(
   
   if (existsSync(path)) {
     try {
-      const { unlinkSync } = require("fs");
       unlinkSync(path);
     } catch {
       // Ignore delete errors
@@ -115,7 +121,6 @@ export function listDelegationReceipts(workspacePath: string): DelegationReceipt
   const receipts: DelegationReceipt[] = [];
   
   try {
-    const { readdirSync } = require("fs");
     const files = readdirSync(STORE_DIR);
     
     const safePathPrefix = workspacePath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(-100) + "__";

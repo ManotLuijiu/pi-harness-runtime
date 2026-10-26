@@ -5,7 +5,7 @@
  * Stores in ignored harness state directory.
  */
 import { homedir as osHomedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, } from "fs";
 import { join } from "path";
 /**
  * Store directory path
@@ -39,7 +39,6 @@ export function saveDelegationReceipt(receipt) {
     writeFileSync(tempPath, JSON.stringify(receipt, null, 2), "utf8");
     // Rename is atomic on POSIX
     try {
-        const { renameSync } = require("fs");
         renameSync(tempPath, path);
     }
     catch {
@@ -81,7 +80,6 @@ export function deleteDelegationReceipt(workspacePath, taskId) {
     const path = getReceiptPath(workspacePath, taskId);
     if (existsSync(path)) {
         try {
-            const { unlinkSync } = require("fs");
             unlinkSync(path);
         }
         catch {
@@ -96,7 +94,6 @@ export function listDelegationReceipts(workspacePath) {
     ensureStoreDir();
     const receipts = [];
     try {
-        const { readdirSync } = require("fs");
         const files = readdirSync(STORE_DIR);
         const safePathPrefix = workspacePath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(-100) + "__";
         for (const file of files) {

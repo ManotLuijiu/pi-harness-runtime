@@ -15,9 +15,6 @@
     "build": "tsc",
     "test": "bun test"
   },
-  "dependencies": {
-    "undici": "^6.29.1"
-  },
   "devDependencies": {
     "typescript": "^5.0.0"
   },

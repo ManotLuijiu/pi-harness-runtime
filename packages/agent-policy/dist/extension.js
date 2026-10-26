@@ -13,6 +13,8 @@ import { renderSystemContract, renderFullRules, renderFullPolicyText, checkPolic
 import { classifyToolCall } from "./types.js";
 import { checkSshNecessity } from "./ssh-guard.js";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 // ---------------------------------------------------------------------------
 // Extension Registration
 // ---------------------------------------------------------------------------

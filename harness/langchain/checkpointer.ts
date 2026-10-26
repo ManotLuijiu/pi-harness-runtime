@@ -33,6 +33,8 @@ import {
 } from "@langchain/langgraph-checkpoint";
 import type { ChannelVersions } from "@langchain/langgraph-checkpoint";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

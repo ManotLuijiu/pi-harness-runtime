@@ -2,7 +2,6 @@
  * Skill MCP Client Implementation (RFC-0106)
  */
 
-import { fetch } from "undici";
 import type {
   ListSkillsParams,
   ListSkillsResult,

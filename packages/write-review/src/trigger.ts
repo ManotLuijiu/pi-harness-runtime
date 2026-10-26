@@ -5,7 +5,7 @@
  * This triggers the write-review loop.
  */
 
-import { existsSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 import type { ReviewTriggerContext } from "./types.js";
 
@@ -65,7 +65,6 @@ export function getWikiPrompts(
 	const prompts: { path: string; category: string; filename: string }[] = [];
 
 	function scanDir(dir: string): void {
-		const { readdirSync, statSync } = require("fs");
 		try {
 			for (const entry of readdirSync(dir)) {
 				const fullPath = join(dir, entry);

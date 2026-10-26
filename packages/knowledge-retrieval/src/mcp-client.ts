@@ -4,7 +4,6 @@
  * Client for interacting with TencentDB-Agent-Memory server via MCP protocol.
  */
 
-import { fetch } from "undici";
 import type {
   SearchOptions,
   SearchResult,

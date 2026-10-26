@@ -5,6 +5,8 @@
  * Reads JSON-RPC requests from stdin, writes responses to stdout.
  */
 import { HARNESS_TOOLS } from "./tools.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 let initialized = false;
 export async function createMCPServer(options = {}) {
     const serverName = options.name ?? "pi-harness";

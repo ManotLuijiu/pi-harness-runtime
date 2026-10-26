@@ -14,6 +14,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { postToGist, isConfigured as isGistConfigured } from "./gist-relay.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // ─── Bridge file path ─────────────────────────────────────────────────────────
 

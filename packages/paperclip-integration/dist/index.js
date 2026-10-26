@@ -16,6 +16,8 @@
  * Auth: Bearer token (agent API key)
  */
 import { homedir as osHomedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 // ---------------------------------------------------------------------------
 // Paperclip Client
 // ---------------------------------------------------------------------------

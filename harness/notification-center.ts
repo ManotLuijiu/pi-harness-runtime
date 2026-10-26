@@ -7,6 +7,8 @@
 
 import { homedir as osHomedir } from "node:os";
 import * as https from "https";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export interface NotificationConfig {
   telegram?: {
