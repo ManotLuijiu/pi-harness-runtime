@@ -10,14 +10,17 @@
  *
  * This suite is the other half of the promise: it proves that the code a
  * consumer receives still runs under node, the runtime that pi itself uses.
- * Only a part of the root suite can do that, because a few files cannot be
+ * Only a part of the root suite can do that, because some files cannot be
  * loaded by node at all:
  *
  *   - one imports `bun:test`, which node's ESM loader rejects outright,
  *   - one reads a source that uses a TypeScript parameter property, which
  *     node's strip-only mode cannot transform,
- *   - two reach a harness module whose internal specifiers use the compiled
- *     ".js" convention, and the repository does not compile the harness.
+ *   - the rest reach a root-level or harness module whose internal
+ *     specifiers use the compiled ".js" convention. Bun maps such a
+ *     specifier to the TypeScript source; node resolves it to a real file.
+ *     The published package ships the root sources as TypeScript, so those
+ *     files are meant to run under bun.
  *
  * The npm script used to run `node --test` over every test file, which
  * failed on exactly those files. A script that always fails is worse than
@@ -53,6 +56,22 @@ const NOT_NODE_COMPATIBLE = new Map([
 	[
 		"test/quota-status.test.mjs",
 		"reaches a harness module that imports siblings with the compiled '.js' convention, and the repository does not compile the harness",
+	],
+	[
+		"test/mirror.test.mjs",
+		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
+	],
+	[
+		"test/renderer.test.mjs",
+		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
+	],
+	[
+		"test/repair-engine.test.mjs",
+		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
+	],
+	[
+		"test/tracker.test.mjs",
+		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
 	],
 ]);
 
@@ -140,7 +159,7 @@ for (const { file, reason } of excluded) {
 	);
 	if (probe.status === 0) {
 		console.error(
-			`node tests: "${file}" is excluded but passes under node - remove it from the exclusion list`,
+			`node tests: "${file}" is excluded but passes under node in this tree - either the exclusion is stale, or this tree has compiled artifacts that a clean checkout does not have`,
 		);
 		process.exit(1);
 	}
