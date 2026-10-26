@@ -12,14 +12,20 @@
  * The orchestrator handles the git/npm plumbing.
  */
 
+// The imports below carry a `pi-lens-ignore` marker for TS5097. The language
+// server that reads this file still holds a project configuration that no
+// longer exists, and it reports the .ts specifiers as an error. The compiler
+// does not - `npx tsc -p scripts/release/tsconfig.json` is clean - and Node
+// needs the literal .ts specifiers, because its type stripping does not remap
+// a .js specifier to a .ts file.
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "path";
-import { detectStacks, formatProfile } from "./adapters/detector.ts";
-import { nodeWorkspaceAdapter } from "./adapters/node-workspace.ts";
-import { tauriAdapter } from "./adapters/tauri.ts";
-import { rustAdapter } from "./adapters/rust.ts";
-import { pythonAdapter } from "./adapters/python.ts";
+import { detectStacks, formatProfile } from "./adapters/detector.ts"; // pi-lens-ignore: ts:5097
+import { nodeWorkspaceAdapter } from "./adapters/node-workspace.ts"; // pi-lens-ignore: ts:5097
+import { tauriAdapter } from "./adapters/tauri.ts"; // pi-lens-ignore: ts:5097
+import { rustAdapter } from "./adapters/rust.ts"; // pi-lens-ignore: ts:5097
+import { pythonAdapter } from "./adapters/python.ts"; // pi-lens-ignore: ts:5097
 import type { AdapterContext, ReleaseAdapter } from "./adapters/base.ts";
 
 const ADAPTERS: ReleaseAdapter[] = [

@@ -239,3 +239,45 @@ test("the release checks the commit messages before it publishes", () => {
 		"the gate runs after the publish",
 	);
 });
+
+test("the CI stops when the list is missing on a push", () => {
+	// A push to a branch of this repository gets the secret. If the
+	// secret is empty there, the scan of the published files silently
+	// turns itself off - and a check that turned itself off is worse
+	// than a check that never existed, because it looks like a pass.
+	const ci = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+	assert.match(
+		ci,
+		/SAME_REPOSITORY: \$\{\{ github\.event_name == 'push' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository \}\}/,
+		"the CI knows when the secret is expected",
+	);
+	assert.match(ci, /if \[ -z "\$\{SENSITIVE_TERMS:-\}" \] && \[ "\$SAME_REPOSITORY" = "true" \]/);
+	assert.match(ci, /exit 1/, "the CI stops instead of skipping the scan");
+});
+
+test("the pull request check and the release check both carry the list", () => {
+	const pr = readFileSync(
+		join(ROOT, ".github", "workflows", "sensitive-terms.yml"),
+		"utf8",
+	);
+	assert.match(
+		pr,
+		/SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/,
+		"the pull request check has the list",
+	);
+	assert.match(pr, /pull_request_target/, "the check runs in the context of the base branch");
+	assert.match(pr, /permissions:\n\s+contents: read/, "the check only reads");
+	assert.match(pr, /persist-credentials: false/, "the checkout keeps no credential");
+
+	for (const step of [
+		"Verify the published files hold no client name",
+		"Verify the commit messages hold no client name",
+	]) {
+		const gate = stepBody("release", step);
+		assert.match(
+			gate,
+			/SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/,
+			`the gate "${step}" has the list`,
+		);
+	}
+});

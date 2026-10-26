@@ -527,3 +527,51 @@ test("the report of a commit message scan never prints the term", () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a mode without its value is not a clean run, it is a broken command", () => {
+	const dir = mkdtempSync(join(tmpdir(), "scan-"));
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		for (const args of [
+			["--diff"],
+			["--file"],
+			["--range"],
+			["--tree"],
+			["--commits"],
+		]) {
+			const run = spawnSync(
+				process.execPath,
+				[SCANNER, "--terms-file", termsFile, ...args],
+				{ encoding: "utf8" },
+			);
+			// Not 0: a check that could not run must not look like a pass.
+			assert.equal(
+				run.status,
+				EXIT_UNAVAILABLE,
+				`the mode ${args[0]} without a value must not pass`,
+			);
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a commit range that holds no commit is not a clean run", () => {
+	const dir = mkdtempSync(join(tmpdir(), "scan-"));
+	const termsFile = join(dir, "terms.txt");
+	try {
+		writeFileSync(termsFile, `${TERM}\n`);
+		// A range that cannot exist. Scanning it would report a clean
+		// result for a check that never read a commit.
+		const run = spawnSync(
+			process.execPath,
+			[SCANNER, "--terms-file", termsFile, "--commits", "no-such-tag..no-such-tag"],
+			{ encoding: "utf8" },
+		);
+		assert.equal(run.status, EXIT_UNAVAILABLE);
+		assert.match(run.stderr, /no commit/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

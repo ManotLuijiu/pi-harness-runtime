@@ -564,6 +564,15 @@ export function scanRange(range, terms, cwd = process.cwd()) {
 }
 
 /**
+ * The directories a tree scan does not walk.
+ *
+ * They are never part of a published package, and their content is not
+ * the content of this repository. A name inside a dependency is not a
+ * leak of this repository.
+ */
+const SKIPPED_DIRECTORIES = new Set([".git", "node_modules"]);
+
+/**
  * The files of a directory tree.
  *
  * A published package is a directory tree, and a name can sit in any file
@@ -581,6 +590,7 @@ export function listTreeFiles(dir, root = dir, out = []) {
 	for (const entry of entries) {
 		const absolute = join(dir, entry.name);
 		if (entry.isDirectory()) {
+			if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
 			listTreeFiles(absolute, root, out);
 			continue;
 		}
@@ -657,6 +667,25 @@ async function main() {
 		return EXIT_UNAVAILABLE;
 	}
 
+	// A mode without its value checked nothing. That is a broken
+	// command, not a clean result, so it stops here.
+	const required = {
+		diff: "path",
+		file: "path",
+		range: "range",
+		tree: "path",
+		commits: "range",
+	};
+	const needed = args.mode ? required[args.mode] : undefined;
+	if (needed && !args[needed]) {
+		console.error(`the mode --${args.mode} needs a ${needed}.`);
+		return EXIT_UNAVAILABLE;
+	}
+	if (args.mode === "text" && args.text === undefined) {
+		console.error("the mode --text needs a text.");
+		return EXIT_UNAVAILABLE;
+	}
+
 	let result;
 	if (args.mode === "pr") {
 		const repo = args.repo ?? process.env.GITHUB_REPOSITORY ?? repositoryFromRemote();
@@ -698,6 +727,13 @@ async function main() {
 		result = scanRange(args.range, terms);
 	} else if (args.mode === "commits") {
 		result = scanCommitMessages(args.range, terms);
+		// A range that holds no commit is a range that was written
+		// wrong. Scanning it would report a clean result for a check
+		// that never ran.
+		if (result.scanned === 0) {
+			console.error(`the range ${args.range} holds no commit, so nothing could be checked.`);
+			return EXIT_UNAVAILABLE;
+		}
 	} else if (args.mode === "tree") {
 		if (!existsSync(args.path) || !statSync(args.path).isDirectory()) {
 			console.error(`the directory ${args.path} does not exist.`);

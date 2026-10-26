@@ -21,6 +21,7 @@
     "build": "bun scripts/build-packages.ts",
     "build:verify": "bun scripts/verify-package-contents.ts",
     "build:verify:pack": "bun scripts/verify-package-contents.ts --pack",
+    "guard:scan": "bash scripts/guard-scan.sh",
     "prepublishOnly": "bun run build && bun run build:verify:pack",
     "test:harness": "node scripts/run-langchain-tests.mjs",
     "test:packages": "bun test packages/",
