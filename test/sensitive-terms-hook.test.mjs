@@ -56,13 +56,26 @@ function commitWith(file, content) {
 	// the index as a file, and a directory of that name is not one.
 	const dir = mkdtempSync(join(tmpdir(), "hook-index-"));
 	const index = join(dir, "index");
-	const env = { ...process.env, GIT_INDEX_FILE: index };
+	// The identity is set for the commit. A checkout on a build
+	// machine has no git identity configured, and `git commit-tree`
+	// refuses to write a commit without one - which failed here and
+	// passed at home.
+	const env = {
+		...process.env,
+		GIT_INDEX_FILE: index,
+		GIT_AUTHOR_NAME: "harness test",
+		GIT_AUTHOR_EMAIL: "test@example.com",
+		GIT_COMMITTER_NAME: "harness test",
+		GIT_COMMITTER_EMAIL: "test@example.com",
+	};
 	try {
 		assert.equal(run("git", ["read-tree", "HEAD"], { env }).status, 0);
-		const blob = run("git", ["hash-object", "-w", "--stdin"], {
+		const hashed = run("git", ["hash-object", "-w", "--stdin"], {
 			env,
 			input: content,
-		}).stdout.trim();
+		});
+		assert.equal(hashed.status, 0, hashed.stderr);
+		const blob = hashed.stdout.trim();
 		assert.notEqual(blob, "");
 		const updated = run(
 			"git",
@@ -71,9 +84,11 @@ function commitWith(file, content) {
 		);
 		assert.equal(updated.status, 0, updated.stderr);
 		const tree = run("git", ["write-tree"], { env }).stdout.trim();
-		const commit = run("git", ["commit-tree", tree, "-p", "HEAD", "-m", "a test commit"], {
+		const committed = run("git", ["commit-tree", tree, "-p", "HEAD", "-m", "a test commit"], {
 			env,
-		}).stdout.trim();
+		});
+		assert.equal(committed.status, 0, committed.stderr);
+		const commit = committed.stdout.trim();
 		assert.notEqual(commit, "");
 		return commit;
 	} finally {
