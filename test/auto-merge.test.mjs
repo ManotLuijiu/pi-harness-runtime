@@ -188,7 +188,7 @@ test("a pull request into another branch is left alone", () => {
 	assert.equal(decision.action, "skip");
 });
 
-test("a missing gate turns the auto merge off", () => {
+test("a missing gate holds the pull request", () => {
 	const decision = decideAutoMerge({
 		evaluation: evaluateChecks(
 			[
@@ -206,7 +206,7 @@ test("a missing gate turns the auto merge off", () => {
 	assert.equal(decision.action, "hold");
 });
 
-test("a failed gate turns the auto merge off", () => {
+test("a failed gate holds the pull request", () => {
 	const decision = decideAutoMerge({
 		evaluation: evaluateChecks(
 			[
@@ -225,7 +225,7 @@ test("a failed gate turns the auto merge off", () => {
 	assert.equal(decision.action, "hold");
 });
 
-test("a gate that is still running turns the auto merge off", () => {
+test("a gate that is still running holds the pull request", () => {
 	const decision = decideAutoMerge({
 		evaluation: evaluateChecks(
 			[
@@ -332,10 +332,23 @@ test("the manual run never runs the change it pulls", () => {
 	assert.match(job, /ref:\s*\$\{\{\s*github\.ref\s*\}\}/);
 	// It opens a pull request, it does not merge one by itself.
 	assert.doesNotMatch(job, /gh pr merge/);
-	// The merge is the auto merge of GitHub, and it is turned on by the
-	// judge of the repository.
+	// The judge of the repository is the script, and the script is the
+	// one that decides whether the pull request is merged.
 	assert.match(job, /scripts\/auto-merge\.mjs/);
 	assert.match(job, /PR_NUMBER/);
+});
+
+test("a manual run can open the pull request and leave the merge to the event", () => {
+	// A pull request that a workflow opened starts no workflow of its
+	// own. A run that is told not to merge opens the pull request, and
+	// the next push to the head branch starts the pull request event,
+	// and the merge job of that event merges the pull request.
+	assert.match(workflow, /merge_now/);
+	// The input is a boolean. A comparison with the string 'false'
+	// would coerce the string to a number, and the step would run
+	// either way.
+	assert.match(workflow, /if:\s*inputs\.merge_now\s*$/m);
+	assert.doesNotMatch(workflow, /merge_now != 'false'/);
 });
 
 test("the manual run and the merge are separate jobs", () => {
