@@ -84,9 +84,11 @@ async function setWorkspaceVersion(
 		return;
 	}
 	pkg.version = version;
-	// Re-serialize via JSON.parse→stringify to collapse any duplicate keys
-	// (duplicate "version" keys are valid JSON but cause bun install to warn/fail)
-	await writeFile(pkgPath, `${JSON.stringify(JSON.parse(JSON.stringify(pkg)), null, 2)}\n`);
+	// The parse above already collapsed any duplicate keys (a duplicate
+	// "version" key is valid JSON but makes bun install warn or fail), so the
+	// plain serialization is enough. It cannot throw: the value came from
+	// JSON.parse and holds nothing but JSON types.
+	await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 	const name =
 		typeof pkg.name === "string"
 			? `${pkg.name}@${version}`

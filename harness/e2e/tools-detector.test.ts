@@ -2,7 +2,6 @@
  * E2E Tools Detector Tests
  */
 
-// @ts-expect-error - bun:test types
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
 	detectProjectType,

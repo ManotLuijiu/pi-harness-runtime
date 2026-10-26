@@ -269,11 +269,17 @@ function checkSensitiveContent(files: string[]): void {
 		);
 		return;
 	}
+	// A file that cannot be read is a file that was not checked. The
+	// check fails closed for the same reason it fails closed on a
+	// missing term list: "nothing was found" must not mean "nothing
+	// was looked at".
+	let unreadable = 0;
 	for (const file of files) {
 		let content: string;
 		try {
 			content = readFileSync(join(ROOT, file), "utf8");
 		} catch {
+			unreadable++;
 			continue;
 		}
 		for (const found of scanText(content, file, terms)) {
@@ -284,8 +290,14 @@ function checkSensitiveContent(files: string[]): void {
 		}
 	}
 	console.log(
-		`[verify-package-contents] the sensitive content scan looked at ${files.length} published file(s) with the list of ${source}`,
+		`[verify-package-contents] the sensitive content scan looked at ${files.length - unreadable} published file(s) with the list of ${source}`,
 	);
+	if (unreadable > 0) {
+		problems.push({
+			kind: "sensitive-content",
+			detail: `${unreadable} published file(s) could not be read, so the sensitive content scan did not cover them`,
+		});
+	}
 }
 
 /**

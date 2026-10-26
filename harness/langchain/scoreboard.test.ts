@@ -47,8 +47,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		const statusPath = join(blackboardDir, "status.json");
@@ -68,8 +70,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		const content = JSON.parse(
@@ -92,8 +96,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		deps.onStep?.("write", {
@@ -103,8 +109,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "``` harness/langchain/surge.ts\nconst x = 1;\n```",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		const content = JSON.parse(
@@ -129,8 +137,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		deps.onStep?.("write", {
@@ -140,8 +150,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```harness/langchain/surge.ts\nconst x = 1;\n```",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		deps.onStep?.("review", {
@@ -157,8 +169,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 				],
 			},
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		const content = JSON.parse(
@@ -186,8 +200,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		// Call plan() — the stub returns a string that includes scoreboard context
@@ -212,8 +228,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 		deps.onStep?.("write", {
 			request: "test",
@@ -222,8 +240,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```a.ts\n1\n```",
 			review: null as any,
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 		deps.onStep?.("review", {
 			request: "test",
@@ -232,8 +252,10 @@ describe("T15 — Scoreboard blackboard wiring", () => {
 			code: "```a.ts\n1\n```",
 			review: { verdict: "approved", summary: "ok", comments: [] },
 			log: [],
-			lastCommentedFile: undefined,
-			seenCommentPairs: [],
+			prevCode: undefined,
+			writtenFiles: {},
+			userInput: null,
+			userResponse: null,
 		});
 
 		const content = JSON.parse(

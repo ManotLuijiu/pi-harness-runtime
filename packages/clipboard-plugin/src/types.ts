@@ -4,14 +4,21 @@
 
 import type { ToolExtension } from "@pi/framework-plugin-sdk";
 
-export interface ClipboardBridgeConfig {
+/**
+ * Declared as a type alias rather than an interface on purpose: only type
+ * aliases receive an implicit index signature, so this shape stays
+ * structurally assignable to `Record<string, unknown>` (the shape
+ * `ToolExtension.config` requires) without an explicit index signature that
+ * would weaken every property to `unknown`.
+ */
+export type ClipboardBridgeConfig = {
 	/** Enable the paste shortcut (default: true) */
 	enablePasteShortcut?: boolean;
 	/** Bridge file path (default: ~/.herdr-clipboard) */
 	bridgePath?: string;
 	/** Auto-sync to clipboard (default: true) */
 	autoSync?: boolean;
-}
+};
 
 export interface ClipboardBridgeTool extends ToolExtension {
 	capability: "tool";

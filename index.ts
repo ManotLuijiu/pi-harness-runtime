@@ -86,10 +86,7 @@ import {
 	JobStateMachine,
 	type CheckpointManager,
 } from "./harness/job-state-machine.ts";
-import {
-	createTaskGraphManager,
-	type TaskGraphManager,
-} from "./harness/task-graph.js";
+import { TaskGraphManager } from "./harness/task-graph.js";
 import { MasterPlanner } from "./harness/master-planner.ts";
 import { RepairEngine } from "./harness/repair-engine.ts";
 import {
@@ -3351,7 +3348,7 @@ async function initMemory(pi: ExtensionAPI): Promise<void> {
 
 			if (!allMemory.trim()) {
 				logToFile("[memory]", "No memory to inject");
-				return;
+				return undefined;
 			}
 
 			// Status on first injection
@@ -4815,6 +4812,9 @@ Server process examples that must be detached: uvicorn, fastapi dev server, guni
 			// Return the additional prompt to append to systemPrompt
 			return { systemPrompt: event.systemPrompt + "\n" + additionalPrompt };
 		}
+
+		// Only the first turn carries the additional prompt.
+		return undefined;
 	});
 
 	// --- Auto-Todo Reminder on Build Commands ---------------------------
@@ -5813,7 +5813,7 @@ Run \`bd ready\` to see current bd issues.
 					jobId,
 					requirement,
 					machine,
-					graph: createTaskGraphManager(),
+					graph: TaskGraphManager.fromGraph(planResult.graph!),
 					blackboard,
 					repairEngine,
 					createdAt: new Date().toISOString(),
@@ -5829,7 +5829,14 @@ Run \`bd ready\` to see current bd issues.
 					"info",
 				);
 			} catch (e) {
-				ctx.ui.notify(`Error starting harness: ${e}`, "error");
+				// The UI can already be gone. A failing notify must not hide
+				// the original error, so the log line is the durable report.
+				logToFile("[Harness]", `Error starting harness: ${e}`);
+				try {
+					ctx.ui.notify(`Error starting harness: ${e}`, "error");
+				} catch {
+					// The UI is not available; the log line above is the report.
+				}
 			}
 		},
 	});

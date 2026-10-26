@@ -4,7 +4,9 @@
     "outDir": "./dist",
     "rootDir": ".",
     "types": ["node"],
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "composite": true,
+    "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*"]
 }

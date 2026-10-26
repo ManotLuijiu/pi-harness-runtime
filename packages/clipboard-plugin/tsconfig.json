@@ -4,9 +4,15 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
   "references": [
-    { "path": "../clipboard" },
-    { "path": "../framework-plugin-sdk" }
+    {
+      "path": "../framework-plugin-sdk"
+    },
+    {
+      "path": "../clipboard"
+    }
   ]
 }

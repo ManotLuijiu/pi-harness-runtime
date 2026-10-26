@@ -1,8 +1,11 @@
 /**
  * Tests for Task Graph — RFC-0016
  *
- * Note: The TaskGraphManager is a stub implementation.
- * Tests reflect the actual stub interface (not the full RFC-0016 design).
+ * The task graph is one real implementation: the concrete RFC-0016 graph
+ * with the RFC-0028 compact view on top. These tests cover the behaviour
+ * that the runtime relies on; the dependency transitions, the persistence
+ * and the topological order have their own suite in
+ * test/task-graph-manager.test.mjs.
  */
 
 import { describe, it, beforeEach } from "node:test";
@@ -78,17 +81,16 @@ describe("TaskGraphManager", () => {
 		assert.strictEqual(summary.done, 1);
 	});
 
-	it("getReadyTasks reflects completed dependencies (stub)", () => {
-		// Stub: ready task is not automatically set via addTask;
-		// getReadyTasks returns tasks explicitly marked ready.
-		// The stub's completeTask updates dependents' status.
+	it("getReadyTasks keeps an explicitly pending task pending", () => {
+		// A task that arrives with its own status keeps that status; only a
+		// task without dependencies and without a status becomes ready.
 		graph.addTask(makeTask({ id: "task-001" }));
 		assert.strictEqual(graph.getReadyTasks().length, 0);
 	});
 
-	it("getBlockedTasks returns empty array (stub)", () => {
+	it("getBlockedTasks returns the tasks that wait for a task", () => {
 		graph.addTask(makeTask({ id: "task-001" }));
-		// Stub always returns []
+		// Nothing waits for this task yet.
 		assert.deepStrictEqual(graph.getBlockedTasks("task-001"), []);
 	});
 });

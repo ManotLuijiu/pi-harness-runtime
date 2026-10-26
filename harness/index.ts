@@ -44,7 +44,8 @@ export type {
 export type { CheckpointManager } from "./job-state-machine.js";
 
 // Task Graph
-export type { TaskGraphManager } from "./task-graph.js";
+export { TaskGraphManager } from "./task-graph.js";
+export type { TaskDescription, TaskGraphOptions } from "./task-graph.js";
 
 // Loop Runtime
 export { LoopRuntime } from "./loop-runtime.js";

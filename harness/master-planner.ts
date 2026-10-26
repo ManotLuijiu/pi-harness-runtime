@@ -6,7 +6,7 @@
  */
 
 import type { TaskGraph } from "../packages/types/dist/runtime-types.js";
-import type { TaskGraphManager } from "./task-graph.ts";
+import { TaskGraphManager } from "./task-graph.js";
 
 export interface PlanResult {
 	success: boolean;

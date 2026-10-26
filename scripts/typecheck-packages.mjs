@@ -26,23 +26,26 @@ import { join, relative } from "node:path";
  * Maximum tolerated number of type errors per project. A project that is
  * not listed must type check cleanly.
  */
+// Every project type checks cleanly. A non-zero entry is a debt that hides
+// a real error, so the baseline stays at zero until a project genuinely
+// compiles.
 const BASELINES = new Map([
 	["a2a-adapter", 0],
-	["clipboard-plugin", 1],
+	["clipboard-plugin", 0],
 	["provider-router", 0],
 	["providers", 0],
 	["quota-manager", 0],
 	["runtime", 0],
-	["voice-api", 16],
+	["voice-api", 0],
 	["worktree", 0],
-	["harness", 20],
+	["harness", 0],
 	// The scripts of the repository type check cleanly. The project
 	// lives in `scripts/tsconfig.json`, so the language server reads the
 	// same configuration as the compiler and no longer answers with a
 	// project that has no node types.
 	["scripts", 0],
 	["scripts/release", 0],
-	["root", 2],
+	["root", 0],
 	["new-modules", 0],
 ]);
 

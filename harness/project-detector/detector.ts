@@ -10,8 +10,8 @@ import type {
 	ProjectDetection,
 	SeedStrategy,
 	E2EStrategy,
-} from "../packages/types/dist/runtime-types.js";
-import { readJson } from "../../cli.ts";
+} from "../../packages/types/dist/runtime-types.js";
+import { readJson } from "../../cli.js";
 import { join } from "node:path";
 
 export interface DetectionSignal {
@@ -190,9 +190,7 @@ export class ProjectDetector {
 				"database/seeders",
 			];
 
-			// @ts-expect-error - Bun has built-in file system access
 			const { existsSync } = await import("node:fs");
-			// @ts-expect-error - Bun has built-in file system access
 			const { readdirSync } = await import("node:fs");
 
 			for (const check of checks) {

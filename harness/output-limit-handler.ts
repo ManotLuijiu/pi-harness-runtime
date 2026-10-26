@@ -259,7 +259,7 @@ export class OutputLimitHandler {
 		}
 
 		// Basic validation: content should be longer than partial
-		return content.length > this.getPartials()[0]?.length ?? 0;
+		return content.length > (this.getPartials()[0]?.length ?? 0);
 	}
 
 	/**

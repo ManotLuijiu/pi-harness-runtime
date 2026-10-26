@@ -96,6 +96,10 @@ harness/**/*.js.map
 scripts/**/*.d.ts.map
 scripts/**/*.js.map
 
+# Incremental build state of a composite project is local build state,
+# never a tracked release artifact.
+*.tsbuildinfo
+
 # Test fixtures that live in the workspace instead of the shared /tmp
 .test-two-phase-root-*
 packages/two-phase-review/.test-*

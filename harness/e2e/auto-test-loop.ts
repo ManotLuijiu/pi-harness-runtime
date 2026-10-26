@@ -100,6 +100,9 @@ export async function runAutoTestLoop(
 	);
 
 	// Handle decision
+	const runTests = () =>
+		runTestLoop(cfg, toolsConfig, retriesAttempted, startTime);
+
 	switch (decision.suggestedAction) {
 		case "skip":
 			logInfo(null, "Skipping E2E tests - not needed right now");
@@ -130,12 +133,13 @@ export async function runAutoTestLoop(
 				logInfo(null, "Generating test stubs...");
 				await generateTestStubs(cfg.projectRoot, toolsConfig.projectType);
 			}
-		// Fall through to run tests
+			// The stubs are the extra step; the test loop runs in both cases.
+			return runTests();
 
 		case "auto_run":
 		default:
 			// Run the test loop
-			return await runTestLoop(cfg, toolsConfig, retriesAttempted, startTime);
+			return runTests();
 	}
 }
 
