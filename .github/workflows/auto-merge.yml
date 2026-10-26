@@ -106,6 +106,14 @@ jobs:
     # The job waits for the checks of the pull request, so it has to
     # outlive the CI of this repository.
     timeout-minutes: 45
+    permissions:
+      # The job merges the pull request it opened. The merge of a pull
+      # request writes to the repository contents. The job runs the
+      # merger of the branch it checked out and nothing of the pull
+      # request, so the permission is only used for the merge itself.
+      contents: write
+      pull-requests: write
+      checks: read
     steps:
       # The branch the release is prepared on. A manual run has no pull
       # request, so it has no base branch to check out.
