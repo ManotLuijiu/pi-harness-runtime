@@ -40,7 +40,7 @@ function fakeBin(dir, name, body) {
  * The fake npm refuses the first removal with a challenge and accepts the
  * rest. The fake curl answers the polling URL with an approved token.
  */
-function workspace() {
+function workspace(options = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "npm-approval-test-"));
 	const bin = join(dir, "bin");
 	const home = join(dir, "home");
@@ -75,7 +75,22 @@ exit 0
 	fakeBin(
 		bin,
 		"curl",
-		`#!/usr/bin/env bash
+		options.approval === "never"
+			? `#!/usr/bin/env bash
+# An approval that never lands: the registry keeps answering that the
+# request is not done yet.
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+if [ -n "$out" ]; then
+  printf '{}' > "$out"
+fi
+printf '404'
+`
+			: `#!/usr/bin/env bash
 # The script reads the body from the file it names with -o and the status
 # code from the -w format, so the fake has to honour both. An earlier
 # version of this fake ignored -o and wrote the body to a file of its
@@ -106,7 +121,7 @@ printf '200'
 			HOME: home,
 			NPM_CONFIG_USERCONFIG: join(dir, "npmrc"),
 			NPM_TOKEN_FILE: join(home, ".pi-harness-runtime", "keys", "npm-token.txt"),
-			APPROVAL_WAIT: "20",
+			APPROVAL_WAIT: options.approval === "never" ? "6" : "20",
 		},
 	};
 }
@@ -198,4 +213,38 @@ test("a batch removes every version across an approval", { timeout: TEST_TIMEOUT
 	assert.equal(result.code, 0, result.stdout);
 	assert.match(result.stdout, /OK: unpublished pi-harness-runtime@1\.1\.390/);
 	assert.match(result.stdout, /OK: unpublished pi-harness-runtime@1\.1\.391/);
+});
+
+test("an approval that never arrives stops the batch instead of burning the window", { timeout: TEST_TIMEOUT_MS }, () => {
+	// Nobody is watching the run, so the approval never arrives. Every
+	// remaining version would face the same challenge and wait the same
+	// fifteen minutes, so the batch stops at the first one that waits.
+	// The removal windows close on their own; spending the rest of them
+	// waiting removes nothing.
+	const ws = workspace({ approval: "never" });
+	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
+	const result = run(ws, "batch", "pi-harness-runtime", "1.1.390", "1.1.391", "1.1.392");
+
+	assert.match(result.stdout, /The approval did not arrive, so the batch stops/);
+	// Only the version that waited is reported as failed. The other two
+	// were never attempted, so they are not failures.
+	const failed = result.stdout.match(/^FAILED:/gm) ?? [];
+	assert.equal(failed.length, 1, `expected one failed version, got ${failed.length}`);
+	assert.match(result.stdout, /The versions that were not attempted are still published/);
+});
+
+test("the batch can be told to keep going after an unanswered approval", { timeout: TEST_TIMEOUT_MS }, () => {
+	// The operator may want the run to try every version anyway. That is
+	// the old behaviour and it is still available.
+	const ws = workspace({ approval: "never" });
+	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
+	ws.env.APPROVAL_ABORT = "0";
+	const result = run(ws, "batch", "pi-harness-runtime", "1.1.390", "1.1.391");
+	// With the override the batch carries on after the unanswered
+	// approval: the first version is reported as failed and the second
+	// is still attempted.
+	const failed = result.stdout.match(/^FAILED:/gm) ?? [];
+	assert.equal(failed.length, 1, `expected one failed version, got ${failed.length}`);
+	assert.match(result.stdout, /OK: unpublished pi-harness-runtime@1\.1\.391/);
+	assert.doesNotMatch(result.stdout, /The approval did not arrive, so the batch stops/);
 });

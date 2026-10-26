@@ -232,6 +232,18 @@ batch)
 		if ! wait_for_approval "$DONE_URL" "${APPROVAL_WAIT:-900}"; then
 			echo "FAILED: ${PACKAGE}@${version}"
 			failed="$failed $version"
+			# An approval that does not arrive means nobody is watching this
+			# run. Every remaining version would face the same challenge and
+			# wait the same fifteen minutes, so the batch stops here
+			# instead of spending hours to remove nothing. Set
+			# APPROVAL_ABORT=0 to keep going anyway.
+			if [ "${APPROVAL_ABORT:-1}" != "0" ]; then
+				echo ""
+				echo "The approval did not arrive, so the batch stops."
+				echo "The versions that were not attempted are still published."
+				echo "Run this again once the approval can be given."
+				break
+			fi
 			continue
 		fi
 		attempt_removal "$PACKAGE" "$version"
