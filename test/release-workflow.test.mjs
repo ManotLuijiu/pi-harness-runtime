@@ -23,7 +23,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -65,6 +65,36 @@ test("the unpublish step runs the checked-out helper", () => {
 	// gives a non-executable file and the step cannot run it.
 	const mode = readFileSync(join(ROOT, "scripts", "npm-unpublish-with-approval.sh"), "utf8");
 	assert.ok(mode.length > 0, "the helper script exists and is readable");
+});
+
+test("the removal is verified against the state captured before it", () => {
+	// The removal is irreversible, so the run has to report what the
+	// registry shows afterwards. The check has to run against the state
+	// that was real, which means the capture comes first.
+	const body = jobBody("unpublish");
+	const capture = stepBody("unpublish", "Capture the registry state");
+	const verify = stepBody("unpublish", "Verify the removal");
+	assert.match(capture, /npm-verify-removal\.mjs/);
+	assert.match(capture, /--capture/);
+	assert.match(verify, /npm-verify-removal\.mjs/);
+	assert.ok(
+		body.indexOf("Capture the registry state") < body.indexOf("Unpublish versions"),
+		"the state is captured after the removal, so it records the wrong state",
+	);
+	assert.ok(
+		body.indexOf("Unpublish versions") < body.indexOf("Verify the removal"),
+		"the removal is verified before it happens",
+	);
+});
+
+test("the verification script exists in the repository", () => {
+	// The workflow step runs the script from the checkout, so the file
+	// has to be there and has to be a node script.
+	const path = join(ROOT, "scripts", "npm-verify-removal.mjs");
+	assert.ok(existsSync(path), "the verification script is in the repository");
+	const source = readFileSync(path, "utf8");
+	assert.match(source, /npm_config_registry/);
+	assert.match(source, /--capture/);
 });
 
 test("the release job still checks out and still publishes", () => {

@@ -208,6 +208,18 @@ jobs:
             | sed -E "s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<email>/g" \
             || echo "npm profile get returned no two-factor lines"
 
+      # The state the removal will be checked against. It is captured
+      # before the removal, so the check proves the result against the
+      # state that was real rather than against a list written by hand.
+      - name: Capture the registry state
+        env:
+          VERSIONS: ${{ github.event.inputs.unpublish_versions }}
+          PACKAGE_NAME: pi-harness-runtime
+        run: |
+          set -uo pipefail
+          node "$GITHUB_WORKSPACE/scripts/npm-verify-removal.mjs" \
+            "$PACKAGE_NAME" --capture /tmp/removal-spec.json $VERSIONS
+
       - name: Unpublish versions
         env:
           VERSIONS: ${{ github.event.inputs.unpublish_versions }}
@@ -258,6 +270,19 @@ jobs:
             echo "Versions that could not be unpublished:$failed"
             exit 1
           fi
+
+      # The removal is irreversible, so the run reports what the registry
+      # actually shows afterwards. The check distinguishes "the version is
+      # gone" from "the registry did not answer", and it also requires the
+      # tarball to answer 404: the tarball is where the content lives, so
+      # a version that is still downloadable is not removed.
+      - name: Verify the removal
+        env:
+          PACKAGE_NAME: pi-harness-runtime
+        run: |
+          set -uo pipefail
+          node "$GITHUB_WORKSPACE/scripts/npm-verify-removal.mjs" \
+            "$PACKAGE_NAME" /tmp/removal-spec.json
 
   release:
     name: Release
