@@ -190,7 +190,10 @@ jobs:
       # workflow merges the pull request with the script of the base
       # branch.
       - name: Merge or hold
-        if: inputs.merge_now != 'false'
+        # The input is a boolean, so it is read as a boolean. A
+        # comparison with the string 'false' would coerce the string to
+        # a number, and the step would run either way.
+        if: inputs.merge_now
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

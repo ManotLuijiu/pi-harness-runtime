@@ -344,7 +344,11 @@ test("a manual run can open the pull request and leave the merge to the event", 
 	// the next push to the head branch starts the pull request event,
 	// and the merge job of that event merges the pull request.
 	assert.match(workflow, /merge_now/);
-	assert.match(workflow, /if:\s*inputs\.merge_now != 'false'/);
+	// The input is a boolean. A comparison with the string 'false'
+	// would coerce the string to a number, and the step would run
+	// either way.
+	assert.match(workflow, /if:\s*inputs\.merge_now\s*$/m);
+	assert.doesNotMatch(workflow, /merge_now != 'false'/);
 });
 
 test("the manual run and the merge are separate jobs", () => {
