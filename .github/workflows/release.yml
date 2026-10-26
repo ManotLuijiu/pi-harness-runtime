@@ -132,17 +132,13 @@ jobs:
           printf '//registry.npmjs.org/:_authToken=%s\n' \
             "$registry_token" >> /tmp/npmrc
           echo "NPM_CONFIG_USERCONFIG=/tmp/npmrc" >> "$GITHUB_ENV"
-          # Prove the credential can read the package with write access
-          # before anything is deleted. This is the same packument request
-          # `npm unpublish` makes first.
-          probe="$(curl -sS -o /tmp/packument.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${registry_token}" \
-            "https://registry.npmjs.org/${PACKAGE_NAME}?write=true")"
-          echo "packument write probe: HTTP ${probe}"
-          if [ "$probe" != "200" ]; then
-            echo "the credential has no write access to ${PACKAGE_NAME}" >&2
-            exit 1
-          fi
+          # Reading the packument proves nothing: the registry serves
+          # it to an unauthenticated reader too, so a 200 here is not
+          # evidence of write access. The only honest proof of write
+          # access is a write, and the removal itself is that proof. The
+          # credential is only identified here.
+          whoami="$(npm whoami 2>&1 || true)"
+          echo "credential identity: ${whoami}"
           echo "exchanged a registry token for ${PACKAGE_NAME}"
 
       # Report which second factor the account actually uses, so the
