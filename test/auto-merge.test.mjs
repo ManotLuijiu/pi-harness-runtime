@@ -319,9 +319,12 @@ test("the manual run never runs the change it pulls", () => {
 		workflow.length,
 	);
 	assert.match(job, /ref:\s*\$\{\{\s*github\.ref\s*\}\}/);
-	// It opens a pull request, it does not merge one.
-	assert.doesNotMatch(job, /auto-merge\.mjs/);
+	// It opens a pull request, it does not merge one by itself.
 	assert.doesNotMatch(job, /gh pr merge/);
+	// The merge is the auto merge of GitHub, and it is turned on by the
+	// judge of the repository.
+	assert.match(job, /scripts\/auto-merge\.mjs/);
+	assert.match(job, /PR_NUMBER/);
 });
 
 test("the manual run and the merge are separate jobs", () => {

@@ -93,7 +93,9 @@ jobs:
     name: Open the release pull request
     if: github.event_name == 'workflow_dispatch' && inputs.open_release_pr
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The job waits for the checks of the pull request, so it has to
+    # outlive the CI of this repository.
+    timeout-minutes: 45
     steps:
       # The branch the release is prepared on. A manual run has no pull
       # request, so it has no base branch to check out.
@@ -113,6 +115,7 @@ jobs:
       # branch is used, and the pull request is judged by the gates of
       # the pull request event.
       - name: Open the release pull request
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -122,6 +125,9 @@ jobs:
             --json number --jq 'length')
           if [ "$open" != "0" ]; then
             echo "a pull request from develop into main is already open"
+            number=$(gh pr list --base main --head develop --state open \
+              --json number --jq '.[0].number')
+            echo "number=$number" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           body="$RUNNER_TEMP/release-body.md"
@@ -135,3 +141,22 @@ jobs:
           gh pr create --base main --head develop \
             --title "Release $version" \
             --body-file "$body"
+          number=$(gh pr list --base main --head develop --state open \
+            --json number --jq '.[0].number')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      # The gates are judged here as well.
+      #
+      # A pull request that a workflow opened does not start a workflow
+      # of its own: an event that a token of the repository creates does
+      # not create a run. The pull request event of the pull request
+      # therefore never comes, and the merge job of the workflow never
+      # runs for it. The manual run takes that work over: it reads the
+      # checks of the head commit of the pull request and turns the
+      # auto merge on when they are green.
+      - name: Merge or hold
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: node scripts/auto-merge.mjs
