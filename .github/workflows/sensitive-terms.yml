@@ -1,0 +1,66 @@
+# The check that keeps a client name out of a pull request.
+#
+# The repository is public, so a name that reaches a pull request has
+# reached the world. A required check can stop that change from being
+# merged - it cannot make a name private once it was pushed.
+#
+# The names live in a repository secret, `SENSITIVE_TERMS`, one term per
+# line. The secret is never printed, and the script that reads it never
+# prints a term and never prints the line that matched.
+#
+# The trigger is `pull_request_target` and not `pull_request`. A normal
+# pull request workflow gets no secret for a fork, and a fork is where a
+# pull request usually comes from. `pull_request_target` runs in the
+# context of the base branch, with the secrets of the base repository.
+#
+# That context is also the risk of the trigger: the workflow has the
+# secrets of the repository, so it must never run code of the pull
+# request. This workflow therefore
+#
+#   - checks out the base commit, never the head of the pull request,
+#   - persists no credential,
+#   - reads the pull request through the API and compares the text,
+#   - builds nothing and installs nothing.
+#
+# The script it runs is the one of the base branch, so a pull request
+# cannot change the check that judges it.
+
+name: Sensitive terms
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# The check only reads. It needs the pull request and the contents of
+# the base branch - nothing else.
+permissions:
+  contents: read
+  pull-requests: read
+
+# One pull request, one run. A second push to the same pull request
+# cancels the first run, so a queue of stale runs cannot delay the
+# author.
+concurrency:
+  group: sensitive-terms-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: No sensitive terms
+    runs-on: ubuntu-latest
+    steps:
+      # The base commit. The head of the pull request is never checked
+      # out - it would be untrusted code in a job that holds a secret.
+      - name: Checkout the base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      # The only step that sees the terms.
+      - name: Scan the pull request
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/check-sensitive-terms.mjs --pr "$PR_NUMBER"

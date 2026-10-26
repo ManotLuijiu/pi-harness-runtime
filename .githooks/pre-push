@@ -1,0 +1,88 @@
+#!/bin/sh
+# The guard that keeps a client name off the remote.
+#
+# The workflow `sensitive-terms.yml` stops a pull request from being
+# merged. It cannot undo a push that already carried a name, and it
+# cannot stop a push to a branch that is not a pull request. This hook
+# is the part that runs before the bytes leave the machine.
+#
+# The terms come from a local file - the same list the repository
+# secret holds, but on this machine and outside the repository. A
+# repository that is public has no business holding a list of client
+# names.
+#
+# The hook is opt-in. It runs when the repository uses this directory
+# as its hooks path:
+#
+#   git config core.hooksPath .githooks
+#
+# Without a local term list the hook does nothing and lets the push
+# through. A machine that does not know the names cannot check for
+# them, and a check that cannot run must not pretend to pass.
+
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+scanner="$root/scripts/check-sensitive-terms.mjs"
+
+if [ ! -f "$scanner" ]; then
+	exit 0
+fi
+
+terms_file=${PI_SENSITIVE_TERMS_FILE:-"$HOME/.pi-harness-runtime/sensitive-terms.txt"}
+if [ ! -f "$terms_file" ]; then
+	echo "sensitive terms: no local list, the push was not checked"
+	exit 0
+fi
+
+# The refs that are being pushed, one per line, as git hands them over.
+pushed=$(cat)
+
+status=0
+echo "$pushed" | while read -r local_ref local_sha remote_ref remote_sha; do
+	[ -n "${local_sha:-}" ] || continue
+
+	# A ref that is not a commit is not checked. The test asks git
+	# whether the object is a commit - a pattern that looked like a
+	# character class looked right and behaved differently in every
+	# shell: `[^...]` is a literal caret in a POSIX shell, and only
+	# `}[!...]` negates.
+	if ! git rev-parse --verify --quiet "${local_sha}^{commit}" >/dev/null 2>&1; then
+		continue
+	fi
+
+	if [ "${remote_sha:-}" = "0000000000000000000000000000000000000000" ]; then
+		# A new branch. The base is the branch it came from.
+		base=$(git merge-base "$local_sha" origin/develop 2>/dev/null || true)
+		if [ -z "$base" ]; then
+			base=$(git merge-base "$local_sha" origin/main 2>/dev/null || true)
+		fi
+		if [ -z "$base" ]; then
+			base=$(git rev-list --max-parents=0 "$local_sha" 2>/dev/null | tail -1)
+		fi
+		if [ -z "$base" ]; then
+			continue
+		fi
+	else
+		base=$remote_sha
+	fi
+
+	if [ "$base" = "$local_sha" ]; then
+		continue
+	fi
+
+	if node "$scanner" --terms-file "$terms_file" --range "$base..$local_sha"; then
+		:
+	else
+		code=$?
+		if [ "$code" -eq 1 ]; then
+			echo "sensitive terms: the push was stopped - the changed files hold a term"
+			echo "sensitive terms: the term is not printed here"
+			exit 1
+		fi
+		echo "sensitive terms: the check could not run, the push was not checked"
+		exit "$code"
+	fi
+done || status=$?
+
+exit "$status"
