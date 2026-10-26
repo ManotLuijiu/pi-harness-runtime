@@ -14,10 +14,17 @@
  *   bun scripts/release-all.ts --dry-run
  */
 
-import { readFile, writeFile } from "fs/promises";
-import { execSync } from "child_process";
-import { resolve, join } from "path";
-import { existsSync, readdirSync } from "fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { execSync } from "node:child_process";
+import { resolve, join } from "node:path";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -67,6 +74,87 @@ async function getRootVersion(): Promise<string> {
 	}
 	if (!version) throw new Error("Root package.json has no version field");
 	return version;
+}
+
+/**
+ * The order of two versions, the way the registry orders them.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function compareVersions(a: string, b: string): number {
+	const parts = (value: string) =>
+		value
+			.split("-")[0]
+			.split(".")
+			.map((piece) => Number.parseInt(piece, 10) || 0);
+	const left = parts(a);
+	const right = parts(b);
+	for (let i = 0; i < 3; i += 1) {
+		const diff = (left[i] ?? 0) - (right[i] ?? 0);
+		if (diff !== 0) return diff > 0 ? 1 : -1;
+	}
+	return 0;
+}
+
+/**
+ * The version of the last tag of the repository.
+ *
+ * @returns {string | null}
+ */
+function lastTagVersion(): string | null {
+	try {
+		const tag = execSync("git describe --tags --abbrev=0", {
+			cwd: ROOT,
+			encoding: "utf-8",
+		}).trim();
+		const match = /^v(\d+\.\d+\.\d+)/.exec(tag);
+		return match ? match[1] : null;
+	} catch {
+		// There is no tag yet, so there is nothing to align with.
+		return null;
+	}
+}
+
+/**
+ * Move the manifest to the last tag when it is behind it.
+ *
+ * The manifest of the working branch can lag behind the published
+ * history - a release that was prepared elsewhere, or a merge that did
+ * not carry the manifest, leaves it behind. A bump from a stale
+ * manifest produces a version that is older than what is on the
+ * registry, and the registry refuses to publish it.
+ *
+ * The last tag is the truth about what was published. When the
+ * manifest is behind it, the manifest is moved to it, and the bump
+ * follows from there.
+ *
+ * @returns {string | null} the version the manifest was moved to
+ */
+function alignVersionWithLastTag(): string | null {
+	const tagged = lastTagVersion();
+	if (!tagged) return null;
+
+	const manifestPath = join(ROOT, "package.json");
+	let manifest: { version?: string };
+	try {
+		manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		throw new Error(`the root manifest could not be read: ${message}`);
+	}
+	const current = manifest.version;
+	if (!current) throw new Error("Root package.json has no version field");
+	if (compareVersions(current, tagged) >= 0) return null;
+
+	console.log(
+		`   The manifest is at ${current} and the last tag is ${tagged}.`,
+	);
+	console.log("   The manifest is moved to the tag, and the bump follows.");
+	manifest.version = tagged;
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+	return tagged;
 }
 
 async function setWorkspaceVersion(
@@ -120,14 +208,23 @@ function openReleasePullRequest(version: string): void {
 		"merge, and the tag is what publishes to npm.",
 	].join("\n");
 	try {
-		const output = execSync(
-			"gh pr create --base main --head develop --title " +
-				JSON.stringify(title) +
-				" --body " +
-				JSON.stringify(body),
-			{ cwd: ROOT, encoding: "utf-8" },
-		);
-		console.log(`   ${output.trim()}`);
+		// The body is written to a file. A body that carries a backtick
+		// is otherwise read by the shell, and the shell runs what is
+		// between the backticks.
+		const bodyFile = join(tmpdir(), `pi-harness-release-${version}.md`);
+		writeFileSync(bodyFile, `${body}\n`);
+		try {
+			const output = execSync(
+				`gh pr create --base main --head develop --title ` +
+					JSON.stringify(title) +
+					` --body-file ` +
+					JSON.stringify(bodyFile),
+				{ cwd: ROOT, encoding: "utf-8" },
+			);
+			console.log(`   ${output.trim()}`);
+		} finally {
+			rmSync(bodyFile, { force: true });
+		}
 	} catch (err) {
 		const detail =
 			err && typeof err === "object" && "stderr" in err
@@ -304,6 +401,17 @@ async function main(): Promise<void> {
 	const cmd = isDryRun ? `${stdCmd} --dry-run` : stdCmd;
 
 	console.log("\n🚀 Synced monorepo release\n");
+
+	// Step 0: Align the manifest with the published history.
+	//
+	// A bump from a manifest that is behind the last tag produces a
+	// version the registry has already passed. The tag is the truth
+	// about what was published, so the manifest follows it and the
+	// bump happens from there.
+	if (!isDryRun) {
+		console.log("📦 Step 0: Aligning the manifest with the last tag...");
+		alignVersionWithLastTag();
+	}
 
 	// Step 1: Run standard-version
 	console.log("📦 Step 1: Running standard-version...");
