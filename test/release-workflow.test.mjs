@@ -181,3 +181,44 @@ test("every shell block in the workflow parses", () => {
 		assert.equal(result.status, 0, `shell block ${index} does not parse: ${result.stderr}`);
 	}
 });
+
+test("the release checks the published files for a client name before it publishes", () => {
+	// A name inside a published file is published for good: the removal
+	// of a published version is a support ticket. The gate therefore
+	// stands between the verification and the publish.
+	const body = jobBody("release");
+	const gate = stepBody("release", "Verify the published files hold no client name");
+	const publish = body.indexOf("- name: Publish to npm");
+	assert.notEqual(publish, -1, "the release publishes");
+	assert.ok(
+		body.indexOf("- name: Verify the published files hold no client name") < publish,
+		"the gate runs after the publish, so the name is already public",
+	);
+	// The gate needs the list, and the list is the repository secret.
+	assert.match(gate, /SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/);
+	// It looks at the packed tarball - the thing npm really publishes -
+	// and not at the working tree.
+	assert.match(gate, /npm pack --pack-destination/);
+	assert.match(gate, /check-sensitive-terms\.mjs --tree/);
+	// It fails closed: without the list the scanner exits 2, and the
+	// step stops there.
+	assert.match(gate, /set -euo pipefail/);
+});
+
+test("the release gate does not run untrusted code of the published package", () => {
+	// The tarball is unpacked, never installed and never run. A package
+	// that holds a script must not execute it while it is checked.
+	const gate = stepBody("release", "Verify the published files hold no client name");
+	assert.doesNotMatch(gate, /npm install/);
+	assert.doesNotMatch(gate, /npm ci/);
+	assert.doesNotMatch(gate, /postinstall/);
+});
+
+test("the CI carries the list, so the content scan runs on every push", () => {
+	const ci = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+	assert.match(
+		ci,
+		/SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/,
+		"the CI verification has the list",
+	);
+});

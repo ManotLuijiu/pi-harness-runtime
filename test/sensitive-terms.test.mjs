@@ -15,7 +15,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -33,6 +33,8 @@ import {
 	pathHasTerm,
 	redactTerms,
 	formatReport,
+	listTreeFiles,
+	scanTree,
 	scanPullRequest,
 	repositoryFromRemote,
 	EXIT_CLEAN,
@@ -320,4 +322,121 @@ test("the source of the check is text, so the tools can read it", () => {
 		join(ROOT, "scripts", "check-sensitive-terms.mjs"),
 	);
 	assert.equal(source.includes(0), false, "the source holds no NUL byte");
+});
+
+// The scan of a directory tree.
+//
+// A published package is a directory tree. The check that keeps a client
+// name out of a pull request protects the pull request; this one protects
+// the package that npm serves to everybody.
+
+test("a term in a file of the tree is found", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		writeFileSync(join(dir, "plain.txt"), "nothing to see\n", "utf8");
+		writeFileSync(join(dir, "held.txt"), "the placeholder lives here\n", "utf8");
+		const result = scanTree(dir, ["placeholder"]);
+		assert.equal(result.scanned, 2);
+		assert.equal(result.hits.length, 1);
+		assert.equal(result.hits[0].path, "held.txt");
+		assert.equal(result.hits[0].line, 1);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a term in the name of a file of the tree is found", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		mkdirSync(join(dir, "sub"), { recursive: true });
+		writeFileSync(join(dir, "sub", "placeholder.txt"), "nothing to see\n", "utf8");
+		const result = scanTree(dir, ["placeholder"]);
+		assert.equal(result.hits.length, 1);
+		// The path is the place the term is in, so it is reported on
+		// line 0.
+		assert.equal(result.hits[0].path, "sub/placeholder.txt");
+		assert.equal(result.hits[0].line, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a clean tree holds no hit", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		writeFileSync(join(dir, "plain.txt"), "nothing to see\n", "utf8");
+		const result = scanTree(dir, ["placeholder"]);
+		assert.equal(result.hits.length, 0);
+		assert.equal(result.scanned, 1);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a symlink is not a file of the tree", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		const outside = mkdtempSync(join(tmpdir(), "sensitive-outside-"));
+		try {
+			writeFileSync(join(outside, "secret.txt"), "the placeholder lives here\n", "utf8");
+			symlinkSync(outside, join(dir, "link"), "dir");
+			const files = listTreeFiles(dir);
+			assert.equal(files.length, 0, "the link is not followed");
+			assert.equal(scanTree(dir, ["placeholder"]).hits.length, 0);
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the report of a tree scan hides the term in the path", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		writeFileSync(join(dir, "placeholder.txt"), "nothing to see\n", "utf8");
+		const result = scanTree(dir, ["placeholder"]);
+		const report = formatReport({ ...result, terms: ["placeholder"] });
+		assert.equal(report.includes("placeholder"), false, "the term is not printed");
+		assert.match(report, /\*\*\*/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a tree that does not exist is not a clean run", () => {
+	// The check fails closed: a directory that is not there is a
+	// broken setup, not "nothing was found".
+	const result = spawnSync(
+		process.execPath,
+		[join(ROOT, "scripts", "check-sensitive-terms.mjs"), "--tree", join(tmpdir(), "no-such-tree-")],
+		{
+			cwd: ROOT,
+			encoding: "utf8",
+			timeout: 60000,
+			env: { ...process.env, SENSITIVE_TERMS: "placeholder" },
+		},
+	);
+	assert.equal(result.status, 2, "the exit code says the check could not run");
+});
+
+test("a tree with a term fails the command", () => {
+	const dir = mkdtempSync(join(tmpdir(), "sensitive-tree-"));
+	try {
+		writeFileSync(join(dir, "held.txt"), "the placeholder lives here\n", "utf8");
+		const result = spawnSync(
+			process.execPath,
+			[join(ROOT, "scripts", "check-sensitive-terms.mjs"), "--tree", dir],
+			{
+				cwd: ROOT,
+				encoding: "utf8",
+				timeout: 60000,
+				env: { ...process.env, SENSITIVE_TERMS: "placeholder" },
+			},
+		);
+		assert.equal(result.status, 1, "the exit code says a term was found");
+		assert.equal(result.stdout.includes("placeholder"), false, "the term is not printed");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

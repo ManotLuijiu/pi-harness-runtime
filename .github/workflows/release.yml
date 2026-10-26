@@ -393,6 +393,25 @@ jobs:
       - name: Verify package contents
         run: bun run build:verify:pack
 
+      # A client name inside a published file is published for good: the
+      # removal of a published version is a support ticket, and the name
+      # is in the tarball of every version until then.
+      #
+      # The check runs on the packed tarball - the thing npm really
+      # publishes - and not on the working tree. It fails closed: without
+      # the list nothing was checked, so the release stops instead of
+      # shipping blind. The report names the file and the line and never
+      # the term, because the log of a workflow run is public.
+      - name: Verify the published files hold no client name
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
+        run: |
+          set -euo pipefail
+          PACK_DIR="$(mktemp -d)"
+          npm pack --pack-destination "$PACK_DIR" --ignore-scripts > /dev/null
+          tar -xzf "$PACK_DIR"/*.tgz -C "$PACK_DIR"
+          node scripts/check-sensitive-terms.mjs --tree "$PACK_DIR/package"
+
       - name: Publish to npm
         if: >-
           (github.event_name != 'workflow_dispatch' ||

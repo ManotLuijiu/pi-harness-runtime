@@ -35,6 +35,7 @@
  *   node scripts/check-sensitive-terms.mjs --diff changes.patch
  *   node scripts/check-sensitive-terms.mjs --file README.md
  *   node scripts/check-sensitive-terms.mjs --text "a name"
+ *   node scripts/check-sensitive-terms.mjs --tree path/to/the/published/files
  *
  * The terms come from, in this order:
  *
@@ -47,8 +48,9 @@
  * only wires them together.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { join, relative } from "node:path";
 
 /**
  * The exit codes of the check.
@@ -453,6 +455,60 @@ export function scanRange(range, terms, cwd = process.cwd()) {
 }
 
 /**
+ * The files of a directory tree.
+ *
+ * A published package is a directory tree, and a name can sit in any file
+ * of it. The walk follows no symlink: a link is not a published file, and
+ * a link that points outside the tree would read a file that npm does not
+ * publish.
+ */
+export function listTreeFiles(dir, root = dir, out = []) {
+	let entries;
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return out;
+	}
+	for (const entry of entries) {
+		const absolute = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			listTreeFiles(absolute, root, out);
+			continue;
+		}
+		// A symlink is not a file: it is not published, and its target
+		// may live outside the tree.
+		if (!entry.isFile()) continue;
+		out.push({
+			relative: relative(root, absolute).split("\\").join("/"),
+			absolute,
+		});
+	}
+	return out;
+}
+
+/**
+ * The scan of a directory tree.
+ *
+ * Every file is scanned as a whole, and the path of the file is scanned
+ * with it: a file that carries a name in its name leaks the name just as
+ * well as a file that carries it in its content.
+ */
+export function scanTree(dir, terms) {
+	const files = listTreeFiles(dir);
+	const hits = [];
+	for (const file of files) {
+		let content;
+		try {
+			content = readFileSync(file.absolute, "utf8");
+		} catch {
+			continue;
+		}
+		hits.push(...scanText(content, file.relative, terms));
+	}
+	return { hits, scanned: files.length, mode: "published files" };
+}
+
+/**
  * The arguments of the command line.
  */
 function parseArgs(argv) {
@@ -465,6 +521,7 @@ function parseArgs(argv) {
 		else if (arg === "--file") args.mode = "file", (args.path = next());
 		else if (arg === "--text") args.mode = "text", (args.text = next());
 		else if (arg === "--range") args.mode = "range", (args.range = next());
+		else if (arg === "--tree") args.mode = "tree", (args.path = next());
 		else if (arg === "--terms-file") args.termsFile = next();
 		else if (arg === "--repo") args.repo = next();
 	}
@@ -529,8 +586,14 @@ async function main() {
 		result = { hits: scanText(args.text, "(text)", terms), scanned: 1, mode: "text" };
 	} else if (args.mode === "range") {
 		result = scanRange(args.range, terms);
+	} else if (args.mode === "tree") {
+		if (!existsSync(args.path) || !statSync(args.path).isDirectory()) {
+			console.error(`the directory ${args.path} does not exist.`);
+			return EXIT_UNAVAILABLE;
+		}
+		result = scanTree(args.path, terms);
 	} else {
-		console.error("nothing to check. use --pr, --diff, --file, --text or --range.");
+		console.error("nothing to check. use --pr, --diff, --file, --text, --range or --tree.");
 		return EXIT_UNAVAILABLE;
 	}
 

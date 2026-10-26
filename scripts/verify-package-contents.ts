@@ -36,6 +36,12 @@ import {
 	packageNameOf,
 	resolveRelativeImport,
 } from "./lib/runtime-imports.js";
+import {
+	readTermsFile,
+	redactTerms,
+	scanText,
+	termsFromEnv,
+} from "./check-sensitive-terms.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifyTarball = process.argv.includes("--pack");
@@ -48,7 +54,8 @@ interface Problem {
 		| "missing-tarball"
 		| "missing-package"
 		| "forbidden-path"
-		| "missing-plugin";
+		| "missing-plugin"
+		| "sensitive-content";
 	detail: string;
 }
 
@@ -219,6 +226,66 @@ function checkPackageLayout(): void {
 			});
 		}
 	}
+}
+
+/**
+ * The terms of the list, and where they came from.
+ *
+ * The list is the repository secret, or the local file. A run without a
+ * list scans nothing - and says so, because "no name was found" and
+ * "nothing was looked at" are not the same statement.
+ */
+function sensitiveTerms(): { terms: string[]; source: string } {
+	const fromEnv = termsFromEnv(process.env);
+	if (fromEnv.length > 0) return { terms: fromEnv, source: "the environment" };
+	const file = process.env.PI_SENSITIVE_TERMS_FILE;
+	if (file) {
+		const terms = readTermsFile(file);
+		if (terms.length > 0) return { terms, source: file };
+	}
+	return { terms: [], source: "none" };
+}
+
+/**
+ * The published files must not hold a client name.
+ *
+ * The other checks look at the paths of the published files. This one
+ * looks at what is inside them: a name in a comment, in a doc or in a
+ * string is published like any other byte, and npm keeps a published
+ * version for a long time - long enough that the removal of one becomes
+ * a support ticket.
+ *
+ * The report names the file and the line and never the term, and the
+ * path is printed with the terms hidden because a path is often the
+ * place the term is in.
+ */
+function checkSensitiveContent(files: string[]): void {
+	const { terms, source } = sensitiveTerms();
+	if (terms.length === 0) {
+		// Nothing was checked. The release workflow runs this check on
+		// its own, with the secret, and it fails closed.
+		console.log(
+			"[verify-package-contents] the sensitive content scan was skipped: no term list is configured",
+		);
+		return;
+	}
+	for (const file of files) {
+		let content: string;
+		try {
+			content = readFileSync(join(ROOT, file), "utf8");
+		} catch {
+			continue;
+		}
+		for (const found of scanText(content, file, terms)) {
+			problems.push({
+				kind: "sensitive-content",
+				detail: `${redactTerms(found.path, terms)}:${found.line} holds a term from the sensitive list`,
+			});
+		}
+	}
+	console.log(
+		`[verify-package-contents] the sensitive content scan looked at ${files.length} published file(s) with the list of ${source}`,
+	);
 }
 
 /**
@@ -596,6 +663,7 @@ if (publishedFiles.length === 0) {
 	});
 } else {
 	checkRelativeImports(publishedFiles);
+	checkSensitiveContent(publishedFiles);
 	if (verifyTarball) inspectTarball(publishedFiles);
 }
 

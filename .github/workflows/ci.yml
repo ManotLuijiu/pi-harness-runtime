@@ -46,7 +46,13 @@ jobs:
       - name: Build packages
         run: npm run build
 
+      # The list of the client names makes the verifier look inside the
+      # published files. Without it the scan is skipped, and the verifier
+      # says so - the release workflow runs the same check on its own and
+      # fails closed.
       - name: Verify package contents
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
         run: npm run build:verify:pack
 
       # The root suite runs with bun (see scripts/run-root-tests.mjs): the
