@@ -35,9 +35,16 @@ on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      open_release_pr:
+        description: "Open the release pull request from develop into main"
+        type: boolean
+        default: false
 
 # The workflow reads the checks of a commit and turns the auto merge of a
-# pull request on or off. It writes nothing else.
+# pull request on or off. It writes nothing else, apart from the pull
+# request a manual run can ask for.
 permissions:
   contents: read
   pull-requests: write
@@ -53,6 +60,7 @@ concurrency:
 jobs:
   merge:
     name: Merge when every gate is green
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     # The merger waits for the checks of the head commit to finish. The
     # CI of this repository runs for minutes, so the wait is long.
@@ -80,3 +88,50 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node scripts/auto-merge.mjs
+
+  open-release-pr:
+    name: Open the release pull request
+    if: github.event_name == 'workflow_dispatch' && inputs.open_release_pr
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The branch the release is prepared on. A manual run has no pull
+      # request, so it has no base branch to check out.
+      - name: Checkout the release branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      # The release script opens the pull request with the token of the
+      # machine, and a token of a machine does not always have the
+      # permission to open a pull request. The token of a workflow has
+      # it, so the pull request is opened here when a manual run asks
+      # for it.
+      #
+      # Nothing of the pull request is run: only the name of the head
+      # branch is used, and the pull request is judged by the gates of
+      # the pull request event.
+      - name: Open the release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          open=$(gh pr list --base main --head develop --state open \
+            --json number --jq 'length')
+          if [ "$open" != "0" ]; then
+            echo "a pull request from develop into main is already open"
+            exit 0
+          fi
+          body="$RUNNER_TEMP/release-body.md"
+          printf '%s\n' \
+            "The release $version is prepared on \`develop\`." \
+            '' \
+            'This pull request is merged by the auto merge workflow' \
+            'once the required checks pass. The tag is created on' \
+            '`main` after the merge, and the tag is what publishes' \
+            'to npm.' > "$body"
+          gh pr create --base main --head develop \
+            --title "Release $version" \
+            --body-file "$body"

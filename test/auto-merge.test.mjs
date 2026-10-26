@@ -299,3 +299,40 @@ test("the workflow merges only the release branch", () => {
 	assert.match(workflow, /branches:\s*\[main\]/);
 	assert.doesNotMatch(workflow, /branches:\s*\[[^\]]*develop/);
 });
+
+test("a manual run can open the release pull request", () => {
+	// The token of a machine does not always have the permission to
+	// open a pull request. The token of a workflow has it.
+	assert.match(workflow, /workflow_dispatch:/);
+	assert.match(workflow, /open_release_pr/);
+	assert.match(workflow, /gh pr create --base main --head develop/);
+	// The pull request is opened once, not again and again.
+	assert.match(workflow, /gh pr list --base main --head develop/);
+});
+
+test("the manual run never runs the change it pulls", () => {
+	// The job that opens the pull request checks out the branch the
+	// release was prepared on. It names the head of the pull request
+	// and does nothing else with it.
+	const job = workflow.slice(
+		workflow.indexOf("open-release-pr:"),
+		workflow.length,
+	);
+	assert.match(job, /ref:\s*\$\{\{\s*github\.ref\s*\}\}/);
+	// It opens a pull request, it does not merge one.
+	assert.doesNotMatch(job, /auto-merge\.mjs/);
+	assert.doesNotMatch(job, /gh pr merge/);
+});
+
+test("the manual run and the merge are separate jobs", () => {
+	// The merge only happens for a pull request event, so a manual run
+	// cannot merge anything by accident.
+	assert.match(
+		workflow,
+		/merge:\n[\s\S]*?if:\s*github\.event_name == 'pull_request_target'/,
+	);
+	assert.match(
+		workflow,
+		/open-release-pr:\n[\s\S]*?if:\s*github\.event_name == 'workflow_dispatch'/,
+	);
+});
