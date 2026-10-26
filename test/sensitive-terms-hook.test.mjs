@@ -202,6 +202,13 @@ test("a new tag on a commit that is already pushed is let through", () => {
 		GIT_COMMITTER_NAME: "harness test",
 		GIT_COMMITTER_EMAIL: "test@example.com",
 	};
+	// The hook reads a list of its own. The list of the machine that
+	// runs the test is not used: a build machine has no list, and the
+	// test has to say the same thing everywhere.
+	const dir = mkdtempSync(join(tmpdir(), "hook-terms-"));
+	const termsFile = join(dir, "terms.txt");
+	writeFileSync(termsFile, `${TERM}\n`);
+	env.PI_SENSITIVE_TERMS_FILE = termsFile;
 	const created = run("git", ["tag", "-a", "hook-test-tag", "-m", "a tag", head], {
 		env,
 	});
@@ -215,6 +222,7 @@ test("a new tag on a commit that is already pushed is let through", () => {
 		assert.equal(result.status, 0, result.stderr + result.stdout);
 	} finally {
 		run("git", ["tag", "-d", "hook-test-tag"], { env });
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
