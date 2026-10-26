@@ -36,7 +36,8 @@ const BASELINES = new Map([
 	["voice-api", 16],
 	["worktree", 0],
 	["harness", 20],
-	["scripts", 15],
+	["scripts", 9],
+	["scripts/release", 0],
 	["root", 2],
 	["new-modules", 0],
 ]);
@@ -67,10 +68,15 @@ for (const name of readdirSync(packagesDir).sort()) {
 	const project = join(packagesDir, name, "tsconfig.json");
 	if (existsSync(project)) projects.push(relative(root, project));
 }
-for (const extra of ["harness", "scripts"]) {
+for (const extra of ["harness", "scripts/release"]) {
 	if (existsSync(join(root, extra, "tsconfig.json"))) {
 		projects.push(join(extra, "tsconfig.json"));
 	}
+}
+// The scripts of the repository are their own project, with a config
+// of their own at the root of the repository.
+if (existsSync(join(root, "tsconfig.scripts.json"))) {
+	projects.push("tsconfig.scripts.json");
 }
 // The root extension (index.ts) has no project of its own - it is the entry
 // point of the extension and was never type checked.
@@ -92,8 +98,15 @@ function ownerOf(projectPath) {
 	const normalized = projectPath.split("\\").join("/");
 	if (normalized === "tsconfig.root.json") return "root";
 	if (normalized === "tsconfig.new-modules.json") return "new-modules";
+	if (normalized === "tsconfig.scripts.json") return "scripts";
 	if (normalized.startsWith("packages/")) {
 		return normalized.split("/")[1];
+	}
+	// A project in a folder of its own (the release sources in
+	// scripts/release) is a project of its own, and not the project of
+	// the folder that holds it.
+	if (normalized.endsWith("/tsconfig.json")) {
+		return normalized.slice(0, -"/tsconfig.json".length);
 	}
 	return normalized.split("/")[0];
 }

@@ -105,9 +105,7 @@ export const nodeWorkspaceAdapter: ReleaseAdapter = {
 
 		// Must have workspaces field
 		try {
-			const raw = JSON.parse(
-				readFileSync(rootPkg, "utf-8") as unknown as string,
-			);
+			const raw = JSON.parse(readFileSync(rootPkg, "utf-8"));
 			if (raw.workspaces) return 0.9;
 		} catch {
 			// ignore
