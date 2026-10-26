@@ -575,3 +575,23 @@ test("a commit range that holds no commit is not a clean run", () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a range that holds no change is not a clean run", () => {
+	// The push path of the workflow scans the range of a push. A range
+	// that holds nothing was written wrong, and reporting a clean
+	// result for it would be a check that never ran.
+	const dir = repoWithMessage("fix: something ordinary\n");
+	try {
+		const termsFile = join(dir, "terms.txt");
+		writeFileSync(termsFile, `${TERM}\n`);
+		const run = spawnSync(
+			process.execPath,
+			[SCANNER, "--terms-file", termsFile, "--range", "HEAD..HEAD"],
+			{ encoding: "utf8", cwd: dir },
+		);
+		assert.equal(run.status, EXIT_UNAVAILABLE);
+		assert.match(run.stderr, /holds nothing/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

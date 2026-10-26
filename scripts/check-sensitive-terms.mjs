@@ -725,6 +725,14 @@ async function main() {
 		result = { hits: scanText(args.text, "(text)", terms), scanned: 1, mode: "text" };
 	} else if (args.mode === "range") {
 		result = scanRange(args.range, terms);
+		// A range that holds nothing was written wrong. Scanning it
+		// would report a clean result for a check that never ran.
+		if (result.scanned === 0) {
+			console.error(
+				`the range ${args.range} holds nothing, so nothing could be checked.`,
+			);
+			return EXIT_UNAVAILABLE;
+		}
 	} else if (args.mode === "commits") {
 		result = scanCommitMessages(args.range, terms);
 		// A range that holds no commit is a range that was written

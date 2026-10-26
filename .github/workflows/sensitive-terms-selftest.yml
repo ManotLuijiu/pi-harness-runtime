@@ -1,0 +1,37 @@
+# The failing path of the sensitive-term guard, proved on every push.
+#
+# A guard that never fails is not a guard. The check in
+# `sensitive-terms.yml` stops a change that holds a client name, but the
+# proof that it really stops one is a separate run: this workflow puts a
+# synthetic term in front of the scanner and checks that the scanner
+# fails, that it fails closed when there is no list, and that it never
+# prints the term.
+#
+# The workflow holds no secret and reads nothing from the network. The
+# term is built while the script runs, so the literal string is never in
+# the repository - a term in the repository would be found by the guard
+# that scans the repository.
+
+name: Sensitive terms self test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+
+# The self test reads the checkout and nothing else.
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    name: The guard fails on a term
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prove the failing path
+        run: scripts/sensitive-terms-selftest.sh

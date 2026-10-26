@@ -38,6 +38,61 @@ test("the workflow runs on pull_request_target, so a fork gets the secret", () =
 	assert.equal(/^\s{2}pull_request:/m.test(workflow), false);
 });
 
+test("the workflow also runs on a push to a merge target", () => {
+	// A required check has to be able to pass for a direct push. Without
+	// a run of its own the check is never reported for the pushed
+	// commit, and a branch that requires the check then refuses every
+	// direct push.
+	assert.match(workflow, /push:\n {4}branches: \[develop, main\]/);
+});
+
+test("one job and one check name serve both events", () => {
+	// Two jobs under one name would let a skipped job replace the
+	// result of the job that really scanned, and a skipped check counts
+	// as a passed check.
+	assert.equal((workflow.match(/name: No sensitive terms/g) ?? []).length, 1);
+	assert.match(workflow, /^ {4}name: No sensitive terms$/m);
+	// One job, so one check run per event. The name of a job is at four
+	// spaces, the name of a step at six.
+	const jobNames = workflow.match(/^ {4}name: .*$/gm) ?? [];
+	assert.equal(jobNames.length, 1);
+});
+
+test("the pushed commit is the tree that is scanned", () => {
+	// The content of a push is what has to be checked, so the tree of
+	// the pushed commit is the tree the scanner reads.
+	assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+	// The commit messages of the pushed commits are public too, so the
+	// history has to come with the checkout.
+	assert.match(workflow, /fetch-depth: 0/);
+});
+
+test("the checkout of the pushed commit only runs for a push", () => {
+	// The checkout of the base branch belongs to the pull request path.
+	// The two must not be mixed: one of them holds untrusted code in a
+	// job that has a secret.
+	assert.match(
+		workflow,
+		/- name: Checkout the pushed commit\n {8}if: github\.event_name == 'push'/,
+	);
+	assert.match(
+		workflow,
+		/- name: Checkout the base branch\n {8}if: github\.event_name == 'pull_request_target'/,
+	);
+});
+
+test("the push path scans the tree and the commit messages of the push", () => {
+	assert.match(workflow, /--tree \./);
+	assert.match(workflow, /--commits "\$BEFORE_SHA\.\.\$HEAD_SHA"/);
+});
+
+test("a push without a base commit stops the check", () => {
+	// A range that cannot be resolved would report a clean result for a
+	// check that never ran.
+	assert.match(workflow, /BEFORE_SHA" = "\$empty"/);
+	assert.match(workflow, /exit 2/);
+});
+
 test("the workflow runs again when the pull request changes", () => {
 	assert.match(workflow, /types: \[opened, synchronize, reopened, ready_for_review\]/);
 });
@@ -124,8 +179,10 @@ test("the workflow asks for no more than it reads", () => {
 	assert.equal(/write/.test(workflow), false);
 });
 
-test("the scan step runs the script of the checked out base branch", () => {
-	// The script is the one of the base branch, so a pull request
-	// cannot change the check that judges it.
+test("the scan step runs the script of the tree that was checked out", () => {
+	// For a pull request the script is the one of the base branch, so
+	// a pull request cannot change the check that judges it. For a push
+	// it is the one of the pushed commit, which is the tree that holds
+	// the content that has to be checked.
 	assert.match(workflow, /node scripts\/check-sensitive-terms\.mjs --pr "\$PR_NUMBER"/);
 });

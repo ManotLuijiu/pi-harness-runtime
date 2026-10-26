@@ -1,4 +1,5 @@
-# The check that keeps a client name out of a pull request.
+# The check that keeps a client name out of a pull request and out of a
+# direct push.
 #
 # The repository is public, so a name that reaches a pull request has
 # reached the world. A required check can stop that change from being
@@ -24,12 +25,26 @@
 #
 # The script it runs is the one of the base branch, so a pull request
 # cannot change the check that judges it.
+#
+# The same job also runs on a push to `develop` and `main`. A required
+# check has to be able to pass for a direct push: without a run of its
+# own the check is never reported for the pushed commit, and a branch
+# that requires the check then refuses every direct push. The push is
+# the other way a name reaches the world - a merge of a pull request
+# lands as a push, and a name can sit in the content of the tree or in
+# the commit message of the pushed commits.
+#
+# There is one job and one check name for both events. Two jobs under
+# one name would let a skipped job replace the result of the job that
+# really scanned, and a skipped check counts as a passed check.
 
 name: Sensitive terms
 
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [develop, main]
 
 # The check only reads. It needs the pull request and the contents of
 # the base branch - nothing else.
@@ -39,9 +54,12 @@ permissions:
 
 # One pull request, one run. A second push to the same pull request
 # cancels the first run, so a queue of stale runs cannot delay the
-# author.
+# author. A push has no pull request, so it gets a run of its own and
+# nothing is cancelled - a cancelled run would leave its commit without
+# a result.
 concurrency:
-  group: sensitive-terms-${{ github.event.pull_request.number }}
+  group: >-
+    sensitive-terms-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -58,7 +76,11 @@ jobs:
     # secret. The condition keeps the checked out tree to the two merge
     # targets, and it keeps the check from running for a pull request
     # against an internal branch.
+    #
+    # A push carries no pull request, so the first condition is what
+    # lets the job run for it.
     if: >-
+      github.event_name == 'push' ||
       github.event.pull_request.base.ref == 'develop' ||
       github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
@@ -66,6 +88,7 @@ jobs:
       # The base branch. The head of the pull request is never checked
       # out - it would be untrusted code in a job that holds a secret.
       - name: Checkout the base branch
+        if: github.event_name == 'pull_request_target'
         uses: actions/checkout@v4
         with:
           # The current tip of the base branch. `base.sha` is the
@@ -75,15 +98,49 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
 
+      # The pushed commit. The content of a push is what has to be
+      # checked, so the tree of the pushed commit is the tree that is
+      # scanned. The history comes along with it, because the commit
+      # messages of the pushed commits are public as well.
+      - name: Checkout the pushed commit
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
       # The scanner is read from the checkout. If it is not there, the
       # run says so instead of failing with a module error.
       - name: The scanner is there
         run: test -f scripts/check-sensitive-terms.mjs
 
       # The only step that sees the terms.
-      - name: Scan the pull request
+      - name: Scan
         env:
           SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: node scripts/check-sensitive-terms.mjs --pr "$PR_NUMBER"
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            node scripts/check-sensitive-terms.mjs --pr "$PR_NUMBER"
+            exit 0
+          fi
+          # A push without a base commit - the creation of a branch -
+          # has no range. A range that cannot be resolved would report
+          # a clean result for a check that never ran.
+          empty="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "$empty" ]; then
+            echo "the push has no base commit, so the range is unknown."
+            exit 2
+          fi
+          # The content and the paths of the tree that was pushed.
+          node scripts/check-sensitive-terms.mjs --tree .
+          # The commit messages of the pushed commits. The release notes
+          # are built from them, so they travel as far as the change.
+          node scripts/check-sensitive-terms.mjs \
+            --commits "$BEFORE_SHA..$HEAD_SHA"
