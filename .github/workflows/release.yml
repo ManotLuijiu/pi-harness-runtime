@@ -196,25 +196,38 @@ jobs:
           set -uo pipefail
           echo "Authenticated as: $(npm whoami 2>&1)"
           failed=""
+          approval_needed=""
           for v in $VERSIONS; do
             if [ "$DRY_RUN" = "true" ]; then
               echo "DRY-RUN: would unpublish $PACKAGE_NAME@$v"
               continue
             fi
             echo "::group::unpublish $PACKAGE_NAME@$v"
-            if [ -n "${NPM_OTP:-}" ]; then
-              npm unpublish --otp="${NPM_OTP}" "$PACKAGE_NAME@$v"
-            else
-              npm unpublish "$PACKAGE_NAME@$v"
-            fi
-            if [ $? -eq 0 ]; then
+            "$GITHUB_WORKSPACE/scripts/npm-unpublish-with-approval.sh" \
+              request "$PACKAGE_NAME" "$v"
+            rc=$?
+            echo "::endgroup::"
+            if [ $rc -eq 0 ]; then
               echo "OK: unpublished $PACKAGE_NAME@$v"
+            elif [ $rc -eq 42 ]; then
+              # The approval URL embeds credential material. A log line
+              # would be masked and a run artifact would publish it, so
+              # the approval cannot be completed from a public run.
+              echo "The registry wants a browser approval for $v."
+              echo "Run the removal on the machine instead:"
+              echo "  scripts/npm-unpublish-with-approval.sh batch \\"
+              echo "    $PACKAGE_NAME $v"
+              approval_needed="$approval_needed $v"
+              break
             else
               echo "FAILED: $PACKAGE_NAME@$v"
               failed="$failed $v"
             fi
-            echo "::endgroup::"
           done
+          if [ -n "$approval_needed" ]; then
+            echo "Versions that need an approval:$approval_needed"
+            exit 1
+          fi
           if [ -n "$failed" ]; then
             echo "Versions that could not be unpublished:$failed"
             exit 1
