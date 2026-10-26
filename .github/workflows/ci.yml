@@ -65,6 +65,13 @@ jobs:
           node --test test/extension-syntax.test.mjs
           test/honcho-memory.test.mjs
 
+      # Every test file that node can load also runs under node, which is the
+      # runtime pi itself uses. The runner names the files it skips and the
+      # reason for each, so a file that cannot run under node is visible
+      # rather than silently missing.
+      - name: Run the full node suite
+        run: npm run test:node:built
+
       - name: Run harness tests
         run: npm run test:harness
 

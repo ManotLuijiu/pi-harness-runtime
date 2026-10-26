@@ -45,7 +45,12 @@ import {
 	packageNameOf,
 	resolveRelativeImport,
 	stripComments,
-} from "../scripts/lib/runtime-imports.js";
+	// The helper is a repository script, not a published package, and the
+	// repository does not compile it. The ".js" specifier therefore has
+	// no file behind it outside bun, which maps the specifier to the
+	// TypeScript source. Naming the source keeps the test runnable under
+	// node as well, the way the other test files name their sources.
+} from "../scripts/lib/runtime-imports.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");

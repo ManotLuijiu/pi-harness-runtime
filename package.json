@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node scripts/run-root-tests.mjs",
-    "test:node:built": "node --test \"test/**/*.test.mjs\" \"packages/clipboard/test/*.test.mjs\"",
+    "test:node:built": "node scripts/run-node-tests.mjs",
     "typecheck": "node scripts/typecheck-packages.mjs",
     "postinstall": "mkdir -p ~/.pi-harness-runtime/cookies && node scripts/copy-plugins.js && ([ -f ~/.config/herdr/config.toml ] || mkdir -p ~/.config/herdr && cp config.toml.example ~/.config/herdr/config.toml)",
     "release": "bun scripts/release-all.ts",
