@@ -49,6 +49,12 @@ on:
         description: "Open the release pull request from develop into main"
         type: boolean
         default: false
+      merge_now:
+        description: >
+          Merge the pull request in this run. When false, the run only
+          opens the pull request, and the pull request event merges it.
+        type: boolean
+        default: true
 
 # The workflow reads the checks of a commit and merges a pull request
 # when they are green. It writes nothing else, apart from the pull
@@ -177,7 +183,14 @@ jobs:
       # runs for it. The manual run takes that work over: it reads the
       # checks of the head commit of the pull request and merges it when
       # they are green.
+      #
+      # A run that is told not to merge only opens the pull request. The
+      # next push to the head branch is a push of a person, and that
+      # push starts the pull request event, and the merge job of the
+      # workflow merges the pull request with the script of the base
+      # branch.
       - name: Merge or hold
+        if: inputs.merge_now != 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
