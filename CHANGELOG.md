@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.448](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.447...v1.1.448) (2026-10-26)
+
+
+### Features
+
+* **release:** publish from a tag on main and gate the merge on the checks ([d744098](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7440985974e5bc6613c4e6ee05fb79a00996a0c))
+
 ### [1.1.190](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.403...v1.1.190) (2026-10-24)
 
 
