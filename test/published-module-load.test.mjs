@@ -37,6 +37,15 @@ const PUBLISHED_ROOTS = [join(repo, "packages")];
 /** How long a single module may take to load. */
 const TIMEOUT_MS = 10_000;
 
+/**
+ * How long the whole sweep may take.
+ *
+ * The default timeout of a test is five seconds, and this sweep starts
+ * one process per module. A test that needs longer has to say so, or it
+ * fails on a slow machine while it passes on a fast one.
+ */
+const TEST_TIMEOUT_MS = 180_000;
+
 /** How many modules load at the same time. */
 const CONCURRENCY = 8;
 
@@ -96,7 +105,7 @@ function loadOne(file) {
 	});
 }
 
-test("every published module imports", async () => {
+test("every published module imports", { timeout: TEST_TIMEOUT_MS }, async () => {
 	const files = PUBLISHED_ROOTS.flatMap(collectJsFiles);
 	assert.ok(files.length > 100, `only ${files.length} module(s) were found`);
 
