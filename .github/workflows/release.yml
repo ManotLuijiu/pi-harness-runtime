@@ -390,7 +390,14 @@ jobs:
       # tarball. Verify the tarball really contains every runtime import
       # target before anything is published - a missing internal app must
       # fail the release, not ship.
+      #
+      # The list of terms comes with it. The verification of the package
+      # skips the content scan when it has no list, and a release that
+      # says "the content scan was skipped" in its public log reads like
+      # a release that published without checking.
       - name: Verify package contents
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
         run: bun run build:verify:pack
 
       # A client name inside a published file is published for good: the
@@ -411,7 +418,8 @@ jobs:
           # npm prints the file list of the tarball to stderr. That is
           # thousands of lines in a public log, and it says nothing the
           # check does not say. A failure is still reported.
-          if ! npm pack --pack-destination "$PACK_DIR" --ignore-scripts > /dev/null 2> "$PACK_DIR/pack.err"; then
+          if ! npm pack --pack-destination "$PACK_DIR" --ignore-scripts \
+            > /dev/null 2> "$PACK_DIR/pack.err"; then
             cat "$PACK_DIR/pack.err"
             exit 1
           fi
@@ -431,7 +439,8 @@ jobs:
           # The tag before this one. The first release has none, and then
           # the whole history is checked - it is clean, and the check
           # says so.
-          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF}^{commit}^" 2>/dev/null || true)"
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 \
+            "${GITHUB_REF}^{commit}^" 2>/dev/null || true)"
           if [ -n "$PREVIOUS_TAG" ]; then
             RANGE="${PREVIOUS_TAG}..${GITHUB_REF}^{commit}"
           else

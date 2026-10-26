@@ -36,7 +36,11 @@ const BASELINES = new Map([
 	["voice-api", 16],
 	["worktree", 0],
 	["harness", 20],
-	["scripts", 9],
+	// The scripts of the repository type check cleanly. The project
+	// lives in `scripts/tsconfig.json`, so the language server reads the
+	// same configuration as the compiler and no longer answers with a
+	// project that has no node types.
+	["scripts", 0],
 	["scripts/release", 0],
 	["root", 2],
 	["new-modules", 0],
@@ -68,15 +72,10 @@ for (const name of readdirSync(packagesDir).sort()) {
 	const project = join(packagesDir, name, "tsconfig.json");
 	if (existsSync(project)) projects.push(relative(root, project));
 }
-for (const extra of ["harness", "scripts/release"]) {
+for (const extra of ["harness", "scripts", "scripts/release"]) {
 	if (existsSync(join(root, extra, "tsconfig.json"))) {
 		projects.push(join(extra, "tsconfig.json"));
 	}
-}
-// The scripts of the repository are their own project, with a config
-// of their own at the root of the repository.
-if (existsSync(join(root, "tsconfig.scripts.json"))) {
-	projects.push("tsconfig.scripts.json");
 }
 // The root extension (index.ts) has no project of its own - it is the entry
 // point of the extension and was never type checked.
@@ -98,7 +97,6 @@ function ownerOf(projectPath) {
 	const normalized = projectPath.split("\\").join("/");
 	if (normalized === "tsconfig.root.json") return "root";
 	if (normalized === "tsconfig.new-modules.json") return "new-modules";
-	if (normalized === "tsconfig.scripts.json") return "scripts";
 	if (normalized.startsWith("packages/")) {
 		return normalized.split("/")[1];
 	}

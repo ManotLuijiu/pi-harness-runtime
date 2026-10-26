@@ -48,18 +48,17 @@ async function main() {
   const transcriber = new VoiceTranscriber({ openaiApiKey });
   console.log("✓ VoiceTranscriber created");
 
-  if (!transcriber.isConfigured()) {
-    console.log("❌ Transcriber not configured");
-    process.exit(1);
-  }
-
-  console.log(`✓ Providers: ${transcriber.getProviders().join(", ")}`);
-  console.log(`✓ Default: ${transcriber.getDefaultProvider()}`);
+  // The transcriber talks to the OpenAI Whisper API. The key was
+  // checked above, so it is configured; the model defaults to whisper-1.
+  console.log("✓ Provider: openai (whisper-1)");
 
   // If Telegram token provided, create handler
   if (telegramBotToken) {
     console.log("✓ Telegram bot token loaded");
 
+    // The handler is what the webhook server calls. The demo does not
+    // start that server, so the answer below comes from the handler
+    // itself and not from Telegram.
     const handler = new TelegramVoiceHandler({
       botToken: telegramBotToken,
       transcriber,
@@ -84,6 +83,12 @@ async function main() {
     console.log("✓ TelegramVoiceHandler created");
     console.log("\nListening for Telegram voice messages...");
     console.log("(This is a demo - actual webhook server not started)");
+
+    // The webhook server calls this for every update. The demo sends an
+    // update that carries no voice message, so the answer shows the
+    // shape of the reply without a call to Telegram.
+    const answer = await handler.handleUpdate({ update_id: 0 });
+    console.log(`✓ The handler answers: ${JSON.stringify(answer)}`);
   } else {
     console.log("⚠ Telegram bot token not found");
     console.log("   Create ~/.pi-harness-runtime/keys/telegram-bot-token.txt for Telegram integration");
@@ -94,12 +99,9 @@ async function main() {
   console.log("Demo: Transcribing test audio file...");
   
   // Note: In production, this would be triggered by actual Telegram/LINE webhooks
-  // For testing, you can manually transcribe an audio file:
+  // For testing, you can transcribe an audio file yourself:
   //
-  // const result = await transcriber.transcribe({
-  //   audioUrl: "https://example.com/audio.ogg",
-  //   language: "en",
-  // });
+  // const result = await transcriber.transcribe(audioBytes);
   // console.log("Transcribed:", result.text);
 
   console.log("\n" + "=".repeat(60));

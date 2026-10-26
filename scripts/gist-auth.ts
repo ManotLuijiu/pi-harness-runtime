@@ -7,7 +7,7 @@
  * Prompts for GitHub PAT and creates a secret Gist for clipboard sync.
  */
 
-import { readline } from "bun";
+import { createInterface } from "node:readline/promises";
 import {
 	createGist,
 	isConfigured,
@@ -19,7 +19,7 @@ async function main() {
 	if (isConfigured()) {
 		console.log("Gist clipboard sync is already configured.");
 		console.log("Run with --reset to reconfigure.\n");
-		const rl = new readline.Interface({ input: stdin, output: stdout });
+		const rl = createInterface({ input: process.stdin, output: process.stdout });
 		const answer = await rl.question("Reset configuration? (y/N): ");
 		rl.close();
 		if (answer.toLowerCase() !== "y") {
@@ -34,7 +34,7 @@ async function main() {
 	console.log("3. Select scopes: 'gist' (read and write gists)");
 	console.log("4. Copy the token\n");
 
-	const rl = new readline.Interface({ input: stdin, output: stdout });
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	const token = await rl.question("GitHub Personal Access Token: ");
 	rl.close();
 

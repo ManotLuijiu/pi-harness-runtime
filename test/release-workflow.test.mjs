@@ -223,6 +223,19 @@ test("the CI carries the list, so the content scan runs on every push", () => {
 	);
 });
 
+test("the release verification of the package carries the list too", () => {
+	// The verification of the package skips the content scan when it
+	// has no list. The release has the list, so the scan runs there as
+	// well - and the public log of a release does not say that a scan
+	// was skipped.
+	const step = stepBody("release", "Verify package contents");
+	assert.match(
+		step,
+		/SENSITIVE_TERMS: \$\{\{ secrets\.SENSITIVE_TERMS \}\}/,
+		"the release verification of the package has the list",
+	);
+});
+
 test("the release checks the commit messages before it publishes", () => {
 	// GitHub builds the release notes from the commit messages of the
 	// release, so a name in a message would be published in the release
