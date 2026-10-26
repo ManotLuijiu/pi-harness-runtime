@@ -56,7 +56,7 @@ export function registerGithubLoginCommand(pi) {
                     `   Gist: ${result.gistUrl}`,
                     "",
                     "   Polling script: scripts/gist-poll.sh",
-                    "   Run: bun scripts/gist-auth-poll.ts on client devices",
+                    "   Run: bash scripts/gist-poll.sh on client devices",
                     "",
                 ].join("\n"), "info");
             }

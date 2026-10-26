@@ -172,7 +172,7 @@ Cannot find module '../packages/notification/dist/notification-center.js'
 
 **Root Cause**:
 
-- The main build script (`bun run build`) only compiles packages with `tsconfig.json`
+- The main build script (`bun scripts/build-packages.ts`) only compiles packages with `tsconfig.json`
 - If TypeScript is missing from `devDependencies`, `node_modules/.bin/tsc` doesn't exist
 - The build loop silently ignores errors: `|| true`
 - Packages get published WITHOUT their `dist/` directories
@@ -181,7 +181,7 @@ Cannot find module '../packages/notification/dist/notification-center.js'
 **Solution**:
 
 1. Ensure `typescript` is in `devDependencies` (so `tsc` is available)
-2. Run `bun run build` locally BEFORE pushing
+2. Run `bun scripts/build-packages.ts` locally BEFORE pushing
 3. Verify `packages/*/dist/` contains compiled `.js` files
 4. Commit the `dist/` output or ensure build succeeds in CI
 
@@ -190,7 +190,7 @@ Cannot find module '../packages/notification/dist/notification-center.js'
 ls packages/notification/dist/
 
 # If missing, build and check again
-bun run build
+bun scripts/build-packages.ts
 ls packages/notification/dist/
 ```
 
@@ -661,9 +661,21 @@ tarball. A user never runs `npm install @pi-harness/<anything>`.
   entry point, so it is not a package.
 - Compiled JavaScript never lives next to a TypeScript source: Bun resolves the
   literal `.js` file first, so a stale artifact silently shadows the current source.
-- `npm run build` (`scripts/build-packages.ts`) builds every package and fails when a
-  published entry point is missing. `npm run build:verify:pack` proves the npm
-  tarball contains every runtime import target. Both run in CI and before a publish.
+- `bun scripts/build-packages.ts` builds every package and fails when a published
+  entry point is missing. `bun scripts/verify-package-contents.ts --pack` proves the
+  npm tarball contains every runtime import target. Both run in CI and before a
+  publish.
+- The manifest of the published package names only what it ships, so it has no
+  `test`, `build` or `typecheck` script: a consumer that runs them would get a
+  broken command. The repository commands are therefore direct invocations:
+  ```bash
+  bun scripts/build-packages.ts                                  # build every package
+  bun scripts/verify-package-contents.ts --pack                  # verify the tarball
+  node scripts/typecheck-packages.mjs                            # type check
+  node scripts/run-root-tests.mjs                                # the root suite (bun)
+  node scripts/run-node-tests.mjs                                # the node suite
+  node scripts/run-langchain-tests.mjs                           # the harness suite
+  ```
 
 ## Centralized Application Logging
 

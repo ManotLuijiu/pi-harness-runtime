@@ -72,6 +72,7 @@ import {
 	type WriteReviewLoop,
 } from "./graph.js";
 import { submitPingPongIntent } from "./ping-pong-middleware.js";
+import { resolveTunnelCommand } from "./tunnel-command.js";
 import { isPiLensAvailable, StatusLineManager } from "./status-line.js";
 import {
 	invokeWithGLMRetry,
@@ -129,7 +130,9 @@ export interface DaemonConfig {
 	 * auto-restarts it if the target port is unreachable.
 	 *
 	 * Set to "auto" to search for scripts/tailscale-tunnel.sh in the
-	 * project root, or give an absolute path.
+	 * project the daemon runs for (and in the package root), or give an
+	 * absolute path.
+	 * When "auto" finds no script, the tunnel monitor stays off.
 	 * Default: none (no tunnel management)
 	 */
 	tunnelCommand?: string;
@@ -727,6 +730,10 @@ class CronWatcher {
 	}
 }
 
+// ─── Tunnel Script Resolution ──────────────────────────────────────────────
+
+export { TUNNEL_SCRIPT_NAME, resolveTunnelCommand } from "./tunnel-command.js";
+
 // ─── Tunnel Health Monitor ───────────────────────────────────────────────────
 
 /**
@@ -957,7 +964,15 @@ export class LoopDaemon {
 
 		// Tunnel monitor — only active when a tunnel script is configured
 		if (this.config.tunnelCommand) {
-			this.tunnelMonitor = new TunnelMonitor(this.config.tunnelCommand);
+			const script = resolveTunnelCommand(this.config.tunnelCommand);
+			if (script) {
+				this.tunnelMonitor = new TunnelMonitor(script);
+			} else {
+				console.warn(
+					`[daemon] tunnelCommand "${this.config.tunnelCommand}" found no script — tunnel management is off`,
+				);
+				this.tunnelMonitor = null;
+			}
 		} else {
 			this.tunnelMonitor = null;
 		}

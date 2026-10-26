@@ -61,7 +61,8 @@ interface Problem {
 		| "missing-plugin"
 		| "sensitive-content"
 		| "undeclared-dependency"
-		| "esm-require";
+		| "esm-require"
+		| "broken-script";
 	detail: string;
 }
 
@@ -69,15 +70,56 @@ const problems: Problem[] = [];
 /** Every runtime import that must resolve: "file -> specifier". */
 const runtimeImports = new Map<string, { file: string; specifier: string; target: string }>();
 
-/** Every directory whose sources are part of the published tarball. */
-const SHIPPED_SOURCE_DIRS = ["harness", "scripts", "packages"];
-
-const SHIPPED_ROOT_FILES = [
-	"index.ts",
-	"status-parsers.ts",
-	"tracker.ts",
-	"windows.ts",
+/**
+ * The scripts the published package ships.
+ *
+ * A script is a program, and a program is only published when the runtime
+ * needs it. The postinstall copies the plugin, the skills package spawns
+ * the sync script, the skill hints name the qdrant sync, and the clipboard
+ * login names the gist poller. Everything else in `scripts/` belongs to
+ * the repository: the release orchestration, the npm cleanup tooling, the
+ * type checker and the test and debug programs.
+ */
+const REQUIRED_RUNTIME_SCRIPTS = [
+	"scripts/copy-plugins.js",
+	"scripts/sync-skills.ts",
+	"scripts/sync-to-qdrant.ts",
+	"scripts/gist-poll.sh",
 ];
+
+/**
+ * The Markdown files the published package ships.
+ *
+ * The documentation of the product ships: the readme, the changelog, the
+ * policy files the agent-policy package reads at runtime, the security
+ * policy, the prompts and the skill. The planning and status documents of
+ * the repository do not: they are work notes, not documentation.
+ */
+const ALLOWED_PUBLISHED_MARKDOWN = new Set([
+	"README.md",
+	"CHANGELOG.md",
+	"AGENTS.md",
+	"RULES.md",
+	"SECURITY.md",
+	"prompts/agents/reviewer.md",
+	"prompts/agents/writer.md",
+	"prompts/slash-commands.md",
+	"prompts/tencentdb-connect.md",
+	"prompts/tencentdb-setup.md",
+	"prompts/tencentdb.md",
+	"prompts/write-review.md",
+	"skills/harness-runtime/SKILL.md",
+]);
+
+/**
+ * The packages that must never be published.
+ *
+ * `e2e-tester` was a duplicate of `webmcp-tester`: the same API, added in
+ * the same commit, with no production importer and a readme that documents
+ * an export the package does not have. The working tester stays; the
+ * duplicate does not come back.
+ */
+const FORBIDDEN_PUBLISHED_PACKAGES = ["e2e-tester"];
 
 /**
  * Paths that must never reach the published package.
@@ -158,21 +200,13 @@ function listFiles(dir: string, filter: (file: string) => boolean): string[] {
 	return out;
 }
 
-function isSourceFile(file: string): boolean {
-	return /\.(ts|mts|cts|mjs|js)$/.test(file) && !file.endsWith(".d.ts");
-}
-
-/** Every source file that ends up in the published package. */
-function shippedSourceFiles(): string[] {
-	const files: string[] = [];
-	for (const name of SHIPPED_ROOT_FILES) {
-		const full = join(ROOT, name);
-		if (existsSync(full)) files.push(full);
-	}
-	for (const dir of SHIPPED_SOURCE_DIRS) {
-		files.push(...listFiles(join(ROOT, dir), isSourceFile));
-	}
-	return files;
+/**
+ * Every published file that is a runtime module.
+ *
+ * A declaration file is not a module: it carries types, not code.
+ */
+function isRuntimeModule(file: string): boolean {
+	return /\.(ts|mts|cts|mjs|js|cjs)$/.test(file) && !/\.d\.[cm]?ts$/.test(file);
 }
 
 // A value import: a static import without the `type` keyword, a dynamic
@@ -330,8 +364,19 @@ function checkPluginCopySource(): void {
 	}
 }
 
-function checkImports(): void {
-	for (const file of shippedSourceFiles()) {
+/**
+ * Every cross-package runtime import of the published files.
+ *
+ * The scan runs on the files npm would publish, so the map describes the
+ * module graph a consumer receives - not the module graph of the whole
+ * repository. A package that the published package no longer ships cannot
+ * be imported by a published file, and the tarball check proves it.
+ */
+function checkImports(files: string[]): void {
+	for (const path of files) {
+		if (!isRuntimeModule(path)) continue;
+		const file = join(ROOT, path);
+		if (!existsSync(file)) continue;
 		const content = readFileSync(file, "utf8");
 		const consider = (specifier: string) => {
 			if (!specifier.startsWith(".")) return;
@@ -492,7 +537,7 @@ function checkStaleOutputs(): void {
 				detail: `packages/${entry} has a stale build - ${relative(
 					ROOT,
 					newest.file,
-				)} is newer than the compiled output. Run "bun run build".`,
+				)} is newer than the compiled output. Run "bun scripts/build-packages.ts".`,
 			});
 		}
 	}
@@ -750,6 +795,100 @@ function checkModuleScopeRequires(files: string[]): void {
 	}
 }
 
+/**
+ * A token of a shell command that names a file in the package.
+ *
+ * A path with a home directory or a shell character is not a file of the
+ * package, so only a plain relative path with a file extension counts.
+ */
+const FILE_TOKEN = /^[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+$/;
+
+/**
+ * The published package must contain the runtime and nothing else.
+ *
+ * The check runs against the exact file list npm produces, so it sees what
+ * a consumer receives:
+ *
+ * - the runtime scripts the runtime needs, and no other script
+ * - the product documentation, and no repository work note
+ * - no duplicate package, no nested `node_modules`, no test directory
+ * - and every script the manifest names must be a file that ships
+ */
+function checkPublishedBoundary(files: string[]): void {
+	const published = new Set(files);
+
+	for (const required of REQUIRED_RUNTIME_SCRIPTS) {
+		if (!published.has(required)) {
+			problems.push({
+				kind: "missing-package",
+				detail: `${required} is not in the tarball - the runtime needs it`,
+			});
+		}
+	}
+
+	for (const path of files) {
+		if (path.startsWith("scripts/") && !REQUIRED_RUNTIME_SCRIPTS.includes(path)) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${path} is in the tarball - the published package ships only the runtime scripts`,
+			});
+		}
+		if (path.endsWith(".md") && !ALLOWED_PUBLISHED_MARKDOWN.has(path)) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${path} is in the tarball - it is a repository document, not product documentation`,
+			});
+		}
+		for (const name of FORBIDDEN_PUBLISHED_PACKAGES) {
+			if (path.startsWith(`packages/${name}/`)) {
+				problems.push({
+					kind: "forbidden-path",
+					detail: `packages/${name} is in the tarball - it duplicates packages/webmcp-tester`,
+				});
+			}
+		}
+		if (path.includes("/node_modules/")) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${path} is in the tarball - a nested node_modules must never be published`,
+			});
+		}
+		if (/^packages\/[^/]+\/(tests?|__tests__)\//.test(path)) {
+			problems.push({
+				kind: "forbidden-path",
+				detail: `${path} is in the tarball - repository tests do not belong to a consumer`,
+			});
+		}
+	}
+
+	// Every file the manifest names in a script has to be a file the
+	// consumer receives: a script that names a missing file is a broken
+	// command in the installed package.
+	let manifest: { scripts?: Record<string, string> };
+	try {
+		manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+			scripts?: Record<string, string>;
+		};
+	} catch {
+		problems.push({
+			kind: "broken-script",
+			detail: "package.json cannot be read, so its scripts cannot be checked",
+		});
+		return;
+	}
+	for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+		for (const token of command.split(/\s+/)) {
+			if (!FILE_TOKEN.test(token)) continue;
+			const path = token.replace(/^\.\//, "");
+			if (published.has(path)) continue;
+			problems.push({
+				kind: "broken-script",
+				detail: `the script "${name}" names ${path}, which is not in the tarball`,
+			});
+		}
+	}
+}
+
 /** The tarball npm would publish must contain the built output. */
 function inspectTarball(files: string[]): void {
 	for (const file of files) {
@@ -806,12 +945,11 @@ function inspectTarball(files: string[]): void {
 
 checkPackageLayout();
 checkPluginCopySource();
-checkImports();
 checkPackageEntries();
 checkStaleOutputs();
 
-// The published file list drives both the import check and the tarball
-// check: it is what a consumer receives.
+// The published file list drives every check that describes the consumer:
+// it is what a consumer receives.
 const publishedFiles = await packFileList();
 if (publishedFiles.length === 0) {
 	problems.push({
@@ -819,10 +957,12 @@ if (publishedFiles.length === 0) {
 		detail: "npm pack --dry-run did not return a file list",
 	});
 } else {
+	checkImports(publishedFiles);
 	checkRelativeImports(publishedFiles);
 	checkDeclaredDependencies(publishedFiles);
 	checkModuleScopeRequires(publishedFiles);
 	checkSensitiveContent(publishedFiles);
+	checkPublishedBoundary(publishedFiles);
 	if (verifyTarball) inspectTarball(publishedFiles);
 }
 
@@ -833,7 +973,7 @@ if (problems.length > 0) {
 	}
 	console.error(
 		"",
-		"Every internal package must ship inside pi-harness-runtime. Run `bun run build` and check the tsc output before publishing.",
+		"Every internal package must ship inside pi-harness-runtime. Run `bun scripts/build-packages.ts` and check the tsc output before publishing.",
 	);
 	process.exit(1);
 }

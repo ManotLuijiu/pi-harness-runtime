@@ -932,7 +932,7 @@ Voice messages from LINE are transcribed via OpenAI Whisper API and executed as 
 git clone https://github.com/ManotLuijiu/pi-harness-runtime.git
 cd pi-harness-runtime
 bun install
-bun run build
+bun scripts/build-packages.ts
 ```
 
 **2. Configure DNS**

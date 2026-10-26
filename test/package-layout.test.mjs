@@ -16,6 +16,9 @@
  * `skills/harness-runtime/` stays: it is the skill of the package itself, it
  * is written for every user of the package, and it is public content. Every
  * other directory under `skills/` belongs to a user and is never committed.
+ *
+ * The boundary itself is checked against the exact file list npm produces.
+ * The allowlist in the manifest is an intention; the tarball is the fact.
  */
 
 import { test } from "node:test";
@@ -52,6 +55,48 @@ const REQUIRED_PLUGIN_FILES = [
 	"plugins/herdr-clipboard/tmux-watch.sh",
 ];
 
+/**
+ * The scripts the published package ships.
+ *
+ * A script is a program, and a program is only published when the runtime
+ * needs it: the postinstall copies the plugin, the skills package spawns the
+ * sync script, the skill hints name the qdrant sync, and the clipboard login
+ * names the gist poller. The release orchestration, the npm cleanup tooling,
+ * the type checker and the test and debug programs belong to the repository.
+ */
+const REQUIRED_RUNTIME_SCRIPTS = [
+	"scripts/copy-plugins.js",
+	"scripts/sync-skills.ts",
+	"scripts/sync-to-qdrant.ts",
+	"scripts/gist-poll.sh",
+];
+
+/**
+ * The packages that must never be published.
+ *
+ * `e2e-tester` duplicated `webmcp-tester`: the same API, added in the same
+ * commit, with no production importer and a readme that documents an export
+ * the package does not have.
+ */
+const FORBIDDEN_PACKAGES = ["packages/e2e-tester"];
+
+/** The documentation the published package ships. */
+const ALLOWED_PUBLISHED_MARKDOWN = new Set([
+	"README.md",
+	"CHANGELOG.md",
+	"AGENTS.md",
+	"RULES.md",
+	"SECURITY.md",
+	"prompts/agents/reviewer.md",
+	"prompts/agents/writer.md",
+	"prompts/slash-commands.md",
+	"prompts/tencentdb-connect.md",
+	"prompts/tencentdb-setup.md",
+	"prompts/tencentdb.md",
+	"prompts/write-review.md",
+	"skills/harness-runtime/SKILL.md",
+]);
+
 function trackedFiles() {
 	const out = execFileSync("git", ["ls-files"], {
 		cwd: ROOT,
@@ -66,15 +111,38 @@ function isForbiddenSkillPath(file) {
 	return !file.startsWith(PACKAGE_SKILL_DIR);
 }
 
+/** The exact file list npm would publish. */
+let publishedFileList = null;
+function publishedFiles() {
+	// The list is the same for every check, and packing is slow, so it is
+	// taken once.
+	if (publishedFileList) return publishedFileList;
+	const out = execFileSync(
+		"npm",
+		["pack", "--dry-run", "--json", "--ignore-scripts"],
+		{ cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+	);
+	const parsed = JSON.parse(out);
+	const entries = Array.isArray(parsed) ? parsed : [parsed];
+	publishedFileList = entries
+		.flatMap((entry) => entry?.files ?? [])
+		.map((file) => file.path);
+	return publishedFileList;
+}
+
 test("the package allowlist ships the plugin and the package's own skill", () => {
 	const files = manifest.files ?? [];
 
 	assert.ok(
-		files.includes("plugins/**/*"),
+		files.some((entry) => entry === "/plugins/**/*" || entry === "plugins/**/*"),
 		"the plugin directory must be in the files allowlist",
 	);
 	assert.ok(
-		files.includes("skills/harness-runtime/**/*"),
+		files.some(
+			(entry) =>
+				entry === "/skills/harness-runtime/**/*" ||
+				entry === "skills/harness-runtime/**/*",
+		),
 		"the package's own skill must be in the files allowlist",
 	);
 	assert.ok(
@@ -82,8 +150,37 @@ test("the package allowlist ships the plugin and the package's own skill", () =>
 		"the .pi directory must not be in the files allowlist",
 	);
 	assert.ok(
-		!files.some((entry) => entry === "skills/**/*"),
+		!files.some(
+			(entry) => entry === "skills/**/*" || entry === "/skills/**/*",
+		),
 		"the whole skills directory must not be in the files allowlist - only the package's own skill",
+	);
+});
+
+test("the package allowlist names only the runtime scripts", () => {
+	const files = manifest.files ?? [];
+	const scriptEntries = files.filter((entry) =>
+		entry.replace(/^\//, "").startsWith("scripts/"),
+	);
+
+	assert.deepEqual(
+		scriptEntries.map((entry) => entry.replace(/^\//, "")),
+		REQUIRED_RUNTIME_SCRIPTS,
+		"the allowlist must name exactly the scripts the runtime needs",
+	);
+});
+
+test("the package allowlist does not use a basename-only markdown pattern", () => {
+	// npm matches a pattern without a slash against the basename at every
+	// depth, so `*.md` would ship the markdown of every directory. The
+	// documentation of the package is named file by file instead.
+	const files = manifest.files ?? [];
+	const basenamePatterns = files.filter((entry) => /(^|\/)\*\.mdx?$/.test(entry));
+
+	assert.deepEqual(
+		basenamePatterns,
+		[],
+		"a basename-only markdown pattern would publish the documents of every directory",
 	);
 });
 
@@ -167,5 +264,78 @@ test("the ignore rules still protect the private release skill", () => {
 		gitignore,
 		/\.pi\/skills\/release\/\*/,
 		"the private release skill must stay ignored",
+	);
+});
+
+test("the published tarball ships the runtime scripts and no other script", () => {
+	const files = publishedFiles();
+	const shipped = files.filter((file) => file.startsWith("scripts/"));
+
+	assert.deepEqual(
+		shipped.sort(),
+		[...REQUIRED_RUNTIME_SCRIPTS].sort(),
+		"the published package ships exactly the runtime scripts",
+	);
+});
+
+test("the published tarball ships the product documentation only", () => {
+	const files = publishedFiles();
+	const documents = files.filter((file) => file.endsWith(".md"));
+	const offenders = documents.filter((file) => !ALLOWED_PUBLISHED_MARKDOWN.has(file));
+
+	assert.deepEqual(
+		offenders,
+		[],
+		`these documents must not be published: ${offenders.join(", ")}`,
+	);
+});
+
+test("the published tarball carries no duplicate package, no test and no nested dependency", () => {
+	const files = publishedFiles();
+	const offenders = files.filter(
+		(file) =>
+			FORBIDDEN_PACKAGES.some((name) => file.startsWith(`${name}/`)) ||
+			file.includes("/node_modules/") ||
+			/^packages\/[^/]+\/(tests?|__tests__)\//.test(file),
+	);
+
+	assert.deepEqual(
+		offenders,
+		[],
+		`these files must not be published: ${offenders.join(", ")}`,
+	);
+});
+
+test("the published tarball still ships the skill and the plugin", () => {
+	const files = new Set(publishedFiles());
+	for (const required of [...REQUIRED_SKILL_FILES, ...REQUIRED_PLUGIN_FILES]) {
+		assert.ok(files.has(required), `${required} must be in the tarball`);
+	}
+});
+
+test("every script of the manifest names a file the consumer receives", () => {
+	const files = new Set(publishedFiles());
+	const fileToken = /^[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+$/;
+
+	for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+		for (const token of command.split(/\s+/)) {
+			if (!fileToken.test(token)) continue;
+			const path = token.replace(/^\.\//, "");
+			assert.ok(
+				files.has(path),
+				`the script "${name}" names ${path}, which the consumer does not receive`,
+			);
+		}
+	}
+});
+
+test("the duplicate tester package is gone and the working one stays", () => {
+	assert.ok(
+		!existsSync(join(ROOT, "packages", "e2e-tester")),
+		"packages/e2e-tester duplicates packages/webmcp-tester and must not exist",
+	);
+	assert.ok(
+		existsSync(join(ROOT, "packages", "webmcp-tester", "src", "index.ts")),
+		"packages/webmcp-tester is the working tester and must stay",
 	);
 });

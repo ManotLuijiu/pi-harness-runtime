@@ -20,13 +20,11 @@ export * from "./skill-commands.js";
 export * from "./skill-tool.js";
 export * from "./skill-versioning.js";
 export * from "./linter.js";
+export * from "./sync-source.js";
 
 import type { SkillsConfig, ScanResult, ScanOptions } from "./types.js";
 import { scanForSkillsSync } from "./scanner.js";
 import { getGlobalSkillRegistry, type SkillRegistry } from "./loader.js";
-import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 /**
  * The result of the skill initialization.
@@ -73,9 +71,6 @@ export function initSkills(
     registry.register(skill);
   }
 
-  // Hint: if ~/.pi-harness-runtime/skills/ is empty, suggest the sync script
-  checkEmptySkillsDir();
-
   // The scan can find the same skill twice: a symlinked directory is
   // scanned twice, because the scanner follows the path it is given. The
   // registry keeps one entry per id, so the count of the local skills is
@@ -85,34 +80,6 @@ export function initSkills(
   for (const skill of result.skills) distinct.set(skill.id, skill);
 
   return { ...result, skills: [...distinct.values()], registry };
-}
-
-/** Show sync hint if the harness skills dir is empty. */
-function checkEmptySkillsDir(): void {
-  try {
-    const harnessDir = join(homedir(), ".pi-harness-runtime", "skills");
-    if (!existsSync(harnessDir)) return;
-
-    const entries = readdirSync(harnessDir).filter((n: string) => n !== "harness-runtime");
-    if (entries.length > 0) return; // Has user skills, nothing to suggest
-
-    const benchPath = join(homedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills");
-    if (!existsSync(benchPath)) return;
-
-    const benchEntries = readdirSync(benchPath).filter((n: string) =>
-      existsSync(join(benchPath, n, "SKILL.md"))
-    );
-    if (benchEntries.length === 0) return;
-
-    console.error(
-      `[pi-harness] ${benchEntries.length} moocoding skill(s) found in frappe-bench`
-    );
-    console.error(
-      '[pi-harness] Sync them: bun scripts/sync-skills.ts --from ~/frappe-bench/.claude-plugins/moocoding-skills/skills'
-    );
-  } catch {
-    // Non-fatal — ignore errors
-  }
 }
 
 /**

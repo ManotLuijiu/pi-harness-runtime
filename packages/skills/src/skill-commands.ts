@@ -6,7 +6,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { getSkillsSourceFromArgs, syncSkillsScriptPath } from "./sync-source.js";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getGlobalSkillRegistry } from "./loader.js";
 import { scanForSkillsSync } from "./scanner.js";
@@ -80,21 +80,37 @@ export function initSkillCommands(
 
   // Register /sync-skills slash command
   pi.registerCommand("sync-skills", {
-    description: "Sync moocoding skills from frappe-bench to ~/.pi-harness-runtime/skills. Usage: /sync-skills [--from <path>] [--to <path>] [--check-only]",
+    description: "Sync skills into ~/.pi-harness-runtime/skills. Usage: /sync-skills [--from <path>] [--to <path>] [--check-only]",
     handler: async (args: string, ctx: ExtensionContext): Promise<void> => {
       const parsedArgs = args.trim();
 
-      // Find the sync-skills script — it lives in the npm package's scripts/
-      const agentNpmDir = resolve(ctx.cwd ?? process.cwd(), "../../../.pi/agent/npm/node_modules/pi-harness-runtime/scripts/sync-skills.ts");
-
-      ctx.ui.notify(`[sync-skills] Syncing from ~/frappe-bench/.claude-plugins/moocoding-skills/skills`, "info");
+      // The sync script ships with this package. It is found relative to
+      // this module, so the command works wherever the package is
+      // installed - the source of the skills is the operator's business,
+      // the script is ours.
+      const scriptPath = syncSkillsScriptPath();
+      if (!scriptPath) {
+        ctx.ui.notify(
+          "[sync-skills] The sync script is missing from this installation.",
+          "error",
+        );
+        return;
+      }
 
       // Build spawn args: bun <script> [user args]
       const spawnArgs = parsedArgs ? parsedArgs.split(/\s+/) : [];
 
+      const source = getSkillsSourceFromArgs(spawnArgs);
+      ctx.ui.notify(
+        source
+          ? `[sync-skills] Syncing from ${source}`
+          : "[sync-skills] Syncing (no --from given, the script reports the usage)",
+        "info",
+      );
+
       // Wrap spawn in a Promise so we can await it
       await new Promise<void>((resolve) => {
-        const bun = spawn("bun", [agentNpmDir, ...spawnArgs], {
+        const bun = spawn("bun", [scriptPath, ...spawnArgs], {
           cwd: ctx.cwd ?? process.cwd(),
           env: { ...process.env },
           killSignal: "SIGTERM",

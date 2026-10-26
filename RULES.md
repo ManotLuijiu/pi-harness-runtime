@@ -21,9 +21,9 @@ runs `npm install @pi-harness/<anything>`.
 4. Compiled JavaScript never lives next to a TypeScript source. Bun resolves
    the literal `.js` file first, so a stale artifact silently shadows the
    current source.
-5. `npm run build` (scripts/build-packages.ts) builds every package and fails
-   when a published entry point is missing. `npm run build:verify:pack`
-   proves the npm tarball contains every runtime import target.
+5. `bun scripts/build-packages.ts` builds every package and fails when a
+   published entry point is missing. `bun scripts/verify-package-contents.ts
+   --pack` proves the npm tarball contains every runtime import target.
 6. Both run in CI, so a release can never publish a tarball with a missing
    internal app.
 

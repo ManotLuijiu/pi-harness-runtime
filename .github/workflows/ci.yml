@@ -36,7 +36,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Type check
-        run: npm run typecheck
+        run: node scripts/typecheck-packages.mjs
 
       # The published app is a SINGLE npm package. Every internal app
       # (logging, jev-judge, contracts, ...) is compiled into
@@ -44,7 +44,7 @@ jobs:
       # must produce every published entry point, and the verifier proves the
       # tarball actually contains them.
       - name: Build packages
-        run: npm run build
+        run: bun scripts/build-packages.ts
 
       # The list of the client names makes the verifier look inside the
       # published files. Without it the scan is skipped, and the verifier
@@ -68,14 +68,14 @@ jobs:
             echo "The guard is off. Add the secret and run the workflow again."
             exit 1
           fi
-          npm run build:verify:pack
+          bun scripts/verify-package-contents.ts --pack
 
       # The root suite runs with bun (see scripts/run-root-tests.mjs): the
       # harness sources import each other with ".js" specifiers, and only bun
       # resolves those to the TypeScript sources. Node would need the
       # gitignored build artifacts, so a clean checkout cannot run it.
       - name: Run tests
-        run: npm test
+        run: node scripts/run-root-tests.mjs
 
       # These two files also run under node, which exercises the node branch
       # of the TypeScript stripper (test/helpers/strip-types.mjs). The rest of
@@ -91,10 +91,10 @@ jobs:
       # reason for each, so a file that cannot run under node is visible
       # rather than silently missing.
       - name: Run the full node suite
-        run: npm run test:node:built
+        run: node scripts/run-node-tests.mjs
 
       - name: Run harness tests
-        run: npm run test:harness
+        run: node scripts/run-langchain-tests.mjs
 
       # This suite resolves its TypeScript sources through bun, so it cannot
       # run under the node test runner.

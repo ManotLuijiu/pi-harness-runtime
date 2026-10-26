@@ -193,6 +193,23 @@ async function main(): Promise<void> {
 	// Step 6: Publish to npm (root package only, not workspaces)
 	if (!isDryRun) {
 		console.log("\n📦 Step 6: Publishing to npm (pi-harness-runtime only)...");
+		// The manifest has no prepublish hook: the published package
+		// names only files it ships, and a hook that runs the build
+		// would name a repository-only script. The build and the
+		// verification therefore run here, right before the publish.
+		try {
+			execSync("bun scripts/build-packages.ts", {
+				cwd: ROOT,
+				stdio: "inherit",
+			});
+			execSync("bun scripts/verify-package-contents.ts --pack", {
+				cwd: ROOT,
+				stdio: "inherit",
+			});
+		} catch {
+			console.error("The build or the package verification failed.");
+			process.exit(1);
+		}
 		try {
 			execSync("npm publish --workspaces=false", {
 				cwd: ROOT,

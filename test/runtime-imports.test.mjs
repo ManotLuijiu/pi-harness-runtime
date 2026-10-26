@@ -293,7 +293,7 @@ test("an import inside a template literal is documentation, not an import", () =
 		"## Usage",
 		"",
 		"\\`\\`\\`typescript",
-		'import { WebMCPTester } from "@pi-harness/e2e-tester";',
+		'import { WebMCPTester } from "@pi-harness/webmcp-tester";',
 		"\\`\\`\\`",
 		"`;",
 		'import { run } from "./runner.js";',

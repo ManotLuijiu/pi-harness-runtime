@@ -18,6 +18,7 @@ export * from "./skill-commands.js";
 export * from "./skill-tool.js";
 export * from "./skill-versioning.js";
 export * from "./linter.js";
+export * from "./sync-source.js";
 import type { SkillsConfig, ScanResult } from "./types.js";
 import { type SkillRegistry } from "./loader.js";
 /**

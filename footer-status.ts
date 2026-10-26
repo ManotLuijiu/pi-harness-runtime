@@ -106,11 +106,11 @@ export function buildExhaustionStatusLine(
 
 	return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
 }
-import { getProviderLabel } from "./packages/types/src/ai-providers.js";
+import { getProviderLabel } from "./packages/types/src/ai-providers.ts";
 import {
 	providerHasContinuousScrape,
 	providerHasTUISignal,
-} from "./packages/providers/src/provider-id.js";
+} from "./packages/providers/src/provider-id.ts";
 
 export type ParsedFooterStatusValue =
 	| { kind: "quota"; value: ParsedQuotaUsageData }

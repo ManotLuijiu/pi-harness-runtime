@@ -3154,33 +3154,19 @@ function initLangChain(pi: {
 	});
 }
 
-// --- moocoding-sync-hint: Suggest syncing skills if skills dir is empty --------
+// --- skills-sync-hint: Suggest syncing skills if skills dir is empty --------
 // Fires after Jev + Qdrant so all three appear together in startup
-function initMoocodingSyncHint(): void {
+//
+// The hint lives in the skills package: the source of the skills is
+// installation data, and the package that owns the skills owns the
+// message about them.
+async function initSkillsSyncHint(): Promise<void> {
 	try {
-		const { readdirSync, existsSync } = require("node:fs");
-		const { join } = require("node:path");
-		const { homedir } = require("node:os");
-
-		const harnessDir = join(homedir(), ".pi-harness-runtime", "skills");
-		if (!existsSync(harnessDir)) return;
-
-		const entries: string[] = readdirSync(harnessDir).filter((n: string) => n !== "harness-runtime");
-		if (entries.length > 0) return; // Has user skills, nothing to suggest
-
-		const benchPath = join(homedir(), "frappe-bench", ".claude-plugins", "moocoding-skills", "skills");
-		if (!existsSync(benchPath)) return;
-
-		const benchEntries: string[] = readdirSync(benchPath).filter((n: string) =>
-			existsSync(join(benchPath, n, "SKILL.md"))
-		);
-		if (benchEntries.length === 0) return;
-
-		const targetPath = join(homedir(), ".pi-harness-runtime", "skills");
-		logToFile("[pi-harness]", `${benchEntries.length} moocoding skill(s) found in frappe-bench`);
-		logToFile("[pi-harness]", `Run /sync-skills --from ${benchPath} --to ${targetPath}`);
+		const mod = await import("./packages/skills/dist/index.js");
+		const hint = mod.skillsSyncHint();
+		if (hint) logToFile("[pi-harness]", hint);
 	} catch {
-		// Non-fatal — ignore errors
+		// The skills package is optional — ignore errors
 	}
 }
 
@@ -4631,8 +4617,8 @@ if (hasReviewMarker) {
 		honchoIdentityState.success = await ensureHonchoIdentity();
 	});
 
-	// --- moocoding-sync-hint: Suggest skill sync if skills dir is empty --------
-	void initMoocodingSyncHint();
+	// --- skills-sync-hint: Suggest skill sync if skills dir is empty --------
+	void initSkillsSyncHint();
 
 	// --- langchain-loop: Ping-pong write-review loop (planner + reviewer + coder) ----
 	void initLangChain(pi);

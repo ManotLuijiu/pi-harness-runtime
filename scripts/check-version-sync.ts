@@ -72,7 +72,7 @@ for (const ws of workspaces) {
 // Result
 if (hasMismatch) {
 	console.log("\n❌ Version files do not match latest git tag.");
-	console.log(`\nTo fix: bun run release:patch\n`);
+	console.log(`\nTo fix: bun scripts/release-all.ts --release-as patch\n`);
 	process.exit(1);
 } else {
 	console.log("\n✅ All versions match git tag");

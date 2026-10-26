@@ -2,7 +2,7 @@
 /**
  * Type check every TypeScript project that ships a tsconfig.json.
  *
- * `npm run build` compiles the packages but swallows every error (`|| true`),
+ * The build script compiles the packages but swallows every error (`|| true`),
  * and the CI "Type check" step used to be a no-op (`npm run typecheck ||
  * echo "No typecheck script"` - there was no typecheck script and no root
  * tsconfig.json), so nothing was ever type checked.
