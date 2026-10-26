@@ -216,41 +216,6 @@ export async function graphql({
 }
 
 /**
- * Let GitHub merge the pull request as soon as it can.
- *
- * `expectedHeadOid` binds the auto merge to the commit that was checked.
- * A push to the pull request changes the head, the auto merge stops
- * applying to the new head, and the new head has to pass the gates again.
- *
- * @param {{nodeId: string, headSha: string, token: string, fetchImpl?: typeof fetch}} options
- */
-export async function enableAutoMerge({
-	nodeId,
-	headSha,
-	token,
-	fetchImpl = fetch,
-}) {
-	return await graphql({
-		token,
-		fetchImpl,
-		query: `mutation Enable($pr: ID!, $method: MergeMethod!, $head: GitObjectID!) {
-			enablePullRequestAutoMerge(input: {
-				pullRequestId: $pr,
-				mergeMethod: $method,
-				expectedHeadOid: $head
-			}) {
-				pullRequest { number mergeStateStatus }
-			}
-		}`,
-		variables: {
-			pr: nodeId,
-			method: "MERGE",
-			head: headSha,
-		},
-	});
-}
-
-/**
  * Take the auto merge back.
  *
  * GitHub answers with an error when there is no auto merge to take back.
@@ -282,4 +247,78 @@ export async function disableAutoMerge({
 		}
 		throw error;
 	}
+}
+
+/**
+ * Merge a pull request.
+ *
+ * The auto merge of GitHub is not always available to the token of a
+ * workflow. When it is not, the merge is done here - with the head
+ * commit that was checked, so a pull request that moved on after the
+ * check is not merged.
+ *
+ * The answer of the merge says whether the pull request was merged.
+ * GitHub refuses a merge that a branch rule does not allow, and that
+ * refusal is not an error of this script: the pull request waits for
+ * a human, and the report says so.
+ *
+ * @param {{repo: string, number: number, headSha: string, token: string, method?: string, fetchImpl?: typeof fetch}} options
+ */
+export async function mergePullRequest({
+	repo,
+	number,
+	headSha,
+	token,
+	method = "merge",
+	fetchImpl = fetch,
+}) {
+	const response = await fetchImpl(
+		`https://api.github.com/repos/${repo}/pulls/${number}/merge`,
+		{
+			method: "POST",
+			headers: {
+				Accept: "application/vnd.github+json",
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+				"X-GitHub-Api-Version": "2022-11-28",
+			},
+			body: JSON.stringify({
+				merge_method: method,
+				// The head commit that was checked. GitHub refuses the
+				// merge when the head is another commit, so a push that
+				// came after the check invalidates the merge.
+				sha: headSha,
+			}),
+		},
+	);
+
+	const text = await response.text();
+	let body = {};
+	try {
+		body = text ? JSON.parse(text) : {};
+	} catch {
+		body = {};
+	}
+
+	if (!response.ok) {
+		return {
+			merged: false,
+			status: response.status,
+			message:
+				typeof body.message === "string"
+					? body.message
+					: `the merge was refused with ${response.status}`,
+		};
+	}
+
+	return {
+		merged: body.merged === true,
+		status: response.status,
+		message:
+			typeof body.message === "string"
+				? body.message
+				: body.merged === true
+					? "the pull request is merged"
+					: "the pull request was not merged",
+	};
 }

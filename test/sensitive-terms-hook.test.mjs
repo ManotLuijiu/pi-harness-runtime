@@ -192,17 +192,29 @@ test("a new tag on a commit that is already pushed is let through", () => {
 	// that adds no commit has nothing to check - the check of that
 	// commit already ran on the push that brought it here.
 	const head = run("git", ["rev-parse", "HEAD"]).stdout.trim();
-	const created = run("git", ["tag", "-a", "hook-test-tag", "-m", "a tag", head]);
+	// The identity is set for the tag. A checkout on a build machine
+	// has no git identity configured, and an annotated tag refuses to be
+	// written without one.
+	const env = {
+		...process.env,
+		GIT_AUTHOR_NAME: "harness test",
+		GIT_AUTHOR_EMAIL: "test@example.com",
+		GIT_COMMITTER_NAME: "harness test",
+		GIT_COMMITTER_EMAIL: "test@example.com",
+	};
+	const created = run("git", ["tag", "-a", "hook-test-tag", "-m", "a tag", head], {
+		env,
+	});
 	assert.equal(created.status, 0, created.stderr);
 	try {
 		const tagSha = run("git", ["rev-parse", "refs/tags/hook-test-tag"]).stdout.trim();
 		const input =
 			`refs/tags/hook-test-tag ${tagSha} refs/tags/hook-test-tag ` +
 			"0000000000000000000000000000000000000000\n";
-		const result = run(HOOK, [], { input });
+		const result = run(HOOK, [], { input, env });
 		assert.equal(result.status, 0, result.stderr + result.stdout);
 	} finally {
-		run("git", ["tag", "-d", "hook-test-tag"]);
+		run("git", ["tag", "-d", "hook-test-tag"], { env });
 	}
 });
 

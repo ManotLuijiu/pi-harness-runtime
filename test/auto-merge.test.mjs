@@ -25,6 +25,7 @@ import {
 	SENSITIVE_TERMS_CHECK,
 	evaluateChecks,
 	findCheckRun,
+	mergePullRequest,
 } from "../scripts/lib/github-checks.mjs";
 import {
 	MERGE_TARGETS,
@@ -284,8 +285,18 @@ test("the workflow has the rights it needs and no more", () => {
 	assert.match(workflow, /contents:\s*read/);
 	assert.match(workflow, /pull-requests:\s*write/);
 	assert.match(workflow, /checks:\s*read/);
-	// The workflow does not write to the repository contents.
-	assert.doesNotMatch(workflow, /contents:\s*write/);
+	// The merge of a pull request writes to the repository contents.
+	// The permission is on the job that merges, and that job runs the
+	// merger of the base branch - never the code of the pull request.
+	assert.match(workflow, /contents:\s*write/);
+	// The scanner of the sensitive terms is the privileged workflow that
+	// looks at the change of somebody else. It only reads.
+	const scanner = readFileSync(
+		join(ROOT, ".github", "workflows", "sensitive-terms.yml"),
+		"utf8",
+	);
+	assert.doesNotMatch(scanner, /contents:\s*write/);
+	assert.doesNotMatch(scanner, /pull-requests:\s*write/);
 });
 
 test("the workflow waits for the checks of the pull request", () => {
@@ -338,4 +349,54 @@ test("the manual run and the merge are separate jobs", () => {
 		workflow,
 		/open-release-pr:\n[\s\S]*?if:\s*github\.event_name == 'workflow_dispatch'/,
 	);
+});
+
+test("the merge is bound to the head commit that was checked", async () => {
+	// The merge names the head commit. A pull request that moved on
+	// after the check is refused by GitHub, so the commit that was
+	// checked is the commit that is merged.
+	let seen = null;
+	const fetchImpl = async (url, init) => {
+		seen = { url, body: JSON.parse(init.body) };
+		return {
+			ok: true,
+			status: 200,
+			text: async () => JSON.stringify({ merged: true, message: "Pull Request successfully merged" }),
+		};
+	};
+
+	const result = await mergePullRequest({
+		repo: "owner/repo",
+		number: 7,
+		headSha: "abc123",
+		token: "t",
+		fetchImpl,
+	});
+
+	assert.equal(result.merged, true);
+	assert.equal(seen.url, "https://api.github.com/repos/owner/repo/pulls/7/merge");
+	assert.equal(seen.body.sha, "abc123");
+	assert.equal(seen.body.merge_method, "merge");
+});
+
+test("a refused merge is a report and not a crash", async () => {
+	// A branch rule can refuse the merge. That is not an error of the
+	// script: the pull request waits for a human.
+	const fetchImpl = async () => ({
+		ok: false,
+		status: 405,
+		text: async () => JSON.stringify({ message: "Pull Request is not mergeable" }),
+	});
+
+	const result = await mergePullRequest({
+		repo: "owner/repo",
+		number: 7,
+		headSha: "abc123",
+		token: "t",
+		fetchImpl,
+	});
+
+	assert.equal(result.merged, false);
+	assert.equal(result.status, 405);
+	assert.match(result.message, /not mergeable/);
 });
