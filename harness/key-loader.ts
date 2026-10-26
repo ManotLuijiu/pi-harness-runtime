@@ -20,6 +20,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { isConfigured, loadConfig } from "./infisical-config.js";
 import { getSecretProvider, SecretProvider } from "./secret-provider.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 const KEYS_DIR = join(homedir(), ".pi-harness-runtime", "keys");
 

@@ -14,6 +14,8 @@ import {
 import { dirname } from "node:path";
 import type { TaskRecord, TaskStatus, TaskEvent } from "./types.js";
 import { getInboxDir, getTasksPath } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // --- Errors -------------------------------------------------------------------
 

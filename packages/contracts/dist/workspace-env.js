@@ -12,7 +12,7 @@
  * Uses synchronous directory creation and exception-safe operations.
  */
 import { homedir as osHomedir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { execSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, mkdirSync, readlinkSync, realpathSync } from "fs";
 import { join } from "path";
@@ -36,9 +36,29 @@ function getDbPath() {
     return join(STORE_DIR, "workspace-env.sqlite");
 }
 /**
+ * Load the SQLite binding lazily.
+ *
+ * `node:sqlite` does not exist in every runtime (Bun 1.3 has no
+ * `node:sqlite`), and a static import makes the whole module unloadable
+ * there. The store is a cache: without the database the detector still
+ * works, it just does not remember what it found.
+ */
+function loadDatabaseSync() {
+    try {
+        const require = createRequire(import.meta.url);
+        return require("node:sqlite").DatabaseSync;
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * Initialize workspace environment database
  */
 function initDatabase() {
+    const DatabaseSync = loadDatabaseSync();
+    if (!DatabaseSync)
+        return null;
     ensureStoreDir();
     const db = new DatabaseSync(getDbPath());
     db.exec(`
@@ -743,6 +763,11 @@ export function detectWorkspaceEnv(workspacePath) {
     let db = null;
     try {
         db = initDatabase();
+        if (!db) {
+            // No SQLite in this runtime: the result is still correct, it is
+            // just not cached.
+            return result;
+        }
         db.prepare(`
 			INSERT OR REPLACE INTO workspace_env 
 			(workspace_path, mode, evidence, has_dev_script, has_build_script, package_manager,
@@ -775,6 +800,8 @@ export function loadWorkspaceEnv(workspacePath) {
     let db = null;
     try {
         db = initDatabase();
+        if (!db)
+            return null;
         const row = db.prepare("SELECT * FROM workspace_env WHERE workspace_path = ?").get(workspacePath);
         if (!row)
             return null;

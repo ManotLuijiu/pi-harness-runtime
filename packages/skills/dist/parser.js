@@ -5,6 +5,8 @@
  * Based on pi.dev Agent Skills specification.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 /**
  * Simple YAML-like frontmatter parser (subset of YAML for skill frontmatter)
  * Handles: strings, numbers, booleans, arrays, nested objects

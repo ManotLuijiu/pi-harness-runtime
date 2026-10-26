@@ -4,7 +4,7 @@
  * Detects when an agent reads a prompt from {project}/wiki/*
  * This triggers the write-review loop.
  */
-import { existsSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 const DEFAULT_WIKI_DIR = "wiki";
 /**
@@ -47,7 +47,6 @@ export function getWikiPrompts(projectPath) {
     }
     const prompts = [];
     function scanDir(dir) {
-        const { readdirSync, statSync } = require("fs");
         try {
             for (const entry of readdirSync(dir)) {
                 const fullPath = join(dir, entry);

@@ -26,6 +26,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export type NativeAppType =
 	| "tauri"

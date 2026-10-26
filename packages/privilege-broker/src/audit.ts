@@ -14,6 +14,8 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AuditEntry, AuditLogger } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 /** No-op logger — discards all events. */
 export class NoOpAuditLogger implements AuditLogger {

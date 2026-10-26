@@ -3,7 +3,6 @@
  *
  * Client for interacting with TencentDB-Agent-Memory server via MCP protocol.
  */
-import { fetch } from "undici";
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_MAX_RESULTS = 5;
 /**

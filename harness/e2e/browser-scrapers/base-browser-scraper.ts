@@ -6,6 +6,8 @@
  */
 
 import type { Page, Browser, BrowserContext } from "playwright";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export interface BrowserScraperConfig {
 	/** Headless mode (default: true) */

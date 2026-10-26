@@ -1,7 +1,6 @@
 /**
  * Skill MCP Client Implementation (RFC-0106)
  */
-import { fetch } from "undici";
 import { SkillAPIError } from "./errors.js";
 import { ErrorCodes } from "./types.js";
 const DEFAULT_TIMEOUT_MS = 10000;

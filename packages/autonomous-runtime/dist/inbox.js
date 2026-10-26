@@ -6,6 +6,8 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, } from "node:fs";
 import { getInboxDir, getTasksPath } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 // --- Errors -------------------------------------------------------------------
 export class InboxError extends Error {
     constructor(msg) {

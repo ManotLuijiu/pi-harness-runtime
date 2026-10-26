@@ -13,6 +13,9 @@ import type {
 	PageRoute,
 	ApiEndpoint,
 } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 
 // --- Detection ----------------------------------------------------------------
 

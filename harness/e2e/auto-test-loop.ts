@@ -774,6 +774,8 @@ test.describe('${base}', () => {
  */
 
 import 'package:flutter_test/flutter_test.dart';
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 void main() {
   group('${base}', () {

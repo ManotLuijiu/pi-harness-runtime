@@ -4,6 +4,8 @@
 
 import { writeFileSync, readFileSync } from "node:fs";
 import type { ClipboardOptions } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 /** Write text to system clipboard. */
 export async function copy(

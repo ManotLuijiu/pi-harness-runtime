@@ -33,6 +33,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // This test talks to the real Telegram bot API. Keep it opt-in so a stray
 // `bun test e2e/` can never send messages.

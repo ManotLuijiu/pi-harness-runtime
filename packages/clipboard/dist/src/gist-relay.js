@@ -10,6 +10,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const HARNESS_DIR = join(homedir(), ".pi-harness-runtime");
 const CONFIG_FILE = join(HARNESS_DIR, "gist-config.json");
 // ─── Config ──────────────────────────────────────────────────────────────

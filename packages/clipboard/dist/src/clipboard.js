@@ -2,6 +2,8 @@
  * Clipboard — System clipboard integration
  */
 import { writeFileSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 /** Write text to system clipboard. */
 export async function copy(text, _options) {
     try {

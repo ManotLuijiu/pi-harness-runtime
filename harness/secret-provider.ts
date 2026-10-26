@@ -29,6 +29,8 @@ import {
   ServiceName,
 } from "./secret-schema.js";
 import { logServiceEvent } from "./service-diagnostics.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 /**
  * Immutable credential snapshot

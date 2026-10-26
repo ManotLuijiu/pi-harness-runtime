@@ -7,6 +7,8 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, } from "node:fs";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 /** No-op logger — discards all events. */
 export class NoOpAuditLogger {
     log(_entry) {

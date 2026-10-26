@@ -28,11 +28,15 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { execFile, spawnSync } from "node:child_process";
+import { builtinModules } from "node:module";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	extractBareImports,
 	extractRelativeValueImports,
+	extractStaticBareImports,
+	findRequireCalls,
+	hasLocalRequire,
 	packageNameOf,
 	resolveRelativeImport,
 } from "./lib/runtime-imports.js";
@@ -55,7 +59,9 @@ interface Problem {
 		| "missing-package"
 		| "forbidden-path"
 		| "missing-plugin"
-		| "sensitive-content";
+		| "sensitive-content"
+		| "undeclared-dependency"
+		| "esm-require";
 	detail: string;
 }
 
@@ -571,6 +577,7 @@ function workspacePackageNames(): Set<string> {
 function checkRelativeImports(files: string[]): void {
 	const published = new Set(files);
 	const workspaceNames = workspacePackageNames();
+
 	for (const path of files) {
 		if (!/\.(ts|mts|cts|mjs|js|cjs)$/.test(path)) continue;
 		if (path.endsWith(".d.ts") || path.endsWith(".d.mts")) continue;
@@ -600,6 +607,144 @@ function checkRelativeImports(files: string[]): void {
 			problems.push({
 				kind: "broken-import",
 				detail: `${path} imports ${specifier} but ${name} is a workspace package: it ships inside this tarball and is never installed, so the name cannot resolve`,
+			});
+		}
+	}
+}
+
+/**
+ * Every package that the published package declares.
+ *
+ * The consumer installs one package, so that one package has to carry the
+ * dependencies of every module it ships. A module that imports a package
+ * the manifest does not name cannot be imported by the consumer: the
+ * dependency is missing from the install.
+ *
+ * A dynamic import is a different case: it is resolved when the code
+ * reaches it, so a module that loads one at run time may treat it as an
+ * optional dependency. Only a static import is checked here.
+ */
+function declaredDependencyNames(): Set<string> {
+	const names = new Set<string>();
+	let manifest: {
+		dependencies?: Record<string, string>;
+		optionalDependencies?: Record<string, string>;
+		peerDependencies?: Record<string, string>;
+	};
+	try {
+		manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+	} catch {
+		return names;
+	}
+	for (const group of [
+		manifest.dependencies,
+		manifest.optionalDependencies,
+		manifest.peerDependencies,
+	]) {
+		for (const name of Object.keys(group ?? {})) names.add(name);
+	}
+	return names;
+}
+
+/**
+ * The names that a published module may import without a declaration.
+ *
+ * A Node builtin is always there. A test runner is only there when the
+ * tests run, and a published module never imports one at run time.
+ */
+const ALWAYS_AVAILABLE_NAMES = new Set([
+	...builtinModules,
+	...builtinModules.map((name) => `node:${name}`),
+	"bun:test",
+	"node:test",
+]);
+
+/**
+ * Every static import of a published file must name a declared package.
+ *
+ * The check runs on the file list that npm itself produced, so it covers
+ * exactly what a consumer receives - the compiled output included.
+ */
+function checkDeclaredDependencies(files: string[]): void {
+	const declared = declaredDependencyNames();
+	const workspaces = workspacePackageNames();
+	for (const path of files) {
+		if (!/\.(ts|mts|cts|mjs|js|cjs)$/.test(path)) continue;
+		if (path.endsWith(".d.ts") || path.endsWith(".d.mts")) continue;
+		const full = join(ROOT, path);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		for (const specifier of extractStaticBareImports(content)) {
+			const name = packageNameOf(specifier);
+			if (!name) continue;
+			if (ALWAYS_AVAILABLE_NAMES.has(name)) continue;
+			if (declared.has(name) || workspaces.has(name)) continue;
+			problems.push({
+				kind: "undeclared-dependency",
+				detail: `${path} imports ${name}, which the published package does not declare - a consumer cannot import this module`,
+			});
+		}
+	}
+}
+
+/**
+ * A published module must not call `require` when it is loaded.
+ *
+ * The published package is an ES module (`"type": "module"`), and Node
+ * has no `require` there: a call at the top level of a module throws the
+ * moment the module is imported. A `require` inside a function is only a
+ * problem when that function runs, so only the module scope is checked.
+ */
+/**
+ * The module system of a published file.
+ *
+ * A file that belongs to a CommonJS package may call `require`. A file
+ * that belongs to an ES module may not: Node has no `require` there.
+ */
+function moduleTypeOf(path: string): "module" | "commonjs" {
+	let dir = dirname(resolve(ROOT, path));
+	for (;;) {
+		const manifestPath = join(dir, "package.json");
+		if (existsSync(manifestPath)) {
+			try {
+				const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+					type?: string;
+				};
+				return manifest.type === "commonjs" ? "commonjs" : "module";
+			} catch {
+				return "module";
+			}
+		}
+		const parent = dirname(dir);
+		if (parent === dir) return "module";
+		dir = parent;
+	}
+}
+
+/**
+ * A published module must not call the global `require`.
+ *
+ * The published package is an ES module, and Node has no `require` there:
+ * a call at the top level of a module throws the moment the module is
+ * imported, and a call inside a function throws when that function runs.
+ *
+ * A module that builds its own `require` with `createRequire` owns a
+ * working `require` and is not affected.
+ */
+function checkModuleScopeRequires(files: string[]): void {
+	for (const path of files) {
+		if (!path.endsWith(".js")) continue;
+		if (moduleTypeOf(path) !== "module") continue;
+		const full = join(ROOT, path);
+		if (!existsSync(full)) continue;
+		const content = readFileSync(full, "utf8");
+		if (hasLocalRequire(content)) continue;
+		for (const call of findRequireCalls(content)) {
+			problems.push({
+				kind: "esm-require",
+				detail: call.moduleScope
+					? `${path} calls require(${call.specifier}) when the module is loaded, but the published package is an ES module`
+					: `${path} calls require(${call.specifier}), but the published package is an ES module and has no require`,
 			});
 		}
 	}
@@ -675,6 +820,8 @@ if (publishedFiles.length === 0) {
 	});
 } else {
 	checkRelativeImports(publishedFiles);
+	checkDeclaredDependencies(publishedFiles);
+	checkModuleScopeRequires(publishedFiles);
 	checkSensitiveContent(publishedFiles);
 	if (verifyTarball) inspectTarball(publishedFiles);
 }

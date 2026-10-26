@@ -15,6 +15,9 @@ import type {
 	MCPPrompt,
 	ToolCallParams,
 } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 
 let initialized = false;
 

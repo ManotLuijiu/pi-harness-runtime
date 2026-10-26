@@ -14,6 +14,8 @@
 import { existsSync, writeFileSync, appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;

@@ -29,12 +29,10 @@
  * ```
  */
 import { spawn } from "child_process";
-import { promisify } from "util";
 import { readFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-const exec = promisify(require("child_process").exec);
 // ---------------------------------------------------------------------------
 // WebMCP Test Runner
 // ---------------------------------------------------------------------------

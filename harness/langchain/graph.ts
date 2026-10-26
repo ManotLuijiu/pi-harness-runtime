@@ -42,6 +42,8 @@ import { WriteReviewBlackboard } from "../../packages/write-review/dist/blackboa
 import { getApprovedPatternStore } from "../../packages/trajectory/dist/src/index.js";
 import type { Verdict } from "../../packages/write-review/src/types.js";
 import type { LoopWidget } from "./widget.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // ─── State ──────────────────────────────────────────────────────────────────
 

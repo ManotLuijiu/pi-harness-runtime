@@ -5,6 +5,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, createRe
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 export class EventStore {
     sessionsDir;
     constructor(opts = {}) {

@@ -24,6 +24,9 @@ import type {
 	StoreOptions,
 	StoreStats,
 } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 
 export class EventStore {
 	private readonly sessionsDir: string;

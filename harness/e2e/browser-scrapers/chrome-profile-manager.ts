@@ -15,6 +15,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export interface ChromeProfileConfig {
 	/** Provider name (e.g., "codex", "z-ai") */

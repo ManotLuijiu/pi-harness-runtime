@@ -3653,6 +3653,8 @@ import { homedir } from "node:os";
 import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, appendFileSync, realpathSync, statSync, chmodSync, openSync, closeSync, renameSync } from "node:fs";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { join, dirname } from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // --- Harness Runtime State --------------------------------------------
 const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");

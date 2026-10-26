@@ -11,6 +11,8 @@ import { normalizeRequest } from "./normalize.js";
 import { renderForProvider } from "./render.js";
 import { buildSections } from "./section-builder.js";
 import { validateSections, validateTokenBudget } from "./validate.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 /**
  * Default in-memory redactor (identity function).
  * Production should inject a real redaction implementation.

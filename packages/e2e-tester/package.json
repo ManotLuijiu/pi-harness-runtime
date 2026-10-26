@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/e2e-tester",
-  "version": "1.1.0",
+  "version": "1.1.190",
   "description": "WebMCP-powered E2E testing for pi-harness - natural language test scenarios",
   "type": "module",
   "main": "./dist/index.js",

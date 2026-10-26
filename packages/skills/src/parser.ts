@@ -15,6 +15,9 @@ import type {
   SkillMetadata,
   SkillPitfall,
 } from "./types.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 
 /**
  * Simple YAML-like frontmatter parser (subset of YAML for skill frontmatter)

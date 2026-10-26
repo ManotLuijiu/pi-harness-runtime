@@ -6,6 +6,8 @@
  */
 
 import { BaseBrowserScraper } from "./base-browser-scraper.js";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export interface CodexQuotaData {
 	provider: "openai-codex";

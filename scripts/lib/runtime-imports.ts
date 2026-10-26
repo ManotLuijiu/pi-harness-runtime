@@ -130,14 +130,24 @@ export function stripComments(source: string): string {
 	return scanSource(source).code;
 }
 
-/** The import forms that carry a specifier. */
-const IMPORT_PATTERNS: RegExp[] = [
+/** The STATIC import forms that carry a specifier. */
+const STATIC_IMPORT_PATTERNS: RegExp[] = [
 	// import ... from "..." / export ... from "..."
 	/(?:^|[\n;])[ \t]*(import|export)\s+(type\s+)?[^;\n]*?from\s*["']([^"']+)["']/g,
 	// import "..." (side effect)
 	/(?:^|[\n;])[ \t]*import\s*["']([^"']+)["']/g,
+];
+
+/** The DYNAMIC import form that carries a specifier. */
+const DYNAMIC_IMPORT_PATTERNS: RegExp[] = [
 	// import("...") (dynamic)
 	/import\s*\(\s*["']([^"']+)["']\s*\)/g,
+];
+
+/** The import forms that carry a specifier. */
+const IMPORT_PATTERNS: RegExp[] = [
+	...STATIC_IMPORT_PATTERNS,
+	...DYNAMIC_IMPORT_PATTERNS,
 ];
 
 /**
@@ -149,10 +159,27 @@ const IMPORT_PATTERNS: RegExp[] = [
  * is documentation, not an import.
  */
 export function extractValueImports(source: string): string[] {
+	return collectSpecifiers(source, IMPORT_PATTERNS);
+}
+
+/**
+ * Every STATIC value import of a source file.
+ *
+ * A dynamic import is a different thing: it is resolved when the code
+ * reaches it, so a module that loads one at run time may be an optional
+ * dependency. A static import is resolved when the module is loaded, so
+ * the package must carry it.
+ */
+export function extractStaticValueImports(source: string): string[] {
+	return collectSpecifiers(source, STATIC_IMPORT_PATTERNS);
+}
+
+/** The specifiers of the given import forms. */
+function collectSpecifiers(source: string, patterns: RegExp[]): string[] {
 	const { code, isCodeAt } = scanSource(source);
 	const specifiers: string[] = [];
 
-	for (const pattern of IMPORT_PATTERNS) {
+	for (const pattern of patterns) {
 		for (const match of code.matchAll(pattern)) {
 			// The match must start in code, not inside a literal.
 			if (match.index === undefined || !isCodeAt(match.index)) continue;
@@ -184,6 +211,19 @@ export function extractBareImports(source: string): string[] {
 }
 
 /**
+ * Every STATIC bare value import of a source file.
+ *
+ * A static bare import is a package the module needs when it is loaded.
+ * The published package must declare it, or the consumer cannot import
+ * the module at all.
+ */
+export function extractStaticBareImports(source: string): string[] {
+	return extractStaticValueImports(source).filter(
+		(specifier) => !specifier.startsWith("."),
+	);
+}
+
+/**
  * The package a specifier names.
  *
  * `@scope/name/sub/path` and `name/sub/path` both name `@scope/name` and
@@ -192,6 +232,152 @@ export function extractBareImports(source: string): string[] {
 export function packageNameOf(specifier: string): string {
 	if (specifier.startsWith("@")) return specifier.split("/").slice(0, 2).join("/");
 	return specifier.split("/")[0];
+}
+
+/** Is the character part of an identifier? */
+function isWordChar(char: string | undefined): boolean {
+	return char !== undefined && /[A-Za-z0-9_$]/.test(char);
+}
+
+/**
+ * Every `require(...)` call that runs when the module is loaded.
+ *
+ * The published package is an ES module (`"type": "module"`), and Node has
+ * no `require` in an ES module. A `require` in the body of a function is
+ * harmless as long as nobody calls that function - but a `require` at the
+ * top level of the module throws the moment the module is imported.
+ *
+ * The scanner walks the code and counts the braces, so it knows whether a
+ * call sits inside a function body. The content of a string or a template
+ * literal is not code and is skipped.
+ */
+/**
+ * The blocks that are not a function body.
+ *
+ * A `require` inside one of them still runs when the module is loaded:
+ * `if (cond) { require("x") }` is a load time call, not a call that waits
+ * for a function to run.
+ */
+const LOAD_TIME_BLOCK_KEYWORDS =
+	/^(?:if|for|while|switch|try|catch|finally|do|else|class|enum)\b/;
+
+/**
+ * A `require` call in a source file.
+ */
+export interface RequireCall {
+	/** The module the call names. */
+	specifier: string;
+	/** Whether the call runs when the module is loaded. */
+	moduleScope: boolean;
+}
+
+/**
+ * Every `require` call of a source file.
+ *
+ * The scope analysis is textual: a block opens a function scope unless it
+ * belongs to a statement that runs at load time, and an arrow function
+ * with an expression body ends with its statement.
+ */
+export function findRequireCalls(source: string): RequireCall[] {
+	const { code, isCodeAt } = scanSource(source);
+	const calls: RequireCall[] = [];
+	let functionDepth = 0;
+	let arrowDepth = 0;
+
+	for (let i = 0; i < code.length; i += 1) {
+		if (!isCodeAt(i)) continue;
+		const char = code[i];
+		if (char === "{") {
+			if (!opensLoadTimeBlock(code, i)) functionDepth += 1;
+			continue;
+		}
+		if (char === "}") {
+			functionDepth -= 1;
+			continue;
+		}
+		if (char === ";" && functionDepth === 0) {
+			// The end of a statement ends an arrow function whose body is
+			// an expression: `const load = () => require("x");`.
+			arrowDepth = 0;
+			continue;
+		}
+		if (char === "=" && code[i + 1] === ">") {
+			if (functionDepth === 0) arrowDepth += 1;
+			i += 1;
+			continue;
+		}
+		if (!code.startsWith("require", i)) continue;
+		if (isWordChar(code[i - 1]) || isWordChar(code[i + 7])) continue;
+		let j = i + 7;
+		while (j < code.length && /\s/.test(code[j])) j += 1;
+		if (code[j] !== "(") continue;
+		const end = code.indexOf(")", j);
+		const argument = code.slice(j + 1, end === -1 ? j + 1 : end).trim();
+		// A call inside a call at the top level still runs at load time.
+		const moduleScope = functionDepth === 0 && arrowDepth === 0;
+		calls.push({ specifier: unquoteSpecifier(argument), moduleScope });
+		i = j;
+	}
+
+	return calls;
+}
+
+/**
+ * Every `require` that runs when the module is loaded.
+ *
+ * The published package is an ES module and Node has no `require` there:
+ * a call at the top level of a module throws the moment the module is
+ * imported. A `require` inside a function body only runs when that
+ * function runs, so it is not a problem for the import itself.
+ */
+export function findModuleScopeRequires(source: string): string[] {
+	return findRequireCalls(source)
+		.filter((call) => call.moduleScope)
+		.map((call) => call.specifier);
+}
+
+/**
+ * Whether the file creates its own `require`.
+ *
+ * An ES module has no `require`, but a module that builds one with
+ * `createRequire` owns a working `require`. Such a file is not broken by
+ * a `require` call.
+ */
+export function hasLocalRequire(source: string): boolean {
+	return /(?:const|let|var)\s+require\s*=\s*createRequire\s*\(/.test(source);
+}
+
+/**
+ * Whether the block that starts at the given position runs at load time.
+ *
+ * The text between the block and the statement before it names the kind of
+ * the block: `try {` is a load time block, `function read() {` is a
+ * function scope.
+ */
+function opensLoadTimeBlock(code: string, braceIndex: number): boolean {
+	let start = braceIndex - 1;
+	while (start >= 0) {
+		const char = code[start];
+		if (char === ";" || char === "{" || char === "}") {
+			start += 1;
+			break;
+		}
+		start -= 1;
+	}
+	if (start < 0) start = 0;
+	const statement = code.slice(start, braceIndex).trim();
+	return LOAD_TIME_BLOCK_KEYWORDS.test(statement);
+}
+
+/** Remove the quotes of a module specifier. */
+function unquoteSpecifier(specifier: string): string {
+	if (specifier.length < 2) return specifier;
+	const first = specifier[0];
+	const last = specifier[specifier.length - 1];
+	if ((first === '"' || first === "'") && first === last) {
+		return specifier.slice(1, -1);
+	}
+	return specifier;
 }
 
 /**
