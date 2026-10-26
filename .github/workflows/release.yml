@@ -51,6 +51,15 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.unpublish_versions != ''
     steps:
+      # The unpublish step runs scripts/npm-unpublish-with-approval.sh from
+      # the workspace, so the repository has to be there. A dry run never
+      # reaches the script, which is why a missing checkout stayed hidden
+      # until a real removal was attempted.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -144,6 +153,13 @@ jobs:
       # Report which second factor the account actually uses, so the
       # operator knows which credential can unpublish. Only booleans and
       # field names are printed - no token value, no email, no username.
+      #
+      # The probe can come back empty: the profile endpoint needs a
+      # profile-scoped credential, and a plain write token gets nothing.
+      # An empty answer is NOT evidence that the account has no second
+      # factor - the registry's own answer to the write is the authority,
+      # and an EOTP challenge proves a second factor IS required. Never
+      # report "no second factor" from an absent answer.
       - name: Report the account's second-factor requirements
         env:
           TOK: ${{ steps.cred.outputs.token }}
@@ -151,13 +167,27 @@ jobs:
           NPM_CONFIG_USERCONFIG: /tmp/npmrc
         run: |
           set -uo pipefail
-          curl -sS -H "Authorization: Bearer ${TOK}" \
-            "https://registry.npmjs.org/-/npm/v1/user" > /tmp/user.json || true
+          status="$(curl -sS -o /tmp/user.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOK}" \
+            "https://registry.npmjs.org/-/npm/v1/user" || echo 000)"
+          echo "profile probe status: ${status}"
           node -e '
             const fs = require("fs");
             const raw = fs.readFileSync("/tmp/user.json", "utf8");
-            let u = {};
-            try { u = JSON.parse(raw); } catch {}
+            let u = null;
+            try {
+              const p = JSON.parse(raw);
+              if (p && typeof p === "object" && Object.keys(p).length) u = p;
+            } catch {}
+            if (!u) {
+              console.log("second factor: unknown "
+                + "(the profile endpoint returned no usable fields)");
+              console.log("This credential cannot read the account profile.");
+              console.log("The registry answer to the write is the authority:");
+              console.log("  EOTP -> the account requires a second factor");
+              console.log("  ok   -> no second factor is required");
+              process.exit(0);
+            }
             console.log("user fields: " + Object.keys(u).join(", "));
             const totp = u.totp && u.totp.enabled === true;
             const web = u.webauth && u.webauth.enabled === true;
@@ -169,7 +199,7 @@ jobs:
             } else if (web) {
               console.log("a browser approval is required");
             } else {
-              console.log("no second factor is enabled on the account");
+              console.log("the account profile reports no second factor");
             }
           '
           echo "--- npm's own view ---"
