@@ -305,7 +305,16 @@ test("a bare import is separated from a relative one", () => {
 	assert.equal(packageNameOf("zod"), "zod");
 });
 
-test("no tracked file names a workspace package in a bare import", () => {
+/**
+ * The two published-file tests pack the whole application and read the
+ * tarball. That takes several seconds, and the runner's default per-test
+ * timeout is five seconds - enough on a fast machine, not enough on a
+ * slow one. The timeout is stated per test so that a slow runner never
+ * decides which assertion runs.
+ */
+const TEST_TIMEOUT_MS = 120_000;
+
+test("no tracked file names a workspace package in a bare import", { timeout: TEST_TIMEOUT_MS }, () => {
 	const files = trackedFiles();
 	if (files === null) {
 		return; // not a Git checkout - nothing to scan
@@ -313,7 +322,7 @@ test("no tracked file names a workspace package in a bare import", () => {
 	assert.deepEqual(bareWorkspaceImports(files), []);
 });
 
-test("no published file names a workspace package in a bare import", () => {
+test("no published file names a workspace package in a bare import", { timeout: TEST_TIMEOUT_MS }, () => {
 	const files = publishedFiles();
 	if (files === null) {
 		return; // npm is not available - the CI verifier covers it
@@ -321,7 +330,7 @@ test("no published file names a workspace package in a bare import", () => {
 	assert.deepEqual(bareWorkspaceImports(files), []);
 });
 
-test("no tracked file carries a relative import that does not resolve", () => {
+test("no tracked file carries a relative import that does not resolve", { timeout: TEST_TIMEOUT_MS }, () => {
 	const files = trackedFiles();
 	if (files === null) {
 		return; // not a Git checkout - nothing to scan
@@ -330,7 +339,7 @@ test("no tracked file carries a relative import that does not resolve", () => {
 	assert.deepEqual(brokenImports(files, tracked), []);
 });
 
-test("no published file carries a relative import that does not resolve", () => {
+test("no published file carries a relative import that does not resolve", { timeout: TEST_TIMEOUT_MS }, () => {
 	const files = publishedFiles();
 	if (files === null) {
 		return; // npm is not available - the CI verifier covers it

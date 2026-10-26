@@ -112,14 +112,26 @@ function run(ws, ...args) {
 	}
 }
 
-test("a removal without any credential is refused", () => {
+/**
+ * Every test in this file starts a shell script, a fake npm and a fake
+ * curl. The runner's default per-test timeout is five seconds, which is
+ * enough on a fast machine and not enough on a slow one - the batch test
+ * polls the registry between attempts, so it needs more than that.
+ *
+ * The timeout is therefore stated per test rather than left to the
+ * default, and it is stated for every test so that a slow runner never
+ * decides which assertion runs.
+ */
+const TEST_TIMEOUT_MS = 60_000;
+
+test("a removal without any credential is refused", { timeout: TEST_TIMEOUT_MS }, () => {
 	const ws = workspace();
 	const result = run(ws, "request", "pi-harness-runtime", "1.1.390");
 	assert.notEqual(result.code, 0);
 	assert.match(result.stdout, /no credential/);
 });
 
-test("the challenge is captured and the link is printed", () => {
+test("the challenge is captured and the link is printed", { timeout: TEST_TIMEOUT_MS }, () => {
 	const ws = workspace();
 	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
 
@@ -134,7 +146,7 @@ test("the challenge is captured and the link is printed", () => {
 	assert.match(readFileSync("/tmp/npm-approval/url.txt", "utf8"), /FAKE-CHALLENGE-ID/);
 });
 
-test("the approval refreshes the credential", () => {
+test("the approval refreshes the credential", { timeout: TEST_TIMEOUT_MS }, () => {
 	const ws = workspace();
 	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
 	run(ws, "request", "pi-harness-runtime", "1.1.390");
@@ -145,7 +157,7 @@ test("the approval refreshes the credential", () => {
 	assert.match(npmrc, /_authToken=npm_fake_approved_token/);
 });
 
-test("a batch removes every version across an approval", () => {
+test("a batch removes every version across an approval", { timeout: TEST_TIMEOUT_MS }, () => {
 	const ws = workspace();
 	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
 
