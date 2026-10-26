@@ -145,12 +145,45 @@ jobs:
           fi
           echo "exchanged a registry token for ${PACKAGE_NAME}"
 
+      # Report which second factor the account actually uses, so the
+      # operator knows which credential can unpublish. Only booleans are
+      # printed - no token value, no email, no username.
+      - name: Report the account's second-factor requirements
+        env:
+          TOK: ${{ steps.cred.outputs.token }}
+        run: |
+          set -uo pipefail
+          curl -sS -H "Authorization: Bearer ${TOK}" \
+            "https://registry.npmjs.org/-/npm/v1/user" > /tmp/user.json || true
+          node -e '
+            const fs = require("fs");
+            let u = {};
+            const raw = fs.readFileSync("/tmp/user.json", "utf8");
+            try { u = JSON.parse(raw); } catch {}
+            const totp = u.totp && u.totp.enabled === true;
+            const web = u.webauth && u.webauth.enabled === true;
+            console.log(`second factor: totp=${totp} webauth=${web}`);
+            if (totp && web) {
+              console.log("both factors are on: a one-time code works");
+            } else if (totp) {
+              console.log("an authenticator one-time code is required");
+            } else if (web) {
+              console.log("a browser approval is required");
+            } else {
+              console.log("no second factor is enabled on the account");
+            }
+          '
+
       - name: Unpublish versions
         env:
           VERSIONS: ${{ github.event.inputs.unpublish_versions }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           PACKAGE_NAME: pi-harness-runtime
           NODE_AUTH_TOKEN: ${{ steps.cred.outputs.token }}
+          # An authenticator one-time code, when the account uses one.
+          # It comes from a secret, never from a workflow input, so it does
+          # not land in the run metadata.
+          NPM_OTP: ${{ secrets.NPM_OTP }}
         run: |
           set -uo pipefail
           echo "Authenticated as: $(npm whoami 2>&1)"
@@ -161,7 +194,12 @@ jobs:
               continue
             fi
             echo "::group::unpublish $PACKAGE_NAME@$v"
-            if npm unpublish "$PACKAGE_NAME@$v"; then
+            if [ -n "${NPM_OTP:-}" ]; then
+              npm unpublish --otp="${NPM_OTP}" "$PACKAGE_NAME@$v"
+            else
+              npm unpublish "$PACKAGE_NAME@$v"
+            fi
+            if [ $? -eq 0 ]; then
               echo "OK: unpublished $PACKAGE_NAME@$v"
             else
               echo "FAILED: $PACKAGE_NAME@$v"
