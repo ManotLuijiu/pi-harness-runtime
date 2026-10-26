@@ -76,8 +76,23 @@ exit 0
 		bin,
 		"curl",
 		`#!/usr/bin/env bash
-# The script only reads the body and the status code.
-printf '{"token":"npm_fake_approved_token"}' > "${dir}/curl-body.json"
+# The script reads the body from the file it names with -o and the status
+# code from the -w format, so the fake has to honour both. An earlier
+# version of this fake ignored -o and wrote the body to a file of its
+# own, which left the script reading a file that nobody wrote - and the
+# test only passed because a stale file from an earlier run was lying
+# around in /tmp.
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+if [ -n "$out" ]; then
+  printf '{"token":"npm_fake_approved_token"}' > "$out"
+else
+  printf '{"token":"npm_fake_approved_token"}'
+fi
 printf '200'
 `,
 	);
@@ -155,6 +170,24 @@ test("the approval refreshes the credential", { timeout: TEST_TIMEOUT_MS }, () =
 	assert.equal(result.code, 0, result.stdout);
 	const npmrc = readFileSync(ws.env.NPM_CONFIG_USERCONFIG, "utf8");
 	assert.match(npmrc, /_authToken=npm_fake_approved_token/);
+});
+
+test("the approved token does not outlive the approval", { timeout: TEST_TIMEOUT_MS }, () => {
+	const ws = workspace();
+	writeFileSync(ws.env.NPM_TOKEN_FILE, "npm_fake_repository_token\n");
+	run(ws, "request", "pi-harness-runtime", "1.1.390");
+	run(ws, "wait", "pi-harness-runtime", "1.1.390", "20");
+
+	// The registry hands the approved token back in the body of the
+	// polling response. That body is a credential, so it must be gone
+	// once the token has been read - a file in /tmp that survives the run
+	// leaves a usable npm credential on a shared machine.
+	assert.ok(
+		!existsSync("/tmp/npm-approval/done-body.json"),
+		"the approved token body is left behind",
+	);
+	// The older path must not be used either.
+	assert.ok(!existsSync("/tmp/npm-done.json"), "a credential body is left in /tmp");
 });
 
 test("a batch removes every version across an approval", { timeout: TEST_TIMEOUT_MS }, () => {

@@ -38,6 +38,13 @@ NPMRC="${NPM_CONFIG_USERCONFIG:-${HOME:-/tmp}/.npmrc}"
 ERR_FILE=/tmp/npm-approval-error.txt
 TOKEN_FILE="${NPM_TOKEN_FILE:-$HOME/.pi-harness-runtime/keys/npm-token.txt}"
 
+# The registry hands the approved token back in the body of the polling
+# response. That body is a credential, so it is written inside the
+# approval directory, readable by its owner only, and removed as soon as
+# the token has been read. A file in /tmp that survives the run leaves a
+# usable npm credential behind on a shared machine.
+APPROVAL_BODY="${APPROVAL_DIR}/done-body.json"
+
 # The credential must exist somewhere before npm is called.
 ensure_credential() {
 	if [ -s "$NPMRC" ] && grep -q "_authToken=" "$NPMRC"; then
@@ -127,16 +134,20 @@ wait_for_approval() {
 	local deadline=$(( $(date +%s) + wait_seconds ))
 	while [ "$(date +%s)" -lt "$deadline" ]; do
 		local code token
-		code="$(curl -sS -o /tmp/npm-done.json -w '%{http_code}' \
+		umask 077
+		mkdir -p "$APPROVAL_DIR"
+		code="$(curl -sS -o "$APPROVAL_BODY" -w '%{http_code}' \
 			-H "Authorization: Bearer ${NODE_AUTH_TOKEN:-}" "$done_url")"
 		if [ "$code" = "200" ]; then
 			token="$(node -e '
 				const fs = require("fs");
 				let c = {};
-				try { c = JSON.parse(fs.readFileSync("/tmp/npm-done.json", "utf8")); }
+				try { c = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
 				catch {}
 				process.stdout.write(c.token || "");
-			')"
+			' "$APPROVAL_BODY")"
+			# The body is a credential: it does not outlive the read.
+			rm -f "$APPROVAL_BODY"
 			if [ -n "$token" ]; then
 				write_token_to_npmrc "$token"
 				echo "the approval landed; the credential was refreshed"
@@ -145,6 +156,7 @@ wait_for_approval() {
 		fi
 		sleep 5
 	done
+	rm -f "$APPROVAL_BODY"
 	echo "no approval arrived within ${wait_seconds}s"
 	return 1
 }
