@@ -79,6 +79,13 @@ export function classifyQuestionRisk(input) {
     // decision. An "approval" question is the agent proposing work: it
     // stays auto-approvable unless the wording names a risky action.
     let requiresExplicitAuthorization = kind === "explicit";
+    // A typed ask that reserves the decision for the human blocks it too.
+    // The typed ask is derived from the whole message, so the requirement
+    // the agent states itself is not lost.
+    if (input.askType === "explicit_authorization") {
+        requiresExplicitAuthorization = true;
+        signals.push("explicit-authorization");
+    }
     // A destructive action never gets an autonomous approval.
     if (destructive) {
         requiresExplicitAuthorization = true;

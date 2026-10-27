@@ -555,6 +555,8 @@ export { E2EJudge } from "./e2e-judge.js";
 export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
+// Export the instruction an autonomous decision sends to the agent
+export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 // Export the deterministic risk classifier of a pending question
 export { classifyQuestionRisk } from "./question-risk.js";
 // Export WrapUpJudge

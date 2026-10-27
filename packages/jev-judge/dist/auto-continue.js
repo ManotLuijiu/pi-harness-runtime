@@ -30,6 +30,28 @@ export function isDecisionOutcome(value) {
         value === "proceed_with_caution");
 }
 /**
+ * Is the value a known scope?
+ *
+ * An unknown scope is ignored instead of being guessed: a decision without
+ * a scope keeps the default scope of the outcome.
+ */
+export function isDecisionScope(value) {
+    return (value === "full_scope" || value === "canary_first" || value === "none");
+}
+/**
+ * The index of the alternative a criterion name stands for.
+ *
+ * The criteria of the choice question are named "option_1", "option_2", ...
+ * so the picked name maps back to the alternative the agent offered. An
+ * unknown name (for example "none_of_these") has no alternative.
+ */
+export function optionIndex(name) {
+    const match = /^option_(\d+)$/.exec(name);
+    if (!match)
+        return -1;
+    return Number.parseInt(match[1], 10) - 1;
+}
+/**
  * Combine the threshold outcome with the structured outcome of the
  * evaluation.
  *
@@ -72,6 +94,25 @@ export function applyDecisionPolicy(proposed, context, options) {
                 appliedRule: "clarification-never-approved",
                 reason: "A clarification asks which option is meant. Guessing it would decide for the user.",
             };
+        }
+        // A choice is decidable, but only with a concrete answer: the decision
+        // has to name the option it picked, otherwise the agent would receive
+        // a "continue" that says nothing about the question it asked.
+        if (question?.kind === "choice") {
+            if (!options?.selectedOption) {
+                return {
+                    outcome: "wait",
+                    appliedRule: "choice-without-selected-option",
+                    reason: "The decision did not name the option it picked, so the question stays open.",
+                };
+            }
+            if (options.scope === "none") {
+                return {
+                    outcome: "wait",
+                    appliedRule: "choice-scope-none",
+                    reason: "The decision chose no scope, so the question stays open.",
+                };
+            }
         }
         if (question?.requiresExplicitAuthorization) {
             return {
@@ -170,7 +211,7 @@ export class AutoContinueJudge {
     async decide(taskState) {
         const state = this.buildState(taskState);
         try {
-            const result = await this.jev.evaluate(state, {
+            const questions = {
                 outcome: {
                     type: "choice",
                     instructions: "The decision for the pending question. Reject it when the proposed action must not happen.",
@@ -238,7 +279,34 @@ export class AutoContinueJudge {
                         "5 - very complex, unknown territory",
                     ],
                 },
-            });
+            };
+            // A choice is only decidable with the alternatives in front of the
+            // evaluation: the decision has to pick one of them, and it has to
+            // say how far the work goes with it.
+            const alternatives = (taskState.context?.question?.alternatives ?? []).slice(0, MAX_LISTED_TASKS);
+            if (alternatives.length >= 2) {
+                const criteria = {};
+                alternatives.forEach((alternative, index) => {
+                    criteria[`option_${index + 1}`] = alternative;
+                });
+                criteria["none_of_these"] = "none of the alternatives is the right one";
+                questions.selectedOption = {
+                    type: "choice",
+                    instructions: "Which alternative does the agent implement? Pick exactly one of the named alternatives, or none of them.",
+                    criteria,
+                };
+                questions.scope = {
+                    type: "choice",
+                    instructions: "How far does the work go with the selected alternative?",
+                    options: ["full_scope", "canary_first", "none"],
+                    optionDescriptions: {
+                        full_scope: "the whole selected alternative is done in one go",
+                        canary_first: "a small canary (for example 100 records) is validated first, and the work only scales up after the canary is verified",
+                        none: "nothing is done, the decision only names the preferred alternative",
+                    },
+                };
+            }
+            const result = await this.jev.evaluate(state, questions);
             return this.applyPolicy(this.buildDecision(result, taskState), taskState);
         }
         catch (error) {
@@ -257,6 +325,8 @@ export class AutoContinueJudge {
             confidenceThreshold: this.config.proceedThreshold,
             cautionThreshold: this.config.cautionThreshold,
             confidence: decision.probability,
+            selectedOption: decision.selectedOption,
+            scope: decision.scope,
         });
         decision.outcome = policy.outcome;
         if (policy.appliedRule) {
@@ -298,7 +368,7 @@ export class AutoContinueJudge {
     /**
      * Build decision from Jev result
      */
-    buildDecision(result, _taskState) {
+    buildDecision(result, taskState) {
         const shouldProceed = result.decisions.shouldProceed;
         const probability = shouldProceed.probability ?? 0.5;
         const riskDecision = result.decisions.riskLevel;
@@ -315,6 +385,15 @@ export class AutoContinueJudge {
         const proposedOutcome = isDecisionOutcome(outcomeChoice)
             ? outcomeChoice
             : undefined;
+        // The option the evaluation picked for a choice question. The name of
+        // the criterion is mapped back to the alternative the agent offered.
+        const alternatives = taskState.context?.question?.alternatives ?? [];
+        const selectedName = result.decisions.selectedOption?.response?.choice;
+        const selectedOption = selectedName
+            ? alternatives[optionIndex(selectedName)]
+            : undefined;
+        const scopeChoice = result.decisions.scope?.response?.choice;
+        const scope = isDecisionScope(scopeChoice) ? scopeChoice : undefined;
         // Determine action based on thresholds
         let action;
         let confidence;
@@ -379,6 +458,8 @@ export class AutoContinueJudge {
             estimatedImpact,
             confidence,
             waitRecommendation,
+            selectedOption,
+            scope,
         };
     }
     /**
@@ -469,7 +550,14 @@ export function buildDecisionState(taskState) {
             ? {
                 request_id: question.requestId,
                 kind: question.kind,
+                ask_type: question.askType ?? "unknown",
                 text: question.text.slice(0, MAX_QUESTION_CHARS),
+                // The alternatives of a choice question: without them the
+                // decision cannot pick one.
+                alternatives: (question.alternatives ?? []).slice(0, MAX_LISTED_TASKS),
+                // The surrounding message: the question sentence often leaves
+                // out what the agent is really waiting for.
+                context_excerpt: (question.contextText ?? "").slice(0, MAX_QUESTION_CHARS),
                 proposed_action: question.proposedAction ?? "unknown",
                 consequence_of_approval: question.consequence ?? "unknown",
                 // The risk facts are unknown when they were not determined: an
