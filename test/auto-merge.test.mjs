@@ -421,3 +421,16 @@ test("a refused merge is a report and not a crash", async () => {
 	assert.equal(result.merged, false);
 	assert.match(result.message, /not mergeable/);
 });
+
+test("the release pull request names the version of the release branch", () => {
+	// The job checks out the ref of the manual run, which is usually
+	// `main`. The version of the release branch is the one that names the
+	// release, so it is read through the API and nothing of the release
+	// branch is checked out or run.
+	assert.match(workflow, /RELEASE_BRANCH:\s*develop/);
+	assert.match(workflow, /contents\/package\.json/);
+	assert.match(workflow, /\?ref=\$RELEASE_BRANCH/);
+	// The manifest of the checked out ref is not the version of the
+	// release branch.
+	assert.doesNotMatch(workflow, /node -p "require\('\.\/package\.json'\)\.version"/);
+});

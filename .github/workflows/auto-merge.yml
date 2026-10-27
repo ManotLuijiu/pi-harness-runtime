@@ -147,9 +147,25 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: develop
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
+          # The version of the release branch, not the version of the
+          # checked out ref: the branch that is released carries the
+          # version of the release, and the title has to name it.
+          #
+          # The manifest is read through the API, so nothing of the
+          # release branch is checked out and nothing of it is run.
+          manifest="repos/$GITHUB_REPOSITORY/contents/package.json"
+          raw=$(gh api "$manifest?ref=$RELEASE_BRANCH" --jq '.content')
+          version=$(printf '%s' "$raw" | tr -d '\n' | base64 -d \
+            | node -e 'const fs=require("fs");
+              const m=JSON.parse(fs.readFileSync(0,"utf8"));
+              process.stdout.write(String(m.version||""));')
+          if [ -z "$version" ]; then
+            echo "the release branch carries no version" >&2
+            exit 1
+          fi
           open=$(gh pr list --base main --head develop --state open \
             --json number --jq 'length')
           if [ "$open" != "0" ]; then
