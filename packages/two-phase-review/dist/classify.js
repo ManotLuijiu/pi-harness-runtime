@@ -119,11 +119,16 @@ export function hasOpenImplementationWork(todos) {
 }
 /** How many todo items of each kind are open. */
 export function summarizeTodos(todos) {
+    const byKind = (kind) => todos.filter((todo) => classifyTodo(todo) === kind);
     return {
         implementation: implementationTodos(todos).length,
         review: reviewTodos(todos).length,
         reviewFix: reviewFixTodos(todos).length,
         test: testTodos(todos).length,
+        implementationTotal: byKind("implement").length + byKind("other").length,
+        reviewTotal: byKind("review").length,
+        reviewFixTotal: byKind("review_fix").length,
+        testTotal: byKind("test").length,
     };
 }
 const PREFIX_BY_KIND = {

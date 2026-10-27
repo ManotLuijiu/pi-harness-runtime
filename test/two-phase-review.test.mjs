@@ -190,7 +190,7 @@ test("the workflow tells the agent what the phase is", () => {
 	assert.match(instruction, /Phase 1 \(implementation\)/);
 	assert.match(instruction, /Do not start a comprehensive review/);
 	assert.match(TWO_PHASE_CONTRACT, /Phase 2/);
-	assert.match(formatPhaseStatus(state), /\[PHASE\] implementation/);
+	assert.match(formatPhaseStatus(state), /\[P\] IMPLEMENT/);
 });
 
 test("the validation of the task is a phase of its own", () => {
@@ -283,4 +283,35 @@ test("the compiled package is in sync with the source", () => {
 		assert.ok(source.includes(marker), `the source is missing ${marker}`);
 		assert.ok(compiled.includes(marker), `the compiled artifact is missing ${marker}`);
 	}
+});
+
+test("the status line is machine-readable and carries the real state", () => {
+	const state = createState("task");
+	const view = buildPhaseView(
+		state,
+		[
+			{ id: 1, subject: "[IMPLEMENT] Add the storage", status: "completed" },
+			{ id: 2, subject: "[IMPLEMENT] Add the reader", status: "pending" },
+		],
+		undefined,
+		{ dispatched: 2, groups: 3 },
+	);
+
+	const line = formatPhaseStatus(state, view);
+	assert.match(line, /^\[P\] IMPLEMENT/);
+	assert.match(line, /1\/2/);
+	assert.match(line, /delegated 2\/3/);
+	// The line is plain ASCII: it is shown in a terminal footer.
+	assert.ok(/^[\x20-\x7e]+$/.test(line), `the status line is not plain ASCII: ${line}`);
+});
+
+test("the runtime reads the delegation state of the session", () => {
+	// The status line shows the children that really ran, so the runtime
+	// needs a reader for the delegation harness.
+	const runtime = readFileSync(join(packageRoot, "src", "runtime.ts"), "utf8");
+	assert.match(runtime, /readDelegation/);
+	assert.match(runtime, /DelegationStatus/);
+	// The extension wires the reader of the harness into the runtime.
+	assert.match(runtimeSource, /readDelegation/);
+	assert.match(runtimeSource, /delegationHarness/);
 });

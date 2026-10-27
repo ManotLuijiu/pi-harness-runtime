@@ -557,11 +557,35 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan };
 	};
 
+	/**
+	 * The delegation state of the session.
+	 *
+	 * The numbers are the observed ones: the children that really ran and
+	 * the groups the harness measured. A plan that was never dispatched
+	 * shows zero dispatched children.
+	 */
+	const readDelegation = () => {
+		const harness = sharedState.delegationHarness as
+			| import("./packages/jev-judge/dist/delegation-harness.js").DelegationHarness
+			| null
+			| undefined;
+		if (!harness) return undefined;
+		try {
+			const receipt = harness.getReceipt();
+			const groups = receipt?.decision.workGroups?.length ?? 0;
+			const dispatched = harness.getChildren().length;
+			return { groups, dispatched };
+		} catch {
+			return undefined;
+		}
+	};
+
 	try {
 		await mod.initTwoPhaseReview({
 			pi,
 			readTodos,
 			readValidation,
+			readDelegation,
 			workspaceRoot: () => {
 				try {
 					return realpathSync(process.cwd());

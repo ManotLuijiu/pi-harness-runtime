@@ -20,6 +20,14 @@ export interface PhaseView {
     reviewFixOpen: number;
     /** How many test todos are open. */
     testOpen: number;
+    /** How many implementation todos the task has (open and finished). */
+    implementationTotal: number;
+    /** How many review todos the task has (open and finished). */
+    reviewTotal: number;
+    /** How many review-fix todos the task has (open and finished). */
+    reviewFixTotal: number;
+    /** How many test todos the task has (open and finished). */
+    testTotal: number;
     /** How many files the review covers. */
     scopeFiles: number;
     /** The review chunks and their state. */
@@ -34,9 +42,24 @@ export interface PhaseView {
     signals: ReviewSignal[];
     /** The validation state of the test items (when it could be read). */
     validation?: ValidationGateState;
+    /** The delegation state of the session (when it could be read). */
+    delegation?: DelegationStatus;
+}
+/**
+ * The delegation state of the session.
+ *
+ * The numbers are the observed ones: the children that really ran, and the
+ * groups the harness measured. A plan that was never dispatched shows zero
+ * dispatched children.
+ */
+export interface DelegationStatus {
+    /** The children that were really dispatched. */
+    dispatched: number;
+    /** The groups of the measured plan. */
+    groups: number;
 }
 /** Build the phase view from the state and the todo list. */
-export declare function buildPhaseView(state: TwoPhaseState, todos: TodoLike[], validation?: ValidationGateState): PhaseView;
+export declare function buildPhaseView(state: TwoPhaseState, todos: TodoLike[], validation?: ValidationGateState, delegation?: DelegationStatus): PhaseView;
 /** The subject of the one queued review todo. */
 export declare function buildReviewTodoSubject(state: TwoPhaseState): string;
 /** The description of the one queued review todo. */
@@ -47,6 +70,13 @@ export declare function buildReviewTodoDescription(state: TwoPhaseState): string
  * The line is plain ASCII: it is shown in the footer of the session.
  */
 export declare function formatPhaseStatus(state: TwoPhaseState, view?: PhaseView): string;
+/**
+ * The validation part of the status.
+ *
+ * The words describe the state that was read: a validation that could not
+ * be read is unknown, never passed.
+ */
+export declare function describeValidation(state?: ValidationGateState): string | undefined;
 /**
  * The subject of the todo that covers one review chunk.
  *

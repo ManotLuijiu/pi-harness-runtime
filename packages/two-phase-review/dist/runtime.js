@@ -110,8 +110,15 @@ export async function initTwoPhaseReview(options) {
     };
     const updateStatus = (ctx, todos, validation) => {
         const context = ctx;
+        let delegation;
+        try {
+            delegation = options.readDelegation?.();
+        }
+        catch {
+            // The delegation state is a convenience, never a requirement.
+        }
         const view = todos
-            ? buildPhaseView(state, todos, validation)
+            ? buildPhaseView(state, todos, validation, delegation)
             : undefined;
         try {
             context?.ui?.setStatus?.("harness-review", formatPhaseStatus(state, view));

@@ -140,12 +140,21 @@ export function summarizeTodos(todos: TodoLike[]): {
 	review: number;
 	reviewFix: number;
 	test: number;
+	implementationTotal: number;
+	reviewTotal: number;
+	reviewFixTotal: number;
+	testTotal: number;
 } {
+	const byKind = (kind: TodoKind): TodoLike[] => todos.filter((todo) => classifyTodo(todo) === kind);
 	return {
 		implementation: implementationTodos(todos).length,
 		review: reviewTodos(todos).length,
 		reviewFix: reviewFixTodos(todos).length,
 		test: testTodos(todos).length,
+		implementationTotal: byKind("implement").length + byKind("other").length,
+		reviewTotal: byKind("review").length,
+		reviewFixTotal: byKind("review_fix").length,
+		testTotal: byKind("test").length,
 	};
 }
 

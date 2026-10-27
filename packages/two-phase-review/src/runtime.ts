@@ -42,6 +42,7 @@ import {
 	buildReviewTodoSubject,
 	formatPhaseStatus,
 	syncChunkStatus,
+	type DelegationStatus,
 	type PhaseView,
 } from "./rules.js";
 import {
@@ -102,6 +103,13 @@ export interface TwoPhaseRuntimeOptions {
 	 * whether a tier passed.
 	 */
 	readValidation?: ValidationGateReader;
+	/**
+	 * Reads the delegation state of the session.
+	 *
+	 * The status line shows the children that really ran, so the reader
+	 * must report the observed children and not a plan.
+	 */
+	readDelegation?: () => DelegationStatus | undefined;
 }
 
 /** The runtime of the workflow. */
@@ -215,8 +223,14 @@ export async function initTwoPhaseReview(
 		validation?: ValidationGateState,
 	): void => {
 		const context = ctx as TwoPhaseExtensionContext | undefined;
+		let delegation: DelegationStatus | undefined;
+		try {
+			delegation = options.readDelegation?.();
+		} catch {
+			// The delegation state is a convenience, never a requirement.
+		}
 		const view: PhaseView | undefined = todos
-			? buildPhaseView(state, todos, validation)
+			? buildPhaseView(state, todos, validation, delegation)
 			: undefined;
 		try {
 			context?.ui?.setStatus?.("harness-review", formatPhaseStatus(state, view));
