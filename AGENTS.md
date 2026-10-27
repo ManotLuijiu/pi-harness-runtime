@@ -88,7 +88,9 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
 
 9. **A large job starts with a measured pilot.** The pilot is the fast tier: it runs over a representative subset (100 records when that is safe) and it is measured, not assumed. The scale-up only starts when the pilot passed, the pilot ran on the declared number of records, and the run stayed inside the budget. A pilot that fails stops the job: report the finding instead of scaling up. The batches of a scale-up are bounded and explicit (`packages/jev-judge/src/batch-plan.ts`), a failed batch is retried instead of restarting the job, and the concurrency limit is always a declared number.
 
-10. **Record every tier run in the ledger.** The harness never runs the tests, so the run is recorded by whoever knows the result:
+10. **The size of a job is a fact, not a phrase.** The harness assesses the workload of a job from the facts that exist (`packages/jev-judge/src/workload.ts`): a record count that the request declares, the scope that was measured in the repository, the dataset size and the expected duration of a declared tier, and a measured cost per record. A request that says "large refactor" is not a large job, and a request that says "10,000 records" is a large job even when the phrase is missing. A job without any fact is **unknown**, never small. A plan that requires the final tier for a large job but declares no pilot is an incomplete plan: the status says `pilot missing (1)`, the todo stays open, and the reason names the repair (a fast tier with `"representative": true` and a final tier with `"scaleUpFrom": "fast"`). The batches of a job run one at a time unless the caller proves that they write to disjoint destinations.
+
+11. **Record every tier run in the ledger.** The harness never runs the tests, so the run is recorded by whoever knows the result:
 
    ```bash
    bun scripts/validation-run.ts --item 12 --tier fast --status passed --duration 18s --dataset 100
@@ -101,6 +103,7 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
 
 - The continuation message carries the plan, the recorded tier state and the remaining budget, so the agent never re-runs a tier that already passed.
 - A scale-up that ran before its pilot passed does not count: the final tier stays pending and the task stays open.
+- A plan that declares a large job without a pilot cannot be completed: the plan is incomplete, the reason is reported, and the tier that is missing is named.
 - The status line names the phase, the progress, the validation state and the children that really ran.
 - When `budgetMinutes` is spent, the item pauses at a safe boundary: nothing is dispatched, the work stays open, and the reason is reported.
 - When a todo with `finalTierRequired` is marked complete while that tier is pending or failed, the completion report is suppressed and the item is named instead. A todo may not be reported as done on the strength of an unreported run.

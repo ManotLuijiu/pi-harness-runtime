@@ -23,6 +23,7 @@
  */
 
 import type { TodoItem } from "./todo-provider.js";
+import { assessWorkload, describeWorkload, type WorkloadAssessment, type WorkloadTierFacts } from "./workload.js";
 
 /**
  * Which side of the ladder a tier sits on.
@@ -101,6 +102,17 @@ export interface ValidationState {
 	budgetMinutes?: number;
 	/** True when the plan requires a final tier but does not declare one. */
 	planIncomplete: boolean;
+	/**
+	 * True when the plan declares a large job but no measured pilot.
+	 *
+	 * A large job is accepted by the scale-up of a representative pilot,
+	 * so a plan without that pilot is not a plan that can be completed.
+	 */
+	missingPilot?: boolean;
+	/** Why the plan is incomplete, in plain words. */
+	planIncompleteReasons?: string[];
+	/** The workload of the job the plan describes. */
+	workload?: WorkloadAssessment;
 }
 
 /**
@@ -304,6 +316,35 @@ export function parseValidationPlan(item: TodoItem | null | undefined): Validati
 }
 
 /**
+ * The workload of the job that a plan describes.
+ *
+ * The facts come from the plan itself: the dataset size of a tier is the
+ * size of the job, and the expected duration of a tier is the declared
+ * cost of it. A plan that declares a job of 10,000 records is a large
+ * job, whether or not it uses the words.
+ */
+export function planWorkload(plan: ValidationPlan | null | undefined): WorkloadAssessment {
+	const tiers: WorkloadTierFacts[] = [];
+	for (const tier of [plan?.fast, plan?.full]) {
+		if (!tier) continue;
+		tiers.push({ datasetSize: tier.datasetSize, expectedDurationMs: tier.expectedDurationMs });
+	}
+	return assessWorkload({ tiers });
+}
+
+/**
+ * Does the plan declare a measured pilot for its scale-up?
+ *
+ * A pilot is the fast tier, and the scale-up is the final tier that names
+ * it with `scaleUpFrom: "fast"`. A fast tier alone is not the pilot of the
+ * final tier, because nothing then says that the final tier waits for it.
+ */
+export function planHasPilot(plan: ValidationPlan | null | undefined): boolean {
+	if (!plan?.fast) return false;
+	return plan.full?.scaleUpFrom === "fast";
+}
+
+/**
  * Describe one tier in a single line: command, expected cost, dataset size.
  */
 export function describeTier(tier: ValidationTier): string {
@@ -389,7 +430,21 @@ export function summarizeValidationState(
 	};
 
 	const finalTierRequired = plan.finalTierRequired === true;
-	const planIncomplete = finalTierRequired && plan.full === undefined;
+	const workload = planWorkload(plan);
+	const missingPilot = finalTierRequired && workload.isLarge && !planHasPilot(plan);
+	const planIncompleteReasons: string[] = [];
+	if (finalTierRequired && plan.full === undefined) {
+		planIncompleteReasons.push("the plan requires a final tier but declares none");
+	}
+	if (missingPilot) {
+		const size = workload.recordCount !== undefined ? `${workload.recordCount} record(s)` : "a large scope";
+		planIncompleteReasons.push(
+			plan.fast
+				? `the plan declares a large job (${size}) but the final tier does not name the pilot as its scale-up`
+				: `the plan declares a large job (${size}) but declares no pilot tier`,
+		);
+	}
+	const planIncomplete = (finalTierRequired && plan.full === undefined) || missingPilot;
 	const fast = stateOf("fast");
 	let full = stateOf("full");
 	// A scale-up that waits for its pilot only counts when the pilot
@@ -406,7 +461,10 @@ export function summarizeValidationState(
 		finalTierRequired,
 		finalTierPending: finalTierRequired && plan.full !== undefined && full.status !== "passed",
 		planIncomplete,
+		missingPilot,
+		workload,
 	};
+	if (planIncompleteReasons.length > 0) state.planIncompleteReasons = planIncompleteReasons;
 	if (plan.budgetMinutes !== undefined) state.budgetMinutes = plan.budgetMinutes;
 	return state;
 }
@@ -490,9 +548,19 @@ export function formatValidationContext(
 			);
 		}
 		if (state.planIncomplete) {
-			lines.push(
-				"The plan requires a final tier but declares none: report that instead of completing the todo silently.",
-			);
+			const reasons = state.planIncompleteReasons && state.planIncompleteReasons.length > 0
+				? state.planIncompleteReasons.join("; ")
+				: "the plan requires a final tier but declares none";
+			lines.push(`The plan cannot be completed as it is: ${reasons}.`);
+			if (state.missingPilot) {
+				lines.push(
+					"A large job is accepted by the scale-up of a representative pilot: declare a fast tier with " +
+						'"representative": true and a final tier with "scaleUpFrom": "fast", then record the pilot.',
+				);
+			}
+		}
+		if (state.workload && state.workload.size !== "unknown") {
+			lines.push(`Workload: ${describeWorkload(state.workload)}.`);
 		}
 	}
 

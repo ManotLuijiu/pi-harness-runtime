@@ -759,6 +759,8 @@ export {
 	formatDuration,
 	summarizeValidationState,
 	validationBudgetStatus,
+	planWorkload,
+	planHasPilot,
 } from "./validation-plan.js";
 export type {
 	ValidationPlan,
@@ -817,6 +819,32 @@ export type {
 	BatchResult,
 	BatchStatus,
 } from "./batch-plan.js";
+
+// Export the workload of a job, decided from the facts of the task
+export {
+	assessWorkload,
+	declaredRecordCount,
+	describeWorkload,
+	workloadBatchPlan,
+	LARGE_RECORD_COUNT,
+	MEDIUM_RECORD_COUNT,
+	LARGE_FILE_COUNT,
+	MEDIUM_FILE_COUNT,
+	LARGE_CALL_SITES,
+	MEDIUM_CALL_SITES,
+	LARGE_DURATION_MS,
+	MEDIUM_DURATION_MS,
+	PILOT_RECORDS,
+	MAX_BATCH_RECORDS,
+	MAX_CONCURRENCY,
+} from "./workload.js";
+export type {
+	WorkloadAssessment,
+	WorkloadInput,
+	WorkloadScopeFacts,
+	WorkloadSize,
+	WorkloadTierFacts,
+} from "./workload.js";
 
 // Export the validation tie-breaker (typed verdict about one item)
 export {

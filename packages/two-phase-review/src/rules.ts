@@ -218,6 +218,7 @@ export function describeValidation(state?: ValidationGateState): string | undefi
 	if (!state.available) return "validation unknown";
 	if (state.failedFinalTier > 0) return `final tier failed (${state.failedFinalTier})`;
 	if (state.incompletePlan > 0) return `plan incomplete (${state.incompletePlan})`;
+	if ((state.missingPilot ?? 0) > 0) return `pilot missing (${state.missingPilot})`;
 	if (state.pendingFinalTier > 0) return `final tier pending (${state.pendingFinalTier})`;
 	return "validation passed";
 }

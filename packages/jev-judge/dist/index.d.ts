@@ -193,7 +193,7 @@ export { TodoContinuationController, createTodoContinuation } from "./continuati
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
-export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, } from "./validation-plan.js";
+export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, planWorkload, planHasPilot, } from "./validation-plan.js";
 export type { ValidationPlan, ValidationTier, ValidationTierKind, ValidationState, ValidationTierState, ValidationBudgetStatus, } from "./validation-plan.js";
 export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
 export type { ValidationRunRecord, ValidationRunStatus, ValidationLedgerOptions, } from "./validation-ledger.js";
@@ -201,6 +201,8 @@ export { buildPilotPlan, describePilot, evaluatePilot, pilotTier, scaleUpTier, s
 export type { MeasuredRun, PilotPlanInput, PilotVerdict, } from "./pilot.js";
 export { buildBatches, batchProgress, describeBatches, estimateJobMs, mayStartScaleUp, nextBatches, overBudget, recordBatchResult, } from "./batch-plan.js";
 export type { Batch, BatchKind, BatchPlan, BatchProgress, BatchResult, BatchStatus, } from "./batch-plan.js";
+export { assessWorkload, declaredRecordCount, describeWorkload, workloadBatchPlan, LARGE_RECORD_COUNT, MEDIUM_RECORD_COUNT, LARGE_FILE_COUNT, MEDIUM_FILE_COUNT, LARGE_CALL_SITES, MEDIUM_CALL_SITES, LARGE_DURATION_MS, MEDIUM_DURATION_MS, PILOT_RECORDS, MAX_BATCH_RECORDS, MAX_CONCURRENCY, } from "./workload.js";
+export type { WorkloadAssessment, WorkloadInput, WorkloadScopeFacts, WorkloadSize, WorkloadTierFacts, } from "./workload.js";
 export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-breaker.js";
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";

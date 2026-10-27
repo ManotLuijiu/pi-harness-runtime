@@ -31,6 +31,8 @@ export interface ValidationGateState {
     failedFinalTier: number;
     /** Test items whose plan requires a final tier but declares none. */
     incompletePlan: number;
+    /** Test items whose plan declares a large job but no measured pilot. */
+    missingPilot?: number;
 }
 /** Reads the validation state of the test items of a session. */
 export type ValidationGateReader = (todos: GateTodo[]) => Promise<ValidationGateState>;
