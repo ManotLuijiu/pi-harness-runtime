@@ -11,7 +11,11 @@
  * - LINE must not be reported as configured when the audit could not run.
  */
 
-import type { ExposedKeyFile, KeyFileAuditResult } from "./key-file-audit.ts";
+import type {
+	ExposedKeyDirectory,
+	ExposedKeyFile,
+	KeyFileAuditResult,
+} from "./key-file-audit.ts";
 
 export type StartupStatus = "wait" | "ok" | "info" | "warn" | "err";
 
@@ -154,15 +158,16 @@ export function relayEndpointReport(options: {
 export function exposedKeyFilesReport(options: {
 	/** The key files that other users can read. */
 	exposed: ExposedKeyFile[];
+	/** The directories of the key tree that other users can reach. */
+	exposedDirectories?: ExposedKeyDirectory[];
 	/** The `chmod` command for each of them. */
 	fixes: string[];
 }): StartupReport | null {
-	if (options.exposed.length === 0) return null;
-	const count = options.exposed.length;
-	const text =
-		count === 1
-			? "1 key file can be read by other users on this machine"
-			: `${count} key files can be read by other users on this machine`;
+	const directories = options.exposedDirectories ?? [];
+	if (options.exposed.length === 0 && directories.length === 0) return null;
+	const files = options.exposed.length;
+	const dirs = directories.length;
+	const text = exposedPermissionText(files, dirs);
 	const details = [...options.fixes];
 	if (details.length === 0) {
 		details.push(
@@ -170,6 +175,26 @@ export function exposedKeyFilesReport(options: {
 		);
 	}
 	return { label: "Keys", text, status: "warn", details };
+}
+
+/**
+ * The text of the exposure line.
+ *
+ * It names the count and never a value: the line says that other users on
+ * the machine can read the files, it never says what is in them.
+ */
+function exposedPermissionText(files: number, directories: number): string {
+	if (files > 0 && directories > 0) {
+		return `${files} key file(s) and ${directories} director(y/ies) of the key tree can be read by other users on this machine`;
+	}
+	if (files > 0) {
+		return files === 1
+			? "1 key file can be read by other users on this machine"
+			: `${files} key files can be read by other users on this machine`;
+	}
+	return directories === 1
+		? "1 directory of the key tree can be read by other users on this machine"
+		: `${directories} directories of the key tree can be read by other users on this machine`;
 }
 
 /**

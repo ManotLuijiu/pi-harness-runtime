@@ -406,6 +406,23 @@ extension reads its own files (`qdrant-cluster-url.txt`, not
 variable). The startup fix commands always name the file the running code
 actually reads.
 
+**The permissions of the key directory.** The directory holds the secrets of
+the runtime, so it is created private (`700`) and audited at startup: a key
+file or a directory of the key tree that the group or the others can read is
+reported in the startup summary, together with one command that makes the
+whole tree private again. The command is shown, never executed:
+
+```bash
+chmod 700 ~/.pi-harness-runtime/keys && find ~/.pi-harness-runtime/keys -type d -exec chmod 700 {} + && find ~/.pi-harness-runtime/keys -type f -exec chmod 600 {} +
+```
+
+On Windows the same intent needs the access control list instead of the mode
+bits, and the summary says so:
+
+```powershell
+icacls "$env:USERPROFILE\.pi-harness-runtime\keys" /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" /T
+```
+
 See [Relay Setup](#relay-setup-two-way-telegram-stream) for the `echo` commands that
 create the relay and Telegram key files.
 

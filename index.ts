@@ -23,8 +23,8 @@ import { HarnessStartupStatus, harnessStatusMarker, type HarnessStatus } from ".
 import {
 	auditKeyFiles,
 	fallbackKeyFileFixes,
-	formatExposedKeyFileFixes,
 	formatKeyFileFixes,
+	formatKeyPermissionFixes,
 	selectKeyFileFixes,
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
@@ -206,14 +206,19 @@ function getKeyFileAudit(): KeyFileAuditResult | null {
  * that the group or the others can read works perfectly - and is published
  * to every account on the machine. No other line notices, so this is the
  * only place where the fact can surface.
+ *
+ * The line shows ONE command for the whole key tree: one command per file
+ * is a list nobody runs. The command is never executed here.
  */
 function reportExposedKeyFiles(): void {
 	const audit = getKeyFileAudit();
 	const exposed = audit?.exposed ?? [];
-	if (exposed.length === 0) return;
+	const exposedDirectories = audit?.exposedDirectories ?? [];
+	if (exposed.length === 0 && exposedDirectories.length === 0) return;
 	const report = exposedKeyFilesReport({
 		exposed,
-		fixes: formatExposedKeyFileFixes(exposed, harnessKeysDir()),
+		exposedDirectories,
+		fixes: formatKeyPermissionFixes({ keysDir: harnessKeysDir() }),
 	});
 	if (!report) return;
 	addHarnessMessage(report.label, report.text, report.status, report.details);
@@ -715,9 +720,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const keysDir = `${home}/.pi-harness-runtime/keys`;
 		const { existsSync, mkdirSync } = await import("fs");
 
-		// Auto-create directory if doesn't exist
+		// Auto-create directory if doesn't exist. The directory holds
+		// secrets, so it is created private: the mode of a new directory
+		// depends on the umask of the shell, and a world readable key
+		// directory publishes the name of every key on the machine.
 		if (!existsSync(keysDir)) {
-			mkdirSync(keysDir, { recursive: true });
+			mkdirSync(keysDir, { recursive: true, mode: 0o700 });
 		}
 
 		// Resolve the provider chain. Every credential stays bound to its own
