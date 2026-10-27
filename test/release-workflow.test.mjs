@@ -375,11 +375,52 @@ test("the version gate and the check of the commit are in the repository", () =>
 });
 
 test("the published manifest does not carry the hooks of the repository", () => {
-	const step = stepBody("release", "Bump version with standard-version");
+	const step = stepBody("release", "Set the version of the release");
 	// The `prepare` script installs the git hooks. It is repository
 	// tooling, and the published manifest is the consumer facing
 	// surface.
 	assert.match(step, /delete pkg\.scripts\.prepare/);
+});
+
+test("a manual release keeps the version of the manifest", () => {
+	// A manual release has no tag. The name of a branch is not a
+	// version, and a manifest that carries "refs/heads/main" as its
+	// version is refused by the version gate - so the manual release
+	// would never publish anything.
+	const step = stepBody("release", "Set the version of the release");
+	// The version comes from the tag, and only for a tag push.
+	assert.match(step, /REF_NAME#refs\/tags\/v/);
+	assert.match(step, /EVENT_NAME" = "push"/);
+	// And the version of the manifest is only written when there is one.
+	assert.match(step, /if \(process\.env\.TAG_VERSION\)/);
+	// The workspace packages follow the version of the tag.
+	assert.match(step, /pkg\.version = process\.env\.TAG_VERSION/);
+});
+
+test("a dry run of a removal does not check a removal that never happened", () => {
+	// The check proves that a version is gone. A dry run removes
+	// nothing, so the versions are still there and the check would
+	// report the removal as failed.
+	const step = stepBody("unpublish", "Verify the removal");
+	assert.match(step, /if: github\.event\.inputs\.dry_run != 'true'/);
+});
+
+test("a dry run of a publish only runs for a version that can be published", () => {
+	// npm refuses a publish of a version that is already on the
+	// registry, and a dry run of such a version would fail for a
+	// reason that has nothing to do with the release.
+	const body = jobBody("release");
+	const dry = body.slice(body.indexOf("- name: Publish to npm (dry-run)"));
+	assert.match(dry, /steps\.version\.outputs\.publishable == 'true'/);
+});
+
+test("two releases do not publish at the same time", () => {
+	// A tag push and a manual dispatch can name the same version, and
+	// the second publish of a version is refused by the registry.
+	const body = jobBody("release");
+	assert.match(body, /concurrency:\n\s+group: release-\$\{\{ github\.repository \}\}/);
+	// A running release is never cancelled.
+	assert.match(body, /cancel-in-progress: false/);
 });
 
 test("the GitHub release points at the published commit", () => {
