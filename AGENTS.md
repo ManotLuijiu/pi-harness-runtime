@@ -273,6 +273,18 @@ ls packages/notification/dist/
 bun add -d typescript
 ```
 
+**The canonical build**: the compiled output that is committed comes from
+`bun scripts/build-packages.ts`, which uses the TypeScript of the root
+(`node_modules/.bin/tsc`). A package-level `bun run build` uses the
+TypeScript that the package itself installed, and the two write different
+source maps for the same source. A package-level build therefore leaves
+the tree with a `dist/` that the next canonical build changes again.
+
+```bash
+# The build whose output is committed
+bun scripts/build-packages.ts
+```
+
 ## Icon Usage
 
 **This is a Node.js CLI daemon — do NOT add React as a dependency for icons.**
