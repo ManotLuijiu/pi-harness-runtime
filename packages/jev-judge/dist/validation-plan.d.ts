@@ -22,6 +22,7 @@
  * (no validation context is injected), so small tasks are unaffected.
  */
 import type { TodoItem } from "./todo-provider.js";
+import { type WorkloadAssessment } from "./workload.js";
 /**
  * Which side of the ladder a tier sits on.
  *
@@ -96,6 +97,17 @@ export interface ValidationState {
     budgetMinutes?: number;
     /** True when the plan requires a final tier but does not declare one. */
     planIncomplete: boolean;
+    /**
+     * True when the plan declares a large job but no measured pilot.
+     *
+     * A large job is accepted by the scale-up of a representative pilot,
+     * so a plan without that pilot is not a plan that can be completed.
+     */
+    missingPilot?: boolean;
+    /** Why the plan is incomplete, in plain words. */
+    planIncompleteReasons?: string[];
+    /** The workload of the job the plan describes. */
+    workload?: WorkloadAssessment;
 }
 /**
  * The full staged validation plan for a todo.
@@ -138,6 +150,23 @@ export declare function parseTier(value: unknown, kind: ValidationTierKind): Val
  * current behaviour.
  */
 export declare function parseValidationPlan(item: TodoItem | null | undefined): ValidationPlan | null;
+/**
+ * The workload of the job that a plan describes.
+ *
+ * The facts come from the plan itself: the dataset size of a tier is the
+ * size of the job, and the expected duration of a tier is the declared
+ * cost of it. A plan that declares a job of 10,000 records is a large
+ * job, whether or not it uses the words.
+ */
+export declare function planWorkload(plan: ValidationPlan | null | undefined): WorkloadAssessment;
+/**
+ * Does the plan declare a measured pilot for its scale-up?
+ *
+ * A pilot is the fast tier, and the scale-up is the final tier that names
+ * it with `scaleUpFrom: "fast"`. A fast tier alone is not the pilot of the
+ * final tier, because nothing then says that the final tier waits for it.
+ */
+export declare function planHasPilot(plan: ValidationPlan | null | undefined): boolean;
 /**
  * Describe one tier in a single line: command, expected cost, dataset size.
  */

@@ -27,6 +27,7 @@ import {
 	evaluatePilot,
 } from "../src/pilot.js";
 import { summarizeValidationState } from "../src/validation-plan.js";
+import { assessWorkload, workloadBatchPlan } from "../src/workload.js";
 
 /** The number of records of the scenario. */
 const TOTAL_RECORDS = 10_000;
@@ -289,5 +290,38 @@ describe("the scenario of 10,000 records", () => {
 		const line = describeBatches(batches);
 		expect(/^[\x20-\x7e]+$/.test(line)).toBe(true);
 		expect(line).toContain(`${PILOT_RECORDS}/${TOTAL_RECORDS} records`);
+	});
+
+	it("derives the pilot and the batches from the facts of the request", () => {
+		// The request declares the size of the job. Everything else comes
+		// from the assessment, not from a constant of the code.
+		const assessment = assessWorkload({ requestText: `reindex ${TOTAL_RECORDS} records`, partitionSafe: true });
+		expect(assessment.isLarge).toBe(true);
+		expect(assessment.recordCount).toBe(TOTAL_RECORDS);
+		expect(assessment.pilotRecords).toBe(PILOT_RECORDS);
+		expect(assessment.batchRecords).toBe(BATCH_RECORDS);
+		expect(assessment.concurrency).toBe(CONCURRENCY);
+
+		const plan = workloadBatchPlan(assessment, { budgetMinutes: 90, maxAttempts: 2 });
+		const batches = buildBatches(plan);
+		const covered = batches.reduce((sum, batch) => sum + batch.records, 0);
+		expect(covered).toBe(TOTAL_RECORDS);
+		expect(batches[0].records).toBe(PILOT_RECORDS);
+		expect(batches[0].kind).toBe("pilot");
+		// Every batch stays inside the bound.
+		for (const batch of batches) expect(batch.records).toBeLessThanOrEqual(BATCH_RECORDS);
+	});
+
+	it("does not complete a large job whose plan declares no pilot", () => {
+		const plan = {
+			full: { kind: "full" as const, command: "bun test tests/full", datasetSize: TOTAL_RECORDS },
+			finalTierRequired: true,
+		};
+		const state = summarizeValidationState(plan, [
+			{ ts: "2026-10-27T00:00:00.000Z", tier: "full", status: "passed" },
+		]);
+		expect(state.planIncomplete).toBe(true);
+		expect(state.missingPilot).toBe(true);
+		expect(state.finalTierPending).toBe(false);
 	});
 });

@@ -531,18 +531,27 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 				pendingFinalTier: 0,
 				failedFinalTier: 0,
 				incompletePlan: 0,
+				missingPilot: 0,
 				reason: "the validation ledger is not initialized",
 			};
 		}
 		let pendingFinalTier = 0;
 		let failedFinalTier = 0;
 		let incompletePlan = 0;
+		let missingPilot = 0;
 		for (const todo of todos) {
 			if (todo.id === undefined) continue;
 			if (mod.classifyTodo(todo) !== "test") continue;
 			const state = ledger.stateFor(todo as never);
 			if (state.planIncomplete) {
-				incompletePlan += 1;
+				// A plan that declares a large job without a pilot is a
+				// different defect than a plan without a final tier, and
+				// the two need different repairs.
+				if (state.missingPilot) {
+					missingPilot += 1;
+				} else {
+					incompletePlan += 1;
+				}
 				continue;
 			}
 			if (!state.finalTierRequired) continue;
@@ -554,7 +563,7 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 				pendingFinalTier += 1;
 			}
 		}
-		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan };
+		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan, missingPilot };
 	};
 
 	/**

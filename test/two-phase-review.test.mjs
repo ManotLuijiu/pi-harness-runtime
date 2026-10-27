@@ -40,6 +40,7 @@ const {
 	buildReviewTodoSubject,
 	formatPhaseStatus,
 	validationGateSatisfied,
+	describeValidationGate,
 	TWO_PHASE_CONTRACT,
 } = await import(join(packageRoot, "dist", "index.js"));
 
@@ -230,6 +231,28 @@ test("the validation of the task is a phase of its own", () => {
 			incompletePlan: 0,
 		}),
 		true,
+	);
+
+	// A large job whose plan declares no pilot keeps the todo open.
+	assert.equal(
+		validationGateSatisfied({
+			available: true,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+			missingPilot: 1,
+		}),
+		false,
+	);
+	assert.match(
+		describeValidationGate({
+			available: true,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+			missingPilot: 1,
+		}),
+		/without a measured pilot/,
 	);
 
 	// The test item is never implementation work.

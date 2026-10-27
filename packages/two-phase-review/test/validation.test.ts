@@ -66,4 +66,16 @@ describe("the validation gate", () => {
 		expect(validationGateSatisfied(state)).toBe(false);
 		expect(describeValidationGate(state)).toMatch(/without a final tier/);
 	});
+
+	it("is not satisfied when a large job declares no pilot", () => {
+		const state = {
+			available: true,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+			missingPilot: 1,
+		};
+		expect(validationGateSatisfied(state)).toBe(false);
+		expect(describeValidationGate(state)).toMatch(/without a measured pilot/);
+	});
 });

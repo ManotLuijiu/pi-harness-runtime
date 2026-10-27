@@ -572,13 +572,15 @@ export { TodoContinuationController, createTodoContinuation } from "./continuati
 // Export TodoProvider
 export { createTodoProvider } from "./todo-provider.js";
 // Export staged validation plans
-export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, } from "./validation-plan.js";
+export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, planWorkload, planHasPilot, } from "./validation-plan.js";
 // Export the validation ledger (durable record of the tiers that ran)
 export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
 // Export the pilot and the scale-up
 export { buildPilotPlan, describePilot, evaluatePilot, pilotTier, scaleUpTier, scaleUpWaitsForPilot, tierKindOf, } from "./pilot.js";
 // Export the batches of a large job
 export { buildBatches, batchProgress, describeBatches, estimateJobMs, mayStartScaleUp, nextBatches, overBudget, recordBatchResult, } from "./batch-plan.js";
+// Export the workload of a job, decided from the facts of the task
+export { assessWorkload, declaredRecordCount, describeWorkload, workloadBatchPlan, LARGE_RECORD_COUNT, MEDIUM_RECORD_COUNT, LARGE_FILE_COUNT, MEDIUM_FILE_COUNT, LARGE_CALL_SITES, MEDIUM_CALL_SITES, LARGE_DURATION_MS, MEDIUM_DURATION_MS, PILOT_RECORDS, MAX_BATCH_RECORDS, MAX_CONCURRENCY, } from "./workload.js";
 // Export the validation tie-breaker (typed verdict about one item)
 export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 // Export Task Intake

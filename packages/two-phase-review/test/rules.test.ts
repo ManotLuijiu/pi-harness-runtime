@@ -205,6 +205,22 @@ describe("the status line", () => {
 		expect(formatPhaseStatus(state, view)).not.toContain("passed");
 	});
 
+	it("names a large job that declares no pilot", () => {
+		const state = testPendingState();
+		const view = buildPhaseView(
+			state,
+			[{ subject: "[TEST] the pilot", status: "pending" }],
+			{
+				available: true,
+				pendingFinalTier: 0,
+				failedFinalTier: 0,
+				incompletePlan: 0,
+				missingPilot: 1,
+			},
+		);
+		expect(formatPhaseStatus(state, view)).toBe("[T] TEST | 0/1 | pilot missing (1)");
+	});
+
 	it("names the children that really ran", () => {
 		const state = createState("t");
 		const view = buildPhaseView(state, [], undefined, { dispatched: 2, groups: 3 });

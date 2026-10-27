@@ -33,6 +33,8 @@ export interface ValidationGateState {
 	failedFinalTier: number;
 	/** Test items whose plan requires a final tier but declares none. */
 	incompletePlan: number;
+	/** Test items whose plan declares a large job but no measured pilot. */
+	missingPilot?: number;
 }
 
 /** Reads the validation state of the test items of a session. */
@@ -47,6 +49,7 @@ export function emptyValidationGateState(): ValidationGateState {
 		pendingFinalTier: 0,
 		failedFinalTier: 0,
 		incompletePlan: 0,
+		missingPilot: 0,
 	};
 }
 
@@ -61,7 +64,8 @@ export function validationGateSatisfied(state: ValidationGateState): boolean {
 	return (
 		state.pendingFinalTier === 0 &&
 		state.failedFinalTier === 0 &&
-		state.incompletePlan === 0
+		state.incompletePlan === 0 &&
+		(state.missingPilot ?? 0) === 0
 	);
 }
 
@@ -81,6 +85,9 @@ export function describeValidationGate(state: ValidationGateState): string {
 	}
 	if (state.incompletePlan > 0) {
 		parts.push(`${state.incompletePlan} plan(s) without a final tier`);
+	}
+	if ((state.missingPilot ?? 0) > 0) {
+		parts.push(`${state.missingPilot} plan(s) without a measured pilot`);
 	}
 	return parts.length > 0 ? parts.join(", ") : "every required tier passed";
 }

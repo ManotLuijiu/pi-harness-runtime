@@ -17,6 +17,7 @@ export function emptyValidationGateState() {
         pendingFinalTier: 0,
         failedFinalTier: 0,
         incompletePlan: 0,
+        missingPilot: 0,
     };
 }
 /**
@@ -30,7 +31,8 @@ export function validationGateSatisfied(state) {
         return false;
     return (state.pendingFinalTier === 0 &&
         state.failedFinalTier === 0 &&
-        state.incompletePlan === 0);
+        state.incompletePlan === 0 &&
+        (state.missingPilot ?? 0) === 0);
 }
 /**
  * A short description of the gate, for the status line and the instruction.
@@ -48,6 +50,9 @@ export function describeValidationGate(state) {
     }
     if (state.incompletePlan > 0) {
         parts.push(`${state.incompletePlan} plan(s) without a final tier`);
+    }
+    if ((state.missingPilot ?? 0) > 0) {
+        parts.push(`${state.missingPilot} plan(s) without a measured pilot`);
     }
     return parts.length > 0 ? parts.join(", ") : "every required tier passed";
 }
