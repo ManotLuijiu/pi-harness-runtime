@@ -6,6 +6,7 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ScopeMeasurement, ScopeWorkGroup } from "./delegation-scope.js";
+import { type DelegationChild } from "./delegation-observer.js";
 /**
  * Extension capability for delegation (inline to avoid dependency)
  */
@@ -101,6 +102,13 @@ export interface DelegationReceipt {
     updatedAt: number;
     status: "assessing" | "in_progress" | "completed" | "failed" | "cancelled";
     childIds: string[];
+    /**
+     * The children that were really dispatched.
+     *
+     * They are observed, not assumed: a child is in this list when its
+     * tool call was seen, and it carries what the extension reported.
+     */
+    children: DelegationChild[];
     pendingValidation: string[];
     userConstraints: string[];
 }
@@ -152,6 +160,18 @@ export declare function createDelegationHarness(pi: ExtensionAPI, config?: Deleg
     discoverCapability: () => Promise<ExtensionCapability | null>;
     shouldAssess: (facts: ScopeFacts) => boolean;
     assess: (facts: ScopeFacts, parentTaskId: string) => Promise<DelegationDecision | null>;
+    observeToolStart: (event: {
+        toolCallId: string;
+        toolName: string;
+        args?: unknown;
+    }) => DelegationChild | null;
+    observeToolEnd: (event: {
+        toolCallId: string;
+        toolName: string;
+        result?: unknown;
+        isError?: boolean;
+    }) => DelegationChild | null;
+    getChildren: () => DelegationChild[];
     getReceipt: () => DelegationReceipt | null;
     getLastDecision: () => DelegationDecision | null;
     clear: () => void;
