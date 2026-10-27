@@ -182,6 +182,24 @@ they are green.
 - **The npm Trusted Publisher is bound to `release.yml` on `main`.** A
   tag or a branch push cannot publish on its own.
 
+**The alignment of the versions** (the release makes it, nobody
+maintains it by hand):
+
+- **npm publishes the version of the tag on `main`.** The release
+  workflow reads the version of the released commit and refuses to
+  publish a version that npm already has.
+- **The channels of the package name the release.** A channel is a
+  pointer, and `npm install pi-harness-runtime@develop` resolves the
+  channel `develop`. The release removes every channel that names an
+  older version (`scripts/align-dist-tags.mjs`), so a consumer who asks
+  for a channel receives the build of the current release and not one
+  from an old line. `latest` is never removed.
+- **A version tag without a published version is a residue.** The
+  release reports the tags that are newer than the newest published
+  version, because such a tag promises a release that never reached npm.
+  The report never deletes a tag: a tag is a public ref, and its removal
+  is the owner's decision.
+
 ## Local Hooks: Husky (CRITICAL)
 
 The hooks of the repository live in `.husky/` and are managed by
