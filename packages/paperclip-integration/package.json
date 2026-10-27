@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/paperclip-integration",
-  "version": "1.1.448",
+  "version": "1.1.449",
   "description": "Paperclip API integration: poll agent inbox, route tasks to pi.dev, Telegram alerts",
   "type": "module",
   "main": "./dist/index.js",

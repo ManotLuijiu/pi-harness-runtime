@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/skills",
-  "version": "1.1.448",
+  "version": "1.1.449",
   "description": "File-based skill system with pi.dev compatibility and Hermes self-improvement",
   "type": "module",
   "main": "src/index.ts",
