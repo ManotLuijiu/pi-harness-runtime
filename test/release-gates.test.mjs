@@ -17,7 +17,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -28,6 +29,7 @@ import {
 } from "../scripts/verify-release-version.mjs";
 import { verdict } from "../scripts/verify-sensitive-check.mjs";
 import { SENSITIVE_TERMS_CHECK } from "../scripts/lib/github-checks.mjs";
+import { scanTree } from "../scripts/check-sensitive-terms.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..");
@@ -148,4 +150,68 @@ test("the check gate fails closed when the check cannot be read", () => {
 	);
 	assert.match(source, /could not be read/);
 	assert.match(source, /process\.exit\(1\)/);
+});
+
+test("a commit without a check is decided by the scan of the release", () => {
+	// A commit that a workflow merged has no push side check: GitHub
+	// starts no run for a push that the token of a workflow made. The
+	// release scans the tree itself, so a missing check is not a
+	// failure - but only when that scan is there.
+	const evaluation = evaluationOf("success");
+	evaluation.missing = [SENSITIVE_TERMS_CHECK];
+	const result = verdict(evaluation, { allowMissing: true });
+	assert.equal(result.passed, true);
+	assert.match(result.reason, /did not run/);
+	assert.match(result.reason, /scans the tree/);
+});
+
+test("a missing check without the scan of the release still stops it", () => {
+	const evaluation = evaluationOf("success");
+	evaluation.missing = [SENSITIVE_TERMS_CHECK];
+	const result = verdict(evaluation);
+	assert.equal(result.passed, false);
+});
+
+test("a failed or unfinished check stops the release even with the scan", () => {
+	// The scan of the release is the control for a commit that has no
+	// check. A check that exists and failed is a different thing: it is
+	// a known bad result, and the release does not publish it.
+	const failed = verdict(evaluationOf("failure"), { allowMissing: true });
+	assert.equal(failed.passed, false);
+	assert.match(failed.reason, /concluded failure/);
+
+	const pending = verdict(evaluationOf(null, "in_progress"), {
+		allowMissing: true,
+	});
+	assert.equal(pending.passed, false);
+	assert.match(pending.reason, /did not finish/);
+});
+
+test("the release scans the whole tree of the released commit", () => {
+	const workflow = readFileSync(
+		join(ROOT, ".github", "workflows", "release.yml"),
+		"utf8",
+	);
+	// The tree of the released commit is scanned with the secret, and
+	// the scan is what replaces the check that a workflow merge cannot
+	// produce.
+	assert.match(workflow, /check-sensitive-terms\.mjs --tree \./);
+	// The check of the commit may be missing - the tree scan is there.
+	assert.match(workflow, /verify-sensitive-check\.mjs --allow-missing/);
+	// The scan of the tree runs before the publish.
+	const scan = workflow.indexOf("check-sensitive-terms.mjs --tree .");
+	const publish = workflow.lastIndexOf("npm publish");
+	assert.ok(scan > 0 && publish > 0, "the workflow has both steps");
+	assert.ok(scan < publish, "the tree is scanned before the publish");
+});
+
+test("a tree scan finds a term in the name of a file", () => {
+	// A file that carries a name in its name leaks the name, and the
+	// content of the file says nothing about it.
+	const dir = mkdtempSync(join(tmpdir(), "tree-name-"));
+	writeFileSync(join(dir, "placeholder-name.txt"), "nothing here\n");
+	const hits = scanTree(dir, ["placeholder-name"]);
+	assert.equal(hits.hits.length, 1);
+	assert.equal(hits.hits[0].line, 0);
+	rmSync(dir, { recursive: true, force: true });
 });
