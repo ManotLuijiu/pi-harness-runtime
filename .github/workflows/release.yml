@@ -40,6 +40,13 @@ on:
           Unpublishing deletes the tarball and cannot be undone.
         required: false
         default: ""
+      align_channels:
+        description: >-
+          Align the npm channels with the version of main without
+          publishing anything. Every channel that names an older version
+          is removed.
+        required: false
+        default: "false"
 
 jobs:
   # Registry cleanup.
@@ -630,11 +637,13 @@ jobs:
       # when it is not. The release does not fail over a hygiene step.
       - name: Align the npm channels with the release
         if: >-
-          steps.version.outputs.publishable == 'true' &&
-          (github.event_name != 'workflow_dispatch' ||
-           github.event.inputs.dry_run != 'true') &&
-          (github.event.inputs.unpublish_versions == null ||
-           github.event.inputs.unpublish_versions == '')
+          (steps.version.outputs.publishable == 'true' &&
+           (github.event_name != 'workflow_dispatch' ||
+            github.event.inputs.dry_run != 'true') &&
+           (github.event.inputs.unpublish_versions == null ||
+            github.event.inputs.unpublish_versions == '')) ||
+          (github.event_name == 'workflow_dispatch' &&
+           github.event.inputs.align_channels == 'true')
         continue-on-error: true
         env:
           PACKAGE_NAME: ${{ steps.meta.outputs.name }}

@@ -204,9 +204,22 @@ export function readRemoteTags(remote = "origin") {
  * @param {string} channel
  */
 export function removeDistTag(packageName, channel) {
-	execFileSync("npm", ["dist-tag", "rm", packageName, channel], {
-		stdio: "inherit",
-	});
+	try {
+		execFileSync("npm", ["dist-tag", "rm", packageName, channel], {
+			stdio: "pipe",
+		});
+		return "";
+	} catch (error) {
+		// The reason of the failure is the answer of the registry: it
+		// names the problem (a second factor, a missing permission) and
+		// never the credential.
+		const stderr = String(error?.stderr ?? "");
+		const lines = stderr
+			.split("\n")
+			.map((line) => line.replace(/^npm\s+(error|warn)\s+/, "").trim())
+			.filter((line) => line.length > 0);
+		return lines.slice(0, 3).join(" | ") || "the command failed";
+	}
 }
 
 /**
@@ -225,11 +238,11 @@ export function alignDistTags(options) {
 	const failed = [];
 	if (apply) {
 		for (const channel of stale) {
-			try {
-				removeDistTag(packageName, channel);
+			const reason = removeDistTag(packageName, channel);
+			if (reason) {
+				failed.push(`${channel}: ${reason}`);
+			} else {
 				removed.push(channel);
-			} catch {
-				failed.push(channel);
 			}
 		}
 	}
@@ -281,8 +294,11 @@ export function main(argv) {
 	}
 	if (result.failed.length > 0) {
 		console.error(
-			`${result.failed.length} channel(s) could not be removed: ${result.failed.join(", ")}`,
+			`${result.failed.length} channel(s) could not be removed:`,
 		);
+		for (const failure of result.failed) {
+			console.error(`  ${failure}`);
+		}
 	}
 	if (result.orphaned.length > 0) {
 		console.log(
