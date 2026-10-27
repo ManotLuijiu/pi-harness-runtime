@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/config-capture",
-  "version": "1.1.450",
+  "version": "1.1.451",
   "description": "Auto-capture API-fetched configuration values to AGENTS.md",
   "type": "module",
   "main": "src/index.ts",
