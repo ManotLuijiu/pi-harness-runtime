@@ -287,7 +287,12 @@ jobs:
       # gone" from "the registry did not answer", and it also requires the
       # tarball to answer 404: the tarball is where the content lives, so
       # a version that is still downloadable is not removed.
+      #
+      # A dry run removes nothing, so the versions are still there, and
+      # the check would report the removal as failed. The check belongs
+      # to a real removal.
       - name: Verify the removal
+        if: github.event.inputs.dry_run != 'true'
         env:
           PACKAGE_NAME: pi-harness-runtime
         run: |
@@ -301,6 +306,14 @@ jobs:
     permissions:
       id-token: write
       contents: write
+    # Two releases must not publish at the same time. A tag push and a
+    # manual dispatch can name the same version, and the second publish
+    # of a version is refused by the registry - the run would be red for
+    # a reason that has nothing to do with the release. The group waits
+    # instead; it never cancels a running release.
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
     # A release is a tag, or a manual dispatch that names the versions to
     # remove from the registry. The unpublish job only runs for the
     # second one, and the release job only runs when no version was
@@ -376,43 +389,66 @@ jobs:
           fi
           echo "the tagged commit is on main."
 
-      - name: Bump version with standard-version
+      - name: Set the version of the release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
         run: |
-          # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Tag version: $TAG_VERSION"
+          set -euo pipefail
+          # The version of a release is the version of its tag. A manual
+          # release has no tag: it publishes the tree of the branch it
+          # runs on, and that tree carries its own version. The name of a
+          # branch is not a version, so it is never written into the
+          # manifest - a manifest with "refs/heads/main" as its version
+          # would be refused by the version gate, and the manual release
+          # would never publish anything.
+          TAG_VERSION=""
+          if [ "$EVENT_NAME" = "push" ] &&
+            [ "${REF_NAME#refs/tags/v}" != "$REF_NAME" ]; then
+            TAG_VERSION="${REF_NAME#refs/tags/v}"
+            echo "Tag version: $TAG_VERSION"
+          else
+            echo "a manual release keeps the version of the manifest"
+          fi
+          export TAG_VERSION
 
           # Update package.json to match the tag
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            const newVersion = '$TAG_VERSION';
-            pkg.version = newVersion;
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (process.env.TAG_VERSION) {
+              pkg.version = process.env.TAG_VERSION;
+              console.log("Updated version to:", pkg.version);
+            } else {
+              console.log("The version of the manifest stays:", pkg.version);
+            }
             // The `prepare` script installs the git hooks of the
             // repository. It is repository tooling, and the published
             // manifest is the consumer facing surface, so it does not
             // travel with the package.
             if (pkg.scripts) delete pkg.scripts.prepare;
-            fs.writeFileSync('package.json',
-              JSON.stringify(pkg, null, 2) + '\\n');
-            console.log('Updated version to:', newVersion);
-          "
+            fs.writeFileSync("package.json",
+              JSON.stringify(pkg, null, 2) + "\n");
+          '
 
           # Update workspace packages to same version
-          for dir in packages/*/; do
-            if [ -f "$dir/package.json" ]; then
-              node -e "
-                const fs = require('fs');
-                const pkg = JSON.parse(
-                  fs.readFileSync('$dir/package.json', 'utf8')
-                );
-                pkg.version = '$TAG_VERSION';
-                fs.writeFileSync('$dir/package.json',
-                  JSON.stringify(pkg, null, 2) + '\\n');
-                console.log('Updated $dir to:', '$TAG_VERSION');
-              "
-            fi
-          done
+          if [ -n "$TAG_VERSION" ]; then
+            for dir in packages/*/; do
+              if [ -f "$dir/package.json" ]; then
+                PKG_DIR="$dir" node -e '
+                  const fs = require("fs");
+                  const path = require("path");
+                  const file = path.join(process.env.PKG_DIR, "package.json");
+                  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+                  pkg.version = process.env.TAG_VERSION;
+                  fs.writeFileSync(file,
+                    JSON.stringify(pkg, null, 2) + "\n");
+                  console.log("Updated", process.env.PKG_DIR,
+                    "to:", pkg.version);
+                '
+              fi
+            done
+          fi
 
       # The version of the release is the version that the tag names, and
       # the manifest of the checkout carries it now.
@@ -574,7 +610,8 @@ jobs:
       - name: Publish to npm (dry-run)
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.event.inputs.dry_run == 'true'
+          github.event.inputs.dry_run == 'true' &&
+          steps.version.outputs.publishable == 'true'
         run: |
           npm publish --ignore-scripts --access public \
             --dry-run --tag ${{ steps.meta.outputs.npm_tag }}
