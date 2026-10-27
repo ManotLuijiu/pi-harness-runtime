@@ -56,9 +56,139 @@ function hasReceipt(workspacePath, taskId) {
     return existsSync(getReceiptPath(workspacePath, taskId));
 }
 /**
- * Sub-agent tool names
+ * The number of groups that can be handed to children at once.
+ *
+ * More groups than that is not a delegation plan: it is a list of files
+ * that still needs a decision about the order.
  */
-const SUBAGENT_TOOLS = ["subagent", "spawn", "delegate", "run_subagent"];
+const MAX_DELEGATED_GROUPS = 8;
+/**
+ * Build the scope facts from a measurement.
+ *
+ * Every number is a count of something the measurement found. The
+ * estimate is the size of the workspace: it is a real number, and it says
+ * how much of the repository the measured files are.
+ */
+export function scopeFactsFromMeasurement(measurement) {
+    const groups = measurement.groups;
+    const extensions = Object.keys(measurement.fileTypes);
+    return {
+        estimatedFiles: measurement.workspaceFiles,
+        observedFiles: measurement.files.length,
+        estimatedCallSites: measurement.callSites,
+        observedCallSites: measurement.callSites,
+        independentComponents: groups.length,
+        tightlyCoupled: groups.length <= 1,
+        // A mechanical change touches one kind of file, and there is more
+        // than one of them: a rename across many files is mechanical, a
+        // single file is just work.
+        isMechanical: extensions.length === 1 && measurement.files.length >= 3,
+        // A complex change spans more than one module.
+        isComplex: groups.length > 1,
+        fileTypes: measurement.fileTypes,
+        fingerprint: measurement.fingerprint,
+        workGroups: groups,
+    };
+}
+/**
+ * The reason why the work stays in the session.
+ */
+function singleAgentReason(groups) {
+    if (groups.length === 1) {
+        return `One measured group (${groups[0].id}): the work stays in this session`;
+    }
+    if (groups.length > MAX_DELEGATED_GROUPS) {
+        return `${groups.length} measured groups: too many to hand out at once, the work stays in this session`;
+    }
+    return "No measured group of work: the work stays in this session";
+}
+/**
+ * Build the message that hands a delegation plan to the agent.
+ *
+ * The message names the measured groups and the tool that can dispatch a
+ * child. It does not claim that anything was dispatched: the harness
+ * measured the work, the agent is the one that sends the groups out.
+ *
+ * @param decision The decision of the assessment.
+ * @returns The message, or null when there is nothing to hand out.
+ */
+export function buildDelegationSteer(decision) {
+    if (!decision)
+        return null;
+    if (decision.strategy !== "delegate")
+        return null;
+    const groups = decision.workGroups ?? [];
+    if (groups.length === 0)
+        return null;
+    const lines = [
+        `[Delegation plan] The measured scope of this request falls into ${groups.length} independent group(s):`,
+        ...groups.map((group) => `- ${group.id} (${group.files.length} file(s))`),
+    ];
+    if (decision.dispatchTool) {
+        lines.push(`Send each group to a child agent with the ${decision.dispatchTool} tool, then integrate the results and validate them.`);
+    }
+    else {
+        lines.push("Send each group to a child agent, then integrate the results and validate them.");
+    }
+    lines.push("The harness measured the scope; it did not dispatch the groups itself.");
+    return lines.join("\n");
+}
+/**
+ * The parameters of a tool that dispatch a child.
+ *
+ * A tool that takes the task of a child can dispatch one. The name of the
+ * tool says nothing about that: only the schema does.
+ */
+const DISPATCH_PARAMETERS = ["task", "prompt", "instructions", "description"];
+/**
+ * The parameters of a tool that isolate the work of a child.
+ */
+const ISOLATION_PARAMETERS = ["cwd", "worktree", "isolation", "sandbox", "branch"];
+/**
+ * The parameters of a tool that stop a child.
+ */
+const CANCELLATION_PARAMETERS = ["timeout", "timeoutMs", "cancel", "signal", "abort"];
+/**
+ * The words that name a child agent.
+ */
+const CHILD_WORDS = ["subagent", "sub-agent", "child agent", "delegate", "spawn"];
+/**
+ * The property names of a tool schema.
+ *
+ * A schema is a plain object: the properties of the object, of every
+ * branch of a union, and of every item of an array.
+ */
+export function schemaPropertyNames(schema) {
+    const names = new Set();
+    const visit = (node) => {
+        if (!node || typeof node !== "object")
+            return;
+        const record = node;
+        const properties = record.properties;
+        if (properties && typeof properties === "object") {
+            for (const name of Object.keys(properties)) {
+                names.add(name);
+            }
+        }
+        for (const branch of ["anyOf", "oneOf", "allOf"]) {
+            const list = record[branch];
+            if (Array.isArray(list))
+                for (const entry of list)
+                    visit(entry);
+        }
+        const items = record.items;
+        if (items)
+            visit(items);
+    };
+    visit(schema);
+    return names;
+}
+/**
+ * The text of a tool that names what the tool is for.
+ */
+function toolText(tool) {
+    return `${tool.name ?? ""} ${tool.description ?? ""}`.toLowerCase();
+}
 /**
  * Create delegation harness integration
  */
@@ -73,23 +203,41 @@ export function createDelegationHarness(pi, config = {}) {
     const minComponents = config.minComponents ?? 2;
     /**
      * Discover and cache delegation capability
+     *
+     * The capability is read from the schema of the tools, not from their
+     * names: a tool that carries the task of a child can dispatch one, and
+     * only a schema that carries a working directory or a timeout proves
+     * that the work can be isolated or stopped.
      */
     async function discoverCapability() {
         if (state.capability)
             return state.capability;
         try {
             const allTools = pi.getAllTools();
-            const toolNames = allTools.map((t) => t.name);
-            const activeTools = pi.getActiveTools();
-            const hasSubagentTool = SUBAGENT_TOOLS.some((tool) => toolNames.includes(tool) || activeTools.includes(tool));
-            if (hasSubagentTool) {
+            const activeTools = new Set(pi.getActiveTools());
+            for (const tool of allTools) {
+                const properties = schemaPropertyNames(tool.parameters);
+                const dispatches = DISPATCH_PARAMETERS.some((parameter) => properties.has(parameter));
+                if (!dispatches)
+                    continue;
+                // The tool has to be about a child agent: a schema that takes a
+                // task is not enough when the tool is something else entirely.
+                const text = toolText(tool);
+                if (!CHILD_WORDS.some((word) => text.includes(word)))
+                    continue;
+                const isolation = ISOLATION_PARAMETERS.find((parameter) => properties.has(parameter));
+                const cancellation = CANCELLATION_PARAMETERS.find((parameter) => properties.has(parameter));
+                const isActive = activeTools.has(tool.name);
                 state.capability = {
-                    name: "subagent-extension",
+                    name: tool.name,
+                    toolName: tool.name,
                     supportsSubagents: true,
-                    supportsWorkIsolation: true,
-                    supportsCancellation: true,
-                    availableTools: activeTools.filter((t) => SUBAGENT_TOOLS.some((st) => t.includes(st))),
-                    verified: true,
+                    supportsWorkIsolation: isolation !== undefined,
+                    supportsCancellation: cancellation !== undefined,
+                    availableTools: isActive ? [tool.name] : [],
+                    // The capability is verified when the tool is active: an inactive
+                    // tool cannot dispatch anything.
+                    verified: isActive,
                 };
                 return state.capability;
             }
@@ -101,8 +249,14 @@ export function createDelegationHarness(pi, config = {}) {
     }
     /**
      * Check if delegation assessment should be triggered
+     *
+     * The thresholds are compared with the measured scope. A scope that was
+     * not measured is never assessed: an empty measurement is not a small
+     * task, it is an unknown one.
      */
     function shouldAssess(facts) {
+        if (facts.observedFiles <= 0)
+            return false;
         if (facts.observedFiles >= minFiles)
             return true;
         if (facts.observedCallSites >= minCallSites)
@@ -113,48 +267,59 @@ export function createDelegationHarness(pi, config = {}) {
     }
     /**
      * Make deterministic assessment
+     *
+     * The decision is built from the measured scope and from the schema of
+     * the tools. A strategy that claims a delegation needs the groups of the
+     * measurement: without them there is nothing to hand to a child.
      */
     function makeDeterministicAssessment(facts, capability) {
         if (!capability?.verified) {
             return {
                 strategy: "unavailable",
-                reason: "No verified sub-agent capability",
+                reason: "No active tool can dispatch a child agent",
                 workGroups: [],
                 validationExpectations: "Parent handles validation",
                 confidence: "high",
                 jevUsed: false,
+                dispatched: false,
                 reassessmentTriggers: ["Extension available"],
             };
         }
         if (facts.isMechanical && !facts.isComplex) {
             return {
                 strategy: "script_only",
-                reason: "Mechanical transformation",
+                reason: `Mechanical transformation of ${facts.observedFiles} measured file(s)`,
                 workGroups: [],
                 validationExpectations: "Script output validation",
                 confidence: "high",
                 jevUsed: false,
+                dispatched: false,
                 reassessmentTriggers: ["Transformation unreliable"],
             };
         }
-        if (facts.independentComponents >= 2 && !facts.tightlyCoupled) {
+        const groups = facts.workGroups ?? [];
+        if (groups.length >= 2 && groups.length <= MAX_DELEGATED_GROUPS && !facts.tightlyCoupled) {
             return {
                 strategy: "delegate",
-                reason: `${facts.independentComponents} independent components`,
-                workGroups: [],
+                reason: `${groups.length} measured groups over ${facts.observedFiles} file(s); the agent dispatches the groups`,
+                workGroups: groups,
                 validationExpectations: "Each group validated, then integrated",
                 confidence: "medium",
                 jevUsed: false,
+                // The harness measured the groups, it did not dispatch them.
+                dispatched: false,
+                dispatchTool: capability.toolName,
                 reassessmentTriggers: ["Scope expands", "Coupling discovered"],
             };
         }
         return {
             strategy: "single_agent",
-            reason: "Default to single agent",
-            workGroups: [],
+            reason: singleAgentReason(groups),
+            workGroups: groups,
             validationExpectations: "Parent validates",
             confidence: "low",
             jevUsed: false,
+            dispatched: false,
             reassessmentTriggers: ["Scope exceeds threshold"],
         };
     }
