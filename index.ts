@@ -253,6 +253,9 @@ function keyFileFixesOrFallback(feature: string, labels: string[]): string[] {
 const sharedState = {
 	waitingForUserSince: null as Date | null,
 	todoContinuationController: null as unknown,
+	// The ledger of the validation runs. The two-phase workflow reads it to
+	// know whether the final tier of a test item passed.
+	validationLedger: null as unknown,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	updateAutoContinueStatus: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -473,10 +476,55 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 		}
 	};
 
+	/**
+	 * Read the validation state of the test items of the session.
+	 *
+	 * The ledger is the only mechanical source for "did the final tier
+	 * pass?". The workflow never runs a test itself, it only reads what the
+	 * ledger recorded.
+	 */
+	const readValidation = async (todos: TwoPhaseTodoLike[]) => {
+		const ledger = sharedState.validationLedger as
+			| import("./packages/jev-judge/dist/validation-ledger.js").ValidationLedger
+			| null
+			| undefined;
+		if (!ledger) {
+			return {
+				available: false,
+				pendingFinalTier: 0,
+				failedFinalTier: 0,
+				incompletePlan: 0,
+				reason: "the validation ledger is not initialized",
+			};
+		}
+		let pendingFinalTier = 0;
+		let failedFinalTier = 0;
+		let incompletePlan = 0;
+		for (const todo of todos) {
+			if (todo.id === undefined) continue;
+			if (mod.classifyTodo(todo) !== "test") continue;
+			const state = ledger.stateFor(todo as never);
+			if (state.planIncomplete) {
+				incompletePlan += 1;
+				continue;
+			}
+			if (!state.finalTierRequired) continue;
+			const status = state.full.status;
+			if (status === "passed") continue;
+			if (status === "failed" || status === "timeout" || status === "error") {
+				failedFinalTier += 1;
+			} else {
+				pendingFinalTier += 1;
+			}
+		}
+		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan };
+	};
+
 	try {
 		await mod.initTwoPhaseReview({
 			pi,
 			readTodos,
+			readValidation,
 			workspaceRoot: () => {
 				try {
 					return realpathSync(process.cwd());
@@ -1523,6 +1571,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						);
 					},
 				});
+				// The two-phase workflow reads the same ledger: the phase gate
+				// and the completion report must never disagree about a tier.
+				sharedState.validationLedger = validationLedger;
 				// SAFETY: ctx is ExtensionContext with sessionManager, isIdle, hasPendingMessages
 				// dispatch uses pi.sendUserMessage for actual message delivery
 				todoContinuationController = new TodoContinuationController(
@@ -1546,6 +1597,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// keep a timer alive nor block a later continuation.
 			todoContinuationController?.dispose?.();
 			todoContinuationController = null;
+			sharedState.validationLedger = null;
 		});
 
 		// --- task-intake: Automatic todo capture from user requests -----------

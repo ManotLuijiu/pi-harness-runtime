@@ -4,8 +4,9 @@
  * The rules are injected into the system prompt: they tell the agent how the
  * two phases are separated and what it has to do in the current phase.
  */
-import { REVIEW_FIX_PREFIX, REVIEW_PREFIX, classifyTodo, summarizeTodos, } from "./classify.js";
+import { REVIEW_FIX_PREFIX, REVIEW_PREFIX, TEST_PREFIX, classifyTodo, summarizeTodos, } from "./classify.js";
 import { summarizeSignals } from "./signals.js";
+import { describeValidationGate, } from "./validation.js";
 /** The contract of the workflow. */
 export const TWO_PHASE_CONTRACT = `## Two-phase implementation and review
 
@@ -26,20 +27,27 @@ A task with several steps runs in two phases.
 - Fix the confirmed findings after the review pass, check the changed area, and run one final integration review over the task diff.
 - The request is complete only when the implementation todos, the review chunks and the required fix todos are done or explicitly accepted.
 
+### Phase 3 - validation
+- A test todo ([${TEST_PREFIX}]) declares the validation plan of the task: the cheap tier you run after every edit and the final tier that decides whether the task is done.
+- The runs are recorded in the validation ledger. A task whose final tier is pending or failed is never complete.
+- The request is complete only when the implementation todos, the review chunks, the required fix todos and the recorded final tier are done.
+
 ### Todo prefixes
 - [IMPLEMENT] implementation work of the current request
 - ${REVIEW_PREFIX} the queued review of the task diff
 - ${REVIEW_FIX_PREFIX} a confirmed finding that has to be fixed
+- ${TEST_PREFIX} the validation of the task (the tiers are declared in its metadata)
 
 A user pause, an approval requirement, a security issue or any other safety rule stops the work immediately. The phase order never overrides the intent of the user.`;
 /** Build the phase view from the state and the todo list. */
-export function buildPhaseView(state, todos) {
+export function buildPhaseView(state, todos, validation) {
     const summary = summarizeTodos(todos);
     return {
         phase: state.phase,
         implementationOpen: summary.implementation,
         reviewOpen: summary.review,
         reviewFixOpen: summary.reviewFix,
+        testOpen: summary.test,
         scopeFiles: state.scopeFiles.length,
         chunks: state.chunks.map((chunk) => ({
             id: chunk.id,
@@ -48,6 +56,7 @@ export function buildPhaseView(state, todos) {
         })),
         queued: state.signals.length > 0,
         signals: state.signals,
+        validation,
     };
 }
 /** The subject of the one queued review todo. */
@@ -78,10 +87,14 @@ export function buildReviewTodoDescription(state) {
  *
  * The line is plain ASCII: it is shown in the footer of the session.
  */
-export function formatPhaseStatus(state) {
+export function formatPhaseStatus(state, view) {
     switch (state.phase) {
-        case "implementation":
-            return "[PHASE] implementation";
+        case "implementation": {
+            const open = view?.implementationOpen;
+            return open === undefined
+                ? "[PHASE] implementation"
+                : `[PHASE] implementation (${open} open)`;
+        }
         case "review_pending":
             return "[PHASE] review_pending";
         case "review": {
@@ -90,6 +103,12 @@ export function formatPhaseStatus(state) {
         }
         case "review_fixes":
             return `[PHASE] review_fixes (${state.findings.length} finding(s))`;
+        case "test_pending": {
+            const open = view?.testOpen;
+            return open === undefined
+                ? "[PHASE] test_pending"
+                : `[PHASE] test_pending (${open} test todo(s))`;
+        }
         case "complete":
             return "[PHASE] complete";
         default:
@@ -190,6 +209,17 @@ export function buildPhaseInstruction(state, view) {
     }
     if (state.phase === "review_fixes") {
         return `[two-phase] Phase 2 (review fixes): ${view.reviewFixOpen} review-fix todo(s) open. Fix the confirmed findings, check the changed area, then run one final integration review over the task diff.`;
+    }
+    if (state.phase === "test_pending") {
+        const validation = view.validation;
+        const detail = validation
+            ? `Validation: ${describeValidationGate(validation)}.`
+            : "Validation: the state of the tiers is not readable.";
+        return [
+            `[two-phase] Phase 3 (validation): the implementation and the review are done. ${view.testOpen} test todo(s) open.`,
+            detail,
+            "Run the cheap tier after every edit and record it in the ledger, run the final tier once the work is stable and record that too. A task whose final tier is pending or failed is not complete.",
+        ].join("\n");
     }
     return "[two-phase] The task is complete: implementation, review and the required fixes are done.";
 }

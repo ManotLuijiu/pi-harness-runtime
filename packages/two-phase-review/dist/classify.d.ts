@@ -12,6 +12,8 @@ export declare const IMPLEMENT_PREFIX = "[IMPLEMENT]";
 export declare const REVIEW_PREFIX = "[REVIEW]";
 /** Prefix of a todo item that fixes a confirmed review finding. */
 export declare const REVIEW_FIX_PREFIX = "[REVIEW-FIX]";
+/** Prefix of a todo item that is the validation of the task. */
+export declare const TEST_PREFIX = "[TEST]";
 /** The part of a todo item the workflow needs. */
 export interface TodoLike {
     id?: number;
@@ -35,7 +37,9 @@ export declare function openTodos(todos: TodoLike[]): TodoLike[];
  * The open todo items that are still implementation work.
  *
  * A queued review item is not implementation work: it must never block the
- * implementation. An unclassified item counts as implementation work, because
+ * implementation. A test item is not implementation work either: it is the
+ * validation of the finished work, and it belongs to the phase that follows
+ * the review. An unclassified item counts as implementation work, because
  * a task that is tracked without a prefix is still work that has to finish.
  */
 export declare function implementationTodos(todos: TodoLike[]): TodoLike[];
@@ -52,6 +56,13 @@ export declare function completedImplementationTodos(todos: TodoLike[]): TodoLik
 export declare function reviewTodos(todos: TodoLike[]): TodoLike[];
 /** The open todo items that fix a confirmed review finding. */
 export declare function reviewFixTodos(todos: TodoLike[]): TodoLike[];
+/**
+ * The open todo items that are the validation of the task.
+ *
+ * A test item carries the validation plan of the task: the tiers it declares
+ * and the final tier that has to pass before the task is complete.
+ */
+export declare function testTodos(todos: TodoLike[]): TodoLike[];
 /** Does the task still have implementation work? */
 export declare function hasOpenImplementationWork(todos: TodoLike[]): boolean;
 /** How many todo items of each kind are open. */
@@ -59,6 +70,7 @@ export declare function summarizeTodos(todos: TodoLike[]): {
     implementation: number;
     review: number;
     reviewFix: number;
+    test: number;
 };
 /** Prefix a title with the kind of its todo item. */
 export declare function buildTodoSubject(kind: TodoKind, text: string): string;

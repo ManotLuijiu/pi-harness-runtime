@@ -343,6 +343,47 @@ todo create "Replace Film icon with themed icon"
 
 ---
 
+## Phase Model: Implementation, Review, Validation (CRITICAL)
+
+A task with several steps runs in three phases, and the harness enforces
+the order. The todo prefixes are the contract:
+
+| Prefix | Meaning |
+|--------|---------|
+| `[IMPLEMENT]` | implementation work of the current request |
+| `[REVIEW]` | the review of the task diff (one todo per chunk) |
+| `[REVIEW-FIX]` | a confirmed finding that has to be fixed |
+| `[TEST]` | the validation of the task (the tiers are declared in its metadata) |
+
+**Phase 1 - implementation.** Every open `[IMPLEMENT]` todo (and every
+unclassified todo) is implementation work. The phase ends when the list
+shows finished implementation work.
+
+**Phase 2 - review.** The review starts **on its own**: as soon as the
+implementation is done and the task changed a file, the harness derives the
+scope from the task diff, splits it into chunks and asks for one `[REVIEW]`
+todo per chunk. You never have to queue a review item to get one. A task
+that changed no file completes without a review - there is nothing to
+review.
+
+**Phase 3 - validation.** A `[TEST]` todo declares the validation plan of
+the task in `metadata.validationPlan` (see the section above) and the
+recorded runs in the validation ledger decide whether the task is done:
+
+- The task is **not** complete while the required final tier is pending.
+- The task is **not** complete when the final tier failed, timed out or
+  errored.
+- A plan that requires a final tier but declares none is an error to
+  report, not a plan to complete.
+- A validation state that cannot be read is never a validation that
+  passed.
+
+So the order of a real task is: implement, review the diff, fix the
+findings, run the tiers, record them, and only then report the task as
+done.
+
+---
+
 ### Habit: Detect New Tasks from User Prompts (CRITICAL)
 
 **When a new user prompt arrives with tasks that differ from the current in-progress task — add ALL new tasks to the todo list immediately.**

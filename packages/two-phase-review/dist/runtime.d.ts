@@ -8,6 +8,7 @@
  */
 import { type TodoLike } from "./classify.js";
 import { TwoPhaseStateStore } from "./state.js";
+import { type ValidationGateReader } from "./validation.js";
 import type { TwoPhasePhase, TwoPhaseState } from "./types.js";
 /** The marker every message of the harness itself carries. */
 export declare const HARNESS_MESSAGE_MARKER = "[harness:";
@@ -52,6 +53,14 @@ export interface TwoPhaseRuntimeOptions {
     log?: (message: string) => void;
     /** Extra review tool patterns of the deployment. */
     extraPatterns?: string[];
+    /**
+     * Reads the validation state of the test items of the session.
+     *
+     * The workflow never runs the tests itself: it reads the ledger of the
+     * session, so the phase gate and the ledger can never disagree about
+     * whether a tier passed.
+     */
+    readValidation?: ValidationGateReader;
 }
 /** The runtime of the workflow. */
 export interface TwoPhaseRuntime {

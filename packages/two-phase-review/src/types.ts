@@ -12,10 +12,11 @@ export type TwoPhasePhase =
 	| "review_pending"
 	| "review"
 	| "review_fixes"
+	| "test_pending"
 	| "complete";
 
 /** What a todo item represents. */
-export type TodoKind = "implement" | "review" | "review_fix" | "other";
+export type TodoKind = "implement" | "review" | "review_fix" | "test" | "other";
 
 /** A "review now" signal that arrived while the implementation was running. */
 export interface ReviewSignal {

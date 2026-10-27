@@ -58,6 +58,13 @@ export declare function recordFinding(state: TwoPhaseState, finding: ReviewFindi
  * ran would hide the work that is still open.
  */
 export declare function transitionToReviewFixes(state: TwoPhaseState): TwoPhaseState;
+/**
+ * The review is done: the validation of the task is now the work.
+ *
+ * The phase only moves when the review really ran over every chunk: a test
+ * phase before the review would hide the work that is still open.
+ */
+export declare function transitionToTestPending(state: TwoPhaseState): TwoPhaseState;
 /** Every chunk is finished. */
 export declare function allChunksDone(state: TwoPhaseState): boolean;
 /**

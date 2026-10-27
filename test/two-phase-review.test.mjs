@@ -28,6 +28,8 @@ const {
 	recordSignal,
 	hasQueuedReview,
 	transitionToReviewPending,
+	transitionToTestPending,
+	markChunkDone,
 	startReview,
 	collectScope,
 	chunkScope,
@@ -37,6 +39,7 @@ const {
 	buildDeferralReason,
 	buildReviewTodoSubject,
 	formatPhaseStatus,
+	validationGateSatisfied,
 	TWO_PHASE_CONTRACT,
 } = await import(join(packageRoot, "dist", "index.js"));
 
@@ -188,6 +191,54 @@ test("the workflow tells the agent what the phase is", () => {
 	assert.match(instruction, /Do not start a comprehensive review/);
 	assert.match(TWO_PHASE_CONTRACT, /Phase 2/);
 	assert.match(formatPhaseStatus(state), /\[PHASE\] implementation/);
+});
+
+test("the validation of the task is a phase of its own", () => {
+	const pending = transitionToReviewPending(createState("task"), [
+		"packages/app/index.ts",
+	]);
+	const review = startReview(pending, chunkScope(["packages/app/index.ts"]));
+	const done = markChunkDone(review, review.chunks[0].id);
+
+	// The review ran over its chunk, but the validation is still open.
+	const waiting = transitionToTestPending(done);
+	assert.equal(waiting.phase, "test_pending");
+
+	const view = buildPhaseView(waiting, [
+		{ id: 1, subject: "[TEST] Validate the task", status: "pending" },
+	]);
+	assert.equal(view.testOpen, 1);
+	const instruction = buildPhaseInstruction(waiting, view);
+	assert.match(instruction, /Phase 3 \(validation\)/);
+	assert.match(instruction, /final tier/);
+
+	// A gate that cannot be read is not a gate that passed.
+	assert.equal(
+		validationGateSatisfied({
+			available: false,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+		}),
+		false,
+	);
+	assert.equal(
+		validationGateSatisfied({
+			available: true,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+		}),
+		true,
+	);
+
+	// The test item is never implementation work.
+	assert.deepEqual(
+		implementationTodos([
+			{ id: 1, subject: "[TEST] Validate the task", status: "pending" },
+		]),
+		[],
+	);
 });
 
 test("there is exactly one queued review item", () => {

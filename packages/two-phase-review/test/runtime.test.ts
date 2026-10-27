@@ -328,6 +328,109 @@ describe("the two-phase runtime", () => {
 		});
 	});
 
+	it("waits for the final tier of a test item", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader([
+						{ id: 1, subject: "[IMPLEMENT] Work", status: "completed" },
+						{ id: 2, subject: "[REVIEW] chunk-1: app", status: "completed" },
+						{ id: 3, subject: "[TEST] Validate the task", status: "pending" },
+					]),
+					// The final tier has not run yet.
+					readValidation: async () => ({
+						available: true,
+						pendingFinalTier: 1,
+						failedFinalTier: 0,
+						incompletePlan: 0,
+					}),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("turn_end", {}, context());
+				expect(runtime.getState().phase).toBe("review");
+
+				// The review ran over its chunk, but the final tier is pending.
+				await pi.emit("turn_end", {}, context());
+				expect(runtime.getState().phase).toBe("test_pending");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
+
+	it("completes the task when the final tier passed", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader([
+						{ id: 1, subject: "[IMPLEMENT] Work", status: "completed" },
+						{ id: 2, subject: "[REVIEW] chunk-1: app", status: "completed" },
+						{ id: 3, subject: "[TEST] Validate the task", status: "completed" },
+					]),
+					readValidation: async () => ({
+						available: true,
+						pendingFinalTier: 0,
+						failedFinalTier: 0,
+						incompletePlan: 0,
+					}),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("turn_end", {}, context());
+				await pi.emit("turn_end", {}, context());
+
+				expect(runtime.getState().phase).toBe("complete");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
+
+	it("keeps the task open when the validation state cannot be read", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader([
+						{ id: 1, subject: "[IMPLEMENT] Work", status: "completed" },
+						{ id: 2, subject: "[REVIEW] chunk-1: app", status: "completed" },
+						{ id: 3, subject: "[TEST] Validate the task", status: "pending" },
+					]),
+					readValidation: async () => {
+						throw new Error("the ledger is not readable");
+					},
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("turn_end", {}, context());
+				await pi.emit("turn_end", {}, context());
+
+				// A tier that cannot be read is not a tier that passed.
+				expect(runtime.getState().phase).toBe("test_pending");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
+
 	it("does not start the review while the implementation is open", async () => {
 		await withTempDirAsync("runtime", async (dir) => {
 			const pi = new FakePi();

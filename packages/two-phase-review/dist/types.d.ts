@@ -6,9 +6,9 @@
  * review signal that arrives during Phase 1 is recorded, never executed.
  */
 /** The phase the task currently is in. */
-export type TwoPhasePhase = "implementation" | "review_pending" | "review" | "review_fixes" | "complete";
+export type TwoPhasePhase = "implementation" | "review_pending" | "review" | "review_fixes" | "test_pending" | "complete";
 /** What a todo item represents. */
-export type TodoKind = "implement" | "review" | "review_fix" | "other";
+export type TodoKind = "implement" | "review" | "review_fix" | "test" | "other";
 /** A "review now" signal that arrived while the implementation was running. */
 export interface ReviewSignal {
     /** Who raised the signal (tool name, agent name, command). */

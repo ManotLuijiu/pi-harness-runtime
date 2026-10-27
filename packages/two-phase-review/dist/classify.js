@@ -11,6 +11,8 @@ export const IMPLEMENT_PREFIX = "[IMPLEMENT]";
 export const REVIEW_PREFIX = "[REVIEW]";
 /** Prefix of a todo item that fixes a confirmed review finding. */
 export const REVIEW_FIX_PREFIX = "[REVIEW-FIX]";
+/** Prefix of a todo item that is the validation of the task. */
+export const TEST_PREFIX = "[TEST]";
 const KIND_BY_NAME = {
     implement: "implement",
     implementation: "implement",
@@ -21,6 +23,9 @@ const KIND_BY_NAME = {
     review_fix: "review_fix",
     "review-fix": "review_fix",
     reviewfix: "review_fix",
+    test: "test",
+    validation: "test",
+    validation_test: "test",
     other: "other",
 };
 /**
@@ -44,6 +49,8 @@ export function classifyTodo(todo) {
     const subject = (todo.subject ?? "").trim().toUpperCase();
     if (subject.startsWith(REVIEW_FIX_PREFIX))
         return "review_fix";
+    if (subject.startsWith(TEST_PREFIX))
+        return "test";
     if (subject.startsWith(IMPLEMENT_PREFIX))
         return "implement";
     if (subject.startsWith(REVIEW_PREFIX))
@@ -62,7 +69,9 @@ export function openTodos(todos) {
  * The open todo items that are still implementation work.
  *
  * A queued review item is not implementation work: it must never block the
- * implementation. An unclassified item counts as implementation work, because
+ * implementation. A test item is not implementation work either: it is the
+ * validation of the finished work, and it belongs to the phase that follows
+ * the review. An unclassified item counts as implementation work, because
  * a task that is tracked without a prefix is still work that has to finish.
  */
 export function implementationTodos(todos) {
@@ -95,6 +104,15 @@ export function reviewTodos(todos) {
 export function reviewFixTodos(todos) {
     return openTodos(todos).filter((todo) => classifyTodo(todo) === "review_fix");
 }
+/**
+ * The open todo items that are the validation of the task.
+ *
+ * A test item carries the validation plan of the task: the tiers it declares
+ * and the final tier that has to pass before the task is complete.
+ */
+export function testTodos(todos) {
+    return openTodos(todos).filter((todo) => classifyTodo(todo) === "test");
+}
 /** Does the task still have implementation work? */
 export function hasOpenImplementationWork(todos) {
     return implementationTodos(todos).length > 0;
@@ -105,12 +123,14 @@ export function summarizeTodos(todos) {
         implementation: implementationTodos(todos).length,
         review: reviewTodos(todos).length,
         reviewFix: reviewFixTodos(todos).length,
+        test: testTodos(todos).length,
     };
 }
 const PREFIX_BY_KIND = {
     implement: IMPLEMENT_PREFIX,
     review: REVIEW_PREFIX,
     review_fix: REVIEW_FIX_PREFIX,
+    test: TEST_PREFIX,
     other: "",
 };
 /** Prefix a title with the kind of its todo item. */

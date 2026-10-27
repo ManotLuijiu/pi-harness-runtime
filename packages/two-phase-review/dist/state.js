@@ -15,7 +15,8 @@ const PHASE_ORDER = {
     review_pending: 1,
     review: 2,
     review_fixes: 3,
-    complete: 4,
+    test_pending: 4,
+    complete: 5,
 };
 /** Makes the name of a temporary state file unique. */
 let writeCounter = 0;
@@ -47,7 +48,14 @@ function listDir(dir) {
 }
 function isPhase(value) {
     return (typeof value === "string" &&
-        ["implementation", "review_pending", "review", "review_fixes", "complete"].includes(value));
+        [
+            "implementation",
+            "review_pending",
+            "review",
+            "review_fixes",
+            "test_pending",
+            "complete",
+        ].includes(value));
 }
 /** Repair a state that was read from disk. */
 export function normalizeState(value, taskId) {
@@ -213,6 +221,19 @@ export function transitionToReviewFixes(state) {
     if (!allChunksDone(state))
         return state;
     return moveToPhase(state, "review_fixes");
+}
+/**
+ * The review is done: the validation of the task is now the work.
+ *
+ * The phase only moves when the review really ran over every chunk: a test
+ * phase before the review would hide the work that is still open.
+ */
+export function transitionToTestPending(state) {
+    if (state.phase !== "review" && state.phase !== "review_fixes")
+        return state;
+    if (!allChunksDone(state))
+        return state;
+    return moveToPhase(state, "test_pending");
 }
 /** Every chunk is finished. */
 export function allChunksDone(state) {
