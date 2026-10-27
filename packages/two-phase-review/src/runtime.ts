@@ -8,9 +8,9 @@
  */
 
 import {
+	completedImplementationTodos,
 	implementationTodos,
 	reviewFixTodos,
-	reviewTodos,
 	type TodoLike,
 } from "./classify.js";
 import {
@@ -22,8 +22,8 @@ import { chunkScope, collectScope, currentRevision } from "./scope.js";
 import {
 	TwoPhaseStateStore,
 	allChunksDone,
+	completeWithoutReview,
 	createState,
-	hasQueuedReview,
 	markComplete,
 	recordSignal,
 	startReview,
@@ -314,13 +314,25 @@ export async function initTwoPhaseReview(
 				updateStatus(ctx);
 				return undefined;
 			}
-			const queued = hasQueuedReview(state) || reviewTodos(read.todos).length > 0;
-			if (!queued) {
+			// The implementation is over only when the todo list shows that
+			// implementation work actually finished. Without that evidence the
+			// workflow waits: it never guesses that a task is done.
+			if (completedImplementationTodos(read.todos).length === 0) {
 				updateStatus(ctx);
 				return undefined;
 			}
 
+			// The review starts on its own: its scope is the measured diff of
+			// the task, not a signal the agent has to raise.
 			const scope = collectScope(workspaceRoot(), state.startRevision);
+			if (scope.files.length === 0) {
+				// The task changed no file, so there is nothing to review.
+				const done = completeWithoutReview(state, scope.files);
+				if (done !== state) persist(done);
+				updateStatus(ctx);
+				return undefined;
+			}
+
 			let next = transitionToReviewPending(state, scope.files);
 			next = startReview(next, chunkScope(scope.files));
 			if (!persist(next)) {

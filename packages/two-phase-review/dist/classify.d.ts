@@ -39,6 +39,15 @@ export declare function openTodos(todos: TodoLike[]): TodoLike[];
  * a task that is tracked without a prefix is still work that has to finish.
  */
 export declare function implementationTodos(todos: TodoLike[]): TodoLike[];
+/**
+ * The finished todo items that were implementation work.
+ *
+ * They are the evidence that the implementation of the task actually ran.
+ * A session without any finished implementation work has no proof that the
+ * implementation is over, so the workflow waits instead of starting the
+ * review of a task that is still running.
+ */
+export declare function completedImplementationTodos(todos: TodoLike[]): TodoLike[];
 /** The open todo items that represent the queued review. */
 export declare function reviewTodos(todos: TodoLike[]): TodoLike[];
 /** The open todo items that fix a confirmed review finding. */

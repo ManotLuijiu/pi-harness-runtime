@@ -67,6 +67,14 @@ export declare function allChunksDone(state: TwoPhaseState): boolean;
  * implementation phase never completes the task on its own.
  */
 export declare function markComplete(state: TwoPhaseState): TwoPhaseState;
+/**
+ * The task changed no file, so there is nothing to review.
+ *
+ * This is the one case in which the implementation phase completes the task
+ * on its own: a review without a diff has nothing to cover. A scope with
+ * files never completes here - that scope needs the review.
+ */
+export declare function completeWithoutReview(state: TwoPhaseState, scopeFiles?: string[]): TwoPhaseState;
 /** Is a review queued? */
 export declare function hasQueuedReview(state: TwoPhaseState): boolean;
 //# sourceMappingURL=state.d.ts.map

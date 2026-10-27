@@ -28,6 +28,7 @@ A task with several steps runs in two phases.
 - Queued review work is not an implementation blocker. The request is not complete while implementation todos remain.
 
 ### Phase 2 - review
+- The review starts on its own: as soon as the implementation todos are done and the task changed a file, the harness starts the review over the diff of the task. You never have to queue a review item to get one.
 - The review covers the diff of the task, not the whole repository.
 - Review the scope in chunks, per module. Use independent reviewers for independent chunks.
 - Record every confirmed finding as a [REVIEW-FIX] todo, grouped by root cause and severity. A minor suggestion does not interrupt a running chunk.

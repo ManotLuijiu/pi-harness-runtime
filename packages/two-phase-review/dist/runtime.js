@@ -6,10 +6,10 @@
  * decision that the runtime takes is conservative - when the state of the
  * todo list is unknown, the workflow waits instead of guessing.
  */
-import { implementationTodos, reviewFixTodos, reviewTodos, } from "./classify.js";
+import { completedImplementationTodos, implementationTodos, reviewFixTodos, } from "./classify.js";
 import { detectReviewInvocation, explicitReviewRequest, parseExtraPatterns, } from "./signals.js";
 import { chunkScope, collectScope, currentRevision } from "./scope.js";
-import { TwoPhaseStateStore, allChunksDone, createState, hasQueuedReview, markComplete, recordSignal, startReview, transitionToReviewFixes, transitionToReviewPending, } from "./state.js";
+import { TwoPhaseStateStore, allChunksDone, completeWithoutReview, createState, markComplete, recordSignal, startReview, transitionToReviewFixes, transitionToReviewPending, } from "./state.js";
 import { TWO_PHASE_CONTRACT, buildChunkTodoSubject, buildDeferralReason, buildPhaseInstruction, buildPhaseView, buildReviewTodoDescription, buildReviewTodoSubject, formatPhaseStatus, syncChunkStatus, } from "./rules.js";
 /** The marker every message of the harness itself carries. */
 export const HARNESS_MESSAGE_MARKER = "[harness:";
@@ -224,12 +224,24 @@ export async function initTwoPhaseReview(options) {
                 updateStatus(ctx);
                 return undefined;
             }
-            const queued = hasQueuedReview(state) || reviewTodos(read.todos).length > 0;
-            if (!queued) {
+            // The implementation is over only when the todo list shows that
+            // implementation work actually finished. Without that evidence the
+            // workflow waits: it never guesses that a task is done.
+            if (completedImplementationTodos(read.todos).length === 0) {
                 updateStatus(ctx);
                 return undefined;
             }
+            // The review starts on its own: its scope is the measured diff of
+            // the task, not a signal the agent has to raise.
             const scope = collectScope(workspaceRoot(), state.startRevision);
+            if (scope.files.length === 0) {
+                // The task changed no file, so there is nothing to review.
+                const done = completeWithoutReview(state, scope.files);
+                if (done !== state)
+                    persist(done);
+                updateStatus(ctx);
+                return undefined;
+            }
             let next = transitionToReviewPending(state, scope.files);
             next = startReview(next, chunkScope(scope.files));
             if (!persist(next)) {

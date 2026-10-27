@@ -85,6 +85,22 @@ export function implementationTodos(todos: TodoLike[]): TodoLike[] {
 	});
 }
 
+/**
+ * The finished todo items that were implementation work.
+ *
+ * They are the evidence that the implementation of the task actually ran.
+ * A session without any finished implementation work has no proof that the
+ * implementation is over, so the workflow waits instead of starting the
+ * review of a task that is still running.
+ */
+export function completedImplementationTodos(todos: TodoLike[]): TodoLike[] {
+	return todos.filter((todo) => {
+		if (todo.status !== "completed") return false;
+		const kind = classifyTodo(todo);
+		return kind === "implement" || kind === "other";
+	});
+}
+
 /** The open todo items that represent the queued review. */
 export function reviewTodos(todos: TodoLike[]): TodoLike[] {
 	return openTodos(todos).filter((todo) => classifyTodo(todo) === "review");

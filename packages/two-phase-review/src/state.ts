@@ -274,6 +274,22 @@ export function markComplete(state: TwoPhaseState): TwoPhaseState {
 	return moveToPhase(state, "complete");
 }
 
+/**
+ * The task changed no file, so there is nothing to review.
+ *
+ * This is the one case in which the implementation phase completes the task
+ * on its own: a review without a diff has nothing to cover. A scope with
+ * files never completes here - that scope needs the review.
+ */
+export function completeWithoutReview(
+	state: TwoPhaseState,
+	scopeFiles: string[] = [],
+): TwoPhaseState {
+	if (state.phase !== "implementation") return state;
+	if (scopeFiles.length > 0) return state;
+	return moveToPhase(state, "complete");
+}
+
 /** Is a review queued? */
 export function hasQueuedReview(state: TwoPhaseState): boolean {
 	return state.signals.length > 0;

@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { initTwoPhaseReview } from "../src/runtime.js";
 import type {
@@ -18,7 +18,7 @@ import type {
 	TwoPhaseRuntime,
 } from "../src/runtime.js";
 import { TwoPhaseStateStore } from "../src/state.js";
-import { withTempDirAsync } from "./helpers.js";
+import { makePlainTempDir, withTempDirAsync } from "./helpers.js";
 
 type Handler = (...args: any[]) => unknown;
 
@@ -250,6 +250,81 @@ describe("the two-phase runtime", () => {
 			expect(pi.messages.length).toBe(1);
 			expect(pi.messages[0].options?.deliverAs).toBe("steer");
 			expect(pi.messages[0].content).toMatch(/Phase 2 \(review\) starts now/);
+		});
+	});
+
+	it("starts the review on its own when the implementation is done", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+
+			const pi = new FakePi();
+			const runtime = await initTwoPhaseReview({
+				pi,
+				// No review signal and no queued review todo: the review starts
+				// from the measured scope of the task.
+				readTodos: reader([
+					{ id: 1, subject: "[IMPLEMENT] Work", status: "completed" },
+				]),
+				workspaceRoot: () => dir,
+				store: new TwoPhaseStateStore(dir),
+			});
+			await pi.emit("session_start", {}, context());
+			await pi.emit("turn_end", {}, context());
+
+			expect(runtime.getState().phase).toBe("review");
+			expect(runtime.getState().scopeFiles.length).toBeGreaterThan(0);
+			expect(pi.messages.length).toBe(1);
+			expect(pi.messages[0].content).toMatch(/Phase 2 \(review\) starts now/);
+		});
+	});
+
+	it("waits for the evidence that the implementation ran", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+
+			const pi = new FakePi();
+			const runtime = await initTwoPhaseReview({
+				pi,
+				// An empty todo list is no proof that the implementation is over.
+				readTodos: reader([]),
+				workspaceRoot: () => dir,
+				store: new TwoPhaseStateStore(dir),
+			});
+			await pi.emit("session_start", {}, context());
+			await pi.emit("turn_end", {}, context());
+
+			expect(runtime.getState().phase).toBe("implementation");
+			expect(pi.messages.length).toBe(0);
+		});
+	});
+
+	it("completes a task that changed no file", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			// The state of the workflow lives outside the workspace: inside it,
+			// the state file would show up as an untracked change of the task.
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader([
+						{ id: 1, subject: "[IMPLEMENT] Work", status: "completed" },
+					]),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("turn_end", {}, context());
+
+				// There is no diff, so there is nothing a review could cover.
+				expect(runtime.getState().phase).toBe("complete");
+				expect(pi.messages.length).toBe(0);
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
 		});
 	});
 

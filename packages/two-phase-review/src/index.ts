@@ -23,6 +23,7 @@ export {
 	isOpenTodo,
 	openTodos,
 	implementationTodos,
+	completedImplementationTodos,
 	reviewTodos,
 	reviewFixTodos,
 	hasOpenImplementationWork,
@@ -78,6 +79,7 @@ export {
 	transitionToReviewFixes,
 	allChunksDone,
 	markComplete,
+	completeWithoutReview,
 	hasQueuedReview,
 } from "./state.js";
 
