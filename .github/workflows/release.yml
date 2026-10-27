@@ -427,16 +427,41 @@ jobs:
         id: version
         run: node scripts/verify-release-version.mjs
 
+      # The whole tree of the released commit, scanned by the release
+      # itself.
+      #
+      # The repository checks every push for a client name, and the check
+      # of a push covers the whole tree of the pushed commit and the
+      # messages of the pushed commits. A commit that a workflow merged
+      # has no such check: GitHub starts no new run for a push that the
+      # token of a workflow made, so the merge of the merge gate never
+      # produces a check of the merge commit.
+      #
+      # The release therefore scans the tree itself, with the same secret
+      # and with the same scanner. The scan fails closed: a missing or an
+      # empty term list stops the release, and a term in the tree stops
+      # it too. The step runs before the check of the commit, so a name
+      # in the tree stops the release even when the check does not exist.
+      - name: Verify the released tree holds no client name
+        env:
+          SENSITIVE_TERMS: ${{ secrets.SENSITIVE_TERMS }}
+        run: node scripts/check-sensitive-terms.mjs --tree .
+
       # The repository checks every push for a client name. The release
       # publishes the tree of this commit, so the release waits for the
       # check of this commit and stops when it did not pass. A check that
-      # never ran is not a passed check.
+      # never ran is not a passed check - unless the tree of the release
+      # was scanned above, which is the control that replaces it.
+      #
+      # A check that exists and failed still stops the release, and so
+      # does a check that has not finished: an unfinished check is an
+      # unknown result.
       - name: Verify the sensitive terms check passed for this commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           COMMIT_SHA: ${{ steps.commit.outputs.sha }}
-        run: node scripts/verify-sensitive-check.mjs
+        run: node scripts/verify-sensitive-check.mjs --allow-missing
 
       - name: Compute release metadata
         id: meta
