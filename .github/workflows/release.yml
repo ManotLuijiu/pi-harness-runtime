@@ -40,13 +40,6 @@ on:
           Unpublishing deletes the tarball and cannot be undone.
         required: false
         default: ""
-      align_channels:
-        description: >-
-          Align the npm channels with the version of main without
-          publishing anything. Every channel that names an older version
-          is removed.
-        required: false
-        default: "false"
 
 jobs:
   # Registry cleanup.
@@ -622,59 +615,6 @@ jobs:
         run: |
           npm publish --ignore-scripts --access public \
             --dry-run --tag ${{ steps.meta.outputs.npm_tag }}
-
-      # The channels of a package are pointers, and a pointer is what a
-      # consumer installs: `npm install pi-harness-runtime@develop`
-      # resolves the channel `develop`. A channel that names an older
-      # version hands over a build the repository has left behind, so the
-      # release removes every channel that is older than the version it
-      # just published. npm and GitHub then name the same version.
-      #
-      # The OIDC credential of the publish is scoped to publishing, and
-      # the registry refuses a packument update made with it. A channel
-      # is a packument update, so the step uses a repository credential
-      # when one is configured and reports that the alignment was skipped
-      # when it is not. The release does not fail over a hygiene step.
-      - name: Align the npm channels with the release
-        if: >-
-          (steps.version.outputs.publishable == 'true' &&
-           (github.event_name != 'workflow_dispatch' ||
-            github.event.inputs.dry_run != 'true') &&
-           (github.event.inputs.unpublish_versions == null ||
-            github.event.inputs.unpublish_versions == '')) ||
-          (github.event_name == 'workflow_dispatch' &&
-           github.event.inputs.align_channels == 'true')
-        continue-on-error: true
-        env:
-          PACKAGE_NAME: ${{ steps.meta.outputs.name }}
-          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
-          TOK_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TOK_NPM_UNPUBLISH_TOKEN: ${{ secrets.NPM_UNPUBLISH_TOKEN }}
-          TOK_NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-          TOK_NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
-        run: |
-          set -uo pipefail
-          token=""
-          for candidate in "$TOK_NPM_TOKEN" "$TOK_NPM_UNPUBLISH_TOKEN" \
-                            "$TOK_NPM_PUBLISH_TOKEN" "$TOK_NPM_AUTH_TOKEN"; do
-            if [ -n "$candidate" ]; then
-              token="$candidate"
-              break
-            fi
-          done
-          if [ -z "$token" ]; then
-            echo "no repository credential is configured:"
-            echo "the channels of the package stay as they are"
-            exit 0
-          fi
-          umask 077
-          printf 'registry=https://registry.npmjs.org/\n' \
-            > /tmp/npmrc-align
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$token" \
-            >> /tmp/npmrc-align
-          NPM_CONFIG_USERCONFIG=/tmp/npmrc-align \
-            node scripts/align-dist-tags.mjs --package "$PACKAGE_NAME" \
-              --version "$RELEASE_VERSION" --apply
 
       # The release names the version that was published. The tag sits on
       # the published commit, so the tag and the published tree are the

@@ -114,34 +114,55 @@ test("every published version tag is aligned", () => {
 	assert.deepEqual(orphanedVersionTags(tags, published), []);
 });
 
-test("the release aligns the channels after the publish", () => {
+test("the release publishes through OIDC and carries no token", () => {
 	const workflow = readFileSync(
 		join(ROOT, ".github/workflows/release.yml"),
 		"utf8",
 	);
 	const publish = workflow.indexOf("- name: Publish to npm\n");
-	const align = workflow.indexOf("- name: Align the npm channels");
 	assert.ok(publish > 0, "the release publishes to npm");
-	assert.ok(align > publish, "the alignment runs after the publish");
+	const block = workflow.slice(publish, publish + 600);
 	assert.ok(
-		workflow.includes("scripts/align-dist-tags.mjs"),
-		"the release runs the alignment script",
+		block.includes("npm publish"),
+		"the publish step publishes the package",
 	);
 	assert.ok(
-		workflow.includes("steps.meta.outputs.version"),
-		"the alignment uses the version of the release",
+		!block.includes("_authToken") && !block.includes("NODE_AUTH_TOKEN"),
+		"the publish step carries no credential: npm does the OIDC exchange",
 	);
 });
 
-test("the alignment never runs on a dry run", () => {
+test("the release does not touch the channels of the package", () => {
+	// The release publishes a version and creates the GitHub release.
+	// A channel is a pointer that a consumer installs, and changing one
+	// is a write that the registry guards with a second factor. The
+	// alignment is therefore the operator's tool, not a step of every
+	// release.
 	const workflow = readFileSync(
 		join(ROOT, ".github/workflows/release.yml"),
 		"utf8",
 	);
-	const align = workflow.indexOf("- name: Align the npm channels");
-	const block = workflow.slice(align, align + 700);
 	assert.ok(
-		block.includes("github.event.inputs.dry_run != 'true'"),
-		"a dry run does not change the registry",
+		!workflow.includes("dist-tag"),
+		"the release does not change a channel of the package",
+	);
+	assert.ok(
+		!workflow.includes("align-dist-tags"),
+		"the release does not run the alignment script",
+	);
+});
+
+test("the alignment is a tool of the repository", () => {
+	const script = readFileSync(
+		join(ROOT, "scripts/align-dist-tags.mjs"),
+		"utf8",
+	);
+	assert.ok(
+		script.includes("--apply"),
+		"the script can remove a channel when it is asked to",
+	);
+	assert.ok(
+		script.includes("stale channels"),
+		"the script names the channels that are stale",
 	);
 });
