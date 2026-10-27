@@ -42,6 +42,24 @@ export interface ValidationTier {
     expectedDurationMs?: number;
     /** Dataset size the tier exercises, when it is data-volume bound. */
     datasetSize?: number;
+    /** Who runs the tier. */
+    owner?: string;
+    /** The criteria the tier has to meet. */
+    passCriteria?: string[];
+    /** What to do when the tier fails. */
+    failureAction?: string;
+    /**
+     * Is this tier the representative pilot of the plan?
+     *
+     * The pilot keeps the shape of the data, not only its size.
+     */
+    representative?: boolean;
+    /**
+     * The tier this one scales up from.
+     *
+     * "fast" means the tier may only start when the fast tier passed.
+     */
+    scaleUpFrom?: ValidationTierKind;
 }
 /**
  * State of one tier for one todo item.

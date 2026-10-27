@@ -46,8 +46,21 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
    {
      "metadata": {
        "validationPlan": {
-         "fast": { "command": "bun test tests/fast", "expectedDurationMs": 18000, "datasetSize": 100 },
-         "full": { "command": "bun test tests/full", "expectedDurationMs": 2400000, "datasetSize": 10000 },
+         "fast": {
+           "command": "bun test tests/fast",
+           "expectedDurationMs": 18000,
+           "datasetSize": 100,
+           "owner": "the agent that runs the validation",
+           "passCriteria": ["every record is written once", "the counts of source and target match"],
+           "failureAction": "stop the job and report the failure of the pilot"
+         },
+         "full": {
+           "command": "bun test tests/full",
+           "expectedDurationMs": 2400000,
+           "datasetSize": 10000,
+           "owner": "the agent that runs the validation",
+           "scaleUpFrom": "fast"
+         },
          "budgetMinutes": 90,
          "finalTierRequired": true
        }
@@ -56,6 +69,8 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
    ```
 
    The harness never guesses a tier from a command string. Without a declared plan the current behaviour is unchanged.
+
+   A tier that declares `scaleUpFrom: "fast"` is the scale-up of a large job: it only counts when the fast tier passed. The fast tier of such a plan is the representative pilot and declares `"representative": true`.
 
 2. **Iterate on the fast tier.** After every code edit, rerun the fast tier plus the focused unit/type checks the edit touches.
 
@@ -71,7 +86,9 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
 
 8. **The fast tier must be representative.** A small fixture keeps the shape of the data (optional fields, relations, uniqueness, boundary values, aggregates under test), not just the row count. Use deterministic data with cleanup so repeated runs do not accumulate rows.
 
-9. **Record every tier run in the ledger.** The harness never runs the tests, so the run is recorded by whoever knows the result:
+9. **A large job starts with a measured pilot.** The pilot is the fast tier: it runs over a representative subset (100 records when that is safe) and it is measured, not assumed. The scale-up only starts when the pilot passed, the pilot ran on the declared number of records, and the run stayed inside the budget. A pilot that fails stops the job: report the finding instead of scaling up. The batches of a scale-up are bounded and explicit (`packages/jev-judge/src/batch-plan.ts`), a failed batch is retried instead of restarting the job, and the concurrency limit is always a declared number.
+
+10. **Record every tier run in the ledger.** The harness never runs the tests, so the run is recorded by whoever knows the result:
 
    ```bash
    bun scripts/validation-run.ts --item 12 --tier fast --status passed --duration 18s --dataset 100
@@ -83,6 +100,8 @@ A task with a cheap tier and an expensive tier MUST use the cheap tier while the
 **What the harness does with the plan:**
 
 - The continuation message carries the plan, the recorded tier state and the remaining budget, so the agent never re-runs a tier that already passed.
+- A scale-up that ran before its pilot passed does not count: the final tier stays pending and the task stays open.
+- The status line names the phase, the progress, the validation state and the children that really ran.
 - When `budgetMinutes` is spent, the item pauses at a safe boundary: nothing is dispatched, the work stays open, and the reason is reported.
 - When a todo with `finalTierRequired` is marked complete while that tier is pending or failed, the completion report is suppressed and the item is named instead. A todo may not be reported as done on the strength of an unreported run.
 

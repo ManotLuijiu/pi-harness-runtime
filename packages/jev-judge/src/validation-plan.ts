@@ -45,6 +45,24 @@ export interface ValidationTier {
 	expectedDurationMs?: number;
 	/** Dataset size the tier exercises, when it is data-volume bound. */
 	datasetSize?: number;
+	/** Who runs the tier. */
+	owner?: string;
+	/** The criteria the tier has to meet. */
+	passCriteria?: string[];
+	/** What to do when the tier fails. */
+	failureAction?: string;
+	/**
+	 * Is this tier the representative pilot of the plan?
+	 *
+	 * The pilot keeps the shape of the data, not only its size.
+	 */
+	representative?: boolean;
+	/**
+	 * The tier this one scales up from.
+	 *
+	 * "fast" means the tier may only start when the fast tier passed.
+	 */
+	scaleUpFrom?: ValidationTierKind;
 }
 
 /**
@@ -123,6 +141,41 @@ function firstNumber(source: Record<string, unknown>, keys: string[]): number | 
 }
 
 /**
+ * The first list of strings of the source.
+ *
+ * A single string is a list of one: a plan that names one criterion does
+ * not have to wrap it in an array.
+ */
+function firstStringList(source: Record<string, unknown>, keys: string[]): string[] | undefined {
+	for (const key of keys) {
+		const value = source[key];
+		if (typeof value === "string" && value.trim().length > 0) return [value.trim()];
+		if (Array.isArray(value)) {
+			const list = value
+				.filter((entry): entry is string => typeof entry === "string")
+				.map((entry) => entry.trim())
+				.filter((entry) => entry.length > 0);
+			if (list.length > 0) return list;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * The tier this one scales up from.
+ *
+ * Only the known kinds are accepted: an unknown name is no gate at all,
+ * so a typo never blocks a run.
+ */
+function firstTierKind(source: Record<string, unknown>, keys: string[]): ValidationTierKind | undefined {
+	for (const key of keys) {
+		const value = source[key];
+		if (value === "fast" || value === "full") return value;
+	}
+	return undefined;
+}
+
+/**
  * Parse a duration into milliseconds.
  *
  * Strings must carry a unit (`45s`, `40m`, `1h`, `1h30m`). A bare number is
@@ -180,10 +233,36 @@ export function parseTier(value: unknown, kind: ValidationTierKind): ValidationT
 	const expectedDurationMs = firstNumber(record, ["expectedDurationMs", "expectedCostMs", "durationMs"])
 		?? parseDurationMs(record.expectedDuration ?? record.expectedCost ?? record.duration);
 	const datasetSize = firstNumber(record, ["datasetSize", "records", "rows"]);
-	if (!command && !label && expectedDurationMs === undefined && datasetSize === undefined) {
+	const owner = firstString(record, ["owner", "responsible"]);
+	const passCriteria = firstStringList(record, ["passCriteria", "criteria"]);
+	const failureAction = firstString(record, ["failureAction", "onFailure"]);
+	const representative = record.representative === true;
+	const scaleUpFrom = firstTierKind(record, ["scaleUpFrom", "scalesUpFrom"]);
+	if (
+		!command &&
+		!label &&
+		expectedDurationMs === undefined &&
+		datasetSize === undefined &&
+		!owner &&
+		!passCriteria &&
+		!failureAction &&
+		!representative &&
+		!scaleUpFrom
+	) {
 		return undefined;
 	}
-	return { kind, command, label, expectedDurationMs, datasetSize };
+	return {
+		kind,
+		command,
+		label,
+		expectedDurationMs,
+		datasetSize,
+		owner,
+		passCriteria,
+		failureAction,
+		representative,
+		scaleUpFrom,
+	};
 }
 
 /**
@@ -232,6 +311,8 @@ export function describeTier(tier: ValidationTier): string {
 	const extras: string[] = [];
 	if (tier.expectedDurationMs !== undefined) extras.push(`~${formatDuration(tier.expectedDurationMs)}`);
 	if (tier.datasetSize !== undefined) extras.push(`${tier.datasetSize} records`);
+	if (tier.representative) extras.push("representative pilot");
+	if (tier.scaleUpFrom) extras.push(`scales up from ${tier.scaleUpFrom}`);
 	return extras.length > 0 ? `${what} (${extras.join(", ")})` : what;
 }
 
@@ -309,11 +390,18 @@ export function summarizeValidationState(
 
 	const finalTierRequired = plan.finalTierRequired === true;
 	const planIncomplete = finalTierRequired && plan.full === undefined;
-	const full = stateOf("full");
+	const fast = stateOf("fast");
+	let full = stateOf("full");
+	// A scale-up that waits for its pilot only counts when the pilot
+	// passed: a run of the expensive tier that started too early is not
+	// the acceptance check of the task.
+	if (plan.full?.scaleUpFrom === "fast" && fast.status !== "passed" && full.status !== "not-run") {
+		full = { ...full, status: "not-run" };
+	}
 
 	const state: ValidationState = {
 		hasPlan: true,
-		fast: stateOf("fast"),
+		fast,
 		full,
 		finalTierRequired,
 		finalTierPending: finalTierRequired && plan.full !== undefined && full.status !== "passed",
@@ -354,6 +442,24 @@ export function formatValidationContext(
 		lines.push(
 			"The full tier is the final acceptance check: do not complete this todo while it is pending or failed.",
 		);
+	}
+	// A plan that starts with a representative pilot says so, and the
+	// scale-up waits for it.
+	if (plan.full?.scaleUpFrom === "fast" || plan.fast?.representative) {
+		lines.push(
+			"The fast tier is the representative pilot: it keeps the shape of the data, not only its size. " +
+				"The scale-up only counts when the pilot passed, so run the pilot first and record it.",
+		);
+	}
+	for (const tier of [plan.fast, plan.full]) {
+		if (!tier) continue;
+		if (tier.owner) lines.push(`The ${tier.kind} tier is owned by ${tier.owner}.`);
+		if (tier.passCriteria && tier.passCriteria.length > 0) {
+			lines.push(`Pass criteria of the ${tier.kind} tier: ${tier.passCriteria.join("; ")}.`);
+		}
+		if (tier.failureAction) {
+			lines.push(`When the ${tier.kind} tier fails: ${tier.failureAction}.`);
+		}
 	}
 	if (plan.budgetMinutes !== undefined) {
 		const budgetMs = plan.budgetMinutes * 60_000;

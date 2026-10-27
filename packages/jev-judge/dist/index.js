@@ -575,6 +575,10 @@ export { createTodoProvider } from "./todo-provider.js";
 export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, } from "./validation-plan.js";
 // Export the validation ledger (durable record of the tiers that ran)
 export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
+// Export the pilot and the scale-up
+export { buildPilotPlan, describePilot, evaluatePilot, pilotTier, scaleUpTier, scaleUpWaitsForPilot, tierKindOf, } from "./pilot.js";
+// Export the batches of a large job
+export { buildBatches, batchProgress, describeBatches, estimateJobMs, mayStartScaleUp, nextBatches, overBudget, recordBatchResult, } from "./batch-plan.js";
 // Export the validation tie-breaker (typed verdict about one item)
 export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 // Export Task Intake
