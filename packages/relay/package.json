@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/relay",
-  "version": "1.1.453",
+  "version": "1.1.454",
   "type": "module",
   "description": "Cloud relay for remote access - T3 Connect style for pi-harness",
   "main": "./dist/index.js",
