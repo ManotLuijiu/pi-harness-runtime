@@ -206,6 +206,63 @@ describe("the assessment of a scope", () => {
 	});
 });
 
+describe("the children of a delegation", () => {
+	it("are not dispatched before a tool call is seen", async () => {
+		const harness = createDelegationHarness(
+			fakePi([tool("worker", "runs a sub-agent on a task", ["task"])], ["worker"]),
+		);
+		const facts = scopeFactsFromMeasurement(measurement(3));
+		const decision = await harness.assess(facts, uniqueTaskId());
+		expect(decision?.dispatched).toBe(false);
+		expect(harness.getChildren()).toEqual([]);
+	});
+
+	it("are recorded when the agent really dispatched one", async () => {
+		const harness = createDelegationHarness(
+			fakePi([tool("worker", "runs a sub-agent on a task", ["task"])], ["worker"]),
+		);
+		const facts = scopeFactsFromMeasurement(measurement(3));
+		await harness.assess(facts, uniqueTaskId());
+
+		const child = harness.observeToolStart({
+			toolCallId: "call-1",
+			toolName: "worker",
+			args: { task: "migrate packages/pkg-1" },
+		});
+		expect(child?.groupId).toBe("packages/pkg-1");
+
+		harness.observeToolEnd({
+			toolCallId: "call-1",
+			toolName: "worker",
+			result: { model: "a-model", output: "done" },
+		});
+
+		const children = harness.getChildren();
+		expect(children).toHaveLength(1);
+		expect(children[0].status).toBe("completed");
+		expect(children[0].model).toBe("a-model");
+		// The receipt now says that a delegation is really under way.
+		expect(harness.getReceipt()?.decision.dispatched).toBe(true);
+		expect(harness.getReceipt()?.childIds).toEqual(["call-1"]);
+	});
+
+	it("ignore a tool that is not the dispatch of the plan", async () => {
+		const harness = createDelegationHarness(
+			fakePi([tool("worker", "runs a sub-agent on a task", ["task"])], ["worker"]),
+		);
+		const facts = scopeFactsFromMeasurement(measurement(3));
+		await harness.assess(facts, uniqueTaskId());
+
+		const child = harness.observeToolStart({
+			toolCallId: "call-2",
+			toolName: "bash",
+			args: { command: "ls" },
+		});
+		expect(child).toBeNull();
+		expect(harness.getReceipt()?.decision.dispatched).toBe(false);
+	});
+});
+
 describe("the plan that is handed to the agent", () => {
 	it("names the measured groups", () => {
 		const message = buildDelegationSteer({

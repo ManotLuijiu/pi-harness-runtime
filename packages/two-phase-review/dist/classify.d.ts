@@ -71,6 +71,10 @@ export declare function summarizeTodos(todos: TodoLike[]): {
     review: number;
     reviewFix: number;
     test: number;
+    implementationTotal: number;
+    reviewTotal: number;
+    reviewFixTotal: number;
+    testTotal: number;
 };
 /** Prefix a title with the kind of its todo item. */
 export declare function buildTodoSubject(kind: TodoKind, text: string): string;

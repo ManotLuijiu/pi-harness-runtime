@@ -226,6 +226,58 @@ describe("the two-phase runtime", () => {
 		});
 	});
 
+	it("says that the phase gate is not active when the todo list cannot be read", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			const pi = new FakePi();
+			const logs: string[] = [];
+			await initTwoPhaseReview({
+				pi,
+				readTodos: reader([], false),
+				workspaceRoot: () => dir,
+				store: new TwoPhaseStateStore(dir),
+				log: (message: string) => logs.push(message),
+			});
+			await pi.emit("session_start", {}, context());
+
+			const prompt = (await pi.emit(
+				"before_agent_start",
+				{ systemPrompt: "base" },
+				context(),
+			))[0] as { systemPrompt?: string };
+
+			// The agent is told that the work is not gated.
+			expect(prompt?.systemPrompt).toMatch(/phase gate of the harness is not active/);
+			expect(prompt?.systemPrompt).toMatch(/the todo provider is not available/);
+			// The reason is reported once.
+			expect(logs.some((line) => /the phase gate is not active/.test(line))).toBe(true);
+		});
+	});
+
+	it("shows that the todo list is unavailable in the status line", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			const pi = new FakePi();
+			const statuses: string[] = [];
+			const ctx = {
+				sessionManager: { getSessionId: () => "session-1" },
+				ui: {
+					setStatus: (key: string, value: string) => {
+						statuses.push(value);
+					},
+				},
+			};
+			await initTwoPhaseReview({
+				pi,
+				readTodos: reader([], false),
+				workspaceRoot: () => dir,
+				store: new TwoPhaseStateStore(dir),
+			});
+			await pi.emit("session_start", {}, ctx);
+			await pi.emit("turn_end", {}, ctx);
+
+			expect(statuses.some((line) => line === "[?] TODOS unavailable")).toBe(true);
+		});
+	});
+
 	it("starts the review when the implementation is done", async () => {
 		await withTempDirAsync("runtime", async (dir) => {
 			makeRepo(dir);

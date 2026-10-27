@@ -8,6 +8,7 @@
  */
 import { type TodoLike } from "./classify.js";
 import { TwoPhaseStateStore } from "./state.js";
+import { type DelegationStatus } from "./rules.js";
 import { type ValidationGateReader } from "./validation.js";
 import type { TwoPhasePhase, TwoPhaseState } from "./types.js";
 /** The marker every message of the harness itself carries. */
@@ -61,6 +62,13 @@ export interface TwoPhaseRuntimeOptions {
      * whether a tier passed.
      */
     readValidation?: ValidationGateReader;
+    /**
+     * Reads the delegation state of the session.
+     *
+     * The status line shows the children that really ran, so the reader
+     * must report the observed children and not a plan.
+     */
+    readDelegation?: () => DelegationStatus | undefined;
 }
 /** The runtime of the workflow. */
 export interface TwoPhaseRuntime {

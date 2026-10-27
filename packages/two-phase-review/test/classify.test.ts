@@ -94,6 +94,12 @@ describe("implementation work", () => {
 			review: 1,
 			reviewFix: 1,
 			test: 1,
+			// The totals count the finished items too: the status line
+			// shows how much of the task is done.
+			implementationTotal: 3,
+			reviewTotal: 1,
+			reviewFixTotal: 1,
+			testTotal: 1,
 		});
 	});
 });

@@ -782,6 +782,42 @@ export type {
 	ValidationLedgerOptions,
 } from "./validation-ledger.js";
 
+// Export the pilot and the scale-up
+export {
+	buildPilotPlan,
+	describePilot,
+	evaluatePilot,
+	pilotTier,
+	scaleUpTier,
+	scaleUpWaitsForPilot,
+	tierKindOf,
+} from "./pilot.js";
+export type {
+	MeasuredRun,
+	PilotPlanInput,
+	PilotVerdict,
+} from "./pilot.js";
+
+// Export the batches of a large job
+export {
+	buildBatches,
+	batchProgress,
+	describeBatches,
+	estimateJobMs,
+	mayStartScaleUp,
+	nextBatches,
+	overBudget,
+	recordBatchResult,
+} from "./batch-plan.js";
+export type {
+	Batch,
+	BatchKind,
+	BatchPlan,
+	BatchProgress,
+	BatchResult,
+	BatchStatus,
+} from "./batch-plan.js";
+
 // Export the validation tie-breaker (typed verdict about one item)
 export {
 	tieBreakValidation,

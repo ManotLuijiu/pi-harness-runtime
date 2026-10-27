@@ -197,6 +197,10 @@ export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffi
 export type { ValidationPlan, ValidationTier, ValidationTierKind, ValidationState, ValidationTierState, ValidationBudgetStatus, } from "./validation-plan.js";
 export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";
 export type { ValidationRunRecord, ValidationRunStatus, ValidationLedgerOptions, } from "./validation-ledger.js";
+export { buildPilotPlan, describePilot, evaluatePilot, pilotTier, scaleUpTier, scaleUpWaitsForPilot, tierKindOf, } from "./pilot.js";
+export type { MeasuredRun, PilotPlanInput, PilotVerdict, } from "./pilot.js";
+export { buildBatches, batchProgress, describeBatches, estimateJobMs, mayStartScaleUp, nextBatches, overBudget, recordBatchResult, } from "./batch-plan.js";
+export type { Batch, BatchKind, BatchPlan, BatchProgress, BatchResult, BatchStatus, } from "./batch-plan.js";
 export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-breaker.js";
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";

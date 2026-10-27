@@ -37,10 +37,11 @@ A task with several steps runs in two phases.
 - ${REVIEW_PREFIX} the queued review of the task diff
 - ${REVIEW_FIX_PREFIX} a confirmed finding that has to be fixed
 - ${TEST_PREFIX} the validation of the task (the tiers are declared in its metadata)
+- The agent owns the todo list: the kind of a todo is read from its metadata first and from the prefix second. Set \`metadata.kind\` when the title does not name the phase.
 
 A user pause, an approval requirement, a security issue or any other safety rule stops the work immediately. The phase order never overrides the intent of the user.`;
 /** Build the phase view from the state and the todo list. */
-export function buildPhaseView(state, todos, validation) {
+export function buildPhaseView(state, todos, validation, delegation) {
     const summary = summarizeTodos(todos);
     return {
         phase: state.phase,
@@ -48,6 +49,10 @@ export function buildPhaseView(state, todos, validation) {
         reviewOpen: summary.review,
         reviewFixOpen: summary.reviewFix,
         testOpen: summary.test,
+        implementationTotal: summary.implementationTotal,
+        reviewTotal: summary.reviewTotal,
+        reviewFixTotal: summary.reviewFixTotal,
+        testTotal: summary.testTotal,
         scopeFiles: state.scopeFiles.length,
         chunks: state.chunks.map((chunk) => ({
             id: chunk.id,
@@ -57,6 +62,7 @@ export function buildPhaseView(state, todos, validation) {
         queued: state.signals.length > 0,
         signals: state.signals,
         validation,
+        delegation,
     };
 }
 /** The subject of the one queued review todo. */
@@ -88,32 +94,68 @@ export function buildReviewTodoDescription(state) {
  * The line is plain ASCII: it is shown in the footer of the session.
  */
 export function formatPhaseStatus(state, view) {
+    const parts = [];
     switch (state.phase) {
         case "implementation": {
-            const open = view?.implementationOpen;
-            return open === undefined
-                ? "[PHASE] implementation"
-                : `[PHASE] implementation (${open} open)`;
+            parts.push("[P] IMPLEMENT");
+            if (view) {
+                parts.push(`${view.implementationTotal - view.implementationOpen}/${view.implementationTotal}`);
+            }
+            break;
         }
         case "review_pending":
-            return "[PHASE] review_pending";
+            parts.push("[R] REVIEW", "pending");
+            break;
         case "review": {
             const done = state.chunks.filter((chunk) => chunk.status === "done").length;
-            return `[PHASE] review (${done}/${state.chunks.length} chunk(s), ${state.scopeFiles.length} file(s))`;
+            parts.push("[R] REVIEW", `${done}/${state.chunks.length} chunks`);
+            parts.push(`${view?.scopeFiles ?? state.scopeFiles.length} files`);
+            break;
         }
         case "review_fixes":
-            return `[PHASE] review_fixes (${state.findings.length} finding(s))`;
+            parts.push("[F] FIX", `${state.findings.length} findings`);
+            break;
         case "test_pending": {
-            const open = view?.testOpen;
-            return open === undefined
-                ? "[PHASE] test_pending"
-                : `[PHASE] test_pending (${open} test todo(s))`;
+            parts.push("[T] TEST");
+            if (view) {
+                parts.push(`${view.testTotal - view.testOpen}/${view.testTotal}`);
+                const validation = describeValidation(view.validation);
+                if (validation)
+                    parts.push(validation);
+            }
+            break;
         }
         case "complete":
-            return "[PHASE] complete";
+            parts.push("[OK] COMPLETE");
+            break;
         default:
-            return "[PHASE] implementation";
+            parts.push("[P] IMPLEMENT");
+            break;
     }
+    const delegation = view?.delegation;
+    if (delegation && delegation.groups > 0) {
+        parts.push(`delegated ${delegation.dispatched}/${delegation.groups}`);
+    }
+    return parts.join(" | ");
+}
+/**
+ * The validation part of the status.
+ *
+ * The words describe the state that was read: a validation that could not
+ * be read is unknown, never passed.
+ */
+export function describeValidation(state) {
+    if (!state)
+        return undefined;
+    if (!state.available)
+        return "validation unknown";
+    if (state.failedFinalTier > 0)
+        return `final tier failed (${state.failedFinalTier})`;
+    if (state.incompletePlan > 0)
+        return `plan incomplete (${state.incompletePlan})`;
+    if (state.pendingFinalTier > 0)
+        return `final tier pending (${state.pendingFinalTier})`;
+    return "validation passed";
 }
 /**
  * The subject of the todo that covers one review chunk.

@@ -42,6 +42,7 @@ import {
 	buildReviewTodoSubject,
 	formatPhaseStatus,
 	syncChunkStatus,
+	type DelegationStatus,
 	type PhaseView,
 } from "./rules.js";
 import {
@@ -102,6 +103,13 @@ export interface TwoPhaseRuntimeOptions {
 	 * whether a tier passed.
 	 */
 	readValidation?: ValidationGateReader;
+	/**
+	 * Reads the delegation state of the session.
+	 *
+	 * The status line shows the children that really ran, so the reader
+	 * must report the observed children and not a plan.
+	 */
+	readDelegation?: () => DelegationStatus | undefined;
 }
 
 /** The runtime of the workflow. */
@@ -150,6 +158,16 @@ export async function initTwoPhaseReview(
 	let state: TwoPhaseState = createState("default");
 	/** The last message of the human of this session (never a harness message). */
 	let lastUserMessage = "";
+	/**
+	 * The availability of the todo list of the session.
+	 *
+	 * The agent owns the todo list, so the harness only reads it. When the
+	 * provider is not available the phase gate is not active, and the
+	 * session has to say so instead of pretending that it is.
+	 */
+	let todoAvailability: { available: boolean; reason?: string } = {
+		available: true,
+	};
 	/** The messages the runtime sent itself. */
 	const sentMessages = new Set<string>();
 
@@ -194,6 +212,28 @@ export async function initTwoPhaseReview(
 		}
 	};
 
+	/**
+	 * Read the todo list and remember whether it was readable.
+	 *
+	 * A change of the availability is reported once: the phase gate is not
+	 * active while the todo list is unreadable, and the operator has to
+	 * know that.
+	 */
+	const readTodosWithAvailability = async (ctx: unknown): Promise<TodoReadResult> => {
+		const read = await readTodos(ctx);
+		if (read.available !== todoAvailability.available) {
+			todoAvailability = { available: read.available, reason: read.reason };
+			log(
+				read.available
+					? "the todo list of the session is readable again"
+					: `the todo list of the session is not readable (${read.reason ?? "unknown reason"}): the phase gate is not active`,
+			);
+		} else if (!read.available && read.reason) {
+			todoAvailability = { available: false, reason: read.reason };
+		}
+		return read;
+	};
+
 	const readValidation = async (todos: TodoLike[]): Promise<ValidationGateState> => {
 		if (!options.readValidation) {
 			return {
@@ -215,11 +255,22 @@ export async function initTwoPhaseReview(
 		validation?: ValidationGateState,
 	): void => {
 		const context = ctx as TwoPhaseExtensionContext | undefined;
+		let delegation: DelegationStatus | undefined;
+		try {
+			delegation = options.readDelegation?.();
+		} catch {
+			// The delegation state is a convenience, never a requirement.
+		}
 		const view: PhaseView | undefined = todos
-			? buildPhaseView(state, todos, validation)
+			? buildPhaseView(state, todos, validation, delegation)
 			: undefined;
 		try {
-			context?.ui?.setStatus?.("harness-review", formatPhaseStatus(state, view));
+			// A todo list that cannot be read is shown: the phase gate is
+			// not active, and the status must not pretend otherwise.
+			const line = todoAvailability.available
+				? formatPhaseStatus(state, view)
+				: "[?] TODOS unavailable";
+			context?.ui?.setStatus?.("harness-review", line);
 		} catch {
 			// The status line is a convenience, never a requirement.
 		}
@@ -295,7 +346,7 @@ export async function initTwoPhaseReview(
 			// The human asked for the review explicitly: the phase order does not win.
 			if (explicitReviewRequest(lastUserMessage)) return {};
 
-			const read = await readTodos(ctx);
+			const read = await readTodosWithAvailability(ctx);
 			if (!read.available) {
 				// The implementation state is unknown, so the review waits.
 				return {
@@ -353,7 +404,7 @@ export async function initTwoPhaseReview(
 
 	// The implementation is done: the review scope is derived from the task diff.
 	pi.on("turn_end", async (_event: unknown, ctx: unknown) => {
-		const read = await readTodos(ctx);
+		const read = await readTodosWithAvailability(ctx);
 		if (!read.available) {
 			// The implementation state is unknown, so the phase does not move.
 			updateStatus(ctx);
@@ -421,8 +472,16 @@ export async function initTwoPhaseReview(
 
 	// The workflow rules and the current phase reach the agent.
 	pi.on("before_agent_start", async (event: { systemPrompt?: string }, ctx: unknown) => {
-		const read = await readTodos(ctx);
-		if (!read.available) return undefined;
+		const read = await readTodosWithAvailability(ctx);
+		if (!read.available) {
+			// The phase gate is not active while the todo list is
+			// unreadable. The agent is told that instead of being given a
+			// contract the harness cannot enforce.
+			const reason = read.reason ?? "unknown reason";
+			return {
+				systemPrompt: `${event?.systemPrompt ?? ""}\n\nThe todo list of this session is not readable (${reason}), so the phase gate of the harness is not active. The work is not gated in this session.`,
+			};
+		}
 		await syncProgress(read.todos);
 
 		const validation = await readValidation(read.todos);

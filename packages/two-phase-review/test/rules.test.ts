@@ -13,10 +13,17 @@ import {
 	buildPhaseView,
 	buildReviewTodoDescription,
 	buildReviewTodoSubject,
+	formatPhaseStatus,
 	isChunkTodo,
 	syncChunkStatus,
 } from "../src/rules.js";
-import { createState, recordSignal, startReview, transitionToReviewPending } from "../src/state.js";
+import {
+	createState,
+	recordSignal,
+	startReview,
+	transitionToReviewPending,
+	transitionToTestPending,
+} from "../src/state.js";
 import { REVIEW_PREFIX } from "../src/classify.js";
 import type { ReviewChunk, ReviewSignal } from "../src/types.js";
 
@@ -144,7 +151,75 @@ describe("the review chunks", () => {
 	});
 });
 
+/** A state that waits for the validation of the test items. */
+function testPendingState() {
+	const reviewed = startReview(createState("t"), [
+		{ id: "chunk-1", label: "a", files: ["a.ts"], status: "done" },
+	]);
+	return transitionToTestPending(reviewed);
+}
+
 /** The subject of the todo of a chunk. */
 function subject(chunk: ReviewChunk): string {
 	return buildChunkTodoSubject(chunk);
 }
+
+describe("the status line", () => {
+	it("names the phase and the progress of the implementation", () => {
+		const state = createState("t");
+		const view = buildPhaseView(state, [
+			{ subject: "[IMPLEMENT] one", status: "completed" },
+			{ subject: "[IMPLEMENT] two", status: "pending" },
+		]);
+		expect(formatPhaseStatus(state, view)).toBe("[P] IMPLEMENT | 1/2");
+	});
+
+	it("names the chunks and the files of the review", () => {
+		const state = startReview(createState("t"), [
+			{ id: "chunk-1", label: "a", files: ["a.ts"], status: "done" },
+			{ id: "chunk-2", label: "b", files: ["b.ts"], status: "pending" },
+		]);
+		const view = buildPhaseView(state, []);
+		expect(formatPhaseStatus(state, view)).toBe("[R] REVIEW | 1/2 chunks | 0 files");
+	});
+
+	it("names the validation of the test phase", () => {
+		const state = testPendingState();
+		const view = buildPhaseView(
+			state,
+			[{ subject: "[TEST] the pilot", status: "pending" }],
+			{ available: true, pendingFinalTier: 0, failedFinalTier: 0, incompletePlan: 0 },
+		);
+		expect(formatPhaseStatus(state, view)).toBe("[T] TEST | 0/1 | validation passed");
+	});
+
+	it("never claims a validation that could not be read", () => {
+		const state = testPendingState();
+		const view = buildPhaseView(state, [], {
+			available: false,
+			pendingFinalTier: 0,
+			failedFinalTier: 0,
+			incompletePlan: 0,
+		});
+		expect(formatPhaseStatus(state, view)).toContain("validation unknown");
+		expect(formatPhaseStatus(state, view)).not.toContain("passed");
+	});
+
+	it("names the children that really ran", () => {
+		const state = createState("t");
+		const view = buildPhaseView(state, [], undefined, { dispatched: 2, groups: 3 });
+		expect(formatPhaseStatus(state, view)).toBe("[P] IMPLEMENT | 0/0 | delegated 2/3");
+	});
+
+	it("says nothing about a delegation that has no groups", () => {
+		const state = createState("t");
+		const view = buildPhaseView(state, [], undefined, { dispatched: 0, groups: 0 });
+		expect(formatPhaseStatus(state, view)).not.toContain("delegated");
+	});
+
+	it("is plain ASCII", () => {
+		const state = createState("t");
+		const line = formatPhaseStatus(state, buildPhaseView(state, []));
+		expect(/^[\x20-\x7e]+$/.test(line)).toBe(true);
+	});
+});

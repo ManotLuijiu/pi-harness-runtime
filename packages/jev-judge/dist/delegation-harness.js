@@ -5,8 +5,9 @@
  * Uses inline types to avoid cross-package dependency.
  */
 import { homedir as osHomedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { DelegationObserver } from "./delegation-observer.js";
 /**
  * Store directory path
  */
@@ -198,6 +199,8 @@ export function createDelegationHarness(pi, config = {}) {
         capability: null,
         lastAssessment: null,
     };
+    // The children that were really dispatched, as they were observed.
+    const observer = new DelegationObserver();
     const minFiles = config.minFiles ?? 10;
     const minCallSites = config.minCallSites ?? 50;
     const minComponents = config.minComponents ?? 2;
@@ -352,17 +355,76 @@ export function createDelegationHarness(pi, config = {}) {
             updatedAt: Date.now(),
             status: "assessing",
             childIds: [],
+            children: [],
             pendingValidation: [],
             userConstraints: [],
         };
         saveReceipt(receipt);
         state.currentReceipt = receipt;
+        // The observer watches the tool that the plan names: the children it
+        // records are the ones the agent really dispatched.
+        if (decision.strategy === "delegate" && decision.dispatchTool) {
+            observer.setPlan(decision.dispatchTool, decision.workGroups.map((group) => group.id));
+        }
         return decision;
+    }
+    /**
+     * A tool call started.
+     *
+     * The call is a child of the current plan when the tool is the one
+     * that the plan named. The child is recorded, and the receipt says
+     * that a delegation is really under way.
+     */
+    function observeToolStart(event) {
+        const child = observer.noteStart(event);
+        if (!child)
+            return null;
+        updateReceiptWithChildren();
+        return child;
+    }
+    /**
+     * A tool call ended.
+     */
+    function observeToolEnd(event) {
+        const child = observer.noteEnd(event);
+        if (!child)
+            return null;
+        updateReceiptWithChildren();
+        return child;
+    }
+    /**
+     * The children that were really dispatched.
+     */
+    function getChildren() {
+        return observer.observed();
+    }
+    /**
+     * Write the observed children into the receipt.
+     *
+     * A child that was observed is the proof that a delegation happened.
+     * Without one, the decision keeps saying that nothing was dispatched.
+     */
+    function updateReceiptWithChildren() {
+        const receipt = state.currentReceipt;
+        if (!receipt)
+            return;
+        const children = observer.observed();
+        if (children.length === 0)
+            return;
+        receipt.children = children;
+        receipt.childIds = children.map((child) => child.toolCallId);
+        receipt.status = "in_progress";
+        receipt.updatedAt = Date.now();
+        receipt.decision = { ...receipt.decision, dispatched: true };
+        saveReceipt(receipt);
     }
     return {
         discoverCapability,
         shouldAssess,
         assess,
+        observeToolStart,
+        observeToolEnd,
+        getChildren,
         getReceipt: () => state.currentReceipt,
         getLastDecision: () => state.lastAssessment,
         clear: () => {

@@ -557,11 +557,35 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan };
 	};
 
+	/**
+	 * The delegation state of the session.
+	 *
+	 * The numbers are the observed ones: the children that really ran and
+	 * the groups the harness measured. A plan that was never dispatched
+	 * shows zero dispatched children.
+	 */
+	const readDelegation = () => {
+		const harness = sharedState.delegationHarness as
+			| import("./packages/jev-judge/dist/delegation-harness.js").DelegationHarness
+			| null
+			| undefined;
+		if (!harness) return undefined;
+		try {
+			const receipt = harness.getReceipt();
+			const groups = receipt?.decision.workGroups?.length ?? 0;
+			const dispatched = harness.getChildren().length;
+			return { groups, dispatched };
+		} catch {
+			return undefined;
+		}
+	};
+
 	try {
 		await mod.initTwoPhaseReview({
 			pi,
 			readTodos,
 			readValidation,
+			readDelegation,
 			workspaceRoot: () => {
 				try {
 					return realpathSync(process.cwd());
@@ -903,6 +927,58 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				logToFile("[Delegation]", "The delegation steer failed:", oneLineError(error));
 			}
 		}
+
+		// The children of a delegation are observed, not assumed. The
+		// harness does not dispatch anything: the agent sends the measured
+		// groups to the sub-agent tool, and the tool events are the proof
+		// that a child really ran.
+		pi.on("tool_execution_start", (event) => {
+			try {
+				const toolEvent = event as {
+					toolCallId?: string;
+					toolName?: string;
+					args?: unknown;
+				};
+				const child = sharedState.delegationHarness?.observeToolStart?.({
+					toolCallId: String(toolEvent.toolCallId ?? ""),
+					toolName: String(toolEvent.toolName ?? ""),
+					args: toolEvent.args,
+				});
+				if (child) {
+					logToFile(
+						"[Delegation]",
+						`A child was dispatched: ${child.toolName} (${child.groupId ?? "no group"})`,
+					);
+				}
+			} catch (error) {
+				logToFile("[Delegation]", "The child could not be recorded:", oneLineError(error));
+			}
+		});
+
+		pi.on("tool_execution_end", (event) => {
+			try {
+				const toolEvent = event as {
+					toolCallId?: string;
+					toolName?: string;
+					result?: unknown;
+					isError?: boolean;
+				};
+				const child = sharedState.delegationHarness?.observeToolEnd?.({
+					toolCallId: String(toolEvent.toolCallId ?? ""),
+					toolName: String(toolEvent.toolName ?? ""),
+					result: toolEvent.result,
+					isError: toolEvent.isError === true,
+				});
+				if (child) {
+					logToFile(
+						"[Delegation]",
+						`The child ended: ${child.toolName} (${child.status})${child.model ? `, model ${child.model}` : ""}`,
+					);
+				}
+			} catch (error) {
+				logToFile("[Delegation]", "The child could not be closed:", oneLineError(error));
+			}
+		});
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
 		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
 		let _completedNotifiedFor: string | null = null; // Track completion notification deduplication
