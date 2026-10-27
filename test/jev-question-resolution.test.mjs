@@ -89,6 +89,27 @@ test("the alternatives of a choice are the two concrete states", () => {
 	assert.match(alternatives[1], /current staging state is intended/);
 });
 
+test("a long question does not make the parser slow", () => {
+	// A question comes from a model, so its length is not under the
+	// control of the harness. A pattern with two unbounded repetitions
+	// next to each other takes quadratic time on a long run of the same
+	// character, and the harness would stall on it.
+	const hostile = `Do you want the ${"\t".repeat(200_000)}change, or the other state?`;
+	const started = Date.now();
+	const alternatives = extractAlternatives(hostile);
+	const duration = Date.now() - started;
+	assert.ok(duration < 2000, `the parser took ${duration}ms`);
+	// The question is longer than the parser reads, so the rest of it is
+	// ignored - and the parser still answers.
+	assert.ok(alternatives.length <= 2);
+
+	// A question that is short enough still names its two alternatives.
+	const tabs = `Do you want the ${"\t".repeat(200)}change, or the other state?`;
+	const parsed = extractAlternatives(tabs);
+	assert.equal(parsed.length, 2);
+	assert.match(parsed[1], /other state/);
+});
+
 test("an unrecognized question waits for a human instead of being routine", () => {
 	const controller = makeController();
 	const result = controller.detectQuestion(

@@ -256,7 +256,64 @@ const ALTERNATIVE_AUXILIARY =
 
 /** The intent tail of an alternative ("... is intended"). */
 const ALTERNATIVE_INTENT =
-	/^(.*\S)\s+(intended|expected|needed|required|desired|meant|correct|right|preferred)$/i;
+	/\s+(intended|expected|needed|required|desired|meant|correct|right|preferred)$/i;
+
+/**
+ * The longest question text that is parsed.
+ *
+ * A question is a sentence. The cap keeps the work of the parser
+ * bounded: the alternatives of a question are not longer than a line,
+ * and a bounded input cannot make a slow pattern slow.
+ */
+const MAX_QUESTION_LENGTH = 500;
+
+/** Is the character whitespace? */
+function isSpace(character: string | undefined): boolean {
+	return typeof character === "string" && /\s/.test(character);
+}
+
+/** Is the character the end of a sentence? */
+function isSentenceEnd(character: string | undefined): boolean {
+	return character === "?" || character === "!" || character === ".";
+}
+
+/**
+ * The question without the punctuation that ends the sentence.
+ *
+ * The punctuation is removed by a scan and not by a pattern: a pattern
+ * with two unbounded repetitions next to each other takes quadratic time
+ * on a long run of the same character.
+ */
+function withoutSentenceEnd(text: string): string {
+	let end = text.length;
+	while (end > 0 && isSentenceEnd(text[end - 1])) end -= 1;
+	return text.slice(0, end).trimEnd();
+}
+
+/**
+ * The index where the "or" of two alternatives starts.
+ *
+ * The separator is the word "or" with whitespace around it. A comma in
+ * front of it belongs to the separator. The search is a scan over the
+ * string: a pattern with two unbounded repetitions can take quadratic
+ * time, and a question is not a fixed length.
+ *
+ * @returns the boundaries of the separator, or null when there is none.
+ */
+function findOrSeparator(text: string): { leftEnd: number; orIndex: number } | null {
+	const lower = text.toLowerCase();
+	for (let index = 0; index + 1 < text.length; index += 1) {
+		if (lower[index] !== "o" || lower[index + 1] !== "r") continue;
+		if (!isSpace(text[index - 1]) || !isSpace(text[index + 2])) continue;
+		// The whitespace in front of the word, and the comma that may
+		// come with it.
+		let start = index;
+		while (start > 0 && isSpace(text[start - 1])) start -= 1;
+		const leftEnd = text[start - 1] === "," ? start - 1 : start;
+		return { leftEnd, orIndex: index };
+	}
+	return null;
+}
 
 /**
  * Extract the alternatives of a choice question.
@@ -267,22 +324,30 @@ const ALTERNATIVE_INTENT =
  * half means the question is not a choice after all.
  */
 export function extractAlternatives(question: string): string[] {
-	const text = question.trim().replace(/[?!.]+\s*$/, "");
+	const text = withoutSentenceEnd(
+		question.trim().slice(0, MAX_QUESTION_LENGTH),
+	);
 
-	const commaSplit = text.match(/^(.*?),\s+or\s+(.*)$/i);
-	const plainSplit = commaSplit ? null : text.match(/^(.*?)\s+or\s+(.*)$/i);
-	const split = commaSplit ?? plainSplit;
-	if (!split) return [];
+	const separator = findOrSeparator(text);
+	if (!separator) return [];
 
-	const left = split[1].replace(QUESTION_STEM, "").replace(/[\s,]+$/, "").trim();
-	const rightRaw = split[2].trim();
+	// The left half ends before the separator, the right half after the
+	// word "or".
+	const left = text
+		.slice(0, separator.leftEnd)
+		.replace(QUESTION_STEM, "")
+		.replace(/[\s,]+$/, "")
+		.trim();
+	const rightRaw = text.slice(separator.orIndex + 2).trim();
 	const right = rightRaw.replace(ALTERNATIVE_AUXILIARY, "").trim();
 
 	if (!left || !right) return [];
 
 	// "the current staging state intended" -> "the current staging state is intended"
 	const intent = right.match(ALTERNATIVE_INTENT);
-	const normalizedRight = intent ? `${intent[1]} is ${intent[2]}` : right;
+	const normalizedRight = intent
+		? `${right.slice(0, intent.index).trimEnd()} is ${intent[1]}`
+		: right;
 
 	return [left, normalizedRight];
 }
