@@ -28,6 +28,14 @@ export interface QuestionRiskFacts {
 export interface QuestionRiskInput {
     /** The kind of the question ("routine", "approval", ...). */
     kind?: QuestionKindLike;
+    /**
+     * The typed ask of the question ("approval", "choice",
+     * "clarification", "explicit_authorization", "routine").
+     *
+     * An explicit authorization is a request that the message reserves for
+     * the human, so it never becomes an autonomous decision.
+     */
+    askType?: string;
     /** The complete question text. */
     text?: string;
 }

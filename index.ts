@@ -23,8 +23,8 @@ import { HarnessStartupStatus, harnessStatusMarker, type HarnessStatus } from ".
 import {
 	auditKeyFiles,
 	fallbackKeyFileFixes,
-	formatExposedKeyFileFixes,
 	formatKeyFileFixes,
+	formatKeyPermissionFixes,
 	selectKeyFileFixes,
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
@@ -206,14 +206,19 @@ function getKeyFileAudit(): KeyFileAuditResult | null {
  * that the group or the others can read works perfectly - and is published
  * to every account on the machine. No other line notices, so this is the
  * only place where the fact can surface.
+ *
+ * The line shows ONE command for the whole key tree: one command per file
+ * is a list nobody runs. The command is never executed here.
  */
 function reportExposedKeyFiles(): void {
 	const audit = getKeyFileAudit();
 	const exposed = audit?.exposed ?? [];
-	if (exposed.length === 0) return;
+	const exposedDirectories = audit?.exposedDirectories ?? [];
+	if (exposed.length === 0 && exposedDirectories.length === 0) return;
 	const report = exposedKeyFilesReport({
 		exposed,
-		fixes: formatExposedKeyFileFixes(exposed, harnessKeysDir()),
+		exposedDirectories,
+		fixes: formatKeyPermissionFixes({ keysDir: harnessKeysDir() }),
 	});
 	if (!report) return;
 	addHarnessMessage(report.label, report.text, report.status, report.details);
@@ -287,6 +292,7 @@ function applyChannelApproval(
 	}
 
 	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
+	logQuestionTransition(requestId, "answered", `${channel}:${action}`);
 
 	// The question is answered, so the wait is over. The wait state is only
 	// cleared after a successful resolution.
@@ -315,6 +321,25 @@ function waitBelongsToRequest(requestId: string | undefined): boolean {
 	const active = sharedState.pqController?.getCurrentQuestion?.()?.requestId;
 	if (!active) return true;
 	return active === requestId;
+}
+
+/**
+ * Log a state transition of a pending question.
+ *
+ * The transitions make the decision observable: "no action yet" has to be
+ * distinguishable from a stuck timer. Only the request ID and a safe
+ * reason code are logged - never the question itself.
+ */
+function logQuestionTransition(
+	requestId: string | undefined,
+	state: string,
+	reason?: string,
+): void {
+	if (!requestId) return;
+	logToFile(
+		"[PendingQuestion]",
+		`${requestId} ${state}${reason ? ` (${reason})` : ""}`,
+	);
 }
 
 // --- tooling-preference: the Biome proposal ---------------------------------
@@ -695,9 +720,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const keysDir = `${home}/.pi-harness-runtime/keys`;
 		const { existsSync, mkdirSync } = await import("fs");
 
-		// Auto-create directory if doesn't exist
+		// Auto-create directory if doesn't exist. The directory holds
+		// secrets, so it is created private: the mode of a new directory
+		// depends on the umask of the shell, and a world readable key
+		// directory publishes the name of every key on the machine.
 		if (!existsSync(keysDir)) {
-			mkdirSync(keysDir, { recursive: true });
+			mkdirSync(keysDir, { recursive: true, mode: 0o700 });
 		}
 
 		// Resolve the provider chain. Every credential stays bound to its own
@@ -737,6 +765,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// JavaScript, so importing "src/auto-continue.js" would depend on
 		// build artifacts that are not part of the package.
 		const mod = await import("./packages/jev-judge/dist/auto-continue.js");
+		// The instruction of an autonomous decision: it names the selected
+		// option, the scope and the reasoning of the decision.
+		const autonomy = await import("./packages/jev-judge/dist/autonomy-instruction.js");
 
 		// Track waiting state
 		let waitingForUserSince: Date | null = null;
@@ -818,6 +849,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 			_currentAutoContinueState = "";
 
+			// A restart does not survive in memory: the wait state and the
+			// pending question are gone with the process. The question is
+			// therefore closed explicitly, so the buttons of that request
+			// do not stay open and look like a request that is still
+			// waiting.
+			const pending = sharedState.pqController?.getCurrentQuestion?.();
+			if (pending && pending.state === "pending") {
+				const expired = sharedState.pqController?.expireByTimeout?.(
+					pending.requestId,
+					"session-ended",
+				) === true;
+				logQuestionTransition(
+					pending.requestId,
+					expired ? "expired" : "closed",
+					"session-ended",
+				);
+			}
+
 			// Reset state
 			waitingForUserSince = null;
 			_lastNotifiedQuestion = "";
@@ -844,6 +893,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Set up pending question callback to dispatch answers to Pi
 		pqController.onUserAnswer((question, answer) => {
 			logToFile("[PendingQuestion]", `User answered: ${answer} for question ${question.requestId}`);
+			logQuestionTransition(question.requestId, "answered", answer);
 			// The question is answered, so the wait is over. The wait state
 			// is cleared here, after a successful resolution: a stale click
 			// must never clear a valid pending wait.
@@ -874,7 +924,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				_completedNotifiedFor = null;
 			}
 
-			const result = pqController.detectQuestion(content);
+			// The complete message is the context of the question: the
+			// sentence that carries the question often leaves out what the
+			// agent is really waiting for ("I need your OK before ...").
+			const result = pqController.detectQuestion(content, { contextText: content });
 
 			// Only trigger if: we found a question AND it's different from last notification
 			// Skip routine continuation questions - let Jev/todo controller decide
@@ -888,17 +941,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Create question in controller
 				const questionKind = result.kind || "approval";
 				// The risk facts of the proposed action are derived from the
-				// question itself and recorded with the request: the
-				// autonomous decision is only as safe as these facts.
+				// whole message, not from the question sentence alone: the
+				// sentence often leaves out what the agent is really waiting
+				// for. They are recorded with the request: the autonomous
+				// decision is only as safe as these facts.
 				const riskFacts = classifyQuestionRisk({
 					kind: questionKind,
-					text: result.questionText,
+					askType: result.askType,
+					text: result.contextText || result.questionText,
 				});
 				const question = pqController.createQuestion({
 					text: result.questionText,
 					sessionId: _sessionId,
 					workspacePath: _piSessionCwd || "/",
 					kind: questionKind,
+					askType: result.askType,
+					alternatives: result.alternatives,
+					contextText: result.contextText,
 					risk: {
 						requiresExplicitAuthorization: riskFacts.requiresExplicitAuthorization,
 						destructive: riskFacts.destructive,
@@ -909,6 +968,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				});
 				
 				logToFile("[PendingQuestion]", `Question created: ${question.requestId} - ${result.questionText?.slice(0, 50)}`);
+				logQuestionTransition(question.requestId, "detected", result.askType ?? questionKind);
 
 					_lastNotifiedQuestion = result.questionText;
 					waitingForUserSince = new Date();
@@ -933,15 +993,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// Yes/No actions. The canonical request ID is the correlation
 				// key of the callback: a prefixed jobId would never match the
 				// pending question and every click would be reported stale.
+				// A choice question shows its alternatives: the human has to
+				// see what the agent is choosing between.
+				const requirement = result.alternatives && result.alternatives.length >= 2
+					? `${result.questionText}\n\nOptions:\n${result.alternatives.map((alternative, index) => `${index + 1}. ${alternative}`).join("\n")}`
+					: result.questionText;
 				_nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: questionJobId,
 					questionId: questionJobId,
 					questionKind: question.kind,
-					requirement: result.questionText,
+					requirement,
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
 				}).catch((e) => logToFile("[Notification]", "notifyWithApproval failed:", String(e)));
+				logQuestionTransition(questionJobId, "notified", "waiting-for-user");
 
 				// Also send context info as a follow-up message (not in error field)
 				_nc?.notify("Info", {
@@ -1176,7 +1242,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							}
 						: classifyQuestionRisk({
 								kind: pendingQuestion.kind,
-								text: pendingQuestion.questionText,
+								askType: pendingQuestion.askType,
+								text:
+									pendingQuestion.contextText ?? pendingQuestion.questionText,
 							})
 					: undefined;
 				const questionContext = pendingQuestion
@@ -1184,6 +1252,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						requestId: pendingQuestion.requestId,
 						text: pendingQuestion.questionText,
 						kind: pendingQuestion.kind,
+						askType: pendingQuestion.askType,
+						alternatives: pendingQuestion.alternatives,
+						contextText: pendingQuestion.contextText,
 						requiresExplicitAuthorization: riskFacts?.requiresExplicitAuthorization,
 						destructive: riskFacts?.destructive,
 						external: riskFacts?.external,
@@ -1219,7 +1290,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					decisionContext,
 				);
 
+					logQuestionTransition(questionContext?.requestId, "eligible", `waited ${Math.round(waitMinutes)}m`);
+
 				const decision = await judge.decide(taskState);
+				logQuestionTransition(questionContext?.requestId, "jev-outcome", decision.outcome ?? decision.action);
 
 					// Check session validity and user response before applying
 					if (checkSessionId !== _sessionId) {
@@ -1266,9 +1340,37 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						"[auto-continue]",
 						`Jev decided to wait (${Math.round(waitMinutes)}m waited, deadline ${MAX_WAIT_MINUTES}m)`,
 					);
+					logQuestionTransition(
+						questionContext?.requestId,
+						"wait",
+						decision.policyApplied ?? "retry",
+					);
 					if (waitMinutes >= MAX_WAIT_MINUTES) {
 						logToFile("[auto-continue]", "Decision deadline reached - pausing the work");
+						// The deadline is a terminal path: the pending question
+						// is closed, so the notification does not stay open
+						// with nobody waiting for it any more.
+						const expired = questionContext?.requestId
+							? sharedState.pqController?.expireByTimeout?.(
+									questionContext.requestId,
+									"deadline-expired",
+								) === true
+							: false;
+						logQuestionTransition(
+							questionContext?.requestId,
+							expired ? "expired" : "deadline",
+							"deadline-expired",
+						);
 						(sharedState.todoContinuationController as any)?.explicitPause?.();
+						if (questionContext?.requestId) {
+							_nc?.notify("Info", {
+								jobId: `expired-${questionContext.requestId}`,
+								requirement:
+									"The request expired: no answer was received before the decision deadline. The work is paused until you answer.",
+							}).catch((e) =>
+								logToFile("[Notification]", "Expiry notification failed:", String(e)),
+							);
+						}
 						// The deadline belongs to the captured question: a newer
 						// question keeps its own wait state.
 						if (waitBelongsToRequest(questionContext?.requestId)) {
@@ -1276,6 +1378,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							sharedState.waitingForUserSince = null;
 							updateAutoContinueStatus("IDLE");
 						}
+					} else {
+						// The request stays open: the next poll asks again
+						// until the deadline closes it.
+						updateAutoContinueStatus(
+							"WAITING",
+							questionContext?.requestId.slice(0, 8),
+						);
 					}
 				} else {
 					// Close the question with the Jev decision. The buttons of
@@ -1291,6 +1400,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								questionContext.requestId,
 								outcome,
 								decision.reasoning,
+								{
+									selectedOption: decision.selectedOption,
+									scope: decision.scope,
+									reasoning: decision.reasoning,
+								},
 							) === true
 						: false;
 					const application = mod.decideOutcomeApplication(outcome, closed);
@@ -1339,21 +1453,27 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						"[auto-continue]",
 						`Question ${questionContext?.requestId} closed by Jev (${outcome})`,
 					);
+					logQuestionTransition(questionContext?.requestId, "applied", outcome);
 
 					// Update status to continuing
 					updateAutoContinueStatus("CONTINUING", questionHash);
 
-					// Send steer message to continue
-					pi.sendUserMessage(
-						outcome === "approve"
-							? "User is unavailable. Based on task progress and low risk, proceeding autonomously.\n" +
-							  `Decision: ${decision.reasoning}\n` +
-							  "Continue with remaining tasks."
-							: "User is unavailable. Proceeding with caution - will log each significant step.\n" +
-							  `Risk level: ${decision.riskLevel}\n` +
-							  "Continue with remaining tasks, reporting progress.",
-						{ deliverAs: "steer" },
-					);
+					// The steer names the selected option, the scope and the
+					// reasoning of the decision. A bare "continue with the
+					// remaining tasks" does not answer the question the
+					// agent asked, and it would pretend that the user
+					// answered.
+					const instruction = autonomy.buildAutonomyInstruction({
+						outcome,
+						questionText: questionContext?.text,
+						selectedOption: decision.selectedOption,
+						scope: decision.scope,
+						reasoning: decision.reasoning,
+						riskLevel: decision.riskLevel,
+						waitedMinutes: Math.round(waitMinutes),
+						deadlineMinutes: MAX_WAIT_MINUTES,
+					});
+					pi.sendUserMessage(instruction, { deliverAs: "steer" });
 					waitingForUserSince = null;
 					sharedState.waitingForUserSince = null;
 					_lastNotifiedQuestion = "";

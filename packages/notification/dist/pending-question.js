@@ -6,6 +6,96 @@
  */
 import { logWarn } from "./file-logger.js";
 /**
+ * The wording that asks for an explicit human authorization.
+ *
+ * The agent states the requirement itself ("I need your OK before ..."). It
+ * is part of the context of the question, not of the question sentence, so
+ * it is detected on the whole message.
+ */
+const EXPLICIT_AUTHORIZATION_PATTERNS = [
+    /\b(?:need|needs|needing|require|requires|requiring|want|wants|waiting for|wait for)\s+(?:your|the)\s+(?:explicit\s+)?(?:ok|okay|approval|approbation|authorization|authorisation|permission|consent|confirmation|green light|sign[- ]?off|go[- ]?ahead)\b/i,
+    /\bexplicit\s+(?:approval|authorization|authorisation|permission)\b/i,
+    /\b(?:authorize|authorise)\s+me\b/i,
+    /\bonly\s+(?:with|after)\s+your\b/i,
+];
+/**
+ * Does the message ask for an explicit human authorization?
+ *
+ * An ask of this kind is never decided autonomously: only the human may
+ * authorize it.
+ */
+export function hasExplicitAuthorizationWording(text) {
+    return EXPLICIT_AUTHORIZATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+/**
+ * The typed ask of a question kind.
+ */
+export function askTypeForKind(kind) {
+    switch (kind) {
+        case "approval":
+            return "approval";
+        case "choice":
+            return "choice";
+        case "clarification":
+            return "clarification";
+        case "explicit":
+            return "explicit_authorization";
+        case "routine":
+            return "routine";
+        default:
+            // An unknown kind is a clarification: the harness does not know
+            // what the agent is waiting for, so it waits for a human.
+            return "clarification";
+    }
+}
+/**
+ * The typed ask of a detected question.
+ *
+ * A choice keeps its type: the agent offers concrete alternatives, and a
+ * decision may pick one of them. Every other ask that the message
+ * explicitly reserves for the human is an explicit authorization.
+ */
+export function computeAskType(kind, explicitAuthorization) {
+    if (kind === "choice")
+        return "choice";
+    if (explicitAuthorization)
+        return "explicit_authorization";
+    return askTypeForKind(kind);
+}
+/**
+ * The stem of a question: the part that carries no alternative.
+ */
+const QUESTION_STEM = /^(?:do you want(?: me to)?|do you prefer|would you like me to|should i|should we|shall i|shall we|may i|can i|could i|is it|are you|which|what|do)\s+/i;
+/** The auxiliary verb of the second alternative. */
+const ALTERNATIVE_AUXILIARY = /^(?:is|are|was|were|should|would|do|does|did|can|could|shall|will|to)\s+/i;
+/** The intent tail of an alternative ("... is intended"). */
+const ALTERNATIVE_INTENT = /^(.*\S)\s+(intended|expected|needed|required|desired|meant|correct|right|preferred)$/i;
+/**
+ * Extract the alternatives of a choice question.
+ *
+ * The result is what the decision has to choose between, so it must be
+ * concrete: "the current staging state is intended" is an alternative,
+ * "is the current staging state intended?" is not. An empty or unusable
+ * half means the question is not a choice after all.
+ */
+export function extractAlternatives(question) {
+    const text = question.trim().replace(/[?!.]+\s*$/, "");
+    const commaSplit = text.match(/^(.*?),\s+or\s+(.*)$/i);
+    const plainSplit = commaSplit ? null : text.match(/^(.*?)\s+or\s+(.*)$/i);
+    const split = commaSplit ?? plainSplit;
+    if (!split)
+        return [];
+    const left = split[1].replace(QUESTION_STEM, "").replace(/[\s,]+$/, "").trim();
+    const rightRaw = split[2].trim();
+    const right = rightRaw.replace(ALTERNATIVE_AUXILIARY, "").trim();
+    if (!left || !right)
+        return [];
+    // "the current staging state intended" -> "the current staging state is intended"
+    const intent = right.match(ALTERNATIVE_INTENT);
+    const normalizedRight = intent ? `${intent[1]} is ${intent[2]}` : right;
+    return [left, normalizedRight];
+}
+/**
  * Pending Question Controller
  */
 export class PendingQuestionController {
@@ -40,8 +130,19 @@ export class PendingQuestionController {
     }
     /**
      * Detect if text contains a question requiring response
+     *
+     * The complete assistant message is kept as the context of the question:
+     * the sentence that carries the question often leaves out what the agent
+     * is really waiting for ("I need your OK before ..."). The risk facts and
+     * the decision are derived from the whole message, not from the sentence
+     * alone.
      */
-    detectQuestion(text, _options) {
+    detectQuestion(text, options) {
+        const contextText = options?.contextText ?? text;
+        // The message decides whether the agent reserves the decision for the
+        // human: "I need your OK before ..." is part of the context and not
+        // of the question sentence.
+        const explicitAuthorization = hasExplicitAuthorizationWording(contextText);
         // Find all question positions and extract each question sentence
         const questionPositions = [];
         let searchFrom = 0;
@@ -81,27 +182,36 @@ export class PendingQuestionController {
             }
             const isRoutine = this.isRoutineContinuation(q.sentence);
             const kind = this.determineKind(q.sentence, isRoutine);
-            // Return first approval or clarification question found
-            if (kind === "approval" || kind === "clarification") {
+            // Return first approval, choice or clarification question found
+            if (kind === "approval" || kind === "choice" || kind === "clarification") {
                 return {
                     detected: true,
                     questionText: q.sentence,
                     kind,
                     isRoutine,
+                    askType: computeAskType(kind, explicitAuthorization),
+                    alternatives: kind === "choice" ? extractAlternatives(q.sentence) : undefined,
+                    contextText,
                 };
             }
         }
-        // If no approval/clarification found, return first non-quoted routine question
+        // If no approval/choice/clarification was found, return the first
+        // non-quoted question. An unrecognized question is a clarification:
+        // the harness does not know what the agent is waiting for.
         for (const q of questionPositions) {
             if (this.isQuotedOrCode(text, q.sentence)) {
                 continue;
             }
             const isRoutine = this.isRoutineContinuation(q.sentence);
+            const kind = this.determineKind(q.sentence, isRoutine);
             return {
                 detected: true,
                 questionText: q.sentence,
-                kind: "routine",
+                kind,
                 isRoutine,
+                askType: computeAskType(kind, explicitAuthorization),
+                alternatives: kind === "choice" ? extractAlternatives(q.sentence) : undefined,
+                contextText,
             };
         }
         // No question found - check for approval patterns without ?
@@ -146,6 +256,8 @@ export class PendingQuestionController {
                     questionText: text.trim(),
                     kind: "approval",
                     isRoutine: false,
+                    askType: computeAskType("approval", hasExplicitAuthorizationWording(text)),
+                    contextText: text,
                 };
             }
         }
@@ -215,10 +327,8 @@ export class PendingQuestionController {
             /\bwant me to\b/i,
             /\bwould you like me to\b/i,
             /\bshall i\b/i,
-            /\bshould i add\b/i,
-            /\bshould i implement\b/i,
-            /\bshould we add\b/i,
-            /\bshould we implement\b/i,
+            /\bshould i\b/i,
+            /\bshould we\b/i,
             /\bdo you want me to\b/i,
             /\bcan i (start|proceed|add|implement)\b/i,
         ];
@@ -227,7 +337,23 @@ export class PendingQuestionController {
                 return "approval";
             }
         }
-        return "routine";
+        // A choice names concrete alternatives: "do you want X, or is Y
+        // intended?". The decision may pick one of them, but only when it
+        // names the picked option.
+        const choicePatterns = [
+            /,\s*or\s+(?:is|are|was|were|should|would|do|does|did|can|could|shall|will|to)\b/i,
+            /\beither\b[^?]*\bor\b/i,
+            /\b(?:do you want|do you prefer|would you like|should i|shall i|can i|could i|which)\b[^?]*\bor\b/i,
+        ];
+        for (const pattern of choicePatterns) {
+            if (pattern.test(lower)) {
+                return "choice";
+            }
+        }
+        // An unrecognized question is not a routine continuation: the harness
+        // does not know what the agent is waiting for, so it asks a human
+        // instead of continuing on a guess.
+        return "clarification";
     }
     /**
      * Check if it's a routine continuation question
@@ -272,6 +398,9 @@ export class PendingQuestionController {
             jobId: params.jobId,
             questionText: params.text,
             kind: params.kind,
+            askType: params.askType ?? askTypeForKind(params.kind),
+            alternatives: params.alternatives,
+            contextText: params.contextText,
             requiresExplicitAuthorization: params.risk?.requiresExplicitAuthorization,
             destructive: params.risk?.destructive,
             reversible: params.risk?.reversible,
@@ -337,6 +466,14 @@ export class PendingQuestionController {
             logWarn("[PendingQuestion]", `Question already resolved as ${this.currentQuestion.resolution} - duplicate callback ignored`);
             return false;
         }
+        // A question that was expired or cancelled is closed: a late click
+        // must not resurrect it and must not report an answer that never
+        // happened.
+        if (this.currentQuestion.state === "expired" ||
+            this.currentQuestion.state === "cancelled") {
+            logWarn("[PendingQuestion]", `Question is ${this.currentQuestion.state} (${this.currentQuestion.closedReason ?? "no reason"}) - late callback ignored`);
+            return false;
+        }
         this.currentQuestion.state = "resolved";
         this.currentQuestion.resolution = params.resolution;
         this.currentQuestion.resolvedBy = params.by;
@@ -371,7 +508,7 @@ export class PendingQuestionController {
      * @returns true if the question was closed, false when it was stale or
      *   already answered by a human.
      */
-    resolveByJev(requestId, outcome, reason) {
+    resolveByJev(requestId, outcome, reason, resolution) {
         if (!this.currentQuestion) {
             logWarn("[PendingQuestion]", "No question to resolve - no pending question");
             return false;
@@ -384,21 +521,87 @@ export class PendingQuestionController {
             logWarn("[PendingQuestion]", `Question already resolved as ${this.currentQuestion.resolution} - jev decision ignored`);
             return false;
         }
+        if (this.currentQuestion.state === "expired" ||
+            this.currentQuestion.state === "cancelled") {
+            logWarn("[PendingQuestion]", `Question is ${this.currentQuestion.state} - jev decision ignored`);
+            return false;
+        }
         this.currentQuestion.state = "resolved";
         this.currentQuestion.resolvedBy = "jev";
         this.currentQuestion.jevOutcome = outcome;
         this.currentQuestion.jevReason = reason;
         this.currentQuestion.resolvedAt = new Date();
+        // The resolution is the answer to the question: the selected option and
+        // the scope travel with the request, so the agent can be told which
+        // option was chosen.
+        if (resolution?.selectedOption) {
+            this.currentQuestion.selectedOption = resolution.selectedOption;
+        }
+        if (resolution?.scope) {
+            this.currentQuestion.scope = resolution.scope;
+        }
         logWarn("[PendingQuestion]", `Closed question ${this.currentQuestion.requestId} with jev outcome ${outcome}`);
         if (this.jevDecisionCallback) {
+            const metadata = { outcome };
+            if (resolution?.selectedOption) {
+                metadata["selectedOption"] = resolution.selectedOption;
+            }
+            if (resolution?.scope) {
+                metadata["scope"] = resolution.scope;
+            }
             this.jevDecisionCallback(this.currentQuestion, {
                 action: outcome === "reject" ? "stop" : outcome === "wait" ? "wait" : "continue",
                 reason: reason ?? `jev:${outcome}`,
                 eligible: true,
-                metadata: { outcome },
+                metadata,
             });
         }
         return true;
+    }
+    /**
+     * Expire the pending question when the decision deadline is reached.
+     *
+     * The deadline is a terminal path: the question is closed with the safe
+     * reason code, the buttons of that request become stale, and the wait
+     * state is cleared. A question that is left open here looks like a
+     * request that is still waiting - forever.
+     *
+     * @returns true if the question was expired, false when it was already
+     *   answered by a human or closed by a decision.
+     */
+    expireByTimeout(requestId, reason = "deadline-expired") {
+        if (!this.currentQuestion) {
+            logWarn("[PendingQuestion]", "No question to expire - no pending question");
+            return false;
+        }
+        if (this.currentQuestion.requestId !== requestId) {
+            logWarn("[PendingQuestion]", `Expiry for an unknown request: ${requestId} (current=${this.currentQuestion.requestId})`);
+            return false;
+        }
+        if (this.currentQuestion.state !== "pending" && this.currentQuestion.state !== "evaluating") {
+            logWarn("[PendingQuestion]", `Question is ${this.currentQuestion.state} - expiry ignored`);
+            return false;
+        }
+        this.currentQuestion.state = "expired";
+        this.currentQuestion.resolvedBy = "timeout";
+        this.currentQuestion.resolvedAt = new Date();
+        this.currentQuestion.closedReason = reason;
+        logWarn("[PendingQuestion]", `Expired question ${this.currentQuestion.requestId}: ${reason}`);
+        if (this.jevDecisionCallback) {
+            this.jevDecisionCallback(this.currentQuestion, {
+                action: "stop",
+                reason,
+                eligible: false,
+                metadata: { outcome: "expired" },
+            });
+        }
+        return true;
+    }
+    /**
+     * The state of the current question.
+     */
+    getState() {
+        return this.currentQuestion?.state;
     }
     /**
      * Apply an approval action from a channel to the current question.

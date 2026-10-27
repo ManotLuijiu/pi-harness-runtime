@@ -30,6 +30,15 @@ export interface TaskState {
  */
 export type DecisionOutcome = "approve" | "reject" | "wait" | "proceed_with_caution";
 /**
+ * The scope of an autonomous decision.
+ *
+ * A large or expensive job is not done in one step: the decision may limit
+ * itself to a canary that is verified before the work scales up. The type
+ * mirrors the one of the notification package - the scope travels from the
+ * decision to the pending question.
+ */
+export type DecisionScope = "full_scope" | "canary_first" | "none";
+/**
  * The pending question Jev has to decide about.
  *
  * Without it Jev can only see progress, not what the agent asked permission
@@ -41,7 +50,13 @@ export interface PendingQuestionContext {
     /** The complete question text. */
     text: string;
     /** The detected kind of the question. */
-    kind: "routine" | "approval" | "clarification" | "explicit";
+    kind: "routine" | "approval" | "choice" | "clarification" | "explicit";
+    /** The typed ask of the question. */
+    askType?: "approval" | "choice" | "clarification" | "explicit_authorization" | "routine";
+    /** The concrete alternatives of a choice question. */
+    alternatives?: string[];
+    /** The complete assistant message the question was detected in. */
+    contextText?: string;
     /** The exact action the agent proposes. */
     proposedAction?: string;
     /** What happens when the question is approved. */
@@ -108,6 +123,10 @@ export interface DecisionPolicyOptions {
     cautionThreshold?: number;
     /** The confidence of the proposed outcome. */
     confidence?: number;
+    /** The option the evaluation selected for a choice question. */
+    selectedOption?: string;
+    /** The scope the evaluation selected. */
+    scope?: DecisionScope;
 }
 /** The confidence an autonomous approval needs by default. */
 export declare const DEFAULT_PROCEED_THRESHOLD = 0.7;
@@ -120,6 +139,21 @@ export declare const DEFAULT_CAUTION_THRESHOLD = 0.5;
  * value is ignored instead of being guessed.
  */
 export declare function isDecisionOutcome(value: unknown): value is DecisionOutcome;
+/**
+ * Is the value a known scope?
+ *
+ * An unknown scope is ignored instead of being guessed: a decision without
+ * a scope keeps the default scope of the outcome.
+ */
+export declare function isDecisionScope(value: unknown): value is DecisionScope;
+/**
+ * The index of the alternative a criterion name stands for.
+ *
+ * The criteria of the choice question are named "option_1", "option_2", ...
+ * so the picked name maps back to the alternative the agent offered. An
+ * unknown name (for example "none_of_these") has no alternative.
+ */
+export declare function optionIndex(name: string): number;
 /**
  * Combine the threshold outcome with the structured outcome of the
  * evaluation.
@@ -175,6 +209,10 @@ export interface AutoContinueDecision {
     waitRecommendation?: number;
     /** The policy rule that changed the outcome, when one did. */
     policyApplied?: string;
+    /** The option the evaluation selected for a choice question. */
+    selectedOption?: string;
+    /** The scope the evaluation selected. */
+    scope?: DecisionScope;
 }
 /**
  * Auto-Continue Judge configuration

@@ -529,3 +529,57 @@ test("the line never names a value", () => {
 	const text = [report.text, ...report.details].join("\n");
 	assert.equal(text.includes("sk-"), false);
 });
+
+// The exposure line of the key tree.
+//
+// The line shows ONE command for the whole tree: a list of one `chmod` per
+// file is a list nobody runs. The command is shown, never executed.
+
+test("the exposure line shows one command for the whole key tree", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [
+			{ file: "openai-api-key.txt", mode: "644", readableBy: "group and others" },
+			{ file: "telegram-bot-token.txt", mode: "644", readableBy: "group and others" },
+			{ file: "line-access-token.txt", mode: "644", readableBy: "group and others" },
+		],
+		exposedDirectories: [],
+		fixes: ["chmod 700 'keys' && find 'keys' -type d -exec chmod 700 {} + && find 'keys' -type f -exec chmod 600 {} +"],
+	});
+	assert.ok(report);
+	assert.equal(report.details.length, 1);
+	assert.match(report.details[0], /-type f -exec chmod 600 \{\} \+/);
+});
+
+test("a key directory that others can read is reported", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [],
+		exposedDirectories: [
+			{ name: ".", mode: "755", readableBy: "group and others" },
+		],
+		fixes: ["chmod 700 'keys' && find 'keys' -type d -exec chmod 700 {} + && find 'keys' -type f -exec chmod 600 {} +"],
+	});
+	assert.ok(report, "the directory exposure is reported");
+	assert.equal(report.label, "Keys");
+	assert.equal(report.status, "warn");
+	assert.match(report.text, /directory of the key tree can be read by other users/);
+});
+
+test("files and directories are counted together", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "others" }],
+		exposedDirectories: [
+			{ name: ".", mode: "755", readableBy: "group and others" },
+			{ name: "sub", mode: "755", readableBy: "group and others" },
+		],
+		fixes: ["chmod 700 'keys'"],
+	});
+	assert.ok(report);
+	assert.match(report.text, /1 key file\(s\) and 2 director\(y\/ies\)/);
+});
+
+test("a private key tree means no line", () => {
+	assert.equal(
+		exposedKeyFilesReport({ exposed: [], exposedDirectories: [], fixes: [] }),
+		null,
+	);
+});

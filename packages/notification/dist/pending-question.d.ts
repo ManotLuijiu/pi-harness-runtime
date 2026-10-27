@@ -7,7 +7,21 @@
 /**
  * Question kinds
  */
-export type QuestionKind = "routine" | "approval" | "clarification" | "explicit";
+export type QuestionKind = "routine" | "approval" | "choice" | "clarification" | "explicit";
+/**
+ * The typed ask of a detected question.
+ *
+ * An ask is not the same thing as a question: a question is a sentence, an
+ * ask is what the agent wants. The distinction matters after the timeout:
+ * an ask of type "choice" can be decided autonomously (the decision names
+ * the chosen option), while an ask of type "clarification" or
+ * "explicit_authorization" waits for a human.
+ *
+ * A question the detector cannot interpret is NOT a routine ask: an
+ * unrecognized question is a clarification, because the harness does not
+ * know what the agent is waiting for and must not guess.
+ */
+export type AskType = "approval" | "choice" | "clarification" | "explicit_authorization" | "routine";
 /**
  * Question states
  */
@@ -47,6 +61,18 @@ export interface PendingQuestion {
     questionText: string;
     /** Question kind */
     kind: QuestionKind;
+    /** The typed ask of the question. */
+    askType?: AskType;
+    /** The concrete alternatives of a choice question. */
+    alternatives?: string[];
+    /** The complete assistant message the question was detected in. */
+    contextText?: string;
+    /** The option Jev selected for a choice question. */
+    selectedOption?: string;
+    /** The scope Jev chose for the selected option. */
+    scope?: DecisionScope;
+    /** The safe reason code of the last state transition. */
+    closedReason?: string;
     /** Does the proposed action need an explicit human authorization? */
     requiresExplicitAuthorization?: boolean;
     /** Can the proposed action destroy or damage something? */
@@ -95,7 +121,62 @@ export interface DetectionResult {
     questionText?: string;
     kind?: QuestionKind;
     isRoutine?: boolean;
+    /** The typed ask of the detected question. */
+    askType?: AskType;
+    /** The concrete alternatives of a choice question. */
+    alternatives?: string[];
+    /** The complete assistant message the question was detected in. */
+    contextText?: string;
 }
+/**
+ * The scope of an autonomous decision.
+ *
+ * A large or expensive job is not done in one step: the decision may
+ * limit itself to a canary that is verified before the work scales up.
+ */
+export type DecisionScope = "full_scope" | "canary_first" | "none";
+/**
+ * The structured resolution of an autonomous decision.
+ *
+ * It is the answer to the question the agent asked: the selected option,
+ * the scope and the reasoning. It is never a human answer.
+ */
+export interface JevResolution {
+    /** The option Jev selected for a choice question. */
+    selectedOption?: string;
+    /** The scope Jev chose. */
+    scope?: DecisionScope;
+    /** The reasoning of the decision. */
+    reasoning?: string;
+}
+/**
+ * Does the message ask for an explicit human authorization?
+ *
+ * An ask of this kind is never decided autonomously: only the human may
+ * authorize it.
+ */
+export declare function hasExplicitAuthorizationWording(text: string): boolean;
+/**
+ * The typed ask of a question kind.
+ */
+export declare function askTypeForKind(kind: QuestionKind): AskType;
+/**
+ * The typed ask of a detected question.
+ *
+ * A choice keeps its type: the agent offers concrete alternatives, and a
+ * decision may pick one of them. Every other ask that the message
+ * explicitly reserves for the human is an explicit authorization.
+ */
+export declare function computeAskType(kind: QuestionKind, explicitAuthorization: boolean): AskType;
+/**
+ * Extract the alternatives of a choice question.
+ *
+ * The result is what the decision has to choose between, so it must be
+ * concrete: "the current staging state is intended" is an alternative,
+ * "is the current staging state intended?" is not. An empty or unusable
+ * half means the question is not a choice after all.
+ */
+export declare function extractAlternatives(question: string): string[];
 /**
  * Jev evaluation result
  */
@@ -132,11 +213,19 @@ export declare class PendingQuestionController {
     private generateRequestId;
     /**
      * Detect if text contains a question requiring response
+     *
+     * The complete assistant message is kept as the context of the question:
+     * the sentence that carries the question often leaves out what the agent
+     * is really waiting for ("I need your OK before ..."). The risk facts and
+     * the decision are derived from the whole message, not from the sentence
+     * alone.
      */
-    detectQuestion(text: string, _options?: {
+    detectQuestion(text: string, options?: {
         sessionId?: string;
         workspacePath?: string;
         jobId?: string;
+        /** The complete assistant message the question was detected in. */
+        contextText?: string;
     }): DetectionResult;
     /**
      * Check for approval patterns in text without question mark
@@ -164,6 +253,12 @@ export declare class PendingQuestionController {
         workspacePath: string;
         jobId?: string;
         kind: QuestionKind;
+        /** The typed ask of the question. */
+        askType?: AskType;
+        /** The concrete alternatives of a choice question. */
+        alternatives?: string[];
+        /** The complete assistant message the question was detected in. */
+        contextText?: string;
         /** The deterministic risk facts of the proposed action. */
         risk?: {
             requiresExplicitAuthorization?: boolean;
@@ -208,7 +303,23 @@ export declare class PendingQuestionController {
      * @returns true if the question was closed, false when it was stale or
      *   already answered by a human.
      */
-    resolveByJev(requestId: string, outcome: JevOutcome, reason?: string): boolean;
+    resolveByJev(requestId: string, outcome: JevOutcome, reason?: string, resolution?: JevResolution): boolean;
+    /**
+     * Expire the pending question when the decision deadline is reached.
+     *
+     * The deadline is a terminal path: the question is closed with the safe
+     * reason code, the buttons of that request become stale, and the wait
+     * state is cleared. A question that is left open here looks like a
+     * request that is still waiting - forever.
+     *
+     * @returns true if the question was expired, false when it was already
+     *   answered by a human or closed by a decision.
+     */
+    expireByTimeout(requestId: string, reason?: string): boolean;
+    /**
+     * The state of the current question.
+     */
+    getState(): QuestionState | undefined;
     /**
      * Apply an approval action from a channel to the current question.
      *

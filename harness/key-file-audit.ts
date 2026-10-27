@@ -15,7 +15,7 @@
  * state of a file (missing / empty).
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -319,6 +319,44 @@ export interface ExposedKeyFile {
 	readableBy: "group" | "others" | "group and others";
 }
 
+/**
+ * A directory of the key tree that other users on this machine can reach.
+ *
+ * A readable directory publishes the NAMES of the secrets below it and,
+ * together with a readable file, their content. The key directory itself is
+ * part of the audit: a directory of mode 755 hands the file names of every
+ * key to every account on the machine.
+ */
+export interface ExposedKeyDirectory {
+	/**
+	 * The name of the directory, relative to the key directory.
+	 *
+	 * The key directory itself is ".".
+	 */
+	name: string;
+	/** The mode of the directory, as an octal string ("755"). */
+	mode: string;
+	/** Who can reach the directory besides the owner. */
+	readableBy: "group" | "others" | "group and others";
+}
+
+/**
+ * The information the audit needs about one entry of the key tree.
+ */
+export interface KeyEntryInfo {
+	/** The permission bits. */
+	mode: number;
+	/** Is it a regular file? */
+	isFile: boolean;
+	/** Is it a directory? */
+	isDirectory?: boolean;
+	/** Is it a symbolic link? */
+	isSymbolicLink?: boolean;
+}
+
+/** How deep the audit walks into the key tree. */
+const MAX_KEY_TREE_DEPTH = 4;
+
 export interface KeyFileAuditOptions {
 	/** The key directory to scan (e.g. ~/.pi-harness-runtime/keys). */
 	keysDir: string;
@@ -330,8 +368,15 @@ export interface KeyFileAuditOptions {
 	exists?: (path: string) => boolean;
 	/** Directory reader override (used by the tests). */
 	readdir?: (path: string) => string[];
-	/** File information override (used by the tests). */
-	stat?: (path: string) => { mode: number; isFile: boolean } | undefined;
+	/**
+	 * File information override (used by the tests).
+	 *
+	 * The audit never follows a symbolic link: a link is reported by the
+	 * `isSymbolicLink` flag and is never classified as a regular file.
+	 */
+	stat?: (path: string) => KeyEntryInfo | undefined;
+	/** The platform the fix commands are written for (defaults to the current one). */
+	platform?: NodeJS.Platform;
 }
 
 export interface KeyFileAuditResult {
@@ -341,6 +386,125 @@ export interface KeyFileAuditResult {
 	byFeature: Map<string, MissingCredential[]>;
 	/** The key files that other users on this machine can read. */
 	exposed: ExposedKeyFile[];
+	/** The directories of the key tree that other users can reach. */
+	exposedDirectories: ExposedKeyDirectory[];
+}
+
+/**
+ * Compare two file names in a stable, locale independent order.
+ */
+function compareByName(a: string, b: string): number {
+	if (a < b) return -1;
+	if (a > b) return 1;
+	return 0;
+}
+
+/**
+ * Who can reach an entry besides its owner.
+ */
+function readableByOf(mode: number): ExposedKeyFile["readableBy"] | undefined {
+	const group = mode & 0o070;
+	const others = mode & 0o007;
+	if (group === 0 && others === 0) return undefined;
+	if (group !== 0 && others !== 0) return "group and others";
+	return group !== 0 ? "group" : "others";
+}
+
+/**
+ * The default entry reader: `lstat`, never `stat`.
+ *
+ * `lstat` does not follow a symbolic link, so a link to a secret is never
+ * read through and never counted as the file it points at.
+ */
+function defaultStat(path: string): KeyEntryInfo | undefined {
+	try {
+		const info = lstatSync(path);
+		return {
+			mode: info.mode & 0o777,
+			isFile: info.isFile(),
+			isDirectory: info.isDirectory(),
+			isSymbolicLink: info.isSymbolicLink(),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The default directory reader.
+ */
+function defaultReaddir(path: string): string[] {
+	try {
+		return readdirSync(path);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Walk the key tree and collect the exposed files and directories.
+ *
+ * The whole tree is scanned, not only the files of the inventory: a key
+ * file that the inventory does not know yet is a secret too. A symbolic
+ * link is never followed and never classified - it is neither a regular
+ * file nor a directory of the key tree.
+ */
+function collectKeyTree(
+	options: KeyFileAuditOptions,
+): { files: ExposedKeyFile[]; directories: ExposedKeyDirectory[] } {
+	const readdir = options.readdir ?? defaultReaddir;
+	const stat = options.stat ?? defaultStat;
+	const files: ExposedKeyFile[] = [];
+	const directories: ExposedKeyDirectory[] = [];
+
+	// The key directory itself: a readable directory publishes the names of
+	// every secret below it.
+	const root = stat(options.keysDir);
+	if (root?.isDirectory) {
+		const readableBy = readableByOf(root.mode);
+		if (readableBy) {
+			directories.push({
+				name: ".",
+				mode: root.mode.toString(8).padStart(3, "0"),
+				readableBy,
+			});
+		}
+	}
+
+	const walk = (dir: string, relative: string, depth: number): void => {
+		if (depth > MAX_KEY_TREE_DEPTH) return;
+		for (const name of readdir(dir).sort(compareByName)) {
+			const path = join(dir, name);
+			const info = stat(path);
+			if (!info) continue;
+			// A symbolic link is neither followed nor classified.
+			if (info.isSymbolicLink) continue;
+			const entryName = relative ? `${relative}/${name}` : name;
+			if (info.isDirectory) {
+				const readableBy = readableByOf(info.mode);
+				if (readableBy) {
+					directories.push({
+						name: entryName,
+						mode: info.mode.toString(8).padStart(3, "0"),
+						readableBy,
+					});
+				}
+				walk(path, entryName, depth + 1);
+				continue;
+			}
+			if (!info.isFile) continue;
+			const readableBy = readableByOf(info.mode);
+			if (!readableBy) continue;
+			files.push({
+				file: entryName,
+				mode: info.mode.toString(8).padStart(3, "0"),
+				readableBy,
+			});
+		}
+	};
+
+	walk(options.keysDir, "", 1);
+	return { files, directories };
 }
 
 /**
@@ -355,45 +519,20 @@ export interface KeyFileAuditResult {
  * key file that the inventory does not know yet is a secret too.
  */
 export function scanExposedKeyFiles(options: KeyFileAuditOptions): ExposedKeyFile[] {
-	const readdir =
-		options.readdir ??
-		((path: string) => {
-			try {
-				return readdirSync(path);
-			} catch {
-				return [];
-			}
-		});
-	const stat =
-		options.stat ??
-		((path: string) => {
-			try {
-				const info = statSync(path);
-				return { mode: info.mode & 0o777, isFile: info.isFile() };
-			} catch {
-				return undefined;
-			}
-		});
+	return collectKeyTree(options).files;
+}
 
-	const exposed: ExposedKeyFile[] = [];
-	for (const name of readdir(options.keysDir).sort()) {
-		const info = stat(join(options.keysDir, name));
-		if (!info || !info.isFile) continue;
-		const group = info.mode & 0o070;
-		const others = info.mode & 0o007;
-		if (group === 0 && others === 0) continue;
-		exposed.push({
-			file: name,
-			mode: info.mode.toString(8).padStart(3, "0"),
-			readableBy:
-				group !== 0 && others !== 0
-					? "group and others"
-					: group !== 0
-						? "group"
-						: "others",
-		});
-	}
-	return exposed;
+/**
+ * The directories of the key tree that other users can reach.
+ *
+ * The key directory itself is the first one: a directory of mode 755 hands
+ * the file names of every key to every account on the machine. A missing
+ * key directory is not an exposure - there is nothing to expose.
+ */
+export function scanExposedKeyDirectories(
+	options: KeyFileAuditOptions,
+): ExposedKeyDirectory[] {
+	return collectKeyTree(options).directories;
 }
 
 /**
@@ -471,7 +610,13 @@ export function auditKeyFiles(options: KeyFileAuditOptions): KeyFileAuditResult 
 		byFeature.set(entry.requirement.feature, list);
 	}
 
-	return { missing, byFeature, exposed: scanExposedKeyFiles(options) };
+	const tree = collectKeyTree(options);
+	return {
+		missing,
+		byFeature,
+		exposed: tree.files,
+		exposedDirectories: tree.directories,
+	};
 }
 
 /**
@@ -485,6 +630,71 @@ export function formatExposedKeyFileFix(
 	keysDir: string,
 ): string {
 	return `chmod 600 ${join(displayKeysDir(keysDir), entry.file)}`;
+}
+
+/**
+ * Quote a path for a POSIX shell.
+ *
+ * The key directory can hold a file name with a space, a quote or a dollar
+ * sign. The command must not run into the shell, and it must not turn a
+ * name into a second command.
+ */
+export function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The one command that makes the whole key tree private again.
+ *
+ * The startup summary shows ONE command, not one command per file: a list
+ * of twenty `chmod` lines is a list nobody runs. The command covers the
+ * key directory, the directories below it and the files in it, and it is
+ * safe for any file name - `find` passes the names to `chmod` itself, so
+ * no name is ever interpreted by the shell.
+ *
+ * The command is never executed by the harness. It is a suggestion for the
+ * operator, and the operator decides when to run it.
+ */
+export function formatKeyPermissionFix(
+	keysDir: string,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	if (platform === "win32") {
+		// Windows has no Unix mode bits. The equivalent is the access
+		// control list of the directory and of the files below it.
+		return `icacls "${keysDir.replace(/"/g, '""')}" /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" /T`;
+	}
+	const dir = shellQuote(keysDir);
+	return (
+		`chmod 700 ${dir} && ` +
+		`find ${dir} -type d -exec chmod 700 {} + && ` +
+		`find ${dir} -type f -exec chmod 600 {} +`
+	);
+}
+
+/**
+ * The fix lines for the exposed key files and directories.
+ *
+ * On a Unix-like system this is the single batch command. On Windows it is
+ * the guidance that the same intent needs - the Unix command does not
+ * exist there and would only confuse the operator.
+ */
+export function formatKeyPermissionFixes(options: {
+	/** The key directory to repair. */
+	keysDir: string;
+	/** The platform the commands are written for. */
+	platform?: NodeJS.Platform;
+}): string[] {
+	const platform = options.platform ?? process.platform;
+	const command = formatKeyPermissionFix(options.keysDir, platform);
+	if (platform === "win32") {
+		return [
+			"Windows: restrict the key directory to your account (the Unix mode bits do not exist here).",
+			command,
+			"The command changes the access rights, not the values.",
+		];
+	}
+	return [command];
 }
 
 /**

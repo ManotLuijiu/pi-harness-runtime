@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.449](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.449) (2026-10-27)
+
+
+### Features
+
+* **jev:** the pending question carries the ask and the answer ([a792133](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a792133e517fb8c12d3363e98942f3af30270f27))
+* **merge:** a manual run can leave the merge to the pull request event ([b3d1950](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b3d1950b5941c78ccd56951acdafd1d4afbe1bff))
+
+
+### Bug Fixes
+
+* **hooks:** a tag is checked through the commit behind it ([c823e8e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c823e8e1f6973c62b5449a97c101759a4d5cbba5))
+* **keys:** the key directory is audited as a tree ([081cc75](https://github.com/ManotLuijiu/pi-harness-runtime/commit/081cc75ac8ceff36b0d619c3f76371dc08459d3c))
+* **merge:** the boolean input is read as a boolean ([971b716](https://github.com/ManotLuijiu/pi-harness-runtime/commit/971b7169a43db382dbdeb6bb9bab02ab56e0351c))
+* **merge:** the manual job needs the right of the merge ([7ba685e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ba685ec43d815f90aa35b742579e87e76c69209))
+* **merge:** the merge of the pull request is the GraphQL mutation ([972bab4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/972bab4b0f7faf1b0047f3bb767ef6db3de4b2fa))
+* **merge:** the workflow merges the pull request the gates cleared ([d7639ec](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7639ec9b83723510acb4a5c4e23d5d6167c3af6))
+
 ### [1.1.448](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.447...v1.1.448) (2026-10-26)
 
 

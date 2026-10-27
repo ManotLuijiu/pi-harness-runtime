@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm, chmod, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, chmod, mkdir, symlink } from "node:fs/promises";
 import { tmpdir, homedir as osHomedir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +19,9 @@ import {
 	formatExposedKeyFileFixes,
 	formatKeyFileFix,
 	formatKeyFileFixes,
+	formatKeyPermissionFix,
+	formatKeyPermissionFixes,
+	scanExposedKeyDirectories,
 	scanExposedKeyFiles,
 	selectKeyFileFixes,
 	KEY_REQUIREMENTS,
@@ -830,4 +833,165 @@ test("a single key file gets a command of its own", () => {
 		"/home/user/.pi-harness-runtime/keys",
 	);
 	assert.equal(fix, "chmod 600 /home/user/.pi-harness-runtime/keys/openai-api-key.txt");
+});
+
+// The mode of the key directory.
+//
+// A directory of mode 755 hands the NAME of every key file to every
+// account on the machine, and a nested directory does the same for the
+// secrets below it. The key directory itself is therefore part of the
+// audit - it is the directory the harness creates, so its mode is the
+// mode the harness chose.
+
+test("a key directory that others can read is reported", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await chmod(dir, 0o755);
+		const directories = scanExposedKeyDirectories({ keysDir: dir });
+		assert.equal(directories.length, 1);
+		// The key directory itself is ".".
+		assert.equal(directories[0].name, ".");
+		assert.equal(directories[0].mode, "755");
+		assert.equal(directories[0].readableBy, "group and others");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a private key directory is not reported", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await chmod(dir, 0o700);
+		assert.deepEqual(scanExposedKeyDirectories({ keysDir: dir }), []);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a nested directory that others can reach is reported", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await mkdir(join(dir, "sub"), { recursive: true });
+		await chmod(join(dir, "sub"), 0o755);
+		await chmod(dir, 0o700);
+		const directories = scanExposedKeyDirectories({ keysDir: dir });
+		assert.equal(directories.length, 1);
+		assert.equal(directories[0].name, "sub");
+		assert.equal(directories[0].mode, "755");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a key file in a nested directory is audited", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await mkdir(join(dir, "sub"), { recursive: true });
+		await writeFile(join(dir, "sub", "openai-api-key.txt"), "sk-example\n", "utf8");
+		await chmod(join(dir, "sub", "openai-api-key.txt"), 0o644);
+		await chmod(join(dir, "sub"), 0o700);
+		await chmod(dir, 0o700);
+		const exposed = scanExposedKeyFiles({ keysDir: dir });
+		assert.equal(exposed.length, 1);
+		assert.equal(exposed[0].file, "sub/openai-api-key.txt");
+		assert.equal(exposed[0].mode, "644");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a symbolic link is never followed and never a key file", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await writeFile(join(dir, "secret.txt"), "sk-example\n", "utf8");
+		await chmod(join(dir, "secret.txt"), 0o644);
+		await symlink(join(dir, "secret.txt"), join(dir, "link.txt"));
+		await chmod(dir, 0o700);
+		const exposed = scanExposedKeyFiles({ keysDir: dir });
+		// The link is not a second entry: only the file it points at.
+		assert.equal(exposed.length, 1);
+		assert.equal(exposed[0].file, "secret.txt");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a symbolic link to a directory is not walked", async () => {
+	const dir = await makeKeysDir();
+	try {
+		await mkdir(join(dir, "real"), { recursive: true });
+		await writeFile(join(dir, "real", "openai-api-key.txt"), "sk-example\n", "utf8");
+		await chmod(join(dir, "real", "openai-api-key.txt"), 0o644);
+		await chmod(join(dir, "real"), 0o755);
+		await symlink(join(dir, "real"), join(dir, "linkdir"));
+		await chmod(dir, 0o700);
+		const directories = scanExposedKeyDirectories({ keysDir: dir });
+		assert.ok(
+			directories.every((entry) => entry.name !== "linkdir"),
+			`a link is not a directory of the key tree: ${JSON.stringify(directories)}`,
+		);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a missing key directory is not an exposure", async () => {
+	const missing = join(tmpdir(), "key-audit-does-not-exist-4711");
+	assert.deepEqual(scanExposedKeyFiles({ keysDir: missing }), []);
+	assert.deepEqual(scanExposedKeyDirectories({ keysDir: missing }), []);
+});
+
+// The repair.
+//
+// The summary shows ONE command for the whole key tree. A list of one
+// `chmod` per file is a list nobody runs, and a command that names every
+// file is a command that breaks on the first file name with a space.
+
+test("the repair of the key tree is one batch command", () => {
+	const fixes = formatKeyPermissionFixes({
+		keysDir: "/home/user/.pi-harness-runtime/keys",
+		platform: "linux",
+	});
+	assert.equal(fixes.length, 1);
+	const command = fixes[0];
+	assert.match(command, /^chmod 700 /);
+	assert.match(command, /-type d -exec chmod 700 \{\} \+/);
+	assert.match(command, /-type f -exec chmod 600 \{\} \+/);
+	// The command is one line, not a list.
+	assert.equal(command.includes("\n"), false);
+});
+
+test("the batch command quotes the key directory", () => {
+	const command = formatKeyPermissionFix(
+		"/home/user/my keys/.pi-harness-runtime/keys",
+		"linux",
+	);
+	assert.match(command, /'[^']*my keys/);
+	// The name is inside the quotes, not outside.
+	assert.equal(command.includes("/home/user/my keys/.pi-harness-runtime/keys'"), true);
+});
+
+test("a quote in the key directory cannot escape the command", () => {
+	const command = formatKeyPermissionFix("/home/o'brien/keys", "linux");
+	// The single quote is closed, escaped and opened again, so the shell
+	// reads exactly one path.
+	assert.equal(command.includes("'/home/o'\\''brien/keys'"), true);
+	assert.equal(command.includes("; rm"), false);
+});
+
+test("Windows gets Windows guidance and no Unix command", () => {
+	const fixes = formatKeyPermissionFixes({
+		keysDir: "C:\\Users\\user\\.pi-harness-runtime\\keys",
+		platform: "win32",
+	});
+	assert.ok(fixes.length >= 1);
+	const text = fixes.join("\n");
+	assert.equal(text.includes("chmod"), false);
+	assert.match(text, /icacls/);
+	assert.match(text, /Windows/);
+});
+
+test("the repair never names a value", () => {
+	const command = formatKeyPermissionFix("/home/user/.pi-harness-runtime/keys", "linux");
+	assert.equal(command.includes("sk-"), false);
 });
