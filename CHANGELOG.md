@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.456](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.456) (2026-10-27)
+
+
+### Features
+
+* **delegation:** a child is only a child when it really ran ([ac4e678](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ac4e6782d7d4bc4941e458425c8a9f38a51fc9d4))
+* **delegation:** the scope of a request is measured before it is judged ([684b6a5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/684b6a55184f63d3be24c48dcecfb0b13410dc15))
+* **jev:** the pending question carries the ask and the answer ([a792133](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a792133e517fb8c12d3363e98942f3af30270f27))
+* **merge:** a manual run can leave the merge to the pull request event ([b3d1950](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b3d1950b5941c78ccd56951acdafd1d4afbe1bff))
+* **phase:** the agent owns the todo list and the harness says so ([c489370](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c489370bd7926aece8cb1a77aa20ca2d2672f1fb))
+* **review:** the review starts on its own when the implementation is done ([04f51f5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/04f51f599cd3222b6c74dd8fadb1373bd72d9bd7))
+* **status:** the status line names the phase, the progress and the children ([0167bf3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0167bf396a0b987c1d44f3b869351976a951dd65))
+* **test:** the task waits for the final tier of the validation plan ([fa147db](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fa147dbf7d50d56e6ea48c6d8fbb4fcb190caf8a))
+* **validation:** a large job starts with a measured pilot ([425964b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/425964b04a3d4fa02adfabed47ff62c5ec2b9c28))
+* **validation:** the size of a job is a fact, not a phrase ([8aa6c11](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8aa6c119565d0f8412dc8aeafa6b295d47d3f093))
+
+
+### Bug Fixes
+
+* **hooks:** a tag is checked through the commit behind it ([c823e8e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c823e8e1f6973c62b5449a97c101759a4d5cbba5))
+* **jev:** the alternatives of a question are parsed without a quadratic pattern ([63016a3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/63016a3f0488acb801990dd46770c00d382b5858))
+* **keys:** the key directory is audited as a tree ([081cc75](https://github.com/ManotLuijiu/pi-harness-runtime/commit/081cc75ac8ceff36b0d619c3f76371dc08459d3c))
+* **merge:** the boolean input is read as a boolean ([971b716](https://github.com/ManotLuijiu/pi-harness-runtime/commit/971b7169a43db382dbdeb6bb9bab02ab56e0351c))
+* **merge:** the manual job needs the right of the merge ([7ba685e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ba685ec43d815f90aa35b742579e87e76c69209))
+* **merge:** the merge of the pull request is the GraphQL mutation ([972bab4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/972bab4b0f7faf1b0047f3bb767ef6db3de4b2fa))
+* **merge:** the workflow merges the pull request the gates cleared ([d7639ec](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7639ec9b83723510acb4a5c4e23d5d6167c3af6))
+* **release:** a manual release keeps the version of its manifest ([122e661](https://github.com/ManotLuijiu/pi-harness-runtime/commit/122e661ea48cb8aff14c71dbd0221a4cf0ba4c8e))
+* **release:** the channels of the package name the release ([a7a273f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a7a273ffe8398e2b5b07ef1c321777de41792c6e))
+* **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
+* **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
+
 ### [1.1.455](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.455) (2026-10-27)
 
 
