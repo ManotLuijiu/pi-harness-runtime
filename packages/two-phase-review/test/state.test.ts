@@ -11,6 +11,7 @@ import { readdirSync, writeFileSync } from "node:fs";
 import {
 	TwoPhaseStateStore,
 	allChunksDone,
+	completeWithoutReview,
 	createState,
 	hasQueuedReview,
 	markChunkDone,
@@ -126,6 +127,18 @@ describe("phases", () => {
 
 		const reviewed = markChunkDone(review, "chunk-1");
 		expect(markComplete(reviewed).phase).toBe("complete");
+	});
+
+	it("completes a task without a review only when the scope is empty", () => {
+		// A task that changed a file needs the review.
+		expect(completeWithoutReview(createState("t"), ["index.ts"]).phase).toBe(
+			"implementation",
+		);
+		// A task without a diff has nothing a review could cover.
+		expect(completeWithoutReview(createState("t"), []).phase).toBe("complete");
+		// The completion never moves the phase backwards.
+		const review = startReview(createState("t"), [chunk("chunk-1")]);
+		expect(completeWithoutReview(review, []).phase).toBe("review");
 	});
 
 	it("never moves the phase backwards", () => {

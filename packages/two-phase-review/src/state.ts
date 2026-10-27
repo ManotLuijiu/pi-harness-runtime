@@ -29,7 +29,8 @@ const PHASE_ORDER: Record<TwoPhasePhase, number> = {
 	review_pending: 1,
 	review: 2,
 	review_fixes: 3,
-	complete: 4,
+	test_pending: 4,
+	complete: 5,
 };
 
 /** Makes the name of a temporary state file unique. */
@@ -66,7 +67,14 @@ function listDir(dir: string): string {
 function isPhase(value: unknown): value is TwoPhasePhase {
 	return (
 		typeof value === "string" &&
-		["implementation", "review_pending", "review", "review_fixes", "complete"].includes(value)
+		[
+			"implementation",
+			"review_pending",
+			"review",
+			"review_fixes",
+			"test_pending",
+			"complete",
+		].includes(value)
 	);
 }
 
@@ -257,6 +265,18 @@ export function transitionToReviewFixes(state: TwoPhaseState): TwoPhaseState {
 	return moveToPhase(state, "review_fixes");
 }
 
+/**
+ * The review is done: the validation of the task is now the work.
+ *
+ * The phase only moves when the review really ran over every chunk: a test
+ * phase before the review would hide the work that is still open.
+ */
+export function transitionToTestPending(state: TwoPhaseState): TwoPhaseState {
+	if (state.phase !== "review" && state.phase !== "review_fixes") return state;
+	if (!allChunksDone(state)) return state;
+	return moveToPhase(state, "test_pending");
+}
+
 /** Every chunk is finished. */
 export function allChunksDone(state: TwoPhaseState): boolean {
 	return state.chunks.length > 0 && state.chunks.every((chunk) => chunk.status === "done");
@@ -271,6 +291,22 @@ export function allChunksDone(state: TwoPhaseState): boolean {
 export function markComplete(state: TwoPhaseState): TwoPhaseState {
 	if (state.phase === "implementation" || state.phase === "review_pending") return state;
 	if (!allChunksDone(state)) return state;
+	return moveToPhase(state, "complete");
+}
+
+/**
+ * The task changed no file, so there is nothing to review.
+ *
+ * This is the one case in which the implementation phase completes the task
+ * on its own: a review without a diff has nothing to cover. A scope with
+ * files never completes here - that scope needs the review.
+ */
+export function completeWithoutReview(
+	state: TwoPhaseState,
+	scopeFiles: string[] = [],
+): TwoPhaseState {
+	if (state.phase !== "implementation") return state;
+	if (scopeFiles.length > 0) return state;
 	return moveToPhase(state, "complete");
 }
 

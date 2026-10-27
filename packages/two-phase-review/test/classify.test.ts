@@ -10,6 +10,7 @@ import {
 	IMPLEMENT_PREFIX,
 	REVIEW_FIX_PREFIX,
 	REVIEW_PREFIX,
+	TEST_PREFIX,
 	buildTodoSubject,
 	classifyTodo,
 	hasOpenImplementationWork,
@@ -17,6 +18,7 @@ import {
 	reviewFixTodos,
 	reviewTodos,
 	summarizeTodos,
+	testTodos,
 } from "../src/classify.js";
 
 describe("classifyTodo", () => {
@@ -28,12 +30,14 @@ describe("classifyTodo", () => {
 		expect(classifyTodo({ subject: "anything", metadata: { kind: "review_fix" } })).toBe(
 			"review_fix",
 		);
+		expect(classifyTodo({ subject: "anything", metadata: { kind: "test" } })).toBe("test");
 	});
 
 	it("reads the kind from the title prefix", () => {
 		expect(classifyTodo({ subject: `${IMPLEMENT_PREFIX} Add storage` })).toBe("implement");
 		expect(classifyTodo({ subject: `${REVIEW_PREFIX} Review the diff` })).toBe("review");
 		expect(classifyTodo({ subject: `${REVIEW_FIX_PREFIX} Fix the race` })).toBe("review_fix");
+		expect(classifyTodo({ subject: `${TEST_PREFIX} Validate the task` })).toBe("test");
 	});
 
 	it("keeps a review fix apart from a review", () => {
@@ -58,6 +62,7 @@ describe("implementation work", () => {
 		{ id: 3, subject: `${REVIEW_FIX_PREFIX} Fix the race`, status: "pending" },
 		{ id: 4, subject: "Unprefixed work", status: "in_progress" },
 		{ id: 5, subject: "Done already", status: "completed" },
+		{ id: 6, subject: `${TEST_PREFIX} Validate the task`, status: "pending" },
 	];
 
 	it("counts the queued review work as no implementation work", () => {
@@ -76,8 +81,20 @@ describe("implementation work", () => {
 		expect(reviewFixTodos(todos).map((todo) => todo.id)).toEqual([3]);
 	});
 
+	it("never counts a test item as implementation work", () => {
+		// The validation of the task belongs to the phase after the review.
+		expect(implementationTodos(todos).map((todo) => todo.id)).toEqual([1, 4]);
+		expect(hasOpenImplementationWork([todos[5]])).toBe(false);
+		expect(testTodos(todos).map((todo) => todo.id)).toEqual([6]);
+	});
+
 	it("summarizes the open items", () => {
-		expect(summarizeTodos(todos)).toEqual({ implementation: 2, review: 1, reviewFix: 1 });
+		expect(summarizeTodos(todos)).toEqual({
+			implementation: 2,
+			review: 1,
+			reviewFix: 1,
+			test: 1,
+		});
 	});
 });
 
@@ -91,6 +108,9 @@ describe("buildTodoSubject", () => {
 		);
 		expect(buildTodoSubject("review_fix", "Fix the race")).toBe(
 			`${REVIEW_FIX_PREFIX} Fix the race`,
+		);
+		expect(buildTodoSubject("test", "Validate the task")).toBe(
+			`${TEST_PREFIX} Validate the task`,
 		);
 	});
 

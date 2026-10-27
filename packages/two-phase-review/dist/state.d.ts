@@ -58,6 +58,13 @@ export declare function recordFinding(state: TwoPhaseState, finding: ReviewFindi
  * ran would hide the work that is still open.
  */
 export declare function transitionToReviewFixes(state: TwoPhaseState): TwoPhaseState;
+/**
+ * The review is done: the validation of the task is now the work.
+ *
+ * The phase only moves when the review really ran over every chunk: a test
+ * phase before the review would hide the work that is still open.
+ */
+export declare function transitionToTestPending(state: TwoPhaseState): TwoPhaseState;
 /** Every chunk is finished. */
 export declare function allChunksDone(state: TwoPhaseState): boolean;
 /**
@@ -67,6 +74,14 @@ export declare function allChunksDone(state: TwoPhaseState): boolean;
  * implementation phase never completes the task on its own.
  */
 export declare function markComplete(state: TwoPhaseState): TwoPhaseState;
+/**
+ * The task changed no file, so there is nothing to review.
+ *
+ * This is the one case in which the implementation phase completes the task
+ * on its own: a review without a diff has nothing to cover. A scope with
+ * files never completes here - that scope needs the review.
+ */
+export declare function completeWithoutReview(state: TwoPhaseState, scopeFiles?: string[]): TwoPhaseState;
 /** Is a review queued? */
 export declare function hasQueuedReview(state: TwoPhaseState): boolean;
 //# sourceMappingURL=state.d.ts.map

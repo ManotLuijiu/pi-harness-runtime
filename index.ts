@@ -253,6 +253,9 @@ function keyFileFixesOrFallback(feature: string, labels: string[]): string[] {
 const sharedState = {
 	waitingForUserSince: null as Date | null,
 	todoContinuationController: null as unknown,
+	// The ledger of the validation runs. The two-phase workflow reads it to
+	// know whether the final tier of a test item passed.
+	validationLedger: null as unknown,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	updateAutoContinueStatus: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -440,6 +443,43 @@ async function loadTwoPhaseModule(): Promise<TwoPhaseModule | null> {
 }
 
 /**
+ * Measure the scope of a request in the workspace.
+ *
+ * The measurement is the only source of the numbers the delegation
+ * assessment uses: the request names the files, or the session changed
+ * them. When nothing can be measured the result is null, and the caller
+ * says that instead of inventing a scope.
+ */
+async function measureDelegationScope(
+	userMessage: string,
+): Promise<import("./packages/jev-judge/dist/delegation-harness.js").ScopeFacts | null> {
+	try {
+		const scope = await import("./packages/jev-judge/dist/delegation-scope.js");
+		const harness = await import("./packages/jev-judge/dist/delegation-harness.js");
+		const measurement = scope.measureScope({
+			workspacePath: _piSessionCwd || process.cwd(),
+			hints: scope.scopeHintsFromText(userMessage),
+		});
+		if (measurement.files.length === 0) return null;
+		return harness.scopeFactsFromMeasurement(measurement);
+	} catch (error) {
+		logToFile("[Delegation]", "Scope measurement failed:", oneLineError(error));
+		return null;
+	}
+}
+
+/**
+ * The decision of the delegation assessment, as the harness returns it.
+ */
+type DelegationDecisionLike = {
+	strategy: string;
+	reason: string;
+	workGroups?: { id: string; files: string[] }[];
+	dispatched?: boolean;
+	dispatchTool?: string;
+};
+
+/**
  * Register the two-phase workflow in the session.
  *
  * The wiring itself lives in the package (it is tested there). The session
@@ -473,10 +513,55 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 		}
 	};
 
+	/**
+	 * Read the validation state of the test items of the session.
+	 *
+	 * The ledger is the only mechanical source for "did the final tier
+	 * pass?". The workflow never runs a test itself, it only reads what the
+	 * ledger recorded.
+	 */
+	const readValidation = async (todos: TwoPhaseTodoLike[]) => {
+		const ledger = sharedState.validationLedger as
+			| import("./packages/jev-judge/dist/validation-ledger.js").ValidationLedger
+			| null
+			| undefined;
+		if (!ledger) {
+			return {
+				available: false,
+				pendingFinalTier: 0,
+				failedFinalTier: 0,
+				incompletePlan: 0,
+				reason: "the validation ledger is not initialized",
+			};
+		}
+		let pendingFinalTier = 0;
+		let failedFinalTier = 0;
+		let incompletePlan = 0;
+		for (const todo of todos) {
+			if (todo.id === undefined) continue;
+			if (mod.classifyTodo(todo) !== "test") continue;
+			const state = ledger.stateFor(todo as never);
+			if (state.planIncomplete) {
+				incompletePlan += 1;
+				continue;
+			}
+			if (!state.finalTierRequired) continue;
+			const status = state.full.status;
+			if (status === "passed") continue;
+			if (status === "failed" || status === "timeout" || status === "error") {
+				failedFinalTier += 1;
+			} else {
+				pendingFinalTier += 1;
+			}
+		}
+		return { available: true, pendingFinalTier, failedFinalTier, incompletePlan };
+	};
+
 	try {
 		await mod.initTwoPhaseReview({
 			pi,
 			readTodos,
+			readValidation,
 			workspaceRoot: () => {
 				try {
 					return realpathSync(process.cwd());
@@ -748,6 +833,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 		logStartup("[pi-harness] Delegation harness initialized");
 
+		// The lifecycle of a continuation the harness started itself: the
+		// status stays "RUN" until the turn settles.
+		const { ContinuationGate } = await import(
+			"./packages/jev-judge/dist/continuation-status.js"
+		);
+
 		// The Jev key is missing: the fix commands must survive every later
 		// message with the same label - `HarnessStartupStatus.update` replaces
 		// a message by label, so a later "verifying API..." line would drop
@@ -774,6 +865,44 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let lastUserMessage: Date | null = null;
 		let autoContinueTimer: NodeJS.Timeout | null = null;
 		let _inferenceInProgress = false; // Track for overlap prevention
+		// A continuation was dispatched and its turn has not settled yet.
+		// The gate owns that state: the status stays "RUN" until the turn
+		// settles, and no timer may clear it in the meantime.
+		const _continuation = new ContinuationGate();
+		// The measured scope that was already handed to the agent. The
+		// plan is sent once per scope, not once per message.
+		let _lastDelegationPlanFingerprint: string | null = null;
+
+		/**
+		 * Hand the measured delegation plan to the agent.
+		 *
+		 * The harness measured the scope; the agent is the one that sends
+		 * the groups to the sub-agent tool. The message says so, and the
+		 * plan is not repeated for a scope the agent already knows.
+		 */
+		async function handDelegationPlanToAgent(
+			decision: DelegationDecisionLike | null,
+			fingerprint: string,
+		): Promise<void> {
+			if (!decision) return;
+			if (_lastDelegationPlanFingerprint === fingerprint) return;
+			let message: string | null = null;
+			try {
+				const harness = await import("./packages/jev-judge/dist/delegation-harness.js");
+				message = harness.buildDelegationSteer(decision);
+			} catch (error) {
+				logToFile("[Delegation]", "The delegation plan could not be built:", oneLineError(error));
+				return;
+			}
+			if (!message) return;
+			_lastDelegationPlanFingerprint = fingerprint;
+			try {
+				await pi.sendUserMessage(message, { deliverAs: "steer" });
+				logToFile("[Delegation]", "The measured delegation plan was handed to the agent");
+			} catch (error) {
+				logToFile("[Delegation]", "The delegation steer failed:", oneLineError(error));
+			}
+		}
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
 		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
 		let _completedNotifiedFor: string | null = null; // Track completion notification deduplication
@@ -1478,8 +1607,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					sharedState.waitingForUserSince = null;
 					_lastNotifiedQuestion = "";
 
-					// Clear status after short delay
-					setTimeout(() => updateAutoContinueStatus("IDLE"), 2000);
+					// The status stays "RUN" until the turn that the steer
+					// started has settled. A timer would clear it while the
+					// agent is still working, and the status would claim
+					// that nothing runs any more.
+					_continuation.begin();
 				}
 				_inferenceInProgress = false;
 			} catch {
@@ -1523,6 +1655,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						);
 					},
 				});
+				// The two-phase workflow reads the same ledger: the phase gate
+				// and the completion report must never disagree about a tier.
+				sharedState.validationLedger = validationLedger;
 				// SAFETY: ctx is ExtensionContext with sessionManager, isIdle, hasPendingMessages
 				// dispatch uses pi.sendUserMessage for actual message delivery
 				todoContinuationController = new TodoContinuationController(
@@ -1546,6 +1681,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// keep a timer alive nor block a later continuation.
 			todoContinuationController?.dispose?.();
 			todoContinuationController = null;
+			sharedState.validationLedger = null;
 		});
 
 		// --- task-intake: Automatic todo capture from user requests -----------
@@ -1637,25 +1773,33 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					];
 					const isLargeRefactor = largeRefactorPatterns.some((p) => p.test(lowerMsg));
 					if (isLargeRefactor) {
-						logToFile("[Delegation]", "Large refactor request detected, triggering assessment");
-						// Trigger delegation assessment asynchronously
-						sharedState.delegationHarness.assess({
-							estimatedFiles: 10,
-							observedFiles: 10,
-							estimatedCallSites: 50,
-							observedCallSites: 50,
-							independentComponents: 2,
-							tightlyCoupled: false,
-							isMechanical: false,
-							isComplex: true,
-							fileTypes: {},
-							fingerprint: `user-msg-${Date.now()}`,
-						}, "user-request").then((decision: { strategy: string; reason: string } | null) => {
-						if (decision) {
-							logToFile("[Delegation]", `Assessment result: ${decision.strategy} - ${decision.reason}`);
-						}
-					}).catch((e: unknown) => logToFile("[Delegation]", "Assessment error:", String(e)));
-				}
+						// The scope is measured in the workspace: the request
+						// names the files, or the session changed them. A
+						// number that nobody counted is not a scope, so the
+						// assessment waits for the measurement.
+						logToFile("[Delegation]", "Large refactor request detected, measuring the scope");
+						measureDelegationScope(userMessage)
+							.then((facts) => {
+								if (!facts) {
+									logToFile("[Delegation]", "No measurable scope in the request - no delegation assessment");
+									return null;
+								}
+								return sharedState.delegationHarness
+									.assess(facts, `user-request-${facts.fingerprint}`)
+									.then(async (decision: DelegationDecisionLike | null) => {
+										if (decision) {
+											logToFile(
+												"[Delegation]",
+												`Assessment: ${decision.strategy} - ${decision.reason} (${decision.workGroups?.length ?? 0} measured group(s), dispatched=${decision.dispatched === true})`,
+											);
+										}
+										await handDelegationPlanToAgent(decision, facts.fingerprint);
+										return decision;
+									})
+									.catch((e: unknown) => logToFile("[Delegation]", "Assessment error:", String(e)));
+							})
+							.catch((e: unknown) => logToFile("[Delegation]", "Scope measurement failed:", String(e)));
+					}
 				}
 
 				// Temporary pause for user input processing (auto-clears on next decision)
@@ -1720,6 +1864,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// Keeping it set would block every later dispatch while still
 			// consuming the retry budget.
 			todoContinuationController?.releaseContinuationGuard?.("agent_settled");
+
+			// The turn that a continuation started has settled: the status
+			// returns to idle, unless the handler below dispatches the next
+			// continuation.
+			if (_continuation.settle()) {
+				updateAutoContinueStatus("IDLE");
+			}
 
 			// Don't continue if user is waiting for response
 			if (waitingForUserSince) {

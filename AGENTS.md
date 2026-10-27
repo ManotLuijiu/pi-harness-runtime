@@ -273,6 +273,18 @@ ls packages/notification/dist/
 bun add -d typescript
 ```
 
+**The canonical build**: the compiled output that is committed comes from
+`bun scripts/build-packages.ts`, which uses the TypeScript of the root
+(`node_modules/.bin/tsc`). A package-level `bun run build` uses the
+TypeScript that the package itself installed, and the two write different
+source maps for the same source. A package-level build therefore leaves
+the tree with a `dist/` that the next canonical build changes again.
+
+```bash
+# The build whose output is committed
+bun scripts/build-packages.ts
+```
+
 ## Icon Usage
 
 **This is a Node.js CLI daemon — do NOT add React as a dependency for icons.**
@@ -340,6 +352,47 @@ todo create "Replace Film icon with themed icon"
 **Why**: Agents often identify issues verbally but forget to track them. This rule ensures nothing slips through.
 
 **IMPORTANT**: The `todo` tool and `bd` commands are DIFFERENT systems. Use `todo` for local task tracking.
+
+---
+
+## Phase Model: Implementation, Review, Validation (CRITICAL)
+
+A task with several steps runs in three phases, and the harness enforces
+the order. The todo prefixes are the contract:
+
+| Prefix | Meaning |
+|--------|---------|
+| `[IMPLEMENT]` | implementation work of the current request |
+| `[REVIEW]` | the review of the task diff (one todo per chunk) |
+| `[REVIEW-FIX]` | a confirmed finding that has to be fixed |
+| `[TEST]` | the validation of the task (the tiers are declared in its metadata) |
+
+**Phase 1 - implementation.** Every open `[IMPLEMENT]` todo (and every
+unclassified todo) is implementation work. The phase ends when the list
+shows finished implementation work.
+
+**Phase 2 - review.** The review starts **on its own**: as soon as the
+implementation is done and the task changed a file, the harness derives the
+scope from the task diff, splits it into chunks and asks for one `[REVIEW]`
+todo per chunk. You never have to queue a review item to get one. A task
+that changed no file completes without a review - there is nothing to
+review.
+
+**Phase 3 - validation.** A `[TEST]` todo declares the validation plan of
+the task in `metadata.validationPlan` (see the section above) and the
+recorded runs in the validation ledger decide whether the task is done:
+
+- The task is **not** complete while the required final tier is pending.
+- The task is **not** complete when the final tier failed, timed out or
+  errored.
+- A plan that requires a final tier but declares none is an error to
+  report, not a plan to complete.
+- A validation state that cannot be read is never a validation that
+  passed.
+
+So the order of a real task is: implement, review the diff, fix the
+findings, run the tiers, record them, and only then report the task as
+done.
 
 ---
 

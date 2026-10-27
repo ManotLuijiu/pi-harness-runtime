@@ -8,9 +8,10 @@
  */
 
 import {
+	completedImplementationTodos,
 	implementationTodos,
 	reviewFixTodos,
-	reviewTodos,
+	testTodos,
 	type TodoLike,
 } from "./classify.js";
 import {
@@ -22,13 +23,14 @@ import { chunkScope, collectScope, currentRevision } from "./scope.js";
 import {
 	TwoPhaseStateStore,
 	allChunksDone,
+	completeWithoutReview,
 	createState,
-	hasQueuedReview,
 	markComplete,
 	recordSignal,
 	startReview,
 	transitionToReviewFixes,
 	transitionToReviewPending,
+	transitionToTestPending,
 } from "./state.js";
 import {
 	TWO_PHASE_CONTRACT,
@@ -40,7 +42,14 @@ import {
 	buildReviewTodoSubject,
 	formatPhaseStatus,
 	syncChunkStatus,
+	type PhaseView,
 } from "./rules.js";
+import {
+	emptyValidationGateState,
+	validationGateSatisfied,
+	type ValidationGateReader,
+	type ValidationGateState,
+} from "./validation.js";
 import type { TwoPhasePhase, TwoPhaseState } from "./types.js";
 
 /** The marker every message of the harness itself carries. */
@@ -85,6 +94,14 @@ export interface TwoPhaseRuntimeOptions {
 	log?: (message: string) => void;
 	/** Extra review tool patterns of the deployment. */
 	extraPatterns?: string[];
+	/**
+	 * Reads the validation state of the test items of the session.
+	 *
+	 * The workflow never runs the tests itself: it reads the ledger of the
+	 * session, so the phase gate and the ledger can never disagree about
+	 * whether a tier passed.
+	 */
+	readValidation?: ValidationGateReader;
 }
 
 /** The runtime of the workflow. */
@@ -177,10 +194,32 @@ export async function initTwoPhaseReview(
 		}
 	};
 
-	const updateStatus = (ctx: unknown): void => {
-		const context = ctx as TwoPhaseExtensionContext | undefined;
+	const readValidation = async (todos: TodoLike[]): Promise<ValidationGateState> => {
+		if (!options.readValidation) {
+			return {
+				...emptyValidationGateState(),
+				reason: "no validation ledger is wired into the workflow",
+			};
+		}
 		try {
-			context?.ui?.setStatus?.("harness-review", formatPhaseStatus(state));
+			const result = await options.readValidation(todos);
+			return { ...emptyValidationGateState(), ...result };
+		} catch (error) {
+			return { ...emptyValidationGateState(), reason: errorMessage(error) };
+		}
+	};
+
+	const updateStatus = (
+		ctx: unknown,
+		todos?: TodoLike[],
+		validation?: ValidationGateState,
+	): void => {
+		const context = ctx as TwoPhaseExtensionContext | undefined;
+		const view: PhaseView | undefined = todos
+			? buildPhaseView(state, todos, validation)
+			: undefined;
+		try {
+			context?.ui?.setStatus?.("harness-review", formatPhaseStatus(state, view));
 		} catch {
 			// The status line is a convenience, never a requirement.
 		}
@@ -191,14 +230,26 @@ export async function initTwoPhaseReview(
 	 *
 	 * The chunk status only moves forward, so a todo list that is briefly
 	 * empty can never erase the progress of the review.
+	 *
+	 * The task is only complete when the validation of the test items is
+	 * done: a final tier that is pending or failed keeps the task open.
 	 */
-	const syncProgress = (todos: TodoLike[]): void => {
+	const syncProgress = async (todos: TodoLike[]): Promise<void> => {
 		const synced = syncChunkStatus(state, todos);
 		const openFixes = reviewFixTodos(todos).length;
+		const openTests = testTodos(todos).length;
+		const validation = await readValidation(todos);
+		const workDone = openTests === 0 && validationGateSatisfied(validation);
+		// The work is finished when the validation is done, otherwise the task
+		// waits in the phase that owns the open test items.
+		const finish = (next: TwoPhaseState): TwoPhaseState =>
+			workDone ? markComplete(next) : transitionToTestPending(next);
 		let next = synced;
 		if (next.phase === "review" && allChunksDone(next)) {
-			next = openFixes > 0 ? transitionToReviewFixes(next) : markComplete(next);
+			next = openFixes > 0 ? transitionToReviewFixes(next) : finish(next);
 		} else if (next.phase === "review_fixes" && openFixes === 0) {
+			next = finish(next);
+		} else if (next.phase === "test_pending" && workDone) {
 			next = markComplete(next);
 		}
 		if (next !== state) persist(next);
@@ -288,7 +339,7 @@ export async function initTwoPhaseReview(
 					// The session entry is a copy; the state file is the truth.
 				}
 			}
-			updateStatus(ctx);
+			updateStatus(ctx, read.todos);
 
 			return {
 				block: true,
@@ -311,24 +362,36 @@ export async function initTwoPhaseReview(
 
 		if (state.phase === "implementation") {
 			if (implementationTodos(read.todos).length > 0) {
-				updateStatus(ctx);
+				updateStatus(ctx, read.todos);
 				return undefined;
 			}
-			const queued = hasQueuedReview(state) || reviewTodos(read.todos).length > 0;
-			if (!queued) {
-				updateStatus(ctx);
+			// The implementation is over only when the todo list shows that
+			// implementation work actually finished. Without that evidence the
+			// workflow waits: it never guesses that a task is done.
+			if (completedImplementationTodos(read.todos).length === 0) {
+				updateStatus(ctx, read.todos);
 				return undefined;
 			}
 
+			// The review starts on its own: its scope is the measured diff of
+			// the task, not a signal the agent has to raise.
 			const scope = collectScope(workspaceRoot(), state.startRevision);
+			if (scope.files.length === 0) {
+				// The task changed no file, so there is nothing to review.
+				const done = completeWithoutReview(state, scope.files);
+				if (done !== state) persist(done);
+				updateStatus(ctx, read.todos);
+				return undefined;
+			}
+
 			let next = transitionToReviewPending(state, scope.files);
 			next = startReview(next, chunkScope(scope.files));
 			if (!persist(next)) {
 				// Without a persisted state the review must not start.
-				updateStatus(ctx);
+				updateStatus(ctx, read.todos);
 				return undefined;
 			}
-			updateStatus(ctx);
+			updateStatus(ctx, read.todos);
 
 			const lines: string[] = [
 				"[harness:two-phase] The implementation todos of this request are done. Phase 2 (review) starts now.",
@@ -351,8 +414,8 @@ export async function initTwoPhaseReview(
 		}
 
 		// Phase 2: the chunk status and the phase follow the review todos.
-		syncProgress(read.todos);
-		updateStatus(ctx);
+		await syncProgress(read.todos);
+		updateStatus(ctx, read.todos);
 		return undefined;
 	});
 
@@ -360,14 +423,17 @@ export async function initTwoPhaseReview(
 	pi.on("before_agent_start", async (event: { systemPrompt?: string }, ctx: unknown) => {
 		const read = await readTodos(ctx);
 		if (!read.available) return undefined;
-		syncProgress(read.todos);
+		await syncProgress(read.todos);
 
-		const view = buildPhaseView(state, read.todos);
+		const validation = await readValidation(read.todos);
+		const view = buildPhaseView(state, read.todos, validation);
 		// The workflow is only active when it has something to say.
 		const active =
 			view.implementationOpen > 0 ||
 			view.reviewOpen > 0 ||
 			view.reviewFixOpen > 0 ||
+			view.testOpen > 0 ||
+			state.phase === "test_pending" ||
 			state.signals.length > 0;
 		if (!active) return undefined;
 
@@ -385,6 +451,11 @@ export async function initTwoPhaseReview(
 		getPhase: (todos: TodoLike[] = []) => {
 			if (state.phase === "complete" && reviewFixTodos(todos).length > 0) {
 				return "review_fixes";
+			}
+			// A task that was completed while a test item was still open waits
+			// for its validation.
+			if (state.phase === "complete" && testTodos(todos).length > 0) {
+				return "test_pending";
 			}
 			return state.phase;
 		},

@@ -19,12 +19,15 @@ export {
 	IMPLEMENT_PREFIX,
 	REVIEW_PREFIX,
 	REVIEW_FIX_PREFIX,
+	TEST_PREFIX,
 	classifyTodo,
 	isOpenTodo,
 	openTodos,
 	implementationTodos,
+	completedImplementationTodos,
 	reviewTodos,
 	reviewFixTodos,
+	testTodos,
 	hasOpenImplementationWork,
 	summarizeTodos,
 	buildTodoSubject,
@@ -76,8 +79,10 @@ export {
 	markChunkDone,
 	recordFinding,
 	transitionToReviewFixes,
+	transitionToTestPending,
 	allChunksDone,
 	markComplete,
+	completeWithoutReview,
 	hasQueuedReview,
 } from "./state.js";
 
@@ -95,6 +100,17 @@ export {
 	buildDeferralReason,
 } from "./rules.js";
 export type { PhaseView } from "./rules.js";
+
+export {
+	emptyValidationGateState,
+	validationGateSatisfied,
+	describeValidationGate,
+} from "./validation.js";
+export type {
+	GateTodo,
+	ValidationGateState,
+	ValidationGateReader,
+} from "./validation.js";
 
 export {
 	HARNESS_MESSAGE_MARKER,

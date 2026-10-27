@@ -14,6 +14,8 @@ export const IMPLEMENT_PREFIX = "[IMPLEMENT]";
 export const REVIEW_PREFIX = "[REVIEW]";
 /** Prefix of a todo item that fixes a confirmed review finding. */
 export const REVIEW_FIX_PREFIX = "[REVIEW-FIX]";
+/** Prefix of a todo item that is the validation of the task. */
+export const TEST_PREFIX = "[TEST]";
 
 /** The part of a todo item the workflow needs. */
 export interface TodoLike {
@@ -33,6 +35,9 @@ const KIND_BY_NAME: Record<string, TodoKind> = {
 	review_fix: "review_fix",
 	"review-fix": "review_fix",
 	reviewfix: "review_fix",
+	test: "test",
+	validation: "test",
+	validation_test: "test",
 	other: "other",
 };
 
@@ -56,6 +61,7 @@ export function classifyTodo(todo: TodoLike | null | undefined): TodoKind {
 
 	const subject = (todo.subject ?? "").trim().toUpperCase();
 	if (subject.startsWith(REVIEW_FIX_PREFIX)) return "review_fix";
+	if (subject.startsWith(TEST_PREFIX)) return "test";
 	if (subject.startsWith(IMPLEMENT_PREFIX)) return "implement";
 	if (subject.startsWith(REVIEW_PREFIX)) return "review";
 	return "other";
@@ -75,11 +81,29 @@ export function openTodos(todos: TodoLike[]): TodoLike[] {
  * The open todo items that are still implementation work.
  *
  * A queued review item is not implementation work: it must never block the
- * implementation. An unclassified item counts as implementation work, because
+ * implementation. A test item is not implementation work either: it is the
+ * validation of the finished work, and it belongs to the phase that follows
+ * the review. An unclassified item counts as implementation work, because
  * a task that is tracked without a prefix is still work that has to finish.
  */
 export function implementationTodos(todos: TodoLike[]): TodoLike[] {
 	return openTodos(todos).filter((todo) => {
+		const kind = classifyTodo(todo);
+		return kind === "implement" || kind === "other";
+	});
+}
+
+/**
+ * The finished todo items that were implementation work.
+ *
+ * They are the evidence that the implementation of the task actually ran.
+ * A session without any finished implementation work has no proof that the
+ * implementation is over, so the workflow waits instead of starting the
+ * review of a task that is still running.
+ */
+export function completedImplementationTodos(todos: TodoLike[]): TodoLike[] {
+	return todos.filter((todo) => {
+		if (todo.status !== "completed") return false;
 		const kind = classifyTodo(todo);
 		return kind === "implement" || kind === "other";
 	});
@@ -95,6 +119,16 @@ export function reviewFixTodos(todos: TodoLike[]): TodoLike[] {
 	return openTodos(todos).filter((todo) => classifyTodo(todo) === "review_fix");
 }
 
+/**
+ * The open todo items that are the validation of the task.
+ *
+ * A test item carries the validation plan of the task: the tiers it declares
+ * and the final tier that has to pass before the task is complete.
+ */
+export function testTodos(todos: TodoLike[]): TodoLike[] {
+	return openTodos(todos).filter((todo) => classifyTodo(todo) === "test");
+}
+
 /** Does the task still have implementation work? */
 export function hasOpenImplementationWork(todos: TodoLike[]): boolean {
 	return implementationTodos(todos).length > 0;
@@ -105,11 +139,13 @@ export function summarizeTodos(todos: TodoLike[]): {
 	implementation: number;
 	review: number;
 	reviewFix: number;
+	test: number;
 } {
 	return {
 		implementation: implementationTodos(todos).length,
 		review: reviewTodos(todos).length,
 		reviewFix: reviewFixTodos(todos).length,
+		test: testTodos(todos).length,
 	};
 }
 
@@ -117,6 +153,7 @@ const PREFIX_BY_KIND: Record<TodoKind, string> = {
 	implement: IMPLEMENT_PREFIX,
 	review: REVIEW_PREFIX,
 	review_fix: REVIEW_FIX_PREFIX,
+	test: TEST_PREFIX,
 	other: "",
 };
 
