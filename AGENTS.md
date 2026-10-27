@@ -372,6 +372,16 @@ todo create "Replace Film icon with themed icon"
 
 **IMPORTANT**: The `todo` tool and `bd` commands are DIFFERENT systems. Use `todo` for local task tracking.
 
+**Who owns the todo list.** The **agent** creates the todos, the harness
+only reads them. Two consequences:
+
+- The kind of a todo is read from `metadata.kind` first and from the title
+  prefix second. An explicit kind is more reliable than a prefix, and the
+  agent can always set it.
+- When the todo provider is not available, the harness says so: the status
+  line reads `[?] TODOS unavailable` and the agent is told that the phase
+  gate is not active. The harness never claims a gate it cannot enforce.
+
 ---
 
 ## Phase Model: Implementation, Review, Validation (CRITICAL)

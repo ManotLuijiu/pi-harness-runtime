@@ -50,6 +50,7 @@ A task with several steps runs in two phases.
 - ${REVIEW_PREFIX} the queued review of the task diff
 - ${REVIEW_FIX_PREFIX} a confirmed finding that has to be fixed
 - ${TEST_PREFIX} the validation of the task (the tiers are declared in its metadata)
+- The agent owns the todo list: the kind of a todo is read from its metadata first and from the prefix second. Set \`metadata.kind\` when the title does not name the phase.
 
 A user pause, an approval requirement, a security issue or any other safety rule stops the work immediately. The phase order never overrides the intent of the user.`;
 
