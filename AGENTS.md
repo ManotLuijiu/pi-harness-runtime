@@ -190,10 +190,12 @@ maintains it by hand):
   publish a version that npm already has.
 - **The channels of the package name the release.** A channel is a
   pointer, and `npm install pi-harness-runtime@develop` resolves the
-  channel `develop`. The release removes every channel that names an
-  older version (`scripts/align-dist-tags.mjs`), so a consumer who asks
-  for a channel receives the build of the current release and not one
-  from an old line. `latest` is never removed.
+  channel `develop`. `scripts/align-dist-tags.mjs` names every channel
+  that points at an older version and can remove it. The removal is a
+  write to the packument, and the registry guards a write with a second
+  factor, so it belongs to a session that can answer it - not to the
+  release, whose only job is to publish the version of the tag through
+  OIDC.
 - **A version tag without a published version is a residue.** The
   release reports the tags that are newer than the newest published
   version, because such a tag promises a release that never reached npm.
