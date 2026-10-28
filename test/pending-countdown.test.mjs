@@ -546,14 +546,15 @@ test("the countdown is stopped on every way out of the wait", () => {
 		["// The stale decision is discarded: the countdown", "a discarded decision"],
 		["// The work pauses for a human: the countdown of", "the pause of the judge"],
 		["// The countdown of the answered question is over with it.", "an answer over a channel"],
-		["// The session changed: the countdown of the old session", "the switch of the session"],
+		['endWait("session-switched")', "the switch of the session"],
+		['endWait("session-ended")', "the end of the session"],
 	];
 
 	for (const [marker, label] of waysOut) {
 		const at = indexSource.indexOf(marker);
 		assert.notEqual(at, -1, `the way out "${label}" exists`);
 		assert.ok(
-			/pendingCountdown\??\.stop\(\)/.test(indexSource.slice(at, at + 120)),
+			/pendingCountdown\??\.stop\(\)|endWait\(/.test(indexSource.slice(at, at + 160)),
 			`the way out "${label}" stops the countdown`,
 		);
 	}
@@ -561,7 +562,7 @@ test("the countdown is stopped on every way out of the wait", () => {
 	const shutdown = indexSource.indexOf('pi.on("session_shutdown"');
 	assert.notEqual(shutdown, -1, "the shutdown of the session exists");
 	assert.ok(
-		indexSource.slice(shutdown, shutdown + 400).includes("pendingCountdown.stop()"),
+		indexSource.slice(shutdown, shutdown + 800).includes('endWait("session-ended")'),
 		"the shutdown of the session stops the countdown",
 	);
 });

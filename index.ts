@@ -46,6 +46,7 @@ import {
 	PendingQuestionCountdown,
 	type CountdownView,
 } from "./harness/pending-countdown.ts";
+import { endPendingWait } from "./harness/pending-wait.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 // The Honcho contract lives with the Honcho integration. A type-only import
 // is erased at runtime, so the startup keeps loading the module lazily.
@@ -1208,6 +1209,31 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		}
 
+		/**
+		 * End the wait for a pending question.
+		 *
+		 * The countdown, the wait state and the pending question belong
+		 * together: when one of them ends, the others end with it. A wait
+		 * that outlives its question would let the judge decide about a
+		 * question of a session that is gone.
+		 */
+		function endWait(reason: string): void {
+			endPendingWait(reason, {
+				currentQuestion: () => sharedState.pqController?.getCurrentQuestion?.(),
+				expireQuestion: (requestId: string, why: string) =>
+					sharedState.pqController?.expireByTimeout?.(requestId, why) === true,
+				clearWait: () => {
+					waitingForUserSince = null;
+					sharedState.waitingForUserSince = null;
+					_lastNotifiedQuestion = "";
+				},
+				stopCountdown: () => pendingCountdown.stop(),
+				clearStatus: () => updateAutoContinueStatus("IDLE"),
+				logTransition: (requestId: string, outcome: string, why: string) =>
+					logQuestionTransition(requestId, outcome, why),
+			});
+		}
+
 		// Capture UI context from session_start
 		pi.on("session_start", (_event, ctx) => {
 			// The session of the runtime: the countdown of a question belongs
@@ -1217,9 +1243,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			).sessionManager?.getSessionId?.();
 			if (typeof sessionId === "string" && sessionId) {
 				if (_piSessionId && _piSessionId !== sessionId) {
-					// The session changed: the countdown of the old session
-					// is over with it.
-					pendingCountdown.stop();
+					// The session changed: the wait of the old session is
+					// over with it. The question is closed and the wait
+					// state is cleared, so the judge is not asked about a
+					// question that nobody can answer any more.
+					endWait("session-switched");
 				}
 				_piSessionId = sessionId;
 			}
@@ -1242,8 +1270,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				autoContinueTimer = null;
 			}
 
-			// The countdown of the pending question is over with the session.
-			pendingCountdown.stop();
+			// A restart does not survive in memory: the wait state and the
+			// pending question are gone with the process. The question is
+			// therefore closed explicitly, so the buttons of that request
+			// do not stay open and look like a request that is still
+			// waiting.
+			endWait("session-ended");
 
 			// Clear UI binding and status
 			if (_setAutoContinueStatus) {
@@ -1252,27 +1284,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 			_currentAutoContinueState = "";
 
-			// A restart does not survive in memory: the wait state and the
-			// pending question are gone with the process. The question is
-			// therefore closed explicitly, so the buttons of that request
-			// do not stay open and look like a request that is still
-			// waiting.
-			const pending = sharedState.pqController?.getCurrentQuestion?.();
-			if (pending && pending.state === "pending") {
-				const expired = sharedState.pqController?.expireByTimeout?.(
-					pending.requestId,
-					"session-ended",
-				) === true;
-				logQuestionTransition(
-					pending.requestId,
-					expired ? "expired" : "closed",
-					"session-ended",
-				);
-			}
-
 			// Reset state
-			waitingForUserSince = null;
-			_lastNotifiedQuestion = "";
 			_inferenceInProgress = false;
 		});
 
