@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/trajectory",
-  "version": "1.1.461",
+  "version": "1.1.462",
   "description": "Trajectory capture for the write-review loop — persists cycle records for learning",
   "type": "module",
   "main": "./dist/src/index.js",
