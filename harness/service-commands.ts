@@ -101,7 +101,7 @@ async function handleTestJev(ctx: ExtensionContext, flags: Record<string, string
 
 /**
  * Handle /harness-services test honcho --read-only
- * Checks Honcho integration status through the MCP adapter.
+ * Checks the Honcho integration status.
  * Does NOT create sessions/peers, write messages, or claim success when only flags were inspected.
  */
 async function handleTestHoncho(ctx: ExtensionContext, flags: Record<string, string | boolean>): Promise<void> {
@@ -113,33 +113,65 @@ async function handleTestHoncho(ctx: ExtensionContext, flags: Record<string, str
   ctx.ui.notify("[services] Testing Honcho MCP connection...", "info");
 
   try {
-    // Report actual registration status from the status tracker
+    // Report actual status from the status tracker
     ctx.ui.notify(`[services] Honcho configured: ${honchoStatus.configured}`, "info");
     ctx.ui.notify(`[services] Honcho connected: ${honchoStatus.connected}`, "info");
     ctx.ui.notify(`[services] Honcho feature enabled: ${honchoStatus.featureEnabled}`, "info");
 
-    // Check if MCP adapter is available via globalThis
-    // SAFETY: We're accessing pi.events which may not exist in all contexts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const globalAny = globalThis as any;
-    const piEvents = globalAny.pi?.events;
-
-    if (!piEvents) {
-      ctx.ui.notify("[services] Honcho test skipped: MCP adapter not available (pi.events)", "warning");
-      ctx.ui.notify("[services] Note: Install pi-mcp-adapter to enable Honcho MCP", "info");
-      return;
+    // The cause of the last attempt, when the integration knows one.
+    // The reason is credential-free: it names the status and the cause.
+    let reason: string | undefined;
+    // The memory client and the native tools are two things: a connected
+    // client does not mean that the model sees the Honcho tools.
+    let nativeTools: boolean | undefined;
+    try {
+      const { getHonchoInitResult } = await import("./honcho-init.js");
+      const init = getHonchoInitResult();
+      if (init && init.status !== "ready") {
+        reason = `${init.status}: ${init.reason ?? "no reason reported"}`;
+      }
+      if (init && init.status === "ready") {
+        nativeTools = init.mcpRegistered === true;
+        if (!nativeTools && init.mcpRegistrationReason) {
+          reason = `native tools not registered: ${init.mcpRegistrationReason}`;
+        }
+      }
+    } catch {
+      // The module is optional for this command: the tracker still reports.
     }
 
-    // For read-only test, report current status from our tracker
-    // A full MCP tool discovery would require a non-read-only request
     if (honchoStatus.connected) {
-      ctx.ui.notify("[services] Honcho MCP server is connected", "info");
-      ctx.ui.notify("[services] Honcho test completed successfully", "info");
+      ctx.ui.notify("[services] Honcho memory client is connected", "info");
+      if (nativeTools === true) {
+        ctx.ui.notify("[services] Honcho native MCP tools are registered (the model sees them)", "info");
+        ctx.ui.notify("[services] Honcho test completed successfully", "info");
+      } else if (nativeTools === false) {
+        // The memory works, but the model has no Honcho tools: the check
+        // must not report a success that hides that.
+        ctx.ui.notify("[services] Honcho native MCP tools are NOT registered (the model sees no Honcho tools)", "warning");
+        if (reason) {
+          ctx.ui.notify(`[services] ${reason}`, "warning");
+        }
+        ctx.ui.notify("[services] The memory connection succeeded, but the native tool registration failed", "warning");
+      } else {
+        // The state of the native tools is unknown: only the memory
+        // connection is reported.
+        ctx.ui.notify("[services] Honcho memory test completed successfully", "info");
+      }
     } else if (honchoStatus.configured) {
       ctx.ui.notify("[services] Honcho MCP server not yet connected", "warning");
+      if (reason) {
+        ctx.ui.notify(`[services] Honcho is unavailable: ${reason}`, "warning");
+      }
+      if (honchoStatus.lastErrorCode) {
+        ctx.ui.notify(`[services] Last error: ${honchoStatus.lastErrorCode}`, "warning");
+      }
       ctx.ui.notify("[services] Connection will be established on first use", "info");
     } else {
       ctx.ui.notify("[services] Honcho MCP not configured", "warning");
+      if (reason) {
+        ctx.ui.notify(`[services] Honcho is unavailable: ${reason}`, "warning");
+      }
       ctx.ui.notify("[services] Add API key to enable Honcho memory", "info");
     }
   } catch (err) {

@@ -31,7 +31,6 @@ This runtime works best with these extensions (auto-installed by pi-harness-runt
 
 ```bash
 pi install npm:pi-subagents     # Sub-agent orchestration for large refactors
-pi install npm:pi-mcp-adapter    # MCP protocol adapter for external tools
 pi install npm:@juicesharp/rpiv-todo  # Task tracking with bd sync
 ```
 
@@ -671,7 +670,16 @@ The fix commands of each feature:
 | LINE | `line-access-token.txt`, `line-user-id.txt` | — (files only) |
 | Jev | `typesafe-api-key.txt` (or `openrouter-api-key.txt`, or the legacy `jev-api-key.txt`) | `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` |
 | Qdrant | `qdrant-cluster-url.txt`, `qdrant-api-key.txt`, `openai-api-key.txt` | `QDRANT_CLUSTER_ENDPOINT`, `QDRANT_API_KEY`, `OPENAI_API_KEY` |
-| Honcho | `honcho-api-key.txt` | — (file only) |
+| Honcho | `honcho-api-key.txt` | `HONCHO_API_KEY` (the environment wins over the file) |
+
+The Honcho integration talks to `https://mcp.honcho.dev` through the native
+MCP support of Pi: the server is registered with Pi, so the model sees the
+Honcho tools. The memory itself (the automatic ingest and the recall) works
+with every Pi version, but a runtime without the native MCP registration (one
+that does not expose `registerMcpServer`) gives the model no Honcho tools -
+the startup summary says so instead of claiming that everything is ready.
+The harness talks to the server with the native MCP client of Pi
+(`@earendil-works/pi-mcp`), which it ships as a dependency.
 
 Only the missing part is listed: a relay that has a URL but no token shows
 the token command alone. The Relay and the LINE line are optional features:

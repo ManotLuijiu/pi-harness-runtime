@@ -1,22 +1,31 @@
 /**
  * Honcho MCP Integration - Initialization and Registration
  *
- * Implements the full 6-step Honcho MCP integration:
- * 1. Register MCP server through pi-mcp-adapter
- * 2. Discover tools and establish workspace/peer mapping
- * 3. Create/retrieve session for Pi session
+ * Implements the full 6-step Honcho MCP integration on Pi's native MCP
+ * support:
+ * 1. Register the Honcho MCP server with Pi (pi.registerMcpServer)
+ * 2. Connect with the native MCP client and list the tools
+ * 3. Create/retrieve the workspace, the peers and the session
  * 4. Ingest messages on agent turn complete
  * 5. Retrieve context before agent execution
  * 6. Truthful status and proper shutdown
+ *
+ * The harness talks to the server twice, and both paths are native MCP:
+ * the model reaches the tools through the registration of step 1, and the
+ * automatic ingestion and recall of steps 4 and 5 use the MCP client of Pi's
+ * own npm package against the same URL and the same credential.
  */
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
-import {
-  HonchoMemory,
-  loadHonchoApiKey,
-  ensureMcpConfigDirectory,
-  writeHonchoMcpConfig,
-} from "./honcho-memory.js";
+import { HonchoMemory, loadHonchoApiKey } from "./honcho-memory.js";
+
+/**
+ * The credential loader of the integration.
+ *
+ * The startup uses it, so the environment variable wins over the key file
+ * everywhere and not only inside the module.
+ */
+export { loadHonchoApiKey };
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -26,61 +35,42 @@ import { homedir } from "node:os";
 // ---------------------------------------------------------------------------
 
 /**
- * MCP Runtime Registration Request (per pi-mcp-adapter contract)
- */
-interface McpRuntimeRegistrationRequest {
-  version: 1;
-  name: string;
-  definition: {
-    url: string;
-    headers?: Record<string, string>;
-  };
-  result?:
-    | { ok: true; registration: { dispose(): Promise<void> } }
-    | { ok: false; error: Error };
-}
-
-/**
- * MCP Tool Call Request (per pi-mcp-adapter contract)
- */
-interface McpToolCallRequest {
-  version: 1;
-  server: string;
-  tool: string;
-  args: Record<string, unknown>;
-  result?: McpToolCallResult;
-}
-
-type McpToolCallResult =
-  | { ok: true; result?: unknown }
-  | { ok: false; error?: Error };
-
-/**
- * Did the adapter refuse the call?
+ * The outcome of the initialization.
  *
- * The check is a type guard and not a plain `!result.ok`: the root project
- * runs without strictNullChecks, and there the discriminant of a union is
- * not narrowed - the guard narrows in every setting.
+ * The startup report names the actual cause, so the status is a closed set
+ * instead of a boolean: "not ready" alone never says WHY.
  */
-function isToolCallFailure(
-  result: McpToolCallResult
-): result is { ok: false; error?: Error } {
-  return result.ok === false;
+export type HonchoInitStatus =
+  | "ready"
+  | "missing_key"
+  | "mcp_unavailable"
+  | "registration_rejected";
+
+export interface HonchoInitResult {
+  /** What happened. */
+  status: HonchoInitStatus;
+  /** The memory instance, only when the status is "ready". */
+  memory: HonchoMemory | null;
+  /** Short, credential-free cause. */
+  reason?: string;
+  /** Actionable, credential-free hint. */
+  hint?: string;
+  /** The HTTP status of the answer, when the server answered with one. */
+  httpStatus?: number;
+  /** Whether the MCP server is registered with Pi. */
+  mcpRegistered?: boolean;
+  /**
+   * Why the MCP server was not registered, credential-free.
+   *
+   * The status stays "ready": the memory works without the registration.
+   * The reason names the cause, so the startup does not have to guess
+   * ("check the Pi version") when the cause is something else.
+   */
+  mcpRegistrationReason?: string;
 }
 
 /**
- * Did the adapter refuse the registration?
- *
- * The same reason as isToolCallFailure: the guard narrows in every setting.
- */
-function isRegistrationFailure(
-  result: NonNullable<McpRuntimeRegistrationRequest["result"]>
-): result is { ok: false; error: Error } {
-  return result.ok === false;
-}
-
-/**
- * Honcho session identity
+ * The Honcho session identity
  */
 interface HonchoIdentity {
   workspaceId: string;
@@ -89,15 +79,102 @@ interface HonchoIdentity {
   sessionId: string;
 }
 
+/**
+ * The native MCP client library of Pi.
+ *
+ * The library is Pi's own npm package; the interface keeps the harness
+ * independent of the concrete classes and lets the tests inject a fake.
+ */
+export interface HonchoMcpLibrary {
+  McpClient: new (options: {
+    name: string;
+    version: string;
+    requestTimeoutMs?: number;
+  }) => HonchoMcpClient & {
+    connect(transport: unknown): Promise<void>;
+  };
+  StreamableHttpTransport: new (options: {
+    url: string;
+    headers?: Record<string, string>;
+  }) => unknown;
+}
+
+/**
+ * Loads the native MCP client library.
+ *
+ * The production loader imports the library by name. The tests inject a
+ * fake, because a dynamic import cannot be intercepted inside the sandbox
+ * of the test suite.
+ */
+export type HonchoMcpLibraryLoader = () => Promise<HonchoMcpLibrary>;
+
+/**
+ * The part of the MCP client the harness uses.
+ *
+ * The client is Pi's own npm package; the interface keeps the harness
+ * independent of the concrete class and lets the tests inject a fake.
+ */
+export interface HonchoMcpClient {
+  /** The tools of the server. */
+  listTools(): Promise<unknown[]>;
+  /** Call a tool of the server. */
+  callTool(
+    tool: string,
+    args?: Record<string, unknown>,
+    options?: { signal?: AbortSignal }
+  ): Promise<unknown>;
+  /** Close the connection. */
+  close(): Promise<void>;
+  /** The connection state of the client, when it exposes one. */
+  readonly connectionState?: string;
+}
+
+/**
+ * Creates a connected MCP client.
+ *
+ * The default implementation uses Pi's native MCP client; the tests inject
+ * a fake with the same shape.
+ */
+export type HonchoMcpClientFactory = (
+  apiKey: string
+) => Promise<HonchoMcpClient>;
+
+/**
+ * The part of Pi's extension API the harness uses for the MCP server.
+ */
+export interface HonchoMcpRegistrar {
+  registerMcpServer?: (name: string, config: unknown) => void;
+  unregisterMcpServer?: (name: string) => void;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MCP_RUNTIME_REGISTER_EVENT = "pi-mcp-adapter:runtime-register:v1";
-const MCP_RUNTIME_TOOL_CALL_EVENT = "pi-mcp-adapter:runtime-tool-call:v1";
+/** The Honcho MCP server (streamable HTTP). */
+const HONCHO_MCP_URL = "https://mcp.honcho.dev";
 
-/** Honcho MCP server name in the adapter */
+/** The name of the Honcho MCP server in Pi. */
 const HONCHO_SERVER_NAME = "honcho";
+
+/**
+ * Pi's native MCP client library.
+ *
+ * The library is imported dynamically: a runtime without it has to report
+ * "mcp_unavailable" instead of breaking the whole harness.
+ */
+const MCP_CLIENT_MODULE = "@earendil-works/pi-mcp";
+
+/** The request timeout of the MCP client. */
+const MCP_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * The timeout of the credential probe.
+ *
+ * The probe is a courtesy, not a gate: it must never hold the startup for
+ * long, so a server that does not answer counts as unreachable.
+ */
+const CREDENTIAL_PROBE_TIMEOUT_MS = 5_000;
 
 /** Default workspace name for Pi harness */
 const DEFAULT_WORKSPACE_NAME = "pi-harness";
@@ -107,6 +184,20 @@ const HONCHO_CONFIG_DIR = join(homedir(), ".pi-harness-runtime", "honcho");
 
 /** File to persist workspace ID */
 const WORKSPACE_ID_FILE = join(HONCHO_CONFIG_DIR, "workspace-id.json");
+
+/**
+ * The answer of the server that says the credential was refused.
+ *
+ * The server does not check the credential during the handshake: it answers
+ * the first tool call with the verdict. The texts that carry the verdict
+ * name the key, the authorization or the status of the refusal.
+ */
+const CREDENTIAL_REJECTION_PATTERN =
+  /api[\s_-]*key|unauthoriz|unauthentic|forbidden|invalid[\s_-]*token|credential|\b401\b|\b403\b/i;
+
+/** The error of a missing MCP client library. */
+const MODULE_MISSING_PATTERN =
+  /cannot find (module|package)|err_module_not_found|err_unknown_file_extension|failed to resolve|cannot resolve/i;
 
 // ---------------------------------------------------------------------------
 // Workspace ID Persistence
@@ -155,23 +246,285 @@ const DEFAULT_ASSISTANT_NAME = "pi-agent";
 /** Global Honcho memory instance */
 let _honchoMemory: HonchoMemory | null = null;
 
-/** Owned registration handle for disposal */
-let _honchoRegistration: { dispose(): Promise<void> } | null = null;
-
 /** Whether initHoncho has been called (attempted) */
 let _initialized = false;
+
+/** Whether the MCP connection is up and the tools are listed */
+let _initReady = false;
 
 /** Whether initHoncho succeeded (can retry if false) */
 let _initSucceeded = false;
 
-/** Stored pi.events for use in tool calls */
-let _piEvents: PiEvents | null = null;
+/** The native MCP client of the session */
+let _mcpClient: HonchoMcpClient | null = null;
+
+/** The factory that creates the client (the seam of the tests) */
+let _clientFactory: HonchoMcpClientFactory | null = null;
+
+/** The credential of the session. It never reaches a log or a message. */
+let _apiKey: string | null = null;
+/** Whether the MCP server is registered with Pi. */
+let _mcpRegistered = false;
+
+/**
+ * Why the MCP server is not registered with Pi.
+ *
+ * The reason is credential-free and it names the cause, so the startup does
+ * not have to guess ("check the Pi version") when the cause is another one.
+ */
+let _mcpRegistrationReason: string | undefined;
+/** Loads the native MCP client library. The tests inject a fake. */
+let _libraryLoader: HonchoMcpLibraryLoader | null = null;
+/**
+ * The extension API of Pi, used to unregister the MCP server again.
+ *
+ * It is set only when this extension registered the server: a name that
+ * another extension owns has to stay with its owner, so a refused
+ * registration must never be undone by the shutdown.
+ */
+let _registrar: HonchoMcpRegistrar | null = null;
 
 /** Current Honcho identity (workspace, peers, session) */
 let _identity: HonchoIdentity | null = null;
 
 /** Disposed flag to prevent post-shutdown operations */
 let _disposed = false;
+
+/** The result of the last initialization attempt */
+let _initResult: HonchoInitResult | null = null;
+
+// ---------------------------------------------------------------------------
+// MCP client
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a connected client with Pi's native MCP client library.
+ *
+ * The connection is streamable HTTP against the Honcho server, and the
+ * credential travels in the Authorization header.
+ */
+async function createNativeMcpClient(
+  apiKey: string,
+  load: HonchoMcpLibraryLoader
+): Promise<HonchoMcpClient> {
+  const mod = await load();
+  const client = new mod.McpClient({
+    name: "pi-harness-runtime",
+    version: "1.0.0",
+    requestTimeoutMs: MCP_REQUEST_TIMEOUT_MS,
+  });
+  const transport = new mod.StreamableHttpTransport({
+    url: HONCHO_MCP_URL,
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  await client.connect(transport);
+  return client;
+}
+
+/**
+ * Loads the native MCP client library of Pi.
+ *
+ * The library is a dependency of the harness, so the import belongs to the
+ * module and not to the caller. The failure of the import is reported by
+ * the caller, which knows what it means for the startup.
+ */
+async function defaultLibraryLoader(): Promise<HonchoMcpLibrary> {
+  const mod = await import(MCP_CLIENT_MODULE);
+  // SAFETY: the package exports the two classes with these names; the
+  // interface above describes exactly how the harness uses them.
+  return mod as unknown as HonchoMcpLibrary;
+}
+
+/**
+ * The factory of the client of the session.
+ *
+ * The injected factory wins (the tests use it), the native client of Pi is
+ * the default.
+ */
+function clientFactory(): HonchoMcpClientFactory {
+  return (
+    _clientFactory ??
+    ((apiKey: string) =>
+      createNativeMcpClient(apiKey, _libraryLoader ?? defaultLibraryLoader))
+  );
+}
+
+/**
+ * The client of the session, connected.
+ *
+ * The client stays alive for the whole session; a dropped connection is
+ * re-established lazily, so a long session survives a server restart.
+ */
+async function ensureMcpClient(): Promise<HonchoMcpClient | null> {
+  if (_disposed) {
+    return null;
+  }
+
+  if (_mcpClient) {
+    const state = _mcpClient.connectionState;
+    // A client without a state (a fake, or an older library) counts as
+    // connected: the calls report their own failures. A client that is
+    // still connecting is not usable: a call would run before the
+    // handshake is finished.
+    if (!state || state === "connected") {
+      return _mcpClient;
+    }
+    try {
+      await _mcpClient.close();
+    } catch {
+      // A client that cannot be closed is dropped anyway.
+    }
+    _mcpClient = null;
+  }
+
+  if (!_apiKey) {
+    return null;
+  }
+
+  const factory = clientFactory();
+  try {
+    _mcpClient = await factory(_apiKey);
+    return _mcpClient;
+  } catch (err) {
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "error",
+      service: "honcho",
+      operation: "mcp_connect",
+      phase: "failed",
+      reason: redact(err instanceof Error ? err.message : String(err)),
+    });
+    return null;
+  }
+}
+
+/**
+ * Did the server answer the call with an error?
+ *
+ * The MCP shape carries the verdict of a failed tool call in the result
+ * (`isError`), not in an exception: the server refuses an unknown
+ * credential with a result that carries the text of the refusal.
+ */
+function isErrorResult(result: unknown): boolean {
+  return (result as { isError?: unknown })?.isError === true;
+}
+
+/**
+ * The text of an answer.
+ *
+ * The text of the content blocks is the answer of the server; a result that
+ * carries an error object instead answers with the message of the error.
+ */
+function resultText(result: unknown): string {
+  const content = (result as { content?: unknown })?.content;
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((block) => (block as { type?: unknown })?.type === "text")
+      .map((block) => String((block as { text?: unknown }).text ?? ""))
+      .filter((entry) => entry !== "")
+      .join("\n");
+    if (text !== "") {
+      return text;
+    }
+  }
+  const error = (result as { error?: { message?: unknown } })?.error;
+  if (error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "";
+}
+
+/**
+ * The HTTP status of an error, when it carries one.
+ */
+function errorStatus(err: unknown): number | undefined {
+  const status = (err as { status?: unknown })?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/**
+ * Remove the credential from a text.
+ *
+ * The server can echo the credential in its answer (an error message that
+ * quotes the key). Every text that the module keeps, reports or logs passes
+ * through here, so the key never reaches a log file, a reason or a hint.
+ *
+ * This complements `redactSecrets` of honcho-memory, it does not replace it:
+ * the pattern redactor only masks a value that follows a secret-looking key
+ * name, while the server can quote the credential on its own. The exact mask
+ * covers that case.
+ *
+ * @param text The text to mask
+ * @param apiKey The credential to remove
+ * @returns The text without the credential
+ */
+export function redactHonchoKey(text: string, apiKey: string): string {
+	if (!apiKey || !text) return text;
+	return text.split(apiKey).join("<redacted>");
+}
+
+/**
+ * Remove the credential of this session from a text.
+ *
+ * The text of the server is the one place where the key can come back: the
+ * answer of a refused call may quote it.
+ */
+function redact(text: string): string {
+	return redactHonchoKey(text, _apiKey ?? "");
+}
+
+/**
+ * Did the server refuse the credential?
+ *
+ * The refusal arrives either as an HTTP status (401, 403) or as the text of
+ * the answer, and both are named without the credential itself.
+ */
+function isCredentialRejection(text: string, status?: number): boolean {
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  return text !== "" && CREDENTIAL_REJECTION_PATTERN.test(text);
+}
+
+/**
+ * The result of a refusal of the server, when the answer is one.
+ *
+ * The server that answers with a status refused the request: a refused
+ * credential (401, 403) and a refused endpoint (404) are both a rejection
+ * of the registration and not an unreachable server.
+ */
+function refusalResult(
+  message: string,
+  status?: number
+): HonchoInitResult | null {
+  if (status === 401 || status === 403) {
+    return {
+      status: "registration_rejected",
+      memory: null,
+      reason: `the server refused the stored credential (HTTP ${status})`,
+      hint: "the stored Honcho credential was rejected by the server",
+      httpStatus: status,
+    };
+  }
+  if (status === 404) {
+    return {
+      status: "registration_rejected",
+      memory: null,
+      reason: "the server refused the MCP endpoint (HTTP 404)",
+      hint: "the Honcho MCP endpoint answered 404",
+      httpStatus: status,
+    };
+  }
+  if (isCredentialRejection(message)) {
+    return {
+      status: "registration_rejected",
+      memory: null,
+      reason: `the server rejected the stored credential: ${redact(message)}`,
+      hint: "the stored Honcho credential was rejected by the server",
+    };
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // MCP Tool Calls
@@ -246,12 +599,39 @@ function peerIdFrom(data: Record<string, unknown> | null): string | null {
   if (typeof direct === "string" && direct !== "") {
     return direct;
   }
-  const nested = (data.peer as { id?: unknown } | undefined)?.id;
+  const nested = (data as { peer?: { id?: unknown } }).peer?.id;
   return typeof nested === "string" && nested !== "" ? nested : null;
 }
 
 /**
- * Call a tool on the Honcho MCP server through the adapter.
+ * Describe the arguments of a call for the log, without their values.
+ *
+ * The values are what the user wrote (a message, a peer name) and a server
+ * can be asked to echo the credential. Only the names of the arguments and
+ * their size are logged.
+ */
+function describeArgs(args: Record<string, unknown>): string {
+  const names = Object.keys(args ?? {});
+  return `${names.join(",") || "none"} (${describeShape(args)})`;
+}
+
+/**
+ * Describe the size of a value for the log, without its content.
+ *
+ * @param value The value to describe
+ * @returns The size of the value as text
+ */
+function describeShape(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return `${typeof text === "string" ? text.length : 0} chars`;
+  } catch {
+    return "unknown size";
+  }
+}
+
+/**
+ * Call a tool on the Honcho MCP server through the native MCP client.
  * Returns actual result from the MCP server.
  */
 async function callHonchoTool(
@@ -262,49 +642,37 @@ async function callHonchoTool(
     return { success: false, error: "Honcho integration disposed" };
   }
 
-  // Use stored pi.events from initHoncho
-  if (!_piEvents) {
-    return { success: false, error: "pi.events not available" };
-  }
-  const piEvents = _piEvents;
-
-  // Create tool call request
-  const request: McpToolCallRequest = {
-    version: 1,
-    server: HONCHO_SERVER_NAME,
-    tool: toolName,
-    args,
-  };
-
-  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "start", tool: toolName, args: JSON.stringify(args).slice(0, 100) });
-
-  // Emit tool call
-  piEvents.emit(MCP_RUNTIME_TOOL_CALL_EVENT, request);
-
-  // Read result immediately after emit. The value goes into a local: reading
-  // the property again after the emit would lose the narrowing, because a
-  // call may change the property.
-  const pending = request.result;
-  if (pending === undefined) {
-    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, reason: "no response from adapter" });
-    return { success: false, error: "No response from MCP adapter" };
+  const client = await ensureMcpClient();
+  if (!client) {
+    return { success: false, error: "The Honcho MCP client is not connected" };
   }
 
-  // The adapter sets the promise during the emit - await it.
-  const result = await pending;
+  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "start", tool: toolName, args: describeArgs(args) });
 
-  if (isToolCallFailure(result)) {
-    // The adapter hands back an Error instance: JSON.stringify would show an
-    // empty object, so the message goes into the log on its own. Without it
-    // a failing call reads like "Unknown error" and names nothing.
-    const message = result.error?.message ?? "Unknown error";
+  let raw: unknown;
+  try {
+    raw = await client.callTool(toolName, args);
+  } catch (err) {
+    // The message of the error is the real reason and has to survive: a
+    // failing call that reads like "Unknown error" names nothing.
+    const message = err instanceof Error ? err.message : String(err);
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, error: redact(message) });
+    return { success: false, error: redact(message) };
+  }
+
+  if (isErrorResult(raw)) {
+    // The server refuses a call with a result that carries the reason in
+    // its content, not with an exception.
+    const message = redact(resultText(raw) || "The Honcho server refused the call");
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "tool_call", phase: "failed", tool: toolName, error: message });
     return { success: false, error: message };
   }
 
-  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "completed", tool: toolName, result: JSON.stringify(result.result).slice(0, 200) });
+  // The content of a result is not logged: it carries what the user wrote
+  // (and a server can quote the credential in it). Only the shape is.
+  logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "tool_call", phase: "completed", tool: toolName, result: describeShape(raw) });
 
-  return { success: true, result: result.result };
+  return { success: true, result: raw };
 }
 
 // ---------------------------------------------------------------------------
@@ -336,9 +704,10 @@ async function setWorkspaceMetadata(workspaceId: string, _workspaceName: string)
 
 /**
  * Get or validate workspace ID.
- * 
- * Note: Honcho MCP does NOT have create_workspace/get_workspace tools.
- * Workspaces are created via CLI/API. MCP tools are for session management.
+ *
+ * Note: the harness does not create the workspace. The server knows the
+ * tool `create_workspace`, but the workspace of the harness is a
+ * deployment decision and stays a CLI/API task.
  * This function:
  * 1. Loads persisted workspace ID
  * 2. Validates it exists by calling inspect_workspace
@@ -362,22 +731,30 @@ async function ensureWorkspace(workspaceName: string): Promise<string | null> {
     // nothing and silently fall back to the workspace name.
     const parsed = honchoPayload(inspectResult.result).parsed as {
       workspace?: { id?: string };
+      workspace_id?: string;
       id?: string;
       metadata?: Record<string, unknown>;
     } | null;
     const response: {
       workspace?: { id?: string };
+      workspace_id?: string;
       id?: string;
       metadata?: Record<string, unknown>;
     } = parsed ?? {};
-    const workspaceId = response.workspace?.id ?? response.id ?? workspaceName;
+    // The server answers with `workspace_id`; `workspace.id` and `id` are
+    // the shapes of the older answers and stay accepted.
+    const workspaceId =
+      response.workspace_id ??
+      response.workspace?.id ??
+      response.id ??
+      workspaceName;
     savePersistedWorkspace(workspaceId, workspaceName);
-    
+
     // Set metadata if not already set
     if (!response.metadata || Object.keys(response.metadata).length === 0) {
       await setWorkspaceMetadata(workspaceId, workspaceName);
     }
-    
+
     logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "workspace_validate", phase: "completed", workspaceId });
     return workspaceId;
   }
@@ -621,51 +998,309 @@ async function getContext(
 }
 
 // ---------------------------------------------------------------------------
+// Registration with Pi
+// ---------------------------------------------------------------------------
+
+/**
+ * The configuration of the Honcho MCP server for Pi.
+ *
+ * The credential travels in the Authorization header of the server
+ * configuration, exactly like it travels in the header of the client.
+ */
+export function honchoMcpServerConfig(apiKey: string): {
+  url: string;
+  headers: Record<string, string>;
+  exposure: string;
+  description: string;
+} {
+  return {
+    url: HONCHO_MCP_URL,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    exposure: "codemode",
+    description:
+      "Honcho memory: workspaces, peers, sessions, messages and recall",
+  };
+}
+
+/**
+ * Register the Honcho MCP server with Pi.
+ *
+ * The registration is what the model and `/mcp` see. A registration that Pi
+ * refuses (for example a name that another extension owns) is reported and
+ * never throws into the startup.
+ *
+ * @param pi The extension API of Pi
+ * @param apiKey The Honcho credential
+ * @returns Whether the server is registered, and why it is not
+ */
+export function registerHonchoMcpServer(
+  pi: HonchoMcpRegistrar | undefined | null,
+  apiKey: string
+): { registered: boolean; reason?: string } {
+  if (!pi || typeof pi.registerMcpServer !== "function") {
+    return {
+      registered: false,
+      reason: "the extension API of this runtime has no registerMcpServer",
+    };
+  }
+
+  try {
+    pi.registerMcpServer(HONCHO_SERVER_NAME, honchoMcpServerConfig(apiKey));
+    return { registered: true };
+  } catch (err) {
+    // The message of Pi can echo the configuration, and the configuration
+    // carries the credential: the key never reaches the reason.
+    let reason = err instanceof Error ? err.message : String(err);
+    if (apiKey !== "") {
+      reason = reason.split(apiKey).join("[REDACTED]");
+    }
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "warn",
+      service: "honcho",
+      operation: "mcp_register",
+      phase: "failed",
+      reason,
+    });
+    return { registered: false, reason };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Initialization
 // ---------------------------------------------------------------------------
 
 /**
- * Initialize Honcho MCP integration.
+ * Run a promise with a timeout.
  *
- * Must be called during session_start or later when the adapter listener is installed.
- * Reads request.result synchronously after emit per the adapter contract.
- *
- * @param options Initialization options
- * @returns Promise resolving to the memory instance (or null if registration failed)
+ * A promise that never settles must not hold the startup, so the timeout
+ * wins and the pending promise is left to its own fate.
  */
-/**
- * Pi events interface for lifecycle hooks
- */
-interface PiEvents {
-  on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
-  emit: (event: string, ...args: unknown[]) => void;
+async function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ timedOut: true }>((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+  });
+  try {
+    const settled = await Promise.race([
+      work.then((value) => ({ timedOut: false as const, value })),
+      timeout,
+    ]);
+    return settled;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
+/**
+ * Close a client that the initialization could not use.
+ *
+ * An initialization that fails must not leave a connection open: the
+ * session would end with a client that nobody closes.
+ *
+ * @param client The client to close
+ */
+async function closeUnusedClient(client: HonchoMcpClient | null): Promise<void> {
+  if (!client) {
+    return;
+  }
+  if (_mcpClient === client) {
+    _mcpClient = null;
+  }
+  try {
+    await client.close();
+    logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "mcp_close", phase: "completed", reason: "the initialization failed" });
+  } catch (err) {
+    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_close", phase: "failed", reason: redact(err instanceof Error ? err.message : String(err)) });
+  }
+}
+
+/**
+ * Did the timeout win?
+ *
+ * The check is a type guard and not a plain `outcome.timedOut`: the root
+ * project runs without strictNullChecks, and there the discriminant of a
+ * union is not narrowed - the guard narrows in every setting.
+ */
+function isTimeoutOutcome(
+  outcome: { timedOut: true } | { timedOut: false; value: unknown }
+): outcome is { timedOut: true } {
+  return outcome.timedOut === true;
+}
+
+/**
+ * The verdict of the server about the credential.
+ *
+ * The server does not check the credential during the handshake: the
+ * verdict arrives with the first tool call. The probe therefore calls a
+ * tool that a normal (non-admin) credential may pass, and reads the answer.
+ */
+type CredentialVerdict =
+  | { verdict: "accepted" }
+  | { verdict: "rejected"; reason: string; httpStatus?: number }
+  | { verdict: "unavailable"; reason: string };
+
+async function probeCredential(
+  client: HonchoMcpClient,
+  timeoutMs: number = CREDENTIAL_PROBE_TIMEOUT_MS
+): Promise<CredentialVerdict> {
+  const persisted = loadPersistedWorkspace();
+  const workspaceId = persisted?.workspaceId ?? DEFAULT_WORKSPACE_NAME;
+
+  // The probe must not outlive its timeout: the request is aborted, so no
+  // call stays pending on a connection that the initialization closes.
+  const controller = new AbortController();
+
+  let outcome: { timedOut: true } | { timedOut: false; value: unknown };
+  try {
+    outcome = await withTimeout(
+      client.callTool(
+        "inspect_workspace",
+        { workspace_id: workspaceId },
+        { signal: controller.signal }
+      ),
+      timeoutMs
+    );
+  } catch (err) {
+    controller.abort();
+    const status = errorStatus(err);
+    const message = err instanceof Error ? err.message : String(err);
+    if (isCredentialRejection(message, status)) {
+      return {
+        verdict: "rejected",
+        reason: message,
+        ...(status ? { httpStatus: status } : {}),
+      };
+    }
+    // The probe did not get an answer. A workspace that does not exist is
+    // answered with a result (the server creates it), so an exception here
+    // is a transport failure - never a proof that the credential is good.
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "warn",
+      service: "honcho",
+      operation: "credential_probe",
+      phase: "failed",
+      reason: redact(message),
+    });
+    return { verdict: "unavailable", reason: redact(message) };
+  }
+
+  if (isTimeoutOutcome(outcome)) {
+    controller.abort();
+    return {
+      verdict: "unavailable",
+      reason: `the server did not answer the credential probe within ${timeoutMs}ms`,
+    };
+  }
+
+  const raw = outcome.value;
+  if (!isErrorResult(raw)) {
+    return { verdict: "accepted" };
+  }
+
+  const text = resultText(raw);
+  if (isCredentialRejection(text)) {
+    return { verdict: "rejected", reason: redact(text) };
+  }
+
+  // The credential was accepted: the tool failed for another reason (a
+  // workspace that does not exist, for example). The identity step reports
+  // the workspace problem.
+  logServiceEvent({
+    ts: new Date().toISOString(),
+    level: "warn",
+    service: "honcho",
+    operation: "credential_probe",
+    phase: "completed",
+    reason: "the probe failed for another reason than the credential",
+  });
+  return { verdict: "accepted" };
+}
+
+/**
+ * Initialize the Honcho MCP integration.
+ *
+ * Must be called during session_start or later.
+ *
+ * @param options Initialization options
+ * @returns The outcome of the initialization with its actual cause
+ */
 export async function initHoncho(options?: {
   workspaceName?: string;
   assistantName?: string;
   userName?: string;
   sessionId?: string;
   apiKey?: string;
-  piEvents?: PiEvents;
-}): Promise<HonchoMemory | null> {
+  /** The extension API of Pi, used to register the MCP server. */
+  pi?: HonchoMcpRegistrar;
+  /** Creates the MCP client. The tests inject a fake client here. */
+  createClient?: HonchoMcpClientFactory;
+  /** Loads the native MCP client library. The tests inject a fake here. */
+  loadMcpLibrary?: HonchoMcpLibraryLoader;
+  /** The timeout of the credential probe. The tests shorten it. */
+  probeTimeoutMs?: number;
+}): Promise<HonchoInitResult> {
+  const result = await runInit(options);
+  // The diagnostics commands report the outcome of the last attempt, so
+  // the cause survives until somebody asks for it.
+  _initResult = result;
+  return result;
+}
+
+/**
+ * The result of the last initialization, for the diagnostics commands.
+ */
+export function getHonchoInitResult(): HonchoInitResult | null {
+  return _initResult;
+}
+
+async function runInit(options?: {
+  workspaceName?: string;
+  assistantName?: string;
+  userName?: string;
+  sessionId?: string;
+  apiKey?: string;
+  pi?: HonchoMcpRegistrar;
+  createClient?: HonchoMcpClientFactory;
+  loadMcpLibrary?: HonchoMcpLibraryLoader;
+  probeTimeoutMs?: number;
+}): Promise<HonchoInitResult> {
   if (_disposed) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "dispose", phase: "failed", reason: "integration has been disposed, cannot reinitialize" });
-    return null;
+    return {
+      status: "mcp_unavailable",
+      memory: null,
+      reason: "the Honcho integration has been disposed",
+    };
   }
 
   // Allow retry if previous init failed
-  if (_initialized && _initSucceeded) {
+  if (_initialized && _initReady) {
     logServiceEvent({ ts: new Date().toISOString(), level: "debug", service: "honcho", operation: "init", phase: "completed", reason: "already initialized, returning existing instance" });
-    return _honchoMemory;
+    const existing: HonchoInitResult = {
+      status: "ready",
+      memory: _honchoMemory,
+      mcpRegistered: _mcpRegistered,
+    };
+    if (_mcpRegistrationReason) {
+      existing.mcpRegistrationReason = _mcpRegistrationReason;
+    }
+    return existing;
   }
 
-  // Reset state if retrying
-  if (_initialized && !_initSucceeded) {
+  if (_initialized) {
     logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "init", phase: "start", reason: "retrying initialization" });
   }
   _initialized = true;
-  _initSucceeded = false;
+  _initReady = false;
 
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "init", phase: "start" });
 
@@ -675,92 +1310,156 @@ export async function initHoncho(options?: {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "init", phase: "failed", reason: "No API key found", helpUrl: "https://app.honcho.dev" });
     honchoStatus.setConfigured(false);
     honchoStatus.recordFailure("init", "no_key", { error: "No API key" });
-    return null;
+    return {
+      status: "missing_key",
+      memory: null,
+      reason: "no Honcho API key was found",
+      hint: "Set HONCHO_API_KEY or store the key in ~/.pi-harness-runtime/keys/honcho-api-key.txt",
+    };
   }
 
   honchoStatus.setConfigured(true);
+  _apiKey = key;
+  _clientFactory = options?.createClient ?? null;
+  _libraryLoader = options?.loadMcpLibrary ?? null;
 
-  // Store pi.events for use in tool calls
-  if (options?.piEvents) {
-    _piEvents = options.piEvents;
-  }
-
-  // Ensure MCP config directory exists (non-destructive)
-  ensureMcpConfigDirectory();
-
-  // Write MCP config for the adapter to pick up
+  // Connect with the native MCP client.
+  const factory = clientFactory();
+  let client: HonchoMcpClient;
   try {
-    writeHonchoMcpConfig(key);
-    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_config", phase: "completed" });
+    client = await factory(key);
   } catch (err) {
-    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_config", phase: "failed", reason: err instanceof Error ? err.message : String(err) });
-    // Continue anyway - adapter may use its own config
-  }
+    const message = err instanceof Error ? err.message : String(err);
+    const status = errorStatus(err);
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_connect", phase: "failed", reason: redact(message) });
+    honchoStatus.recordFailure("init", "connect_failed", { error: redact(message) });
 
-  // Get pi.events from options (passed from startup) or fall back to global
-  const piEvents = options?.piEvents ?? (globalThis as { pi?: { events?: PiEvents } }).pi?.events;
-
-  if (!piEvents) {
-    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "init", phase: "failed", reason: "pi.events not available" });
-    honchoStatus.recordFailure("init", "adapter_missing", { error: "pi.events not available" });
-    return null;
-  }
-
-  // Create registration request with bearer token authentication
-  const request: McpRuntimeRegistrationRequest = {
-    version: 1,
-    name: HONCHO_SERVER_NAME,
-    definition: {
-      url: "https://mcp.honcho.dev",
-      headers: {
-        Authorization: `Bearer ${key}`,
-      },
-    },
-  };
-
-  // Emit registration event - adapter writes request.result synchronously
-  piEvents.emit(MCP_RUNTIME_REGISTER_EVENT, request);
-
-  // Read result immediately after emit. The value goes into a local: reading
-  // the property again after the emit would lose the narrowing, because a
-  // call may change the property.
-  const registration = request.result;
-  if (registration === undefined) {
-    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_register", phase: "failed", reason: "MCP adapter not responding" });
-    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "failed", helpUrl: "pi install npm:pi-mcp-adapter" });
-    honchoStatus.recordFailure("init", "no_listener", { error: "No adapter responded" });
-    return null;
-  }
-
-  if (isRegistrationFailure(registration)) {
-    const errorMsg = registration.error?.message ?? "Unknown registration error";
-    
-    // Check for duplicate name - an existing server may already be registered
-    if (errorMsg.includes("already") || errorMsg.includes("duplicate")) {
-      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_register", phase: "completed", reason: "server already registered (duplicate name)" });
-      // Continue with memory initialization - the existing server should work
-    } else {
-      logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_register", phase: "failed", reason: errorMsg });
-      honchoStatus.recordFailure("init", "registration_rejected", { error: errorMsg });
-      return null;
+    const refusal = refusalResult(message, status);
+    if (refusal) {
+      honchoStatus.setConnected(false);
+      honchoStatus.recordFailure("init", "registration_rejected", { error: redact(message) });
+      return refusal;
     }
-  } else {
-    // Registration accepted - store handle for disposal
-    _honchoRegistration = registration.registration;
-    logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed" });
+
+    if (MODULE_MISSING_PATTERN.test(message)) {
+      return {
+        status: "mcp_unavailable",
+        memory: null,
+        reason: "the native MCP client library is not installed",
+        hint: "@earendil-works/pi-mcp 1.4.0 or newer is required for the native MCP client",
+      };
+    }
+
+    return {
+      status: "mcp_unavailable",
+      memory: null,
+      reason: `the Honcho MCP server could not be reached: ${redact(message)}`,
+      hint: `check the network and the endpoint ${HONCHO_MCP_URL}`,
+    };
+  }
+
+  _mcpClient = client;
+
+  // The tools of the server have to be listed: a server that answers the
+  // handshake but not the tools is not usable.
+  try {
+    await client.listTools();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = errorStatus(err);
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_tools", phase: "failed", reason: redact(message) });
+    honchoStatus.recordFailure("init", "list_tools_failed", { error: redact(message) });
+
+    const refusal = refusalResult(message, status);
+    if (refusal) {
+      honchoStatus.setConnected(false);
+      honchoStatus.recordFailure("init", "registration_rejected", { error: redact(message) });
+      await closeUnusedClient(client);
+      return refusal;
+    }
+
+    await closeUnusedClient(client);
+    return {
+      status: "mcp_unavailable",
+      memory: null,
+      reason: `the Honcho MCP server did not list its tools: ${redact(message)}`,
+      hint: `the endpoint ${HONCHO_MCP_URL} answered the handshake but no tools`,
+    };
+  }
+
+  // The handshake does not check the credential: the verdict arrives with
+  // the first tool call. The probe asks for it, with a short timeout.
+  const probe = await probeCredential(client, options?.probeTimeoutMs ?? CREDENTIAL_PROBE_TIMEOUT_MS);
+  if (probe.verdict === "rejected") {
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "credential_probe", phase: "failed", reason: redact(probe.reason) });
+    honchoStatus.setConnected(false);
+    honchoStatus.recordFailure("init", "credential_rejected", { error: redact(probe.reason) });
+    await closeUnusedClient(client);
+    return {
+      status: "registration_rejected",
+      memory: null,
+      reason: `the server rejected the stored credential: ${redact(probe.reason)}`,
+      hint: "the stored Honcho credential was rejected by the server",
+      ...(probe.httpStatus ? { httpStatus: probe.httpStatus } : {}),
+    };
+  }
+  if (probe.verdict === "unavailable") {
+    logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "credential_probe", phase: "failed", reason: redact(probe.reason) });
+    honchoStatus.recordFailure("init", "probe_failed", { error: redact(probe.reason) });
+    await closeUnusedClient(client);
+    return {
+      status: "mcp_unavailable",
+      memory: null,
+      reason: `the Honcho MCP server did not answer the credential probe: ${probe.reason}`,
+      hint: `the endpoint ${HONCHO_MCP_URL} accepted the handshake but did not answer a call`,
+    };
+  }
+
+  // Register the server with Pi, so the model and `/mcp` see it. The
+  // registration needs the extension API of the running Pi: without it the
+  // module does not attempt a registration, and it never reports a failure
+  // for a registration that the caller performs itself.
+  const pi = options?.pi;
+  if (pi) {
+    const registration = registerHonchoMcpServer(pi, key);
+    _mcpRegistered = registration.registered;
+    if (registration.registered) {
+      // The extension API is kept for the shutdown: the server has to be
+      // unregistered again, or a reload keeps the old registration alive.
+      // Only a registration that this extension made is ever unregistered:
+      // a name that another extension owns has to stay with its owner.
+      _registrar = pi;
+      _mcpRegistrationReason = undefined;
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed" });
+    } else {
+      _mcpRegistrationReason = redact(registration.reason ?? "the server was not registered");
+      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_register", phase: "failed", reason: _mcpRegistrationReason });
+      honchoStatus.recordFailure("init", "registration_failed", { error: _mcpRegistrationReason });
+    }
   }
 
   // Create memory instance
   _honchoMemory = new HonchoMemory({
     apiKey: key,
   });
+  honchoStatus.setConnected(true);
 
-  // MCP registration done - identity setup deferred to session_start
-  // (MCP tool calls require an active Pi session)
-  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_register", phase: "completed", reason: "identity_setup_deferred" });
+  // The identity setup is deferred to session_start (the workspace, the
+  // peers and the session belong to a running session).
+  logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "init", phase: "completed", reason: "identity_setup_deferred" });
   honchoStatus.recordSuccess("init", undefined, { note: "identity deferred to session_start" });
 
-  return _honchoMemory;
+  _initReady = true;
+
+  const ready: HonchoInitResult = {
+    status: "ready",
+    memory: _honchoMemory,
+    mcpRegistered: _mcpRegistered,
+  };
+  if (_mcpRegistrationReason) {
+    ready.mcpRegistrationReason = _mcpRegistrationReason;
+  }
+  return ready;
 }
 
 /**
@@ -936,7 +1635,7 @@ export async function retrieveHonchoContext(
 
 /**
  * Shutdown Honcho integration.
- * Disposes owned registration, stops timers, clears state.
+ * Closes the MCP client, stops timers, clears state.
  */
 export async function shutdownHoncho(): Promise<void> {
   if (_disposed) {
@@ -945,6 +1644,18 @@ export async function shutdownHoncho(): Promise<void> {
 
   _disposed = true;
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "shutdown", phase: "start" });
+
+  // The MCP server must not stay registered with Pi. A reload registers it
+  // again, and the old registration would keep the old credential alive.
+  if (_registrar && typeof _registrar.unregisterMcpServer === "function") {
+    try {
+      _registrar.unregisterMcpServer(HONCHO_SERVER_NAME);
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_unregister", phase: "completed" });
+    } catch (err) {
+      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_unregister", phase: "failed", reason: redact(err instanceof Error ? err.message : String(err)) });
+    }
+  }
+  _registrar = null;
 
   // Dispose memory instance
   if (_honchoMemory) {
@@ -955,27 +1666,25 @@ export async function shutdownHoncho(): Promise<void> {
   // Clear identity
   _identity = null;
 
-  // Dispose owned registration
-  if (_honchoRegistration) {
+  // Close the native MCP client
+  if (_mcpClient) {
     try {
-      await _honchoRegistration.dispose();
-      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "dispose_registration", phase: "completed" });
+      await _mcpClient.close();
+      logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "mcp_close", phase: "completed" });
     } catch (err) {
-      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "dispose_registration", phase: "failed", reason: err instanceof Error ? err.message : String(err) });
+      logServiceEvent({ ts: new Date().toISOString(), level: "warn", service: "honcho", operation: "mcp_close", phase: "failed", reason: redact(err instanceof Error ? err.message : String(err)) });
     }
-    _honchoRegistration = null;
+    _mcpClient = null;
   }
 
+  _apiKey = null;
+  _mcpRegistered = false;
+  _mcpRegistrationReason = undefined;
   _initialized = false;
+  _initReady = false;
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "shutdown", phase: "completed" });
 }
 
-/**
- * Register Honcho with session lifecycle hooks.
- * Call this during harness startup to wire Honcho into Pi events.
- *
- * @param getPiEvents Function that returns pi.events when available
- */
 /**
  * Call a Honcho MCP tool (exported for honcho-memory.ts)
  */
@@ -994,6 +1703,8 @@ export async function honchoToolCall(
 export function registerHonchoLifecycle(
   pi: {
     on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void;
+    registerMcpServer?: (name: string, config: unknown) => void;
+    unregisterMcpServer?: (name: string) => void;
   }
 ): void {
   // Note: initHoncho() is called at startup in index.ts
@@ -1001,6 +1712,10 @@ export function registerHonchoLifecycle(
   // This function only handles message ingestion and shutdown
 
   logServiceEvent({ ts: new Date().toISOString(), level: "info", service: "honcho", operation: "lifecycle_hooks", phase: "start" });
+
+  // The extension API is not remembered here: this function registers
+  // nothing. Only the registration of the initialization may be undone by
+  // the shutdown, and the shutdown may only undo what this extension made.
 
   // Shutdown at session shutdown
   pi.on("session_shutdown", async () => {
