@@ -11,6 +11,35 @@
  * way.
  */
 
+/**
+ * The pieces of the wait that a release touches.
+ */
+export interface WaitRelease {
+	/**
+	 * Clear the wait state.
+	 *
+	 * The state is the moment the wait began and the marker of the
+	 * question that was notified. Both belong to the wait: a question that
+	 * is closed must not keep the harness from noticing it again.
+	 */
+	clearWaitState(): void;
+	/** Stop the countdown of the wait and release its timer. */
+	stopCountdown(): void;
+}
+
+/**
+ * Release a wait.
+ *
+ * The state and the countdown of the wait die together: a live countdown
+ * without a wait draws a row for a question that is not waiting any more,
+ * and a wait without a stopped countdown leaves a tick that can fire for a
+ * question that is gone.
+ */
+export function releaseWait(release: WaitRelease): void {
+	release.clearWaitState();
+	release.stopCountdown();
+}
+
 /** The question that is waiting for an answer. */
 export interface PendingWaitQuestion {
 	requestId: string;
@@ -18,7 +47,7 @@ export interface PendingWaitQuestion {
 }
 
 /** The pieces of the harness that the release of a wait touches. */
-export interface PendingWaitOwner {
+export interface PendingWaitOwner extends WaitRelease {
 	/** The question that is waiting for an answer, if there is one. */
 	currentQuestion(): PendingWaitQuestion | null | undefined;
 	/**
@@ -28,10 +57,6 @@ export interface PendingWaitOwner {
 	 * pending any more needs no closing.
 	 */
 	expireQuestion(requestId: string, reason: string): boolean;
-	/** Clear the wait state: the wait is over. */
-	clearWait(): void;
-	/** Stop the countdown of the wait and release its timer. */
-	stopCountdown(): void;
 	/** Clear the status row of the wait. */
 	clearStatus(): void;
 	/** Record the transition of the question. */
@@ -46,12 +71,8 @@ export interface PendingWaitOwner {
  * the transition says why the question was closed.
  */
 export function endPendingWait(reason: string, owner: PendingWaitOwner): void {
-	// The countdown of the question is over with the wait: a tick of it
-	// must not draw a status and must not start a decision.
-	owner.stopCountdown();
-
-	// The question is closed explicitly, so the buttons of that request do
-	// not stay open and look like a request that is still waiting.
+	// The question is closed before the wait is cleared: nothing can
+	// decide about it in between.
 	const question = owner.currentQuestion();
 	if (question && question.state === "pending") {
 		const expired = owner.expireQuestion(question.requestId, reason) === true;
@@ -62,8 +83,7 @@ export function endPendingWait(reason: string, owner: PendingWaitOwner): void {
 		);
 	}
 
-	// The wait state is over with the question: the judge is not asked
-	// about a question of a session that is gone.
-	owner.clearWait();
+	// The wait and the countdown of the wait die together.
+	releaseWait(owner);
 	owner.clearStatus();
 }

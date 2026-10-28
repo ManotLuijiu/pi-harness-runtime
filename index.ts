@@ -46,7 +46,7 @@ import {
 	PendingQuestionCountdown,
 	type CountdownView,
 } from "./harness/pending-countdown.ts";
-import { endPendingWait } from "./harness/pending-wait.ts";
+import { endPendingWait, releaseWait } from "./harness/pending-wait.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 // The Honcho contract lives with the Honcho integration. A type-only import
 // is erased at runtime, so the startup keeps loading the module lazily.
@@ -1210,6 +1210,33 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		}
 
 		/**
+		 * Clear the state of a wait.
+		 *
+		 * The moment the wait began and the marker of the question that
+		 * was notified belong to the wait: a question that is closed must
+		 * not keep the harness from noticing the same question again.
+		 */
+		function clearWaitState(): void {
+			waitingForUserSince = null;
+			sharedState.waitingForUserSince = null;
+			_lastNotifiedQuestion = "";
+		}
+
+		/**
+		 * Release a wait whose question is closed already.
+		 *
+		 * The state of the wait and the countdown of the wait die
+		 * together: a live countdown without a wait draws a row for a
+		 * question that is not waiting any more.
+		 */
+		function clearWait(): void {
+			releaseWait({
+				clearWaitState,
+				stopCountdown: () => pendingCountdown.stop(),
+			});
+		}
+
+		/**
 		 * End the wait for a pending question.
 		 *
 		 * The countdown, the wait state and the pending question belong
@@ -1222,11 +1249,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				currentQuestion: () => sharedState.pqController?.getCurrentQuestion?.(),
 				expireQuestion: (requestId: string, why: string) =>
 					sharedState.pqController?.expireByTimeout?.(requestId, why) === true,
-				clearWait: () => {
-					waitingForUserSince = null;
-					sharedState.waitingForUserSince = null;
-					_lastNotifiedQuestion = "";
-				},
+				clearWaitState,
 				stopCountdown: () => pendingCountdown.stop(),
 				clearStatus: () => updateAutoContinueStatus("IDLE"),
 				logTransition: (requestId: string, outcome: string, why: string) =>
@@ -1311,12 +1334,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			logQuestionTransition(question.requestId, "answered", answer);
 			// The question is answered, so the wait is over. The wait state
 			// is cleared here, after a successful resolution: a stale click
-			// must never clear a valid pending wait.
-			waitingForUserSince = null;
-			sharedState.waitingForUserSince = null;
-			_lastNotifiedQuestion = "";
-			// The question is answered: the countdown of the wait is over.
-			pendingCountdown.stop();
+			// must never clear a valid pending wait. The wait and the
+			// countdown of the wait are over with it.
+			clearWait();
 			updateAutoContinueStatus("IDLE");
 			// Dispatch answer to Pi
 			const message = answer === "yes" ? "yes" : "not yet";
@@ -1557,11 +1577,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					}
 				lastUserMessage = new Date();
 				if (waitingForUserSince) {
-					waitingForUserSince = null;
-					_lastNotifiedQuestion = "";
-					// The user answered in Pi: the countdown of the wait is
-					// over with it.
-					pendingCountdown.stop();
+					// The user answered in Pi: the wait and the countdown of
+					// the wait are over with it.
+					clearWait();
 					updateAutoContinueStatus("IDLE");
 					// Cancel pending question on user response
 					// (User answered via Pi instead of button)
@@ -1803,11 +1821,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						// The deadline belongs to the captured question: a newer
 						// question keeps its own wait state.
 						if (waitBelongsToRequest(questionContext?.requestId)) {
-							waitingForUserSince = null;
-							sharedState.waitingForUserSince = null;
-							// The request expired: the countdown of the wait
-							// is over with it.
-							pendingCountdown.stop();
+							// The request expired: the wait and the countdown
+							// of the wait are over with it.
+							clearWait();
 							updateAutoContinueStatus("IDLE");
 						}
 					} else {
@@ -1852,12 +1868,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						// The wait state belongs to the captured question: a
 						// newer question keeps its own wait.
 						if (waitBelongsToRequest(questionContext?.requestId)) {
-							waitingForUserSince = null;
-							sharedState.waitingForUserSince = null;
-							_lastNotifiedQuestion = "";
-							// The stale decision is discarded: the countdown
-							// of the wait is over with it.
-							pendingCountdown.stop();
+							// The stale decision is discarded: the wait and
+							// the countdown of the wait are over with it.
+							clearWait();
 							updateAutoContinueStatus("IDLE");
 						} else {
 							logToFile(
@@ -1878,12 +1891,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						);
 						(sharedState.todoContinuationController as any)?.explicitPause?.();
 						if (waitBelongsToRequest(questionContext?.requestId)) {
-							waitingForUserSince = null;
-							sharedState.waitingForUserSince = null;
-							_lastNotifiedQuestion = "";
-							// The work pauses for a human: the countdown of
-							// the wait is over with it.
-							pendingCountdown.stop();
+							// The work pauses for a human: the wait and the
+							// countdown of the wait are over with it.
+							clearWait();
 							updateAutoContinueStatus("IDLE");
 						}
 						return;
@@ -1914,11 +1924,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						deadlineMinutes: MAX_WAIT_MINUTES,
 					});
 					pi.sendUserMessage(instruction, { deliverAs: "steer" });
-					waitingForUserSince = null;
-					sharedState.waitingForUserSince = null;
-					_lastNotifiedQuestion = "";
-					// The question is closed: the countdown of the wait is over.
-					pendingCountdown.stop();
+					// The question is closed: the wait and the countdown of
+					// the wait are over with it.
+					clearWait();
 
 					// The status stays "RUN" until the turn that the steer
 					// started has settled. A timer would clear it while the

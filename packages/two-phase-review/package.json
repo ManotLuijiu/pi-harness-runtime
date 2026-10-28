@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/two-phase-review",
-  "version": "1.1.461",
+  "version": "1.1.462",
   "description": "pi-harness-runtime — two-phase implementation and review workflow (queue review signals, gate the phase, scope the diff)",
   "type": "module",
   "main": "./dist/index.js",

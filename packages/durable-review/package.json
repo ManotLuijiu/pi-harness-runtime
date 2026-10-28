@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/durable-review",
-  "version": "1.1.461",
+  "version": "1.1.462",
   "description": "SQLite-backed durable reviewer using @earendil-works/pi-durable",
   "type": "module",
   "main": "src/index.ts",

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { endPendingWait } from "../harness/pending-wait.ts";
+import { endPendingWait, releaseWait } from "../harness/pending-wait.ts";
 
 const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
 
@@ -30,7 +30,7 @@ function createWait() {
 				state.expired = { requestId, reason };
 				return true;
 			},
-			clearWait: () => {
+			clearWaitState: () => {
 				state.waitingSince = null;
 			},
 			stopCountdown: () => {
@@ -86,9 +86,9 @@ test("the question is closed before the wait is cleared", () => {
 			order.push("expire");
 			return wait.owner.expireQuestion(requestId, reason);
 		},
-		clearWait: () => {
+		clearWaitState: () => {
 			order.push("clear");
-			wait.owner.clearWait();
+			wait.owner.clearWaitState();
 		},
 	};
 
@@ -150,6 +150,81 @@ test("the session switch and the shutdown end the wait in the harness", () => {
 	);
 });
 
+test("a release clears the wait state and stops the countdown", () => {
+	let cleared = 0;
+	let stopped = 0;
+
+	releaseWait({
+		clearWaitState: () => {
+			cleared += 1;
+		},
+		stopCountdown: () => {
+			stopped += 1;
+		},
+	});
+
+	assert.equal(cleared, 1, "the wait state is cleared");
+	assert.equal(stopped, 1, "the countdown of the wait is stopped");
+});
+
+test("a release that throws does not leave the countdown running", () => {
+	let stopped = 0;
+
+	assert.throws(() =>
+		releaseWait({
+			clearWaitState: () => {
+				throw new Error("the state is gone");
+			},
+			stopCountdown: () => {
+				stopped += 1;
+			},
+		}),
+	);
+	assert.equal(stopped, 0, "the countdown is not stopped after a failed release");
+});
+
+test("the wait state is cleared in one place only", () => {
+	// Every way out of a wait goes through one release, so a way out that
+	// forgets the countdown cannot be added without failing this check.
+	const clears = [...indexSource.matchAll(/(?<![.\w])waitingForUserSince = null;/g)];
+	assert.equal(clears.length, 1, "the wait state is cleared in one place only");
+
+	const stateFn = indexSource.match(/function clearWaitState\(\): void \{[^}]*\}/);
+	assert.ok(stateFn, "the shared release of the wait state exists");
+	assert.ok(
+		stateFn[0].includes("waitingForUserSince = null"),
+		"the release of the wait state clears the wait",
+	);
+
+	const releaseFn = indexSource.match(/function clearWait\(\): void \{[\s\S]*?\n\t\t\}/);
+	assert.ok(releaseFn, "the release of a wait exists");
+	assert.ok(
+		releaseFn[0].includes("releaseWait"),
+		"the release of a wait goes through the shared release",
+	);
+	assert.ok(
+		releaseFn[0].includes("stopCountdown"),
+		"the release of a wait stops the countdown with the wait state",
+	);
+});
+
+test("every way out of a wait goes through the shared release", () => {
+	// The countdown is stopped by hand in three places, and they are the
+	// ones that keep the wait: the countdown gives up and the fallback
+	// poll takes over. The wait state is cleared in one place only, so
+	// none of them clears it.
+	const stops = [...indexSource.matchAll(/pendingCountdown\.stop\(\);/g)];
+	assert.ok(stops.length >= 1, "the countdown is stopped somewhere");
+	for (const stop of stops) {
+		const around = indexSource.slice(Math.max(0, stop.index - 300), stop.index + 300);
+		if (around.includes("clearWaitState")) continue;
+		assert.ok(
+			!/waitingForUserSince = null;/.test(around),
+			"a countdown that is stopped by hand does not clear the wait state",
+		);
+	}
+});
+
 test("the wait of a session that is gone is never decided about", () => {
 	// The judge reads the wait state and the question of the controller.
 	// The release of a wait clears both, so the judge has nothing to
@@ -161,7 +236,7 @@ test("the wait of a session that is gone is never decided about", () => {
 	);
 	assert.match(
 		indexSource,
-		/clearWait: \(\) => \{\s*\n\s*waitingForUserSince = null;/,
+		/function clearWaitState\(\): void \{\s*\n\s*waitingForUserSince = null;/,
 		"the release of a wait clears the wait state",
 	);
 	assert.match(
