@@ -26,6 +26,7 @@ import {
 	evaluateChecks,
 	findCheckRun,
 	mergePullRequest,
+	waitForChecks,
 } from "../scripts/lib/github-checks.mjs";
 import {
 	MERGE_TARGETS,
@@ -160,6 +161,306 @@ test("every run of a required name counts, not only the first", () => {
 	assert.equal(evaluation.failed.length, 1);
 	assert.equal(evaluation.failed[0].name, CI_CHECK);
 	assert.equal(evaluation.failed[0].conclusion, "failure");
+});
+
+/** A check run of a workflow run, with the url that names the run. */
+function checkRunOf(run, overrides = {}) {
+	return {
+		details_url: `https://github.com/ManotLuijiu/pi-harness-runtime/actions/runs/${run}/job/1`,
+		started_at: "2026-10-28T18:00:00Z",
+		...overrides,
+	};
+}
+
+test("a re-run of a failed run decides the gate", () => {
+	// The attempt that failed stays on the commit. The newest attempt of
+	// the run is its state now, so the re-run is what makes the gate
+	// green again.
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 100,
+				started_at: "2026-10-28T17:55:00Z",
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "success",
+				id: 200,
+				started_at: "2026-10-28T18:11:00Z",
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.ready, true);
+	assert.equal(evaluation.passed, true);
+	assert.deepEqual(evaluation.failed, []);
+});
+
+test("the newest attempt of a run decides, even when it is red", () => {
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "success",
+				id: 100,
+				started_at: "2026-10-28T17:55:00Z",
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 200,
+				started_at: "2026-10-28T18:11:00Z",
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.passed, false);
+	assert.equal(evaluation.failed.length, 1);
+	assert.equal(evaluation.failed[0].name, CI_CHECK);
+});
+
+test("a run that is still going decides, even when an attempt was green", () => {
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "success",
+				id: 100,
+				started_at: "2026-10-28T17:55:00Z",
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "in_progress",
+				conclusion: null,
+				id: 200,
+				started_at: "2026-10-28T18:11:00Z",
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.ready, false);
+	assert.equal(evaluation.passed, false);
+	assert.deepEqual(evaluation.pending, [CI_CHECK]);
+});
+
+test("two different runs of the same name both count", () => {
+	// The push of the head commit and the pull request of its merge ref
+	// are two runs of the same name, and both are reported on the head
+	// commit.
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740228281, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "success",
+				id: 100,
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 200,
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.passed, false);
+	assert.equal(evaluation.failed.length, 1);
+	assert.equal(evaluation.failed[0].name, CI_CHECK);
+});
+
+test("a red run and a running run of the same name both count", () => {
+	// The wait ends when every run of a required name has finished, so
+	// the run that is still going has to be seen even when another run
+	// of the name is red.
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740228281, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 100,
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "in_progress",
+				conclusion: null,
+				id: 200,
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.ready, false);
+	assert.equal(evaluation.passed, false);
+	assert.deepEqual(evaluation.pending, [CI_CHECK]);
+	assert.equal(evaluation.failed.length, 1);
+	assert.equal(evaluation.failed[0].conclusion, "failure");
+});
+
+test("a conclusion that can never be cleared holds the gate", () => {
+	// A cancelled or a stale run stays the way it is, so it holds the
+	// gate until a human looks at it.
+	for (const conclusion of ["cancelled", "stale"]) {
+		const evaluation = evaluateChecks(
+			[
+				{
+					name: SENSITIVE_TERMS_CHECK,
+					status: "completed",
+					conclusion: "success",
+				},
+				checkRunOf(40740228281, {
+					name: CI_CHECK,
+					status: "completed",
+					conclusion: "success",
+					id: 100,
+				}),
+				checkRunOf(40740365097, {
+					name: CI_CHECK,
+					status: "completed",
+					conclusion,
+					id: 200,
+				}),
+			],
+			REQUIRED_CHECKS,
+		);
+		assert.equal(evaluation.passed, false, `${conclusion} counted as green`);
+		assert.equal(evaluation.failed.length, 1);
+	}
+});
+
+test("the wait ends when every run of a required name has finished", async () => {
+	// The first read reports a red run and a run that is still going.
+	// The wait may not end there: the run that is still going has to be
+	// read again.
+	const answers = [
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740228281, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 100,
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "in_progress",
+				conclusion: null,
+				id: 200,
+			}),
+		],
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740228281, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 100,
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 200,
+			}),
+		],
+	];
+	let read = 0;
+	const evaluation = await waitForChecks({
+		repo: "ManotLuijiu/pi-harness-runtime",
+		sha: "abc1234",
+		names: REQUIRED_CHECKS,
+		token: "t",
+		timeoutMs: 60_000,
+		intervalMs: 1,
+		sleepImpl: async () => {},
+		fetchImpl: async () => {
+			const body = answers[Math.min(read, answers.length - 1)];
+			read += 1;
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ check_runs: body }),
+			};
+		},
+	});
+	assert.equal(read, 2, "the wait ended while a run was still going");
+	assert.equal(evaluation.ready, true);
+	assert.equal(evaluation.passed, false);
+	assert.equal(evaluation.failed.length, 1);
+});
+
+test("the report names how many runs reported a check", () => {
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			checkRunOf(40740228281, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "success",
+				id: 100,
+			}),
+			checkRunOf(40740365097, {
+				name: CI_CHECK,
+				status: "completed",
+				conclusion: "failure",
+				id: 200,
+			}),
+		],
+		REQUIRED_CHECKS,
+	);
+	const summary = buildSummary({
+		decision: decideAutoMerge({
+			evaluation,
+			pullRequest: pullRequest(),
+			repository: "ManotLuijiu/pi-harness-runtime",
+		}),
+		evaluation,
+	});
+	assert.match(summary, /\| Tests \| 2 \|/);
 });
 
 test("a run of a required name that is still going is not green", () => {

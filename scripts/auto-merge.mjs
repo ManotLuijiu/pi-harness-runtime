@@ -135,11 +135,15 @@ export function buildSummary({ decision, evaluation }) {
 		lines.push(`- ${reason}`);
 	}
 	lines.push("");
-	lines.push("| Check | Status | Conclusion |");
-	lines.push("| --- | --- | --- |");
+	lines.push("| Check | Runs | Status | Conclusion |");
+	lines.push("| --- | --- | --- | --- |");
 	for (const check of evaluation.checks) {
+		// The number of the runs that reported the check. A check that
+		// two runs reported is a different situation than a check that
+		// one run reported, and the operator needs to see which one it
+		// is.
 		lines.push(
-			`| ${check.name} | ${check.status} | ${check.conclusion ?? "-"} |`,
+			`| ${check.name} | ${check.runs ?? 0} | ${check.status} | ${check.conclusion ?? "-"} |`,
 		);
 	}
 	lines.push("");
