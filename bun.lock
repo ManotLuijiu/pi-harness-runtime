@@ -9,6 +9,7 @@
         "@aws-sdk/s3-request-presigner": "^3.1152.0",
         "@earendil-works/chord": "^1.3.0",
         "@earendil-works/pi-durable": "^1.3.0",
+        "@earendil-works/pi-mcp": "^1.4.0",
         "@langchain/core": "^1.2.9",
         "@langchain/langgraph": "^1.4.13",
         "@langchain/langgraph-checkpoint": "^1.1.5",
@@ -41,23 +42,19 @@
         "@earendil-works/pi-ai": "^1.3.0",
         "@earendil-works/pi-coding-agent": "*",
         "@earendil-works/pi-tui": "*",
-        "pi-mcp-adapter": ">=6.0.0",
         "typebox": "*",
       },
-      "optionalPeers": [
-        "pi-mcp-adapter",
-      ],
     },
     "packages/a2a-adapter": {
       "name": "@pi/a2a-adapter",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/agent-policy": {
       "name": "@pi/agent-policy",
-      "version": "1.0.0",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
@@ -67,25 +64,25 @@
     },
     "packages/architecture-generator": {
       "name": "@pi-harness/architecture-generator",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^5.4.0",
       },
     },
     "packages/auth": {
       "name": "@pi-harness/auth",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/autonomous-refactor": {
       "name": "@pi/autonomous-refactor",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/autonomous-runtime": {
       "name": "@pi/autonomous-runtime",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -93,14 +90,14 @@
     },
     "packages/cache-strategy": {
       "name": "@pi/cache-strategy",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/capability-registry": {
       "name": "@pi-harness/capability-registry",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -108,7 +105,7 @@
     },
     "packages/checkpoint": {
       "name": "@pi/checkpoint",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -116,7 +113,7 @@
     },
     "packages/cli-plugin-sdk": {
       "name": "@pi/cli-plugin-sdk",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "execa": "^10.0.1",
       },
@@ -126,32 +123,32 @@
     },
     "packages/clipboard": {
       "name": "@pi/clipboard",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/clipboard-plugin": {
       "name": "@pi/clipboard-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi/framework-plugin-sdk": "workspace:*",
       },
     },
     "packages/code-generation": {
       "name": "@pi/code-generation",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/code-review": {
       "name": "@pi/code-review",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/codex-adapter": {
       "name": "@pi/codex-adapter",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "openai": "^7.4.0",
       },
@@ -161,7 +158,7 @@
     },
     "packages/codex-watcher": {
       "name": "@pi-harness/codex-watcher",
-      "version": "1.1.137",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^5.7.0",
@@ -169,11 +166,11 @@
     },
     "packages/config-capture": {
       "name": "@moocoding/config-capture",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/connection-runtime": {
       "name": "@pi-harness/connection-runtime",
-      "version": "1.1.336",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/contracts": "workspace:*",
       },
@@ -183,7 +180,7 @@
     },
     "packages/context-compiler": {
       "name": "@pi/context-compiler",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/task-compiler": "workspace:*",
@@ -197,18 +194,18 @@
     },
     "packages/context-discovery": {
       "name": "@pi/context-discovery",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/context-manager": {
       "name": "@pi-harness/context-manager",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/contracts": {
       "name": "@pi-harness/contracts",
-      "version": "1.1.336",
+      "version": "1.1.458",
       "dependencies": {
         "zod": "^4.6.7",
       },
@@ -218,7 +215,7 @@
     },
     "packages/cookie-sanitizer": {
       "name": "@pi-harness/cookie-sanitizer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "chokidar": "^5.0.0",
       },
@@ -228,7 +225,7 @@
     },
     "packages/cost-optimizer": {
       "name": "@pi-harness/cost-optimizer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -236,22 +233,22 @@
     },
     "packages/dependency-analyzer": {
       "name": "@pi/dependency-analyzer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/django-plugin": {
       "name": "@pi/django-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/doc-generator": {
       "name": "@pi-harness/doc-generator",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/durable-review": {
       "name": "@moocoding/durable-review",
-      "version": "0.1.0",
+      "version": "1.1.458",
       "dependencies": {
         "better-sqlite3": "^11.7.0",
       },
@@ -266,7 +263,7 @@
     },
     "packages/evaluation-engine": {
       "name": "@pi-harness/evaluation-engine",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -274,18 +271,18 @@
     },
     "packages/evaluation-runner": {
       "name": "@pi/evaluation-runner",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/event-bus": {
       "name": "@pi/event-bus",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/event-sink": {
       "name": "@pi-harness/event-sink",
-      "version": "1.1.336",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/contracts": "workspace:*",
         "better-sqlite3": "^11.7.0",
@@ -299,11 +296,11 @@
     },
     "packages/event-store": {
       "name": "@pi/event-store",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/experience-replay": {
       "name": "@pi-harness/experience-replay",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -311,51 +308,51 @@
     },
     "packages/feedback-collector": {
       "name": "@pi/feedback-collector",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/file-copy-helper": {
       "name": "@moocoding/file-copy-helper",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/framework-detector": {
       "name": "@pi/framework-detector",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/framework-plugin-sdk": {
       "name": "@pi/framework-plugin-sdk",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/frappe-plugin": {
       "name": "@pi/frappe-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/generic-web-plugin": {
       "name": "@pi/generic-web-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/health-monitor": {
       "name": "@pi/health-monitor",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/intent-analyzer": {
       "name": "@pi/intent-analyzer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/jev-judge": {
       "name": "@pi-harness/jev-judge",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "openai": "^4.77.0",
       },
@@ -369,7 +366,7 @@
     },
     "packages/knowledge-graph": {
       "name": "@pi-harness/knowledge-graph",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/okf-indexer": "workspace:*",
       },
@@ -379,7 +376,7 @@
     },
     "packages/knowledge-retrieval": {
       "name": "@pi-harness/knowledge-retrieval",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^5.0.0",
@@ -387,11 +384,11 @@
     },
     "packages/laravel-plugin": {
       "name": "@pi/laravel-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/learning-engine": {
       "name": "@pi-harness/learning-engine",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -399,7 +396,7 @@
     },
     "packages/logging": {
       "name": "@pi-harness/logging",
-      "version": "1.1.185",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^26.6.4",
         "typescript": "^5.7.2",
@@ -413,14 +410,14 @@
     },
     "packages/mcp-adapter": {
       "name": "@pi/mcp-adapter",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/memory-engine": {
       "name": "@pi-harness/memory-engine",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -428,14 +425,14 @@
     },
     "packages/milestone-manager": {
       "name": "@pi-harness/milestone-manager",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^5.4.0",
       },
     },
     "packages/model-registry": {
       "name": "@pi-harness/model-registry",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -443,18 +440,18 @@
     },
     "packages/nextjs-plugin": {
       "name": "@pi-harness/nextjs-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/notification": {
       "name": "@pi-harness/notification",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi/observability": "workspace:*",
       },
     },
     "packages/observability": {
       "name": "@pi/observability",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -462,18 +459,18 @@
     },
     "packages/okf-indexer": {
       "name": "@pi-harness/okf-indexer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/paperclip-integration": {
       "name": "@pi-harness/paperclip-integration",
-      "version": "0.9.4",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^5.7.3",
       },
     },
     "packages/performance-optimizer": {
       "name": "@pi-harness/performance-optimizer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^7.0.2",
@@ -481,7 +478,7 @@
     },
     "packages/permission-mode": {
       "name": "@pi-harness/permission-mode",
-      "version": "1.1.336",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/contracts": "workspace:*",
       },
@@ -491,7 +488,7 @@
     },
     "packages/privilege-broker": {
       "name": "@pi/privilege-broker",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "yaml": "^2.5.0",
       },
@@ -502,7 +499,7 @@
     },
     "packages/project-analyzer": {
       "name": "@pi/project-analyzer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/types": "workspace:*",
         "@pi/framework-detector": "workspace:*",
@@ -513,7 +510,7 @@
     },
     "packages/project-bootstrap": {
       "name": "@pi-harness/project-bootstrap",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi/framework-detector": "workspace:*",
       },
@@ -523,11 +520,11 @@
     },
     "packages/projection-engine": {
       "name": "@pi/projection-engine",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/prompt-compiler": {
       "name": "@pi/prompt-compiler",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/task-compiler": "workspace:*",
@@ -541,14 +538,14 @@
     },
     "packages/prompt-versioning": {
       "name": "@pi/prompt-versioning",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/provider-adapter-sdk": {
       "name": "@pi/provider-adapter-sdk",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -559,7 +556,7 @@
     },
     "packages/provider-router": {
       "name": "@pi-harness/provider-router",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -567,18 +564,18 @@
     },
     "packages/provider-selector": {
       "name": "@pi-harness/provider-selector",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/providers": {
       "name": "@pi-harness/providers",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/qdrant-skills": {
       "name": "@pi-harness/qdrant-skills",
-      "version": "1.0.0",
+      "version": "1.1.458",
       "dependencies": {
         "@qdrant/js-client-rest": "^1.19.0",
       },
@@ -592,22 +589,22 @@
     },
     "packages/quota-manager": {
       "name": "@pi-harness/quota-manager",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/rate-limiter": {
       "name": "@pi/rate-limiter",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/react-vite-plugin": {
       "name": "@pi/react-vite-plugin",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/relay": {
       "name": "@pi-harness/relay",
-      "version": "1.1.336",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/contracts": "workspace:*",
       },
@@ -617,14 +614,14 @@
     },
     "packages/release-manager": {
       "name": "@pi/release-manager",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/requirement-compiler": {
       "name": "@pi-harness/requirement-compiler",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/types": "workspace:*",
       },
@@ -634,15 +631,15 @@
     },
     "packages/runtime": {
       "name": "@pi-harness/runtime",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/scheduler": {
       "name": "@pi-harness/scheduler",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/scheduler-adapter": {
       "name": "@pi/scheduler-adapter",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
@@ -650,33 +647,33 @@
     },
     "packages/session": {
       "name": "@pi/session",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/session-api": {
       "name": "@pi/session-api",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/session-export": {
       "name": "@pi/session-export",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/shared-context": {
       "name": "@pi-harness/shared-context",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/skill-mcp-client": {
       "name": "@pi/skill-mcp-client",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^5.0.0",
       },
     },
     "packages/skill-registry": {
       "name": "@pi-harness/skill-registry",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "bun-types": "^1.0.0",
@@ -684,22 +681,22 @@
     },
     "packages/skills": {
       "name": "@pi-harness/skills",
-      "version": "0.1.0",
+      "version": "1.1.458",
     },
     "packages/sprint-planner": {
       "name": "@pi/sprint-planner",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/subscription-engine": {
       "name": "@pi/subscription-engine",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/task-compiler": {
       "name": "@pi-harness/task-compiler",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "@pi-harness/requirement-compiler": "workspace:*",
         "@pi-harness/types": "workspace:*",
@@ -711,11 +708,11 @@
     },
     "packages/tencentdb-memory": {
       "name": "@moocoding/tencentdb-memory",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/tencentdb-sync": {
       "name": "@pi-harness/tencentdb-sync",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "dependencies": {
         "chokidar": "^5.0.0",
       },
@@ -726,40 +723,40 @@
     },
     "packages/test-data-generator": {
       "name": "@pi/test-data-generator",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/test-generator": {
       "name": "@pi-harness/test-generator",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/todo-bd-sync": {
       "name": "@moocoding/todo-bd-sync",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/token-estimation": {
       "name": "@pi-harness/token-estimation",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/token-optimizer": {
       "name": "@pi-harness/token-optimizer",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "bun-types": "^1.0.0",
       },
     },
     "packages/tooling-preference": {
       "name": "@pi-harness/tooling-preference",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/trajectory": {
       "name": "@pi-harness/trajectory",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^5.7.0",
@@ -770,19 +767,19 @@
     },
     "packages/tui": {
       "name": "@pi-harness/tui",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/two-phase-review": {
       "name": "@pi-harness/two-phase-review",
-      "version": "1.1.0",
+      "version": "1.1.458",
     },
     "packages/types": {
       "name": "@pi-harness/types",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/voice-api": {
       "name": "@pi-harness/voice-api",
-      "version": "1.1.337",
+      "version": "1.1.458",
       "dependencies": {
         "openai": "^4.77.0",
       },
@@ -792,14 +789,14 @@
     },
     "packages/webmcp-tester": {
       "name": "@pi-harness/webmcp-tester",
-      "version": "1.1.0",
+      "version": "1.1.458",
       "peerDependencies": {
         "typescript": "^5.0.0",
       },
     },
     "packages/wiki": {
       "name": "@pi-harness/wiki",
-      "version": "0.0.1",
+      "version": "1.1.458",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "typescript": "^5.5.0",
@@ -807,19 +804,19 @@
     },
     "packages/workflow-events": {
       "name": "@pi/workflow-events",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/workspace-scanner": {
       "name": "@pi/workspace-scanner",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/worktree": {
       "name": "@pi-harness/worktree",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
     "packages/write-review": {
       "name": "@moocoding/write-review",
-      "version": "1.1.71-1",
+      "version": "1.1.458",
     },
   },
   "packages": {
@@ -958,6 +955,8 @@
     "@earendil-works/pi-coding-agent": ["@earendil-works/pi-coding-agent@0.84.1", "", { "dependencies": { "@earendil-works/pi-agent-core": "^0.84.1", "@earendil-works/pi-ai": "^0.84.1", "@earendil-works/pi-client": "^0.84.1", "@earendil-works/pi-protocol": "^0.84.1", "@earendil-works/pi-tui": "^0.84.1", "@silvia-odwyer/photon-node": "0.3.4", "chalk": "5.6.2", "cross-spawn": "7.0.6", "diff": "8.0.4", "glob": "13.0.6", "grok-mermaid": "0.2.2", "highlight.js": "10.7.3", "hosted-git-info": "9.0.3", "ignore": "7.0.5", "jiti": "2.7.0", "minimatch": "10.2.5", "proper-lockfile": "4.1.2", "semver": "7.8.0", "typebox": "1.3.7", "undici": "8.9.0", "yaml": "2.9.0" }, "optionalDependencies": { "@mariozechner/clipboard": "0.3.9" }, "bin": { "pi": "dist/cli.js" } }, "sha512-ncAqFrG+iybuPGOhMiZoEHkEzTpJgz3guYD32pD+M7ucc0WeHmauP6wa7qwP8V/KWvsZDVNa5XGsdZ7fkC7w7A=="],
 
     "@earendil-works/pi-durable": ["@earendil-works/pi-durable@1.3.0", "", { "dependencies": { "@earendil-works/chord": "1.3.0", "@earendil-works/pi-ai": "1.3.0", "@earendil-works/pi-codemode": "1.3.0", "@silvia-odwyer/photon": "0.3.3", "diff": "8.0.4", "typebox": "1.3.27" } }, "sha512-2aD0xead1LH0BBwUBxex28in/PpUJEwyaEiW/nLoTFUcZ/lDYEl6LHX6mGZKJG8tUHzERwJyysDgy0ruidt84w=="],
+
+    "@earendil-works/pi-mcp": ["@earendil-works/pi-mcp@1.4.0", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-92aZmmGsUpHHknYuKXZHRINQfahntw5hU9If0I0ZM49GojOaFHpkl5/GF3/aatqpt7v7GjZbBfpfSygGKW+pnw=="],
 
     "@earendil-works/pi-protocol": ["@earendil-works/pi-protocol@0.84.1", "", { "dependencies": { "typebox": "1.3.7" } }, "sha512-Ox1pciyeSPGEEUcxvR0/dJcrY7C6hrEGA8y71rOsvSIUlXN1Cbp/be/eoL71OGDBk5O97TeQPfWN6Ju/2Ehjww=="],
 
@@ -1805,7 +1804,7 @@
 
     "path-exists": ["path-exists@4.0.0", "", {}, "sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w=="],
 
-    "path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
+    "path-key": ["path-key@3.1.1", "", {}, "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q=="],
 
     "path-parse": ["path-parse@1.0.7", "", {}, "sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw=="],
 
@@ -2183,8 +2182,6 @@
 
     "cosmiconfig-typescript-loader/jiti": ["jiti@2.6.1", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ=="],
 
-    "cross-spawn/path-key": ["path-key@3.1.1", "", {}, "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q=="],
-
     "decamelize-keys/map-obj": ["map-obj@1.0.1", "", {}, "sha512-7N/q3lyZ+LVCp7PzuxrJr4KMbBE2hW7BT7YNia330OFxIf4d3r5zVpicP2650l7CPN6RM9zOJRl3NGpqSiw3Eg=="],
 
     "dotgitignore/find-up": ["find-up@3.0.0", "", { "dependencies": { "locate-path": "^3.0.0" } }, "sha512-1yD6RmLI1XBfxugvORwlck6f75tYL+iR0jqwsOrOxMZyGYqUuDhJ0l4AXdO1iX/FTs9cBAMEk1gWSEx1kSbylg=="],
@@ -2230,6 +2227,8 @@
     "minimist-options/is-plain-obj": ["is-plain-obj@1.1.0", "", {}, "sha512-yvkRyxmFKEOQ4pNXCmJG5AEQNlXJS5LaONXo5/cLdTZdWvsZ1ioJEonLGAosKlMWE8lwUy/bJzMjcw8az73+Fg=="],
 
     "normalize-package-data/hosted-git-info": ["hosted-git-info@4.1.0", "", { "dependencies": { "lru-cache": "^6.0.0" } }, "sha512-kyCuEOWjJqZuDbRHzL8V93NzQhwIB71oFWSyzVo+KPZI+pnQPPxucdkrOZvkLRnrf5URsQM+IJ09Dw29cRALIA=="],
+
+    "npm-run-path/path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
 
     "openai/@types/node": ["@types/node@18.19.130", "", { "dependencies": { "undici-types": "~5.26.4" } }, "sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg=="],
 

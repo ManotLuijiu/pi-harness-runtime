@@ -1,6 +1,6 @@
 {
   "name": "@pi/agent-policy",
-  "version": "1.1.458",
+  "version": "1.1.459",
   "description": "Agent policy runtime for pi-harness - enforces mandatory rule delivery and mutation gating",
   "type": "module",
   "main": "./dist/index.js",

@@ -13,16 +13,14 @@
 
 import { logServiceEvent, honchoStatus } from "./service-diagnostics.js";
 import { honchoPayload, honchoToolCall } from "./honcho-init.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 // ---------------------------------------------------------------------------
-// Honcho MCP Configuration (non-destructive)
+// Honcho credential
 // ---------------------------------------------------------------------------
 
-const MCP_CONFIG_DIR = join(homedir(), ".config", "mcp");
-const MCP_CONFIG_FILE = join(MCP_CONFIG_DIR, "mcp.json");
 const HONCHO_KEY_FILE = join(homedir(), ".pi-harness-runtime", "keys", "honcho-api-key.txt");
 
 /**
@@ -78,20 +76,30 @@ function redactSecrets(text: string): string {
 }
 
 /**
- * Ensure MCP config directory exists (non-destructive).
- * Does NOT write config at import time.
- */
-export function ensureMcpConfigDirectory(): void {
-	if (!existsSync(MCP_CONFIG_DIR)) {
-		mkdirSync(MCP_CONFIG_DIR, { recursive: true, mode: 0o755 });
-	}
-}
-
-/**
- * Load Honcho API key from keys directory.
+ * Load the Honcho API key.
+ *
+ * The environment variable wins over the key file: it is the explicit
+ * override of a session. The key file is the per-user default.
  * Does NOT write config files.
+ *
+ * This is deliberately not `key-loader.loadKey`: that one resolves the key
+ * through the Infisical provider, and the Honcho startup must stay a local
+ * read (no secret manager, no network in the startup path). The environment
+ * it reads is already filled by the key loader when another runtime filled
+ * it.
  */
 export function loadHonchoApiKey(): string | undefined {
+	// `process` does not exist in every context (a sandboxed module), so
+	// the environment is read defensively.
+	const fromEnv =
+		typeof process !== "undefined" && process.env
+			? process.env.HONCHO_API_KEY
+			: undefined;
+	const envKey = typeof fromEnv === "string" ? fromEnv.trim() : "";
+	if (envKey !== "") {
+		return envKey;
+	}
+
 	if (existsSync(HONCHO_KEY_FILE)) {
 		try {
 			return readFileSync(HONCHO_KEY_FILE, "utf8").trim() || undefined;
@@ -100,58 +108,6 @@ export function loadHonchoApiKey(): string | undefined {
 		}
 	}
 	return undefined;
-}
-
-/**
- * Read existing MCP config (non-destructive).
- * Returns null if config doesn't exist or is invalid.
- */
-export function readMcpConfig(): Record<string, unknown> | null {
-	if (!existsSync(MCP_CONFIG_FILE)) {
-		return null;
-	}
-	try {
-		const content = readFileSync(MCP_CONFIG_FILE, "utf8");
-		return JSON.parse(content);
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Write MCP config atomically (non-destructive).
- * Only updates the Honcho server entry, preserves other entries.
- */
-export function writeHonchoMcpConfig(apiKey: string): void {
-	ensureMcpConfigDirectory();
-
-	// Read existing config or create new one
-	let config: Record<string, unknown> = readMcpConfig() || { mcpServers: {} };
-	if (!config.mcpServers || typeof config.mcpServers !== "object") {
-		config = { mcpServers: {} };
-	}
-
-	// Update Honcho entry
-	const mcpServers = config.mcpServers as Record<string, unknown>;
-	mcpServers.honcho = {
-		url: "https://mcp.honcho.dev",
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-		},
-	};
-
-	// Atomic write with temp file
-	const tempFile = `${MCP_CONFIG_FILE}.tmp`;
-	writeFileSync(tempFile, JSON.stringify(config, null, 2), { mode: 0o644 });
-	try {
-		// Verify the temp file is valid JSON before renaming
-		JSON.parse(readFileSync(tempFile, "utf8"));
-		renameSync(tempFile, MCP_CONFIG_FILE);
-	} catch {
-		// Clean up invalid temp file
-		try { unlinkSync(tempFile); } catch { /* ignore */ }
-		throw new Error("Failed to write valid MCP config");
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +230,13 @@ export function stopHonchoHealthCheck(): void {
  * Honcho memory configuration
  */
 export interface HonchoMemoryConfig {
-  /** Honcho API key */
+  /**
+   * Honcho API key.
+   *
+   * Accepted, but the class does not read it: the calls go through the
+   * native MCP client of honcho-init, which owns the credential of the
+   * session. The field stays for the callers that still pass it.
+   */
   apiKey: string;
   /** Workspace ID for memory storage */
   workspaceId?: string;
@@ -475,7 +437,7 @@ export class HonchoMemory {
   }
 
   /**
-   * Call a Honcho MCP tool through the adapter.
+   * Call a Honcho MCP tool through the native MCP client.
    * Uses the honchoToolCall from honcho-init.ts.
    */
   private async callHonchoTool(

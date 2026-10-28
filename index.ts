@@ -26,6 +26,7 @@ import {
 	formatKeyFileFixes,
 	formatKeyPermissionFixes,
 	selectKeyFileFixes,
+	secureKeyTree,
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
 import { renderDetailLines } from "./harness/startup-lines.ts";
@@ -42,6 +43,12 @@ import {
 } from "./harness/startup-report.ts";
 import { localSkillsReport, skillsReport } from "./harness/skills-startup.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
+// The Honcho contract lives with the Honcho integration. A type-only import
+// is erased at runtime, so the startup keeps loading the module lazily.
+import type {
+	HonchoInitResult,
+	HonchoMcpRegistrar,
+} from "./harness/honcho-init.ts";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
 import { MiniMaxQuotaScraper } from "./harness/e2e/minimax-quota-scraper.js";
@@ -211,17 +218,44 @@ function getKeyFileAudit(): KeyFileAuditResult | null {
  * is a list nobody runs. The command is never executed here.
  */
 function reportExposedKeyFiles(): void {
-	const audit = getKeyFileAudit();
-	const exposed = audit?.exposed ?? [];
-	const exposedDirectories = audit?.exposedDirectories ?? [];
+	let audit = getKeyFileAudit();
+	let exposed = audit?.exposed ?? [];
+	let exposedDirectories = audit?.exposedDirectories ?? [];
 	if (exposed.length === 0 && exposedDirectories.length === 0) return;
+
+	// Key files belong to this app and are private by design. Repair unsafe
+	// Unix permissions automatically; keep the actionable warning only when
+	// the platform cannot express the repair or a path cannot be changed.
+	const repair = secureKeyTree(harnessKeysDir());
+	if (repair.supported) {
+		try {
+			audit = auditKeyFiles({ keysDir: harnessKeysDir() });
+			keyFileAudit = audit;
+		} catch {
+			// Preserve the original findings if the verification scan fails.
+		}
+		exposed = audit?.exposed ?? exposed;
+		exposedDirectories = audit?.exposedDirectories ?? exposedDirectories;
+		if (exposed.length === 0 && exposedDirectories.length === 0) {
+			addHarnessMessage(
+				"Keys",
+				`permissions secured automatically (${repair.securedFiles} files, ${repair.securedDirectories} directories)`,
+				"ok",
+			);
+			return;
+		}
+	}
+
 	const report = exposedKeyFilesReport({
 		exposed,
 		exposedDirectories,
 		fixes: formatKeyPermissionFixes({ keysDir: harnessKeysDir() }),
 	});
 	if (!report) return;
-	addHarnessMessage(report.label, report.text, report.status, report.details);
+	const failedPaths = repair.failedPaths.length > 0
+		? [`Could not change permissions for: ${repair.failedPaths.join(", ")}`]
+		: [];
+	addHarnessMessage(report.label, report.text, report.status, [...failedPaths, ...report.details]);
 }
 
 /**
@@ -3220,39 +3254,65 @@ function initConsoleGuard(pi: ExtensionAPI): void {
 }
 
 // --- honcho-memory: Honcho MCP for peer/user memory via https://mcp.honcho.dev ------
-// Registers Honcho MCP server and implements automatic memory lifecycle:
+// Registers the Honcho MCP server with Pi's NATIVE MCP support and implements
+// the automatic memory lifecycle:
 // - Ingest sanitized messages on completed turns
 // - Retrieve relevant context before agent execution
 // - Deduplication by message ID
 // - Bounded context injection with provenance
 
+/**
+ * The contract of the Honcho integration module.
+ *
+ * The module is loaded at runtime, so the shape of its exports is declared
+ * here: this is the only part TypeScript cannot check for us.
+ */
+interface HonchoModule {
+	initHoncho: (options: {
+		apiKey?: string;
+		pi?: HonchoMcpRegistrar;
+	}) => Promise<HonchoInitResult>;
+	registerHonchoLifecycle: (pi: unknown) => void;
+	/** The credential: the environment wins over the key file. */
+	loadHonchoApiKey: () => string | undefined;
+	/** Removes the credential from a text. */
+	redactHonchoKey: (text: string, apiKey: string) => string;
+}
+
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Honcho", "initializing", "wait");
+	let apiKey = "";
+	let honcho: HonchoModule | null = null;
 	try {
-	// Import new Honcho integration module
-	const { initHoncho: honchoInit, registerHonchoLifecycle } = await import("./harness/honcho-init.js");
+	// Import the Honcho integration module.
+	honcho = (await import("./harness/honcho-init.js")) as unknown as HonchoModule;
 
-	// Check for API key
-	const { readFileSync, existsSync } = await import("node:fs");
-	const home = process.env.HOME || process.env.USERPROFILE || homedir();
-	const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
+	// The credential comes from the loader of the module: the environment
+	// variable wins over the key file, and the file is the per-user default.
+	apiKey = honcho.loadHonchoApiKey() ?? "";
+	if (!apiKey) {
+		// A key file that exists but is empty is a different advice than a
+		// missing file.
+		const { readFileSync, existsSync } = await import("node:fs");
+		const home = process.env.HOME || process.env.USERPROFILE || homedir();
+		const keyPath = `${home}/.pi-harness-runtime/keys/honcho-api-key.txt`;
+		const emptyFile = existsSync(keyPath) && readFileSync(keyPath, "utf8").trim() === "";
 
-	if (!existsSync(keyPath)) {
+		if (emptyFile) {
+			logStartup("[pi-harness] Honcho: API key is empty — skipping");
+			addHarnessMessage("Honcho", "API key empty", "warn", [
+				...keyFileFixesOrFallback("Honcho", ["API key"]),
+				"Then reload Pi.",
+			]);
+			return;
+		}
+
 		logStartup("[pi-harness] Honcho not configured:");
 		logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
 		logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
 		addHarnessMessage("Honcho", "API key missing", "warn", [
 			...keyFileFixesOrFallback("Honcho", ["API key"]),
-			"Then reload Pi.",
-		]);
-		return;
-	}
-
-	const apiKey = readFileSync(keyPath, "utf8").trim();
-	if (!apiKey) {
-		logStartup("[pi-harness] Honcho: API key is empty — skipping");
-		addHarnessMessage("Honcho", "API key empty", "warn", [
-			...keyFileFixesOrFallback("Honcho", ["API key"]),
+			"Get a key: https://app.honcho.dev/api-keys",
 			"Then reload Pi.",
 		]);
 		return;
@@ -3260,27 +3320,130 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 
 		// Register lifecycle hooks using the new integration
 		// SAFETY: pi.on accepts these event names at runtime
-		registerHonchoLifecycle(pi as unknown as { on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void });
+		honcho.registerHonchoLifecycle(pi as unknown as { on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => void });
 
-		// Initialize Honcho with the API key and pi.events
-		// SAFETY: pi.events implements the required on/emit interface
-		const result = await honchoInit({ apiKey, piEvents: pi.events });
+		// Initialize Honcho with the API key. The integration uses Pi's own MCP
+		// client, so no event adapter is passed any more. It also registers
+		// the MCP server with the extension API of Pi, so the model and
+		// `/mcp` see it - and a refused registration is not fatal: the
+		// harness talks to the server through its own MCP client, so only
+		// the native tools are missing and the rest of the startup continues.
+		// SAFETY: the runtime that runs this extension exposes
+		// registerMcpServer (verified with Pi 1.4.0); the local type
+		// definitions are older, so the call is cast.
+		const result = await honcho.initHoncho({
+			apiKey,
+			pi: pi as unknown as HonchoMcpRegistrar,
+		});
 
-		if (result) {
-			logStartup("[pi-harness] Honcho integration ready");
-			addHarnessMessage("Honcho", "initialized", "ok");
-		} else {
-			logStartup("[pi-harness] Honcho: initialization returned null");
-			addHarnessMessage("Honcho", "initialization returned no client", "err", [
-				"How to fix: Check HONCHO_API_KEY in ~/.pi-harness-runtime/keys/honcho-api-key.txt",
-				"Verify Honcho account is active at honcho.dev.",
+		if (!result || !result.status) {
+			logStartup("[pi-harness] Honcho: initialization produced no status");
+			addHarnessMessage("Honcho", "init failed", "err", [
+				"Check /tmp/pi-harness.log for the Honcho reason.",
+				"The Honcho integration returned no status.",
+				"Honcho memory stays disabled for this session.",
 			]);
+			return;
+		}
+
+		switch (result.status) {
+			case "ready": {
+				logStartup("[pi-harness] Honcho integration ready");
+				if (result.mcpRegistered) {
+					logStartup("[pi-harness] Honcho: native MCP server registered");
+					addHarnessMessage("Honcho", "initialized", "ok");
+				} else {
+					// The memory works, but the model has no Honcho tools: the
+					// user has to know that, not only the log. The reason of
+					// the registration names the cause, so the advice is not
+					// always "check the Pi version".
+					const cause = honcho.redactHonchoKey(
+						result.mcpRegistrationReason ?? "the reason was not reported",
+						apiKey,
+					);
+					logStartup(`[pi-harness] Honcho: native MCP server not registered (the model sees no Honcho tools): ${cause}`);
+					// The advice follows the cause: a runtime without
+					// registerMcpServer is a different problem than a name
+					// that another extension owns.
+					const capability = cause.includes("registerMcpServer")
+						? "This runtime does not provide registerMcpServer: the Honcho memory works, but the model sees no Honcho tools."
+						: "The Honcho memory works, but the model sees no Honcho tools.";
+					addHarnessMessage("Honcho", "native MCP tools not registered", "warn", [
+						`The registration failed: ${cause}`,
+						"Check /tmp/pi-harness.log for the Honcho reason.",
+						capability,
+					]);
+				}
+				break;
+			}
+			case "missing_key": {
+				// The only state that may point at the key file: the credential
+				// is what is missing.
+				logStartup("[pi-harness] Honcho not configured:");
+				logStartup("[pi-harness]   Get key: https://app.honcho.dev/api-keys");
+				logStartup(`[pi-harness]   Then: echo "{api-key}" > ~/.pi-harness-runtime/keys/honcho-api-key.txt`);
+				addHarnessMessage("Honcho", "API key missing", "warn", [
+					...keyFileFixesOrFallback("Honcho", ["API key"]),
+					"Get a key: https://app.honcho.dev/api-keys",
+					"Then reload Pi.",
+				]);
+				break;
+			}
+			case "mcp_unavailable": {
+				// The key was read successfully - the problem is the MCP runtime.
+				const reason = honcho.redactHonchoKey(result.reason ?? "no reason given", apiKey);
+				const hint = honcho.redactHonchoKey(
+					result.hint ?? "The native MCP client library @earendil-works/pi-mcp is required.",
+					apiKey,
+				);
+				logStartup(`[pi-harness] Honcho: native MCP unavailable (${reason})`);
+				addHarnessMessage("Honcho", "native MCP unavailable", "err", [
+					"Check /tmp/pi-harness.log for the Honcho reason.",
+					reason,
+					hint,
+				]);
+				break;
+			}
+			case "registration_rejected": {
+				const reason = honcho.redactHonchoKey(
+					result.reason ?? "the server did not accept the request",
+					apiKey,
+				);
+				const httpStatus = typeof result.httpStatus === "number" ? ` (HTTP ${result.httpStatus})` : "";
+				const hint = honcho.redactHonchoKey(
+					result.hint ?? "Check the Honcho account at https://honcho.dev.",
+					apiKey,
+				);
+				logStartup(`[pi-harness] Honcho: the server refused the request${httpStatus} (the MCP server is not registered): ${reason}`);
+				addHarnessMessage("Honcho", "server refused the request", "err", [
+					"Check the Honcho account and the endpoint: https://app.honcho.dev/api-keys",
+					reason,
+					hint,
+				]);
+				break;
+			}
+			default: {
+				const reason = honcho.redactHonchoKey(String(result.status), apiKey);
+				logStartup("[pi-harness] Honcho: initialization failed:", reason);
+				addHarnessMessage("Honcho", "init failed", "err", [
+					"Check /tmp/pi-harness.log for the Honcho reason.",
+					reason,
+					"Honcho memory stays disabled for this session.",
+				]);
+				break;
+			}
 		}
 	} catch (err) {
-		logStartup("[pi-harness] Honcho: init failed:", err instanceof Error ? err.message : String(err));
+		const message = err instanceof Error ? err.message : String(err);
+		const reason =
+			honcho && typeof honcho.redactHonchoKey === "function"
+				? honcho.redactHonchoKey(message, apiKey)
+				: message;
+		logStartup("[pi-harness] Honcho: init failed:", reason);
 		addHarnessMessage("Honcho", "init failed", "err", [
-			err instanceof Error ? err.message : String(err),
-			"Check keys/honcho-api-key.txt",
+			"Check /tmp/pi-harness.log for the Honcho reason.",
+			reason,
+			"Honcho memory stays disabled for this session.",
 		]);
 	}
 }
@@ -3820,8 +3983,31 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Skills", "initializing", "wait");
 	try {
 		// Dynamically import to avoid circular deps
-		const { initSkills, sanitizationStatus } =
+		const { initSkills, sanitizationStatus, sanitizationFilePath } =
 			await import("./packages/skills/dist/index.js");
+		let sanitizationFileCreated = false;
+		let sanitizationFileCreateError: string | undefined;
+		try {
+			const path = sanitizationFilePath();
+			const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+			const { dirname } = await import("node:path");
+			if (!existsSync(path)) {
+				mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+				try {
+					writeFileSync(
+						path,
+						`${JSON.stringify({ rules: [], nameMap: {} }, null, 2)}\n`,
+						{ encoding: "utf8", flag: "wx", mode: 0o600 },
+					);
+					sanitizationFileCreated = true;
+				} catch (error) {
+					// Another Pi process may have created the file after existsSync.
+					if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+				}
+			}
+		} catch (error) {
+			sanitizationFileCreateError = error instanceof Error ? error.message : String(error);
+		}
 
 		// Scan skills from default locations
 		const result = initSkills();
@@ -3833,21 +4019,30 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 		const local = localSkillsReport(localCount);
 		addHarnessMessage("Skills", local.text, local.status, local.details);
 		// The rules that keep a client name out of the shared collection
-		// live in a local file - they are not in the repository, it is
-		// public. Without them only the generic rules hold, and a client
-		// name travels into the collection. That is a visible state, not
-		// a silent one.
+		// live in a local file. Create a private empty template on first
+		// use; client-specific rules can be added locally.
 		try {
 			const rules = sanitizationStatus();
-			if (!rules.configured) {
+			if (sanitizationFileCreated && rules.configured) {
 				addHarnessMessage(
 					"Skill privacy",
-					"sanitization rules not configured",
+					"created a private sanitization rules file",
+					"info",
+					[
+						`File: ${rules.path}`,
+						"The file starts with no client-specific rules. Add private rules before publishing skills that contain client names.",
+					],
+				);
+			} else if (!rules.configured) {
+				addHarnessMessage(
+					"Skill privacy",
+					"sanitization rules file could not be created",
 					"warn",
 					[
-						`How to fix: create ${rules.path} with the rules of your client names, or set PI_SKILL_SANITIZATION_FILE to a file that holds them.`,
-						"The rules are not in the repository - it is public, and a list of client names in it is a list of client names in the world.",
-						"A client name can travel into the shared collection until they are.",
+						`Create ${rules.path} with { "rules": [], "nameMap": {} } and add private client-specific rules if needed.`,
+						"Check the path in PI_SKILL_SANITIZATION_FILE.",
+						"PI_SKILL_SANITIZATION_FILE must name a file path, not a JSON array.",
+						...(sanitizationFileCreateError ? [sanitizationFileCreateError] : []),
 						...(rules.error ? [rules.error] : []),
 					],
 				);
@@ -6020,6 +6215,7 @@ Run \`bd ready\` to see current bd issues.
 	// --- /usage today — focused view -------------------------------------
 	pi.registerCommand("usage-today", {
 		description: "Show today's usage + 5h window",
+		// The handler returns a Promise: the command API of Pi requires one.
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const local = aggregateWindows(tracker.all());
 			const lines = [
