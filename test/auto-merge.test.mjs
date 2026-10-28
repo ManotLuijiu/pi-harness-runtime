@@ -141,6 +141,76 @@ test("the check that is found is the check that is named", () => {
 	assert.equal(findCheckRun(runs, CI_CHECK), undefined);
 });
 
+test("every run of a required name counts, not only the first", () => {
+	// The push of the head commit and the pull request of its merge ref
+	// are both reported on that commit, and both are called "Tests".
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			{ name: CI_CHECK, status: "completed", conclusion: "success" },
+			{ name: CI_CHECK, status: "completed", conclusion: "failure" },
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.passed, false);
+	assert.equal(evaluation.failed.length, 1);
+	assert.equal(evaluation.failed[0].name, CI_CHECK);
+	assert.equal(evaluation.failed[0].conclusion, "failure");
+});
+
+test("a run of a required name that is still going is not green", () => {
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			{ name: CI_CHECK, status: "completed", conclusion: "success" },
+			{ name: CI_CHECK, status: "in_progress", conclusion: null },
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.ready, false);
+	assert.equal(evaluation.passed, false);
+	assert.deepEqual(evaluation.pending, [CI_CHECK]);
+});
+
+test("two green runs of a required name are green", () => {
+	const evaluation = evaluateChecks(
+		[
+			{
+				name: SENSITIVE_TERMS_CHECK,
+				status: "completed",
+				conclusion: "success",
+			},
+			{ name: CI_CHECK, status: "completed", conclusion: "success" },
+			{ name: CI_CHECK, status: "completed", conclusion: "success" },
+		],
+		REQUIRED_CHECKS,
+	);
+	assert.equal(evaluation.ready, true);
+	assert.equal(evaluation.passed, true);
+	assert.deepEqual(evaluation.failed, []);
+});
+
+test("the run that decides the gate is the worst run of that name", () => {
+	const runs = [
+		{ name: CI_CHECK, status: "completed", conclusion: "success" },
+		{ name: CI_CHECK, status: "completed", conclusion: "failure" },
+	];
+	assert.equal(findCheckRun(runs, CI_CHECK)?.conclusion, "failure");
+	const withPending = [
+		{ name: CI_CHECK, status: "completed", conclusion: "success" },
+		{ name: CI_CHECK, status: "in_progress", conclusion: null },
+	];
+	assert.equal(findCheckRun(withPending, CI_CHECK)?.status, "in_progress");
+});
+
 test("a green pull request is merged", () => {
 	const decision = decideAutoMerge({
 		evaluation: evaluateChecks(greenChecks(), REQUIRED_CHECKS),
