@@ -540,21 +540,32 @@ test("a decision that did not start is armed again", () => {
 
 test("the countdown is stopped on every way out of the wait", () => {
 	const waysOut = [
-		["// The question is answered: the countdown of the wait is over.", "the answer of a human"],
-		["// The user answered in Pi: the countdown of the wait is", "a message of the user"],
-		["// The request expired: the countdown of the wait", "the expiry of the request"],
-		["// The stale decision is discarded: the countdown", "a discarded decision"],
-		["// The work pauses for a human: the countdown of", "the pause of the judge"],
+		["// must never clear a valid pending wait.", "the answer of a human"],
 		["// The countdown of the answered question is over with it.", "an answer over a channel"],
+		["// The user answered in Pi: the wait and the countdown of", "a message of the user"],
+		["// The request expired: the wait and the countdown", "the expiry of the request"],
+		["// The stale decision is discarded: the wait and", "a discarded decision"],
+		["// The work pauses for a human: the wait and the", "the pause of the judge"],
+		["// The question is closed: the wait and the countdown of", "the judge that continues"],
 		['endWait("session-switched")', "the switch of the session"],
 		['endWait("session-ended")', "the end of the session"],
 	];
 
-	for (const [marker, label] of waysOut) {
+	// The code that follows the comment of a way out is the way out
+	// itself: the release of the wait has to be there.
+	const codeAfter = (marker) => {
 		const at = indexSource.indexOf(marker);
-		assert.notEqual(at, -1, `the way out "${label}" exists`);
-		assert.ok(
-			/pendingCountdown\??\.stop\(\)|endWait\(/.test(indexSource.slice(at, at + 160)),
+		assert.notEqual(at, -1, `the way out "${marker}" exists`);
+		const lines = indexSource.slice(at).split("\n");
+		let i = 0;
+		while (i < lines.length && /^\s*\/\//.test(lines[i])) i++;
+		return lines.slice(i, i + 3).join("\n");
+	};
+
+	for (const [marker, label] of waysOut) {
+		assert.match(
+			codeAfter(marker),
+			/clearWait\(|releaseWait\(|endWait\(|pendingCountdown\??\.stop\(\)/,
 			`the way out "${label}" stops the countdown`,
 		);
 	}
