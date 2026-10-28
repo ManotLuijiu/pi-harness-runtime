@@ -12,6 +12,12 @@
  * decision that only looks at the conclusion of the checks it found
  * would merge a change whose gate never ran.
  *
+ * One name can carry several runs. The push of a head commit and the
+ * pull request of its merge ref are both reported on that commit, and
+ * both are called "Tests". Every run of a required name counts and the
+ * worst of them decides, so the gate does not depend on the order the
+ * API happens to list the runs in.
+ *
  * The evaluation is a pure function, so the decision can be tested without
  * a network, and the polling lives in one place.
  */
@@ -25,14 +31,42 @@ export const CI_CHECK = "Tests";
 const API = "https://api.github.com";
 
 /**
- * The run of a named check.
+ * Every run of a named check.
+ *
+ * A name can carry more than one run. The push of a head commit and the
+ * pull request of its merge ref are both reported on that commit, and
+ * both are called "Tests": the first is the code of the branch, the
+ * second is the code that would land on the release branch. A gate that
+ * reads only one of them reads whichever the API happens to list first.
+ *
+ * @param {Array<{name?: string}>} checkRuns
+ * @param {string} name
+ * @returns {Array<{name?: string, status?: string, conclusion?: string|null}>}
+ */
+function findCheckRuns(checkRuns, name) {
+	if (!Array.isArray(checkRuns)) return [];
+	return checkRuns.filter((run) => run && run.name === name);
+}
+
+/**
+ * The run of a named check that decides the gate.
+ *
+ * A failure decides it, a run that is still going decides it, and only
+ * when every run of that name is green does the first one speak.
  *
  * @param {Array<{name?: string}>} checkRuns
  * @param {string} name
  */
 export function findCheckRun(checkRuns, name) {
-	if (!Array.isArray(checkRuns)) return undefined;
-	return checkRuns.find((run) => run && run.name === name);
+	const runs = findCheckRuns(checkRuns, name);
+	if (runs.length === 0) return undefined;
+	return (
+		runs.find(
+			(run) => run.status === "completed" && run.conclusion !== "success",
+		) ??
+		runs.find((run) => run.status !== "completed") ??
+		runs[0]
+	);
 }
 
 /**
@@ -45,12 +79,17 @@ export function evaluateChecks(checkRuns, requiredNames) {
 	const runs = Array.isArray(checkRuns) ? checkRuns : [];
 	const names = Array.isArray(requiredNames) ? requiredNames : [];
 	const checks = names.map((name) => {
+		// Every run of that name counts. The push of the head commit and
+		// the pull request of its merge ref share the name, and the gate
+		// must not depend on which of them the API lists first.
+		const matching = findCheckRuns(runs, name);
 		const run = findCheckRun(runs, name);
 		return {
 			name,
-			present: Boolean(run),
+			present: matching.length > 0,
 			status: run ? run.status : "missing",
 			conclusion: run ? (run.conclusion ?? null) : null,
+			runs: matching.length,
 		};
 	});
 	const missing = checks

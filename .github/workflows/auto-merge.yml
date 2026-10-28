@@ -19,6 +19,18 @@
 #     the change. A change that holds a name is never merged.
 #   - "Tests" - the CI of this repository.
 #
+# A name can carry more than one run. The push of the head commit and
+# the pull request of its merge ref are both reported on that commit, and
+# both are called "Tests": the first is the code of the branch, the
+# second is the code that would land on the release branch. Every run of
+# a required name counts and the worst of them decides.
+#
+# A pull request run of the CI that fails before a job starts reports no
+# check at all: the run exists, no job ran, and the gate never sees it.
+# That failure is on the side of GitHub and not on the side of the
+# change - the same run re-run is green - and the gate is not held up by
+# it, because a run without a job is not a red check.
+#
 # The trigger is `pull_request_target`, so the workflow runs with the
 # permissions of this repository. A normal pull request workflow gets a
 # read only token for a fork, and a fork is where a pull request often
