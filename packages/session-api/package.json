@@ -1,6 +1,6 @@
 {
   "name": "@pi/session-api",
-  "version": "1.1.458",
+  "version": "1.1.459",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
