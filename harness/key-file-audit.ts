@@ -15,7 +15,13 @@
  * state of a file (missing / empty).
  */
 
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	readFileSync,
+	readdirSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -388,6 +394,78 @@ export interface KeyFileAuditResult {
 	exposed: ExposedKeyFile[];
 	/** The directories of the key tree that other users can reach. */
 	exposedDirectories: ExposedKeyDirectory[];
+}
+
+export interface SecureKeyTreeResult {
+	/** False on platforms where chmod does not express the required ACL. */
+	supported: boolean;
+	securedFiles: number;
+	securedDirectories: number;
+	failedPaths: string[];
+}
+
+/**
+ * Restrict the key tree to its owner on Unix-like systems.
+ *
+ * This runs only on the dedicated application key directory. It never
+ * follows symlinks, and records per-path failures so startup can retain a
+ * warning when the current user cannot repair an entry (for example, when
+ * it is owned by another account).
+ */
+export function secureKeyTree(
+	keysDir: string,
+	platform: NodeJS.Platform = process.platform,
+): SecureKeyTreeResult {
+	const result: SecureKeyTreeResult = {
+		supported: platform !== "win32",
+		securedFiles: 0,
+		securedDirectories: 0,
+		failedPaths: [],
+	};
+	if (!result.supported) return result;
+
+	const root = defaultStat(keysDir);
+	if (!root?.isDirectory || root.isSymbolicLink) {
+		result.failedPaths.push(keysDir);
+		return result;
+	}
+
+	const secureDirectory = (path: string): boolean => {
+		try {
+			chmodSync(path, 0o700);
+			result.securedDirectories++;
+			return true;
+		} catch {
+			result.failedPaths.push(path);
+			return false;
+		}
+	};
+
+	const secureFile = (path: string): void => {
+		try {
+			chmodSync(path, 0o600);
+			result.securedFiles++;
+		} catch {
+			result.failedPaths.push(path);
+		}
+	};
+
+	const walk = (dir: string, depth: number): void => {
+		if (depth > MAX_KEY_TREE_DEPTH) return;
+		for (const name of defaultReaddir(dir).sort(compareByName)) {
+			const path = join(dir, name);
+			const info = defaultStat(path);
+			if (!info || info.isSymbolicLink) continue;
+			if (info.isDirectory) {
+				if (secureDirectory(path)) walk(path, depth + 1);
+			} else if (info.isFile) {
+				secureFile(path);
+			}
+		}
+	};
+
+	if (secureDirectory(keysDir)) walk(keysDir, 1);
+	return result;
 }
 
 /**

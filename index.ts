@@ -26,6 +26,7 @@ import {
 	formatKeyFileFixes,
 	formatKeyPermissionFixes,
 	selectKeyFileFixes,
+	secureKeyTree,
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
 import { renderDetailLines } from "./harness/startup-lines.ts";
@@ -211,17 +212,44 @@ function getKeyFileAudit(): KeyFileAuditResult | null {
  * is a list nobody runs. The command is never executed here.
  */
 function reportExposedKeyFiles(): void {
-	const audit = getKeyFileAudit();
-	const exposed = audit?.exposed ?? [];
-	const exposedDirectories = audit?.exposedDirectories ?? [];
+	let audit = getKeyFileAudit();
+	let exposed = audit?.exposed ?? [];
+	let exposedDirectories = audit?.exposedDirectories ?? [];
 	if (exposed.length === 0 && exposedDirectories.length === 0) return;
+
+	// Key files belong to this app and are private by design. Repair unsafe
+	// Unix permissions automatically; keep the actionable warning only when
+	// the platform cannot express the repair or a path cannot be changed.
+	const repair = secureKeyTree(harnessKeysDir());
+	if (repair.supported) {
+		try {
+			audit = auditKeyFiles({ keysDir: harnessKeysDir() });
+			keyFileAudit = audit;
+		} catch {
+			// Preserve the original findings if the verification scan fails.
+		}
+		exposed = audit?.exposed ?? exposed;
+		exposedDirectories = audit?.exposedDirectories ?? exposedDirectories;
+		if (exposed.length === 0 && exposedDirectories.length === 0) {
+			addHarnessMessage(
+				"Keys",
+				`permissions secured automatically (${repair.securedFiles} files, ${repair.securedDirectories} directories)`,
+				"ok",
+			);
+			return;
+		}
+	}
+
 	const report = exposedKeyFilesReport({
 		exposed,
 		exposedDirectories,
 		fixes: formatKeyPermissionFixes({ keysDir: harnessKeysDir() }),
 	});
 	if (!report) return;
-	addHarnessMessage(report.label, report.text, report.status, report.details);
+	const failedPaths = repair.failedPaths.length > 0
+		? [`Could not change permissions for: ${repair.failedPaths.join(", ")}`]
+		: [];
+	addHarnessMessage(report.label, report.text, report.status, [...failedPaths, ...report.details]);
 }
 
 /**
@@ -3820,8 +3848,31 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 	addHarnessMessage("Skills", "initializing", "wait");
 	try {
 		// Dynamically import to avoid circular deps
-		const { initSkills, sanitizationStatus } =
+		const { initSkills, sanitizationStatus, sanitizationFilePath } =
 			await import("./packages/skills/dist/index.js");
+		let sanitizationFileCreated = false;
+		let sanitizationFileCreateError: string | undefined;
+		try {
+			const path = sanitizationFilePath();
+			const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+			const { dirname } = await import("node:path");
+			if (!existsSync(path)) {
+				mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+				try {
+					writeFileSync(
+						path,
+						`${JSON.stringify({ rules: [], nameMap: {} }, null, 2)}\n`,
+						{ encoding: "utf8", flag: "wx", mode: 0o600 },
+					);
+					sanitizationFileCreated = true;
+				} catch (error) {
+					// Another Pi process may have created the file after existsSync.
+					if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+				}
+			}
+		} catch (error) {
+			sanitizationFileCreateError = error instanceof Error ? error.message : String(error);
+		}
 
 		// Scan skills from default locations
 		const result = initSkills();
@@ -3833,21 +3884,29 @@ async function initHermesSkills(pi: ExtensionAPI): Promise<void> {
 		const local = localSkillsReport(localCount);
 		addHarnessMessage("Skills", local.text, local.status, local.details);
 		// The rules that keep a client name out of the shared collection
-		// live in a local file - they are not in the repository, it is
-		// public. Without them only the generic rules hold, and a client
-		// name travels into the collection. That is a visible state, not
-		// a silent one.
+		// live in a local file. Create a private empty template on first
+		// use; client-specific rules can be added locally.
 		try {
 			const rules = sanitizationStatus();
-			if (!rules.configured) {
+			if (sanitizationFileCreated && rules.configured) {
 				addHarnessMessage(
 					"Skill privacy",
-					"sanitization rules not configured",
+					"created a private sanitization rules file",
+					"info",
+					[
+						`File: ${rules.path}`,
+						"The file starts with no client-specific rules. Add private rules before publishing skills that contain client names.",
+					],
+				);
+			} else if (!rules.configured) {
+				addHarnessMessage(
+					"Skill privacy",
+					"sanitization rules file could not be created",
 					"warn",
 					[
-						`How to fix: create ${rules.path} with the rules of your client names, or set PI_SKILL_SANITIZATION_FILE to a file that holds them.`,
-						"The rules are not in the repository - it is public, and a list of client names in it is a list of client names in the world.",
-						"A client name can travel into the shared collection until they are.",
+						`Create ${rules.path} with { "rules": [], "nameMap": {} } and add private client-specific rules if needed.`,
+						"PI_SKILL_SANITIZATION_FILE must name a file path, not a JSON array.",
+						...(sanitizationFileCreateError ? [sanitizationFileCreateError] : []),
 						...(rules.error ? [rules.error] : []),
 					],
 				);
