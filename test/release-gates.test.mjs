@@ -28,7 +28,7 @@ import {
 	parseVersion,
 } from "../scripts/verify-release-version.mjs";
 import { verdict } from "../scripts/verify-sensitive-check.mjs";
-import { SENSITIVE_TERMS_CHECK } from "../scripts/lib/github-checks.mjs";
+import { SENSITIVE_TERMS_CHECK, evaluateChecks } from "../scripts/lib/github-checks.mjs";
 import { scanTree } from "../scripts/check-sensitive-terms.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -111,6 +111,43 @@ test("a check that did not succeed stops the release", () => {
 		assert.equal(result.passed, false, `${conclusion} let the release through`);
 		assert.match(result.reason, /concluded/);
 	}
+});
+
+test("the release gate reads the runs of a check, not one of them", () => {
+	// The check of a commit can be reported by more than one run: the
+	// push of the branch and the pull request of the merge ref. The
+	// release gate reads the runs of the check, so a second run that is
+	// red stops the release and a run that is still going stops it too.
+	const check = (run, overrides) => ({
+		name: SENSITIVE_TERMS_CHECK,
+		status: "completed",
+		conclusion: "success",
+		details_url: `https://github.com/ManotLuijiu/pi-harness-runtime/actions/runs/${run}/job/1`,
+		started_at: "2026-10-28T18:00:00Z",
+		...overrides,
+	});
+	const green = evaluateChecks([check(1, {})], [SENSITIVE_TERMS_CHECK]);
+	assert.equal(verdict(green).passed, true);
+
+	const withRed = evaluateChecks(
+		[
+			check(1, { id: 100 }),
+			check(2, { id: 200, conclusion: "failure" }),
+		],
+		[SENSITIVE_TERMS_CHECK],
+	);
+	const red = verdict(withRed);
+	assert.equal(red.passed, false);
+	assert.match(red.reason, /concluded/);
+
+	const withRunning = evaluateChecks(
+		[
+			check(1, { id: 100 }),
+			check(2, { id: 200, status: "in_progress", conclusion: null }),
+		],
+		[SENSITIVE_TERMS_CHECK],
+	);
+	assert.equal(verdict(withRunning).passed, false);
 });
 
 test("the reason never carries a term", () => {

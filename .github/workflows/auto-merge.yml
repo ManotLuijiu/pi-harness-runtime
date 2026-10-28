@@ -23,13 +23,19 @@
 # the pull request of its merge ref are both reported on that commit, and
 # both are called "Tests": the first is the code of the branch, the
 # second is the code that would land on the release branch. Every run of
-# a required name counts and the worst of them decides.
+# a required name counts.
+#
+# A run that is re-run keeps its number and gets a new attempt, and the
+# attempt that failed stays on the commit. The newest attempt of a run is
+# its state now, so the re-run of a failed job is what makes the gate
+# green again.
 #
 # A pull request run of the CI that fails before a job starts reports no
-# check at all: the run exists, no job ran, and the gate never sees it.
-# That failure is on the side of GitHub and not on the side of the
-# change - the same run re-run is green - and the gate is not held up by
-# it, because a run without a job is not a red check.
+# check run at all: the run exists, no job ran, and the API has nothing
+# to report for it. Such a failure is on the side of GitHub and not on
+# the side of the change - the same run re-run is green - and the gate
+# does not hold the release for it, because a run without a check run is
+# not a red check.
 #
 # The trigger is `pull_request_target`, so the workflow runs with the
 # permissions of this repository. A normal pull request workflow gets a

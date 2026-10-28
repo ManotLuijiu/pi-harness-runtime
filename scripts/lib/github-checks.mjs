@@ -14,9 +14,15 @@
  *
  * One name can carry several runs. The push of a head commit and the
  * pull request of its merge ref are both reported on that commit, and
- * both are called "Tests". Every run of a required name counts and the
- * worst of them decides, so the gate does not depend on the order the
- * API happens to list the runs in.
+ * both are called "Tests". Every run of a required name counts, so the
+ * gate does not depend on the order the API happens to list the runs
+ * in, and the state of every run of the name is read: a run that is
+ * still going is not green even when another run of the name is red.
+ *
+ * A run that is re-run keeps its number and gets a new attempt, and the
+ * attempt that failed stays on the commit. The newest attempt of a run
+ * is its state now, so a re-run of a failed job is what makes the gate
+ * green again - the way GitHub itself reads the checks of a commit.
  *
  * The evaluation is a pure function, so the decision can be tested without
  * a network, and the polling lives in one place.
@@ -49,16 +55,84 @@ function findCheckRuns(checkRuns, name) {
 }
 
 /**
- * The run of a named check that decides the gate.
+ * The workflow run a check run belongs to.
  *
- * A failure decides it, a run that is still going decides it, and only
- * when every run of that name is green does the first one speak.
+ * The url of a check run names the run it belongs to. A re-run of that
+ * run keeps the number and gets a new attempt, so the attempts of one
+ * run share it.
+ *
+ * @param {{details_url?: string, id?: number|string}} checkRun
+ * @returns {string|null} the number of the run, or null when the url
+ *   does not name one
+ */
+function runOf(checkRun) {
+	const url = typeof checkRun?.details_url === "string" ? checkRun.details_url : "";
+	const match = url.match(/\/actions\/runs\/(\d+)/);
+	return match ? match[1] : null;
+}
+
+/**
+ * Whether a check run is the newer of two attempts of one run.
+ *
+ * The attempt that started later is the state of the run now. The
+ * number of the check run grows with every attempt, so it decides when
+ * the times do not say.
+ *
+ * @param {{started_at?: string, id?: number|string}} candidate
+ * @param {{started_at?: string, id?: number|string}} held
+ */
+function isNewer(candidate, held) {
+	const started = Date.parse(candidate?.started_at ?? "");
+	const heldStarted = Date.parse(held?.started_at ?? "");
+	if (Number.isFinite(started) && Number.isFinite(heldStarted)) {
+		if (started !== heldStarted) return started > heldStarted;
+	}
+	return Number(candidate?.id ?? 0) > Number(held?.id ?? 0);
+}
+
+/**
+ * The newest attempt of every run among the check runs of a name.
+ *
+ * A re-run of a failed job leaves the attempt that failed on the
+ * commit, and the attempt that is the newest is the state of the run
+ * now. The attempts of one run therefore count once, and the newest one
+ * decides - the way GitHub itself reads a check of a commit, where a
+ * re-run of a failed job is what makes a protected branch mergeable
+ * again.
+ *
+ * @param {Array<{details_url?: string, id?: number|string}>} runs
+ */
+function latestAttempts(runs) {
+	const groups = new Map();
+	runs.forEach((run, index) => {
+		// A check run without a run of its own is its own group, so an
+		// unknown run is counted instead of being merged into another.
+		const key = runOf(run) ?? `check:${run?.id ?? index}`;
+		const held = groups.get(key);
+		if (!held || isNewer(run, held.run)) groups.set(key, { run, index });
+	});
+	return [...groups.values()].map((held) => held.run);
+}
+
+/**
+ * The check runs of a name that decide the gate.
  *
  * @param {Array<{name?: string}>} checkRuns
  * @param {string} name
  */
-export function findCheckRun(checkRuns, name) {
-	const runs = findCheckRuns(checkRuns, name);
+function decidingRuns(checkRuns, name) {
+	return latestAttempts(findCheckRuns(checkRuns, name));
+}
+
+/**
+ * The worst of the runs that decide a check.
+ *
+ * A failure decides it, a run that is still going decides it, and only
+ * when every run is green does the first one speak.
+ *
+ * @param {Array<{status?: string, conclusion?: string|null}>} runs
+ */
+function worstRun(runs) {
 	if (runs.length === 0) return undefined;
 	return (
 		runs.find(
@@ -67,6 +141,16 @@ export function findCheckRun(checkRuns, name) {
 		runs.find((run) => run.status !== "completed") ??
 		runs[0]
 	);
+}
+
+/**
+ * The run of a named check that decides the gate.
+ *
+ * @param {Array<{name?: string}>} checkRuns
+ * @param {string} name
+ */
+export function findCheckRun(checkRuns, name) {
+	return worstRun(decidingRuns(checkRuns, name));
 }
 
 /**
@@ -82,32 +166,35 @@ export function evaluateChecks(checkRuns, requiredNames) {
 		// Every run of that name counts. The push of the head commit and
 		// the pull request of its merge ref share the name, and the gate
 		// must not depend on which of them the API lists first.
-		const matching = findCheckRuns(runs, name);
-		const run = findCheckRun(runs, name);
+		const current = decidingRuns(runs, name);
+		const deciding = worstRun(current);
+		// The state of every run that counts, not only of the one that
+		// decides: a run that is still going has to be seen even when
+		// another run of the name is red.
+		const failures = current.filter(
+			(run) => run.status === "completed" && run.conclusion !== "success",
+		);
 		return {
 			name,
-			present: matching.length > 0,
-			status: run ? run.status : "missing",
-			conclusion: run ? (run.conclusion ?? null) : null,
-			runs: matching.length,
+			present: current.length > 0,
+			status: deciding ? deciding.status : "missing",
+			conclusion: deciding ? (deciding.conclusion ?? null) : null,
+			runs: current.length,
+			pending: current.some((run) => run.status !== "completed"),
+			failures,
 		};
 	});
 	const missing = checks
 		.filter((check) => !check.present)
 		.map((check) => check.name);
 	const pending = checks
-		.filter((check) => check.present && check.status !== "completed")
+		.filter((check) => check.present && check.pending)
 		.map((check) => check.name);
 	const failed = checks
-		.filter(
-			(check) =>
-				check.present &&
-				check.status === "completed" &&
-				check.conclusion !== "success",
-		)
+		.filter((check) => check.failures.length > 0)
 		.map((check) => ({
 			name: check.name,
-			conclusion: check.conclusion ?? "unknown",
+			conclusion: check.failures[0].conclusion ?? "unknown",
 		}));
 	return {
 		checks,
