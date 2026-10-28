@@ -42,6 +42,10 @@ import {
 	relayShouldBeReported,
 } from "./harness/startup-report.ts";
 import { localSkillsReport, skillsReport } from "./harness/skills-startup.ts";
+import {
+	PendingQuestionCountdown,
+	type CountdownView,
+} from "./harness/pending-countdown.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 // The Honcho contract lives with the Honcho integration. A type-only import
 // is erased at runtime, so the startup keeps loading the module lazily.
@@ -292,6 +296,9 @@ const sharedState = {
 	validationLedger: null as unknown,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	updateAutoContinueStatus: null as any,
+	// The live countdown of the pending question. The channels stop it when
+	// a human answer arrives.
+	pendingCountdown: null as PendingQuestionCountdown | null,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	pqController: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -335,6 +342,8 @@ function applyChannelApproval(
 	// cleared after a successful resolution.
 	sharedState.waitingForUserSince = null;
 	sharedState.updateAutoContinueStatus?.("IDLE");
+	// The countdown of the answered question is over with it.
+	sharedState.pendingCountdown?.stop();
 
 	if (result.resolution === "yes") {
 		(sharedState.todoContinuationController as any)?.resume?.();
@@ -932,6 +941,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let lastUserMessage: Date | null = null;
 		let autoContinueTimer: NodeJS.Timeout | null = null;
 		let _inferenceInProgress = false; // Track for overlap prevention
+		// The timing of the wait. The countdown in the status row and the
+		// decision of the judge use the same constants, so the displayed
+		// deadline and the decision can never drift apart.
+		const AUTO_CONTINUE_INTERVAL_MS = 60 * 1000; // Fallback poll: every minute
+		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
+		const MAX_WAIT_MINUTES = 30; // After this the work pauses instead of waiting
 		// A continuation was dispatched and its turn has not settled yet.
 		// The gate owns that state: the status stays "RUN" until the turn
 		// settles, and no timer may clear it in the meantime.
@@ -1023,6 +1038,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 		let _sessionId = Date.now().toString(36); // Track session for cancellation
+		// The session of the Pi runtime. A countdown belongs to the session
+		// that asked the question.
+		let _piSessionId = "";
+		// The session the running countdown belongs to. A countdown of a
+		// session that is gone must not draw its status any more.
+		let _countdownSessionId = "";
+		// The request the row of the footer belongs to. A countdown that
+		// stops must not clear the row of a newer question.
+		let _countdownRowRequestId: string | null = null;
 		let _lastNotifiedQuestion = ""; // Track last question to prevent repeat notifications
 		let _completedNotifiedFor: string | null = null; // Track completion notification deduplication
 
@@ -1048,36 +1072,164 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			ERROR: "Auto-continue unavailable",
 		} as const;
 
+		// The live countdown of the pending question.
+		//
+		// It owns the deadline of the wait: it shows the remaining time in
+		// the status row once per second and starts the decision of the
+		// judge exactly at the deadline. The fallback poll only takes over
+		// when there is no countdown, so a decision is never started twice.
+		const pendingCountdown = new PendingQuestionCountdown({
+			// The two policies of the wait belong to the countdown, so the
+			// displayed deadline and the deadline of the judge cannot drift
+			// apart.
+			waitMinutes: MIN_WAIT_MINUTES,
+			recheckIntervalMs: AUTO_CONTINUE_INTERVAL_MS,
+			render: (view: CountdownView) => {
+				_countdownRowRequestId = view.requestId;
+				updateAutoContinueStatus(
+					"WAITING",
+					view.requestId.slice(0, 8),
+					view.mode === "recheck"
+						? `Jev will recheck in ${view.remaining}`
+						: `Jev decision in ${view.remaining}`,
+				);
+			},
+			onDeadline: (requestId: string) => {
+				logToFile("[auto-continue]", "The decision deadline was reached:", requestId);
+				checkAndAutoContinue("countdown")
+					.then(() => {
+						// The decision did not start - another one was still in
+						// flight, or the wait was gone before it ran. The
+						// deadline is not lost: the countdown is armed again
+						// and the decision follows.
+						if (pendingCountdown.fired && pendingCountdown.requestId === requestId) {
+							pendingCountdown.startRecheck(requestId);
+						}
+					})
+					.catch((error) => {
+						logToFile("[auto-continue]", "The decision failed:", oneLineError(error));
+						// The decision did not run: the countdown releases the
+						// wait, so the fallback poll can take over again.
+						pendingCountdown.stop();
+					});
+			},
+			isPending: (requestId: string) => {
+				// The wait must still belong to the request: a late tick of
+				// an answered or replaced question must not draw its status
+				// and must not trigger a decision.
+				if (!waitingForUserSince) return false;
+				if (_countdownSessionId !== _piSessionId) return false;
+				const current = sharedState.pqController?.getCurrentQuestion?.();
+				if (!current) return false;
+				return (
+					current.requestId === requestId &&
+					(current.state === "pending" || current.state === "evaluating")
+				);
+			},
+			onStop: (requestId: string | null) => {
+				// The countdown is over: the row is cleared with it, so no
+				// row claims a decision that is not due any more. Only the row
+				// of that countdown is cleared: a row of another state - the
+				// judge continues, for example - belongs to that state, and
+				// the row of a newer question belongs to that question.
+				if (_countdownRowRequestId && requestId && _countdownRowRequestId !== requestId) {
+					return;
+				}
+				_countdownRowRequestId = null;
+				if (_currentAutoContinueState.startsWith("[WAIT]")) {
+					_currentAutoContinueState = "";
+					_setAutoContinueStatus?.(undefined);
+				}
+			},
+			onError: (error: unknown) => {
+				logToFile("[auto-continue]", "The countdown failed:", oneLineError(error));
+			},
+		});
+		sharedState.pendingCountdown = pendingCountdown;
+
 		// Wire shared state for callback handlers
 		sharedState.waitingForUserSince = waitingForUserSince;
 		sharedState.updateAutoContinueStatus = updateAutoContinueStatus;
 
-		// Update auto-continue status in TUI footer
-		function updateAutoContinueStatus(state: keyof typeof AC_STATE_MESSAGES, requestId?: string): void {
-			if (!_setAutoContinueStatus) return;
+		/**
+		 * Start the countdown of a pending question.
+		 *
+		 * The deadline of the decision is derived from the wait that is
+		 * already running, so the displayed deadline and the decision of
+		 * the judge can never drift apart.
+		 */
+		function startPendingCountdown(requestId: string): void {
+			_countdownSessionId = _piSessionId;
+			const startedAt = waitingForUserSince?.getTime() ?? Date.now();
+			pendingCountdown.start(requestId, startedAt);
+		}
 
+		/**
+		 * Start the countdown of the next attempt.
+		 *
+		 * The judge asked to wait longer: the countdown counts down to the
+		 * next attempt instead of to the deadline of the decision.
+		 */
+		function startRecheckCountdown(requestId: string): void {
+			_countdownSessionId = _piSessionId;
+			pendingCountdown.startRecheck(requestId);
+		}
+
+		// Update auto-continue status in TUI footer
+		function updateAutoContinueStatus(
+			state: keyof typeof AC_STATE_MESSAGES,
+			requestId?: string,
+			detail?: string,
+		): void {
 			const message = AC_STATE_MESSAGES[state];
 			if (state === "IDLE") {
-				// Clear status
-				_setAutoContinueStatus(undefined);
-				_currentAutoContinueState = "";
-			} else {
-				const statusText = requestId
-					? `[${AC_STATE[state]}] ${message} | ${requestId}`
-					: `[${AC_STATE[state]}] ${message}`;
-
-				// Only update if state changed (prevent flicker)
-				if (statusText !== _currentAutoContinueState) {
-					_setAutoContinueStatus(statusText);
-					_currentAutoContinueState = statusText;
+				// Only the row is cleared here: the countdown belongs to the
+				// wait, not to the row. A settled continuation must not stop
+				// the countdown of a question that the agent asked in the
+				// same turn, and it must not blank its row either.
+				if (!pendingCountdown.active) {
+					_currentAutoContinueState = "";
+					_setAutoContinueStatus?.(undefined);
 				}
+				return;
+			}
+
+			const parts = [`[${AC_STATE[state]}] ${message}`];
+			if (requestId) parts.push(requestId);
+			if (detail) parts.push(detail);
+			const statusText = parts.join(" | ");
+
+			// Only update if state changed (prevent flicker). The state is
+			// kept even without a UI binding: a session that starts without
+			// a TUI shows the current state as soon as the UI is there.
+			if (statusText !== _currentAutoContinueState) {
+				_currentAutoContinueState = statusText;
+				_setAutoContinueStatus?.(statusText);
 			}
 		}
 
 		// Capture UI context from session_start
 		pi.on("session_start", (_event, ctx) => {
+			// The session of the runtime: the countdown of a question belongs
+			// to the session that asked it.
+			const sessionId = (
+				ctx as { sessionManager?: { getSessionId?: () => string | undefined } }
+			).sessionManager?.getSessionId?.();
+			if (typeof sessionId === "string" && sessionId) {
+				if (_piSessionId && _piSessionId !== sessionId) {
+					// The session changed: the countdown of the old session
+					// is over with it.
+					pendingCountdown.stop();
+				}
+				_piSessionId = sessionId;
+			}
 			if (ctx.hasUI && ctx.ui) {
 				_setAutoContinueStatus = ctx.ui.setStatus.bind(ctx.ui, "harness-auto-continue");
+				// A session without a TUI collected the state already: it is
+				// shown as soon as the UI is there.
+				if (_currentAutoContinueState) {
+					_setAutoContinueStatus(_currentAutoContinueState);
+				}
 			}
 
 		});
@@ -1089,6 +1241,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				clearInterval(autoContinueTimer);
 				autoContinueTimer = null;
 			}
+
+			// The countdown of the pending question is over with the session.
+			pendingCountdown.stop();
 
 			// Clear UI binding and status
 			if (_setAutoContinueStatus) {
@@ -1148,6 +1303,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			waitingForUserSince = null;
 			sharedState.waitingForUserSince = null;
 			_lastNotifiedQuestion = "";
+			// The question is answered: the countdown of the wait is over.
+			pendingCountdown.stop();
 			updateAutoContinueStatus("IDLE");
 			// Dispatch answer to Pi
 			const message = answer === "yes" ? "yes" : "not yet";
@@ -1224,8 +1381,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// Use question.requestId as the jobId for callback matching
 					const questionJobId = question.requestId;
 
-					// Update TUI status - use short ID for display
-					updateAutoContinueStatus("WAITING", questionJobId.slice(0, 8));
+					// The status row counts down to the decision of the judge.
+					// The countdown is bound to this request, so a newer
+					// question replaces it.
+					startPendingCountdown(questionJobId);
 
 				// Get task context for additional info
 				const taskContext = await getTaskContext().catch(() => ({ total: 0, completed: 0, remaining: [] as string[] }));
@@ -1388,6 +1547,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (waitingForUserSince) {
 					waitingForUserSince = null;
 					_lastNotifiedQuestion = "";
+					// The user answered in Pi: the countdown of the wait is
+					// over with it.
+					pendingCountdown.stop();
 					updateAutoContinueStatus("IDLE");
 					// Cancel pending question on user response
 					// (User answered via Pi instead of button)
@@ -1397,17 +1559,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 
 		// Periodic check for auto-continue decision
-		const AUTO_CONTINUE_INTERVAL_MS = 60 * 1000; // Check every 1 minute
-		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
-		const MAX_WAIT_MINUTES = 30; // After this the work pauses instead of waiting
 
-		const checkAndAutoContinue = async () => {
+		const checkAndAutoContinue = async (source: "countdown" | "poll" = "poll") => {
 			// Prevent overlap if inference is already in progress
 			if (_inferenceInProgress) {
+				// A deadline that was blocked is armed again by the caller of
+				// the countdown, so the decision is not lost.
 				return;
 			}
 
 			if (!waitingForUserSince) return;
+
+			// The countdown owns the wait while it runs: the fallback poll
+			// only takes over when there is no countdown, so the decision is
+			// never started twice.
+			if (source === "poll" && pendingCountdown.active) return;
 
 			// Capture session ID at check time for post-inference validation
 			const checkSessionId = _sessionId;
@@ -1470,6 +1636,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (taskContext.total === 0 && !hasPendingQuestion) {
 					logToFile("[auto-continue]", "No tasks and no pending questions, skipping auto-continue check");
 					_inferenceInProgress = false;
+					// The countdown is over: the fallback poll takes over the
+					// next attempt.
+					pendingCountdown.stop();
 					return;
 				}
 
@@ -1624,15 +1793,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						if (waitBelongsToRequest(questionContext?.requestId)) {
 							waitingForUserSince = null;
 							sharedState.waitingForUserSince = null;
+							// The request expired: the countdown of the wait
+							// is over with it.
+							pendingCountdown.stop();
 							updateAutoContinueStatus("IDLE");
 						}
 					} else {
-						// The request stays open: the next poll asks again
-						// until the deadline closes it.
-						updateAutoContinueStatus(
-							"WAITING",
-							questionContext?.requestId.slice(0, 8),
-						);
+						// The request stays open: the countdown counts down to
+						// the next check, so the retry does not wait for the
+						// fallback poll.
+						if (questionContext?.requestId) {
+							startRecheckCountdown(questionContext.requestId);
+						} else {
+							updateAutoContinueStatus("WAITING");
+						}
 					}
 				} else {
 					// Close the question with the Jev decision. The buttons of
@@ -1669,6 +1843,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							waitingForUserSince = null;
 							sharedState.waitingForUserSince = null;
 							_lastNotifiedQuestion = "";
+							// The stale decision is discarded: the countdown
+							// of the wait is over with it.
+							pendingCountdown.stop();
 							updateAutoContinueStatus("IDLE");
 						} else {
 							logToFile(
@@ -1692,6 +1869,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							waitingForUserSince = null;
 							sharedState.waitingForUserSince = null;
 							_lastNotifiedQuestion = "";
+							// The work pauses for a human: the countdown of
+							// the wait is over with it.
+							pendingCountdown.stop();
 							updateAutoContinueStatus("IDLE");
 						}
 						return;
@@ -1725,6 +1905,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					waitingForUserSince = null;
 					sharedState.waitingForUserSince = null;
 					_lastNotifiedQuestion = "";
+					// The question is closed: the countdown of the wait is over.
+					pendingCountdown.stop();
 
 					// The status stays "RUN" until the turn that the steer
 					// started has settled. A timer would clear it while the
@@ -1735,6 +1917,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				_inferenceInProgress = false;
 			} catch {
 				_inferenceInProgress = false;
+				// The countdown is over: the fallback poll takes over the next
+				// attempt.
+				pendingCountdown.stop();
 				updateAutoContinueStatus("ERROR");
 				addHarnessMessage("Jev", "auto-continue evaluation failed", "err", [
 					"How to fix: Check logs at /tmp/pi-harness.log for API errors",
@@ -2108,7 +2293,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		});
 
 		// Start periodic check
-		autoContinueTimer = setInterval(checkAndAutoContinue, AUTO_CONTINUE_INTERVAL_MS);
+		autoContinueTimer = setInterval(
+			() => checkAndAutoContinue("poll"),
+			AUTO_CONTINUE_INTERVAL_MS,
+		);
 		if (jevKeyMissing) {
 			// Without a provider the health check cannot run. The missing-key
 			// message (with its fix commands) stays the visible one.
