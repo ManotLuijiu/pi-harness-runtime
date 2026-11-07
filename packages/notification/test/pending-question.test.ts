@@ -6,10 +6,11 @@
  */
 
 import { describe, it, expect, beforeEach } from "bun:test";
-import { 
+// The test directory carries its own tsconfig.json (bun-types), the way the
+// other packages of this repository do.
+import {
   PendingQuestionController,
   createPendingQuestionController,
-  type QuestionKind,
 } from "../src/pending-question.js";
 
 describe("PendingQuestionController", () => {
@@ -23,6 +24,29 @@ describe("PendingQuestionController", () => {
   });
 
   describe("detectQuestion", () => {
+    it("preserves implementation alternatives for Jev to select", () => {
+      for (const stem of ["Want me to", "Would you like me to", "Should I"]) {
+        const result = controller.detectQuestion(`${stem} implement A, or A+B?`);
+        expect(result.kind).toBe("choice");
+        expect(result.askType).toBe("choice");
+        expect(result.alternatives).toEqual(["implement A", "A+B"]);
+      }
+    });
+
+    it("recognizes the implementation offer wherever the sentence starts", () => {
+      const result = controller.detectQuestion("So, want me to implement A, or A+B?");
+      expect(result.kind).toBe("choice");
+      expect(result.askType).toBe("choice");
+    });
+
+    it("keeps the explicit reservation of the message for a choice", () => {
+      const result = controller.detectQuestion(
+        "I need your explicit approval before I continue. Want me to implement A, or A+B?",
+      );
+      expect(result.kind).toBe("choice");
+      expect(result.askType).toBe("explicit_authorization");
+    });
+
     it("should detect 'Want me to implement X?' pattern", () => {
       const result = controller.detectQuestion(
         "I've finished the toggle implementation. Want me to implement the toggle buttons now?"
@@ -265,7 +289,7 @@ describe("PendingQuestionController", () => {
       let callbackCalled = false;
       let callbackResolution = "";
       
-      controller.onUserAnswer((question, answer) => {
+      controller.onUserAnswer((_question, answer) => {
         callbackCalled = true;
         callbackResolution = answer;
       });

@@ -555,6 +555,7 @@ export { E2EJudge } from "./e2e-judge.js";
 export { FlakyDetector } from "./flaky-detector.js";
 export { DecisionEngine } from "./decision-engine.js";
 export { AutoContinueJudge, createTaskState } from "./auto-continue.js";
+export { buildChoiceDecisionContext, describeChoiceOption, deriveOptionAnchor, extractOptionFacts, renderChoiceExcerpt, MAX_CHOICE_OPTIONS, MAX_CHOICE_QUESTION_CHARS, MAX_CHOICE_EXCERPT_CHARS, MAX_OPTION_CRITERION_CHARS, MAX_OPTION_DESCRIPTION_CHARS, MAX_OPTION_FACTS, MAX_PROBLEM_CHARS, } from "./decision-context.js";
 // Export the instruction an autonomous decision sends to the agent
 export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 // Export the deterministic risk classifier of a pending question

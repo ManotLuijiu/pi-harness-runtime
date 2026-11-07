@@ -116,7 +116,7 @@ import {
 // Centralized application logging: R2 (durable archive) + webhook (live),
 // with a local spool as the fallback. Optional - without credentials the
 // logs simply stay local.
-import { centralInfo, initCentralLogging } from "./packages/logging/dist/index.js";
+import { centralInfo, initCentralLogging, redactText } from "./packages/logging/dist/index.js";
 
 // --- Jev Auto-Continue: Agent autonomous decision-making --------------------
 // Lazy import - only loads when packages/jev-judge exists and API key available
@@ -1785,7 +1785,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// decision, so the next check can still decide about it.
 					logToFile(
 						"[auto-continue]",
-						`Jev decided to wait (${Math.round(waitMinutes)}m waited, deadline ${MAX_WAIT_MINUTES}m)`,
+						`Jev decided to wait (${Math.round(waitMinutes)}m waited, deadline ${MAX_WAIT_MINUTES}m): ${logReasoning(decision.reasoning)}`,
 					);
 					logQuestionTransition(
 						questionContext?.requestId,
@@ -4412,6 +4412,20 @@ const HARNESS_LOG_FILE = "/tmp/pi-harness.log";
 const HARNESS_LOG_MAX_BYTES = 5 * 1024 * 1024;
 let harnessLogFileSecured = false;
 let harnessLogWrites = 0;
+
+/**
+ * The reasoning of a decision, bounded and redacted for the log.
+ *
+ * The reasoning is the text of the model, and it can quote the question it
+ * answered. The log keeps a readable excerpt without a credential.
+ */
+function logReasoning(reasoning: unknown, maxLength = 300): string {
+	const text = redactText(String(reasoning ?? ""))
+		.replace(/\s+/g, " ")
+		.trim();
+	if (text.length <= maxLength) return text;
+	return `${text.slice(0, maxLength)}...[truncated:${text.length - maxLength}]`;
+}
 
 /** Log a harness message to file (not stderr - bypasses Pi's cursor tracking) */
 function logToFile(...parts: string[]): void {

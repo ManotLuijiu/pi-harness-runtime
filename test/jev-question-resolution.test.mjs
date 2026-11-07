@@ -36,6 +36,17 @@ const SAMPLE =
 	"The seeder fix is validated on a small batch. I need your OK before I cross the commit boundary. " +
 	"Do you want the remaining 1,228 contracts seeded, or is the current staging state intended?";
 
+/**
+ * The same choice without the reservation of the human.
+ *
+ * The message of the issue reserves the decision for the human, so it waits
+ * for the human. A choice that does not reserve it may be decided, and
+ * these tests cover that path.
+ */
+const SAMPLE_WITHOUT_RESERVATION =
+	"The seeder fix is validated on a small batch. " +
+	"Do you want the remaining 1,228 contracts seeded, or is the current staging state intended?";
+
 function makeController() {
 	return createPendingQuestionController();
 }
@@ -63,7 +74,9 @@ test("a two-option question is a choice and not a routine continuation", () => {
 
 	assert.equal(result.detected, true);
 	assert.equal(result.kind, "choice");
-	assert.equal(result.askType, "choice");
+	// The message reserves the decision for the human, so the choice is
+	// never decided autonomously - even though the alternatives survive.
+	assert.equal(result.askType, "explicit_authorization");
 	assert.equal(result.isRoutine, false);
 	assert.equal(result.alternatives.length, 2);
 	assert.match(result.alternatives[0], /remaining 1,228 contracts seeded/);
@@ -152,7 +165,9 @@ test("an explicit authorization blocks the autonomous decision", () => {
 
 test("an approval of a choice keeps the selected option and the scope", () => {
 	const controller = makeController();
-	const detection = controller.detectQuestion(SAMPLE, { contextText: SAMPLE });
+	const detection = controller.detectQuestion(SAMPLE_WITHOUT_RESERVATION, {
+		contextText: SAMPLE_WITHOUT_RESERVATION,
+	});
 	const risk = classifyQuestionRisk({
 		kind: detection.kind,
 		askType: detection.askType,
@@ -173,7 +188,9 @@ test("an approval of a choice keeps the selected option and the scope", () => {
 
 test("a cautious approval of a choice keeps the selected option and the scope", () => {
 	const controller = makeController();
-	const detection = controller.detectQuestion(SAMPLE, { contextText: SAMPLE });
+	const detection = controller.detectQuestion(SAMPLE_WITHOUT_RESERVATION, {
+		contextText: SAMPLE_WITHOUT_RESERVATION,
+	});
 	const risk = classifyQuestionRisk({
 		kind: detection.kind,
 		askType: detection.askType,
@@ -190,6 +207,30 @@ test("a cautious approval of a choice keeps the selected option and the scope", 
 
 	assert.equal(result.outcome, "proceed_with_caution");
 	assert.equal(result.appliedRule, undefined);
+});
+
+test("a choice that reserves the decision for the human waits for the human", () => {
+	const controller = makeController();
+	const detection = controller.detectQuestion(SAMPLE, { contextText: SAMPLE });
+	const risk = classifyQuestionRisk({
+		kind: detection.kind,
+		askType: detection.askType,
+		text: detection.contextText,
+	});
+	const context = { question: questionContextOf(detection, risk) };
+
+	const result = applyDecisionPolicy("approve", context, {
+		confidenceThreshold: 0.7,
+		confidence: 0.9,
+		selectedOption: detection.alternatives[0],
+		scope: "canary_first",
+	});
+
+	// The agent asked for the OK of the human, so no option is picked for
+	// it. The alternatives stay intact for the human that answers.
+	assert.equal(result.outcome, "wait");
+	assert.equal(risk.requiresExplicitAuthorization, true);
+	assert.equal(detection.alternatives.length, 2);
 });
 
 test("a choice without a selected option stays open", () => {

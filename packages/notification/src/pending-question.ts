@@ -232,23 +232,42 @@ export function askTypeForKind(kind: QuestionKind): AskType {
  * The typed ask of a detected question.
  *
  * A choice keeps its type: the agent offers concrete alternatives, and a
- * decision may pick one of them. Every other ask that the message
- * explicitly reserves for the human is an explicit authorization.
+ * decision may pick one of them. An ask that the message explicitly
+ * reserves for the human stays an explicit authorization, also when the
+ * message offers alternatives: the reservation of the human wins over the
+ * kind of the question.
  */
 export function computeAskType(
 	kind: QuestionKind,
 	explicitAuthorization: boolean,
 ): AskType {
-	if (kind === "choice") return "choice";
 	if (explicitAuthorization) return "explicit_authorization";
+	if (kind === "choice") return "choice";
 	return askTypeForKind(kind);
 }
+
+/**
+ * The stems that introduce an implementation offer.
+ *
+ * The same stems serve two branches: an offer with two alternatives is a
+ * choice, an offer without alternatives is an approval. One list keeps the
+ * two branches from drifting apart.
+ */
+const APPROVAL_STEMS: RegExp[] = [
+	/\bwant me to\b/i,
+	/\bwould you like me to\b/i,
+	/\bshall i\b/i,
+	/\bshould i\b/i,
+	/\bshould we\b/i,
+	/\bdo you want me to\b/i,
+	/\bcan i (?:start|proceed|add|implement)\b/i,
+];
 
 /**
  * The stem of a question: the part that carries no alternative.
  */
 const QUESTION_STEM =
-	/^(?:do you want(?: me to)?|do you prefer|would you like me to|should i|should we|shall i|shall we|may i|can i|could i|is it|are you|which|what|do)\s+/i;
+	/^(?:want me to|do you want(?: me to)?|do you prefer|would you like me to|should i|should we|shall i|shall we|may i|can i|could i|is it|are you|which|what|do)\s+/i;
 
 /** The auxiliary verb of the second alternative. */
 const ALTERNATIVE_AUXILIARY =
@@ -640,18 +659,15 @@ export class PendingQuestionController {
       }
     }
 		
+    // An implementation offer with alternatives is a choice, even when
+    // it starts with approval wording. Keep clarification precedence.
+    if (APPROVAL_STEMS.some((pattern) => pattern.test(lower))
+      && extractAlternatives(question).length === 2) {
+      return "choice";
+    }
+
     // Explicit approval patterns (want me to, would you like me to, etc.)
-    const approvalPatterns = [
-      /\bwant me to\b/i,
-      /\bwould you like me to\b/i,
-      /\bshall i\b/i,
-      /\bshould i\b/i,
-      /\bshould we\b/i,
-      /\bdo you want me to\b/i,
-      /\bcan i (start|proceed|add|implement)\b/i,
-    ];
-		
-    for (const pattern of approvalPatterns) {
+    for (const pattern of APPROVAL_STEMS) {
       if (pattern.test(lower)) {
         return "approval";
       }
