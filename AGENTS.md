@@ -730,6 +730,8 @@ bun run build && bun run start   # Server deployment
   mode (`*_ENV`, `*_ENVIRONMENT`, `*_MODE`, `*_STAGE`, e.g. `AMOS_ENV`), then
   any other environment shaped key - and only then an environment shaped key
   of the process env → development/production/test
+- The facts about a Frappe bench (when no variable names a KNOWN mode) → the
+  bench is the runtime of a site: its facts name the mode
 - The facts about the repository (when no variable names a KNOWN mode) → a
   published source repository without a runtime of its own is a development
   checkout; a `develop`/`development` branch is the fallback
@@ -769,6 +771,28 @@ their own machine → `DEVELOPMENT (source-only repository)`. A branch named
 `develop` or `development` is the fallback → `DEVELOPMENT (git branch
 develop)`. A production branch is NEVER a development checkout, and this
 tier never claims production.
+
+**The Frappe bench tier comes before the repository.** A bench is the runtime
+of a Frappe site, so it says more about the environment than the shape of a
+checkout. The bench is the workspace itself, one of its parents (a bench
+holds its apps) or one of its children. The signals are weighed:
+
+| Signal | Names | Weight |
+|--------|-------|--------|
+| supervisor manages the bench, nginx serves it | production | strong |
+| a development server of the bench runs (`bench serve`) | development | strong |
+| `developer_mode` on, `live_reload` on, a development branch | development | medium |
+| a site in maintenance mode, `bench start` runs, a deployment configuration | production | medium |
+| `developer_mode` off | production | weak |
+| the scheduler is paused (`pause_scheduler`) | development | weak |
+
+A strong signal decides, unless a strong signal of the other kind contradicts
+it - then no mode is claimed. Otherwise the weights decide, and a tie is no
+claim. `developer_mode` is deliberately NOT a strong signal: a production
+bench with the flag left on is still a production bench, and a development
+bench with the flag off is still a development bench. The label names the
+deciding signals: `DEVELOPMENT (frappe bench: live reload on, git branch
+develop)`.
 
 **The repository is found in the workspace, in its parents, or in a child.**
 `git rev-parse` walks up, so a folder inside a repository (a package of a
@@ -830,6 +854,8 @@ Check the .env and .env.* files of the workspace second
 Only then an environment shaped key of the process env (e.g. AMOS_ENV)
 A variable whose value names no known mode does not decide
   (VIRTUAL_ENV, a path, a value this detector does not know)
+Only then the facts about a Frappe bench
+  (the bench is the runtime of a site: its signals decide)
 Only then the facts about the repository
   (a published source repository without a runtime of its own,
    or a develop/development branch)

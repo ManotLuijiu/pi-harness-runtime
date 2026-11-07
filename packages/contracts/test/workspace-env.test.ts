@@ -20,6 +20,7 @@ import {
 	isLowRamWarning,
 	isSessionVariableKey,
 	MASKED_MODE_VALUE,
+	modeFromFrappeBenchFacts,
 	modeFromRepositoryFacts,
 	modeFromValue,
 	orderDotenvFileNames,
@@ -32,7 +33,11 @@ import {
 	readDotenvFiles,
 } from "../src/workspace-dotenv.ts";
 import { detectWorkspaceEnv, findRepositoryChild } from "../src/workspace-env.ts";
-import type { EnvEvidence, WorkspaceEnvResult } from "../src/workspace-env-format.ts";
+import type {
+	EnvEvidence,
+	FrappeBenchFacts,
+	WorkspaceEnvResult,
+} from "../src/workspace-env-format.ts";
 
 function makeEnv(overrides: Partial<WorkspaceEnvResult> = {}): WorkspaceEnvResult {
 	return {
@@ -879,6 +884,122 @@ describe("the repository of a workspace", () => {
 
 			expect(findRepositoryChild(scratch)).toBe("");
 		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("the mode of a Frappe bench", () => {
+	const bench: FrappeBenchFacts = {
+		benchRoot: "/home/tester/frappe-bench",
+		developerMode: null,
+		maintenanceMode: null,
+		liveReload: false,
+		pauseScheduler: false,
+		supervisorManaged: false,
+		nginxManaged: false,
+		deploymentMarker: false,
+		devServerRunning: false,
+		productionRun: false,
+		branch: "",
+	};
+
+	test("a workspace without a bench names no mode", () => {
+		expect(modeFromFrappeBenchFacts({ ...bench, benchRoot: "" })).toBeNull();
+	});
+
+	test("a bench without a fact names no mode", () => {
+		expect(modeFromFrappeBenchFacts(bench)).toBeNull();
+	});
+
+	test("developer_mode on names a development bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, developerMode: true });
+
+		expect(detection?.mode).toBe("development");
+		expect(detection?.key).toContain("developer_mode");
+	});
+
+	test("developer_mode off names a production bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, developerMode: false });
+
+		expect(detection?.mode).toBe("production");
+	});
+
+	test("a deployed bench stays a production bench when developer_mode is on", () => {
+		const detection = modeFromFrappeBenchFacts({
+			...bench,
+			developerMode: true,
+			supervisorManaged: true,
+		});
+
+		expect(detection?.mode).toBe("production");
+		expect(detection?.key).toContain("supervisor");
+	});
+
+	test("nginx names a deployed bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, nginxManaged: true });
+
+		expect(detection?.mode).toBe("production");
+		expect(detection?.key).toContain("nginx");
+	});
+
+	test("a running development server names a development bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, devServerRunning: true });
+
+		expect(detection?.mode).toBe("development");
+	});
+
+	test("a bench that says both names no mode", () => {
+		expect(
+			modeFromFrappeBenchFacts({
+				...bench,
+				devServerRunning: true,
+				supervisorManaged: true,
+			}),
+		).toBeNull();
+	});
+
+	test("a development branch names a development bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, branch: "develop" });
+
+		expect(detection?.mode).toBe("development");
+	});
+
+	test("the live reload of a bench names a development bench", () => {
+		const detection = modeFromFrappeBenchFacts({ ...bench, liveReload: true });
+
+		expect(detection?.mode).toBe("development");
+	});
+});
+
+describe("the bench of a workspace", () => {
+	test("the bench of a workspace inside a bench names the mode", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pi-frappe-bench-"));
+		const previousNodeEnv = process.env["NODE_ENV"];
+		const previousVirtualEnv = process.env["VIRTUAL_ENV"];
+		try {
+			const benchRoot = join(scratch, "frappe-bench");
+			mkdirSync(join(benchRoot, "sites"), { recursive: true });
+			writeFileSync(
+				join(benchRoot, "sites", "common_site_config.json"),
+				JSON.stringify({ developer_mode: 1 }),
+			);
+			const workspace = join(benchRoot, "apps", "erpnext", "frontend");
+			mkdirSync(workspace, { recursive: true });
+			// The virtualenv of the shell says nothing about the workspace.
+			delete process.env["NODE_ENV"];
+			process.env["VIRTUAL_ENV"] = "/home/tester/.venvs/demo";
+
+			const result = detectWorkspaceEnv(workspace);
+
+			expect(result.mode).toBe("development");
+			expect(describeWorkspaceMode(result)).toContain("frappe bench");
+			expect(describeWorkspaceMode(result)).toContain("developer_mode");
+		} finally {
+			if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+			else process.env["NODE_ENV"] = previousNodeEnv;
+			if (previousVirtualEnv === undefined) delete process.env["VIRTUAL_ENV"];
+			else process.env["VIRTUAL_ENV"] = previousVirtualEnv;
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	});

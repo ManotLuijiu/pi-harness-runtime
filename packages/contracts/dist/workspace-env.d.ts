@@ -35,6 +35,18 @@ export type { DotenvVar, EnvEvidence, ServerState, WorkspaceEnvResult, Workspace
  */
 export declare function findRepositoryChild(workspacePath: string): string;
 /**
+ * The child of a workspace that matches a predicate.
+ *
+ * A workspace is often the folder above the repository: the root of a
+ * monorepo, a directory of applications, a directory of workspaces. The
+ * nearest match in a stable order is returned.
+ *
+ * @param workspacePath The workspace
+ * @param matches The predicate of a directory
+ * @returns The directory that matches ("" when there is none)
+ */
+export declare function findChildDirectory(workspacePath: string, matches: (directory: string) => boolean): string;
+/**
  * Detect and store workspace environment
  */
 export declare function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult;
