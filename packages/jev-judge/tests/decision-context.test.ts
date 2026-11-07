@@ -79,6 +79,103 @@ describe("the decision context of a choice", () => {
 		);
 	});
 
+	it("keeps a constraint of the section of an option that names it with a pronoun", () => {
+		// The paragraph stands in the section of the option and names it with
+		// a pronoun. It is about that option: dropping it would hide the
+		// restriction of the option without any warning.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"**A. The small fix.**",
+				"",
+				"It only changes the message of the app.",
+				"",
+				"**B. The connector.**",
+				"",
+				"It must actually connect servers.",
+				"",
+				"Should I take A or B?",
+			].join("\n"),
+		});
+
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"must actually connect",
+		);
+		expect(renderChoiceExcerpt(context)).toContain("must actually connect");
+		expect(context.source.complete).toBe(true);
+	});
+
+	it("keeps a constraint that names the option in a message without option headers", () => {
+		// Without a header there is no section, so the paragraph that names
+		// the option is the only thing that can carry the fact.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"Option B reports the registration as connected.",
+				"",
+				"Option B must actually connect the servers.",
+			].join("\n"),
+		});
+
+		expect(context.options[1]?.description).toContain(
+			"reports the registration as connected",
+		);
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"must actually connect",
+		);
+	});
+
+	it("keeps the constraints of the message when the agent supplied a description", () => {
+		// The description of the agent is the meaning of the option, not a
+		// replacement for the facts of the message: a caveat that only the
+		// message carries has to survive it.
+		const context = buildChoiceDecisionContext({
+			question: HONCHO_QUESTION,
+			alternatives: HONCHO_ALTERNATIVES,
+			contextText: HONCHO_MESSAGE,
+			structured: {
+				options: [
+					{ label: "implement A", description: "report the registration as connected" },
+					{
+						label: "A+B",
+						description: "connect the registered servers ourselves",
+						constraints: [],
+					},
+				],
+			},
+		});
+
+		expect(context.options[1]?.description).toBe(
+			"connect the registered servers ourselves",
+		);
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"must actually connect",
+		);
+		// The wording of the source for the option survives as well.
+		expect(context.options[1]?.tradeoffs.join(" ")).toContain(
+			"Become the connector",
+		);
+	});
+
+	it("finds the section of an option when the alternatives are in another order", () => {
+		// The order of the alternatives is not the order of the sections: the
+		// label "A" belongs to the first option, so the header of "A+B" is
+		// not the header of the option "A".
+		const context = buildChoiceDecisionContext({
+			question: HONCHO_QUESTION,
+			alternatives: ["A+B", "implement A"],
+			contextText: HONCHO_MESSAGE,
+		});
+
+		expect(context.options[0]?.description).toContain("Become the connector");
+		expect(context.options[1]?.description).toContain("Truthful reporting only");
+		expect(context.options[0]?.constraints.join(" ")).toContain(
+			"must actually connect",
+		);
+	});
+
 	it("never chooses an option and never invents an approval", () => {
 		const context = buildChoiceDecisionContext({
 			question: HONCHO_QUESTION,
@@ -149,7 +246,9 @@ describe("the decision context of a choice", () => {
 			"the registration succeeds while the model has no tools",
 		);
 		expect(context.options[0]?.description).toBe("report registered as connected");
-		expect(context.source.derived).toBe("structured");
+		// The meaning comes from the structure, the constraints of the
+		// message are merged with it: the provenance says so.
+		expect(context.source.derived).toBe("mixed");
 		expect(context.authorization.notEstablished).toEqual(["nothing is authorized"]);
 	});
 
