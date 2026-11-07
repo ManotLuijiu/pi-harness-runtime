@@ -13,6 +13,7 @@ const outputText = stripTypeScriptTypes(source, { mode: "transform" })
   + "\nObject.assign(exports, { honchoPayload, initHoncho, ensureHonchoIdentity,"
   + " ingestUserMessage, ingestAssistantMessage, retrieveHonchoContext, getHonchoIdentity,"
   + " honchoToolCall, honchoMcpServerConfig, registerHonchoMcpServer, getHonchoInitResult,"
+  + " honchoMcpTools, honchoMcpState, honchoMcpReport,"
   + " shutdownHoncho, redactHonchoKey, loadHonchoApiKey, registerHonchoLifecycle });";
 
 /** The MCP envelope: the JSON sits in the text of the first content block. */
@@ -897,4 +898,106 @@ test("every status of the integration is handled by the startup", async () => {
       `index.ts handles the status "${status}"`,
     );
   }
+});
+
+test("the state of the server is read from the tools of the session", () => {
+  const { honcho } = loadHoncho();
+
+  const connected = honcho.honchoMcpState(
+    {
+      getAllTools: () => [
+        { name: "mcp__honcho__search" },
+        { name: "read_file" },
+      ],
+    },
+    true,
+  );
+  assert.equal(
+    connected,
+    "connected",
+    "the tools of the server are the evidence of a connection",
+  );
+
+  const registered = honcho.honchoMcpState(
+    { getAllTools: () => [{ name: "read_file" }] },
+    true,
+  );
+  assert.equal(
+    registered,
+    "registered",
+    "a server without tools of its own is only registered",
+  );
+
+  const withoutTools = honcho.honchoMcpState({}, true);
+  assert.equal(
+    withoutTools,
+    "registered",
+    "a runtime that cannot report the tools reports no connection",
+  );
+
+  const refused = honcho.honchoMcpState(
+    { getAllTools: () => [{ name: "mcp__honcho__search" }] },
+    false,
+  );
+  assert.equal(refused, "not_registered", "a refused registration is no server");
+});
+
+test("a runtime that fails to report the tools claims no connection", () => {
+  const { honcho } = loadHoncho();
+
+  const state = honcho.honchoMcpState(
+    {
+      getAllTools() {
+        throw new Error("the runtime is not ready");
+      },
+    },
+    true,
+  );
+  assert.equal(state, "registered", "a failing runtime does not claim a connection");
+});
+
+test("the report names the state instead of a registration", () => {
+  const { honcho } = loadHoncho();
+
+  const connected = honcho.honchoMcpReport("connected");
+  assert.equal(connected.text, "MCP connected");
+  assert.equal(connected.status, "ok");
+  assert.equal(connected.details.length, 0, "a connected server needs no explanation");
+
+  const registered = honcho.honchoMcpReport("registered");
+  assert.equal(registered.status, "warn", "a server without tools is a warning");
+  assert.ok(
+    registered.details.some((line) => /MCP connector/.test(line)),
+    "the report says why the tools are missing",
+  );
+  assert.ok(
+    !/initialized/.test(registered.text),
+    "the report does not claim that the server works",
+  );
+
+  const refused = honcho.honchoMcpReport("not_registered", "the name is taken");
+  assert.equal(refused.status, "warn");
+  assert.ok(
+    refused.details.some((line) => line.includes("the name is taken")),
+    "the report names the cause of the refusal",
+  );
+});
+
+test("the startup reports the state of the server, not the registration", () => {
+  const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+
+  assert.match(
+    indexSource,
+    /honcho\.honchoMcpState\(/,
+    "the startup reads the state of the server from the session",
+  );
+  assert.match(
+    indexSource,
+    /honcho\.honchoMcpReport\(/,
+    "the startup reports the state of the server",
+  );
+  assert.ok(
+    !/addHarnessMessage\("Honcho", "initialized"/.test(indexSource),
+    "a registration is not reported as a working server",
+  );
 });

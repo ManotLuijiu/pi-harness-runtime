@@ -53,6 +53,8 @@ import { isChannelDisabled, setChannelDisabled } from "./harness/notification-se
 import type {
 	HonchoInitResult,
 	HonchoMcpRegistrar,
+	HonchoMcpReport,
+	HonchoMcpState,
 } from "./harness/honcho-init.ts";
 import { UsageTracker } from "./tracker.ts";
 import { MirrorStore, type MirrorRecord } from "./mirror.ts";
@@ -3485,6 +3487,66 @@ interface HonchoModule {
 	loadHonchoApiKey: () => string | undefined;
 	/** Removes the credential from a text. */
 	redactHonchoKey: (text: string, apiKey: string) => string;
+	/**
+	 * The state of the MCP server in the session.
+	 *
+	 * The state is read from the tools of the session, not from the
+	 * registration: a registration that Pi accepted says that Pi knows the
+	 * server, and nothing about a connection.
+	 */
+	honchoMcpState: (
+		pi: HonchoMcpRegistrar | undefined | null,
+		registered: boolean,
+	) => HonchoMcpState;
+	/** The report of the state, for the startup. */
+	honchoMcpReport: (state: HonchoMcpState, reason?: string) => HonchoMcpReport;
+}
+
+/**
+ * How long the startup waits for the tools of the Honcho server.
+ *
+ * A connector connects the registered servers asynchronously, so the tools
+ * are not there when the registration returns. The wait is bounded: a
+ * connector that never connects must not hold the session, and the report
+ * says what it knows when the wait is over.
+ */
+const HONCHO_MCP_WAIT_MS = 15_000;
+
+/** The interval between two checks of the tools of the session. */
+const HONCHO_MCP_WAIT_INTERVAL_MS = 500;
+
+/**
+ * Correct the report when the tools of the Honcho server appear.
+ *
+ * The connector of Pi connects the registered servers in the background, so
+ * the report of the startup is written before the connection happens. The
+ * wait is bounded and the report is only corrected when the tools are
+ * really there.
+ */
+function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): void {
+	const registrar = pi as unknown as HonchoMcpRegistrar;
+	const deadline = Date.now() + HONCHO_MCP_WAIT_MS;
+	const check = (): void => {
+		const state = honcho.honchoMcpState(registrar, true);
+		if (state === "connected") {
+			logStartup("[pi-harness] Honcho: native MCP server connected");
+			// The correction comes from the same report as the startup, so
+			// the two rows cannot drift apart.
+			const report = honcho.honchoMcpReport(state);
+			addHarnessMessage("Honcho", report.text, report.status, report.details);
+			return;
+		}
+		if (Date.now() >= deadline) {
+			logStartup(
+				"[pi-harness] Honcho: no connector connected the MCP server (the model sees no Honcho tools)",
+			);
+			return;
+		}
+		const timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
+		if (typeof timer.unref === "function") timer.unref();
+	};
+	const timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
+	if (typeof timer.unref === "function") timer.unref();
 }
 
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
@@ -3558,8 +3620,28 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 			case "ready": {
 				logStartup("[pi-harness] Honcho integration ready");
 				if (result.mcpRegistered) {
-					logStartup("[pi-harness] Honcho: native MCP server registered");
-					addHarnessMessage("Honcho", "initialized", "ok");
+					// The registration is a declaration: the tools of the
+					// server reach the model only when an MCP connector
+					// connected it. The tools of the session are the
+					// evidence, so the report names what is true.
+					const state = honcho.honchoMcpState(
+						pi as unknown as HonchoMcpRegistrar,
+						true,
+					);
+					if (state === "connected") {
+						logStartup("[pi-harness] Honcho: native MCP server connected");
+						const report = honcho.honchoMcpReport(state);
+						addHarnessMessage("Honcho", report.text, report.status, report.details);
+					} else {
+						logStartup(
+							"[pi-harness] Honcho: native MCP server registered (the tools reach the model only while an MCP connector is active)",
+						);
+						const report = honcho.honchoMcpReport(state);
+						addHarnessMessage("Honcho", report.text, report.status, report.details);
+						// A connector connects the server in the background:
+						// the report is corrected when the tools appear.
+						watchHonchoMcpTools(pi, honcho);
+					}
 				} else {
 					// The memory works, but the model has no Honcho tools: the
 					// user has to know that, not only the log. The reason of
@@ -3576,9 +3658,9 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 					const capability = cause.includes("registerMcpServer")
 						? "This runtime does not provide registerMcpServer: the Honcho memory works, but the model sees no Honcho tools."
 						: "The Honcho memory works, but the model sees no Honcho tools.";
-					addHarnessMessage("Honcho", "native MCP tools not registered", "warn", [
-						`The registration failed: ${cause}`,
-						"Check /tmp/pi-harness.log for the Honcho reason.",
+					const report = honcho.honchoMcpReport("not_registered", cause);
+					addHarnessMessage("Honcho", report.text, report.status, [
+						...report.details,
 						capability,
 					]);
 				}
