@@ -669,6 +669,25 @@ export function modeFromFrappeBenchFacts(
 	const strongProduction = production.filter((signal) => signal.strength === "strong");
 	// A contradiction is not a mode: the facts say both, so nothing is claimed.
 	if (strongDevelopment.length > 0 && strongProduction.length > 0) return null;
+	// A strong signal decides: the runtime of the bench says how it runs, and
+	// it outweighs the configuration flags, however many of them point the
+	// other way.
+	if (strongDevelopment.length > 0) {
+		return {
+			mode: "development",
+			key: `frappe bench: ${strongDevelopment
+				.map((signal) => signal.reason)
+				.join(", ")}`,
+		};
+	}
+	if (strongProduction.length > 0) {
+		return {
+			mode: "production",
+			key: `frappe bench: ${strongProduction
+				.map((signal) => signal.reason)
+				.join(", ")}`,
+		};
+	}
 
 	const score = (signals: BenchSignal[]): number =>
 		signals.reduce((total, signal) => total + BENCH_SIGNAL_WEIGHT[signal.strength], 0);

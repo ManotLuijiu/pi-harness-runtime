@@ -949,6 +949,39 @@ describe("the mode of a Frappe bench", () => {
 		expect(detection?.mode).toBe("development");
 	});
 
+	test("a deployed bench stays a production bench with several development flags", () => {
+		// The runtime of the bench says how it runs: the configuration flags
+		// do not outweigh supervisor and nginx, however many of them point
+		// the other way.
+		const detection = modeFromFrappeBenchFacts({
+			...bench,
+			developerMode: true,
+			liveReload: true,
+			pauseScheduler: true,
+			branch: "develop",
+			supervisorManaged: true,
+			nginxManaged: true,
+		});
+
+		expect(detection?.mode).toBe("production");
+		expect(detection?.key).toContain("supervisor");
+		expect(detection?.key).toContain("nginx");
+	});
+
+	test("a running development server decides over the configuration flags", () => {
+		const detection = modeFromFrappeBenchFacts({
+			...bench,
+			developerMode: false,
+			maintenanceMode: true,
+			deploymentMarker: true,
+			branch: "main",
+			devServerRunning: true,
+		});
+
+		expect(detection?.mode).toBe("development");
+		expect(detection?.key).toContain("development server running");
+	});
+
 	test("a bench that says both names no mode", () => {
 		expect(
 			modeFromFrappeBenchFacts({
