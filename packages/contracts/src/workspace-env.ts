@@ -622,8 +622,8 @@ const REPOSITORY_SEARCH_SKIP = new Set([
  * The deepest level below the workspace that is searched for a repository.
  *
  * Two levels cover the shapes that matter: a folder of applications
- * ("apps/m_capital") and a repository inside one of them ("apps/m_capital/
- * frontend" with the repository one level above).
+ * ("apps/store") and a repository inside one of them ("apps/store/web"
+ * with the repository one level above).
  */
 const REPOSITORY_SEARCH_DEPTH = 2;
 
