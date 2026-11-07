@@ -48,6 +48,12 @@ import {
 } from "./harness/pending-countdown.ts";
 import { endPendingWait, releaseWait } from "./harness/pending-wait.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
+import {
+	createMcpConnector,
+	type McpClientLibrary,
+	type McpConnector,
+	type McpConnectorApi,
+} from "./harness/mcp-connector.ts";
 // The Honcho contract lives with the Honcho integration. A type-only import
 // is erased at runtime, so the startup keeps loading the module lazily.
 import type {
@@ -3463,6 +3469,68 @@ function initConsoleGuard(pi: ExtensionAPI): void {
 	});
 }
 
+/**
+ * The fallback connector for the MCP servers that extensions register.
+ *
+ * Pi expects the extension that handles `mcp_servers_change` to be the one
+ * that connects the registered servers. The built-in MCP extension of Pi
+ * does that job while it is active; this connector takes over only the
+ * servers that nobody else connected, and the tools of the session are the
+ * evidence of who did what.
+ *
+ * The connector works in the background: the session does not wait for it,
+ * because a server that nobody connected is a rare case and the tools of a
+ * server that is still connecting arrive late anyway.
+ */
+function initMcpConnector(pi: ExtensionAPI): void {
+	// The typings of the installed runtime may be older than the event
+	// itself, so the registration uses the structural type of the API.
+	const registrar = pi as unknown as {
+		on: (
+			event: string,
+			handler: (...args: unknown[]) => void | Promise<void>,
+		) => void;
+	};
+	const connector = createMcpConnector(pi as unknown as McpConnectorApi, {
+		loadLibrary: async (): Promise<McpClientLibrary> => {
+			const mod = await import("@earendil-works/pi-mcp");
+			// SAFETY: the package exports the client and the two transports
+			// with these names; the interface describes how the connector
+			// uses them.
+			return mod as unknown as McpClientLibrary;
+		},
+		log: (message: string): void => {
+			logStartup(`[pi-harness] ${message}`);
+		},
+	});
+	mcpConnector = connector;
+
+	// The registration of a server while the extensions load is read with
+	// getMcpServers() on session_start; a later registration fires the
+	// change event. Both paths lead to the same place.
+	pi.on("session_start", () => {
+		void connector.connectPending().catch((error: unknown) => {
+			logStartup(
+				`[pi-harness] the MCP fallback connector failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
+	});
+
+	registrar.on("mcp_servers_change", () => {
+		void connector.connectPending().catch((error: unknown) => {
+			logStartup(
+				`[pi-harness] the MCP fallback connector failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
+	});
+
+	pi.on("session_shutdown", () => {
+		void connector.close().catch(() => {
+			// A broken connection needs no closing.
+		});
+	});
+}
+
 // --- honcho-memory: Honcho MCP for peer/user memory via https://mcp.honcho.dev ------
 // Registers the Honcho MCP server with Pi's NATIVE MCP support and implements
 // the automatic memory lifecycle:
@@ -3516,6 +3584,22 @@ const HONCHO_MCP_WAIT_MS = 15_000;
 const HONCHO_MCP_WAIT_INTERVAL_MS = 500;
 
 /**
+ * The connector of the session.
+ *
+ * The startup report of Honcho names the reason a connection failed, so the
+ * report can tell the user what went wrong.
+ */
+let mcpConnector: McpConnector | null = null;
+
+/**
+ * The name of the Honcho MCP server in Pi.
+ *
+ * The integration keeps the name in its own module, which is loaded lazily:
+ * a value import here would load the whole integration at the startup.
+ */
+const HONCHO_MCP_SERVER_NAME = "honcho";
+
+/**
  * Correct the report when the tools of the Honcho server appear.
  *
  * The connector of Pi connects the registered servers in the background, so
@@ -3537,9 +3621,17 @@ function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): void {
 			return;
 		}
 		if (Date.now() >= deadline) {
+			// The fallback connector knows why the connection failed, and
+			// the reason is more useful than "nobody connected it".
+			const status = mcpConnector?.statuses.get(HONCHO_MCP_SERVER_NAME);
+			const reason = status?.state === "failed" ? status.reason : undefined;
 			logStartup(
-				"[pi-harness] Honcho: no connector connected the MCP server (the model sees no Honcho tools)",
+				`[pi-harness] Honcho: no connector connected the MCP server (the model sees no Honcho tools)${reason ? `: ${reason}` : ""}`,
 			);
+			if (reason) {
+				const report = honcho.honchoMcpReport("registered", reason);
+				addHarnessMessage("Honcho", report.text, report.status, report.details);
+			}
 			return;
 		}
 		const timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
@@ -5111,6 +5203,13 @@ export default async function (pi: ExtensionAPI) {
 	// A library that writes to the console would put its text into the
 	// prompt input field. The guard sends it to the harness log instead.
 	initConsoleGuard(pi);
+
+	// --- mcp-connector: the fallback for the MCP servers of the extensions ----
+	// The built-in MCP extension of Pi connects the servers that extensions
+	// register. The connector takes over only the servers that nobody else
+	// connected, so the tools of Honcho reach the model even when the
+	// built-in support is disabled or replaced.
+	initMcpConnector(pi);
 
 	// --- line-voice-queue: Watch for LINE voice commands ----
 	void initLineVoiceQueue(pi);

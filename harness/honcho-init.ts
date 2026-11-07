@@ -164,7 +164,7 @@ export interface HonchoMcpRegistrar {
 const HONCHO_MCP_URL = "https://mcp.honcho.dev";
 
 /** The name of the Honcho MCP server in Pi. */
-const HONCHO_SERVER_NAME = "honcho";
+export const HONCHO_SERVER_NAME = "honcho";
 
 /**
  * The prefix of the names of the tools of the Honcho server.
@@ -1184,6 +1184,9 @@ export function honchoMcpReport(
       text: "MCP registered, not connected",
       status: "warn",
       details: [
+        ...(reason
+          ? [`The connection failed: ${reason}`]
+          : []),
         "The Honcho server is registered with Pi.",
         "Its tools reach the model only while an MCP connector is active.",
         "Check /mcp for the connection state.",
