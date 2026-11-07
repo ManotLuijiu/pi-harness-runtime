@@ -463,7 +463,18 @@ export function createMcpConnector(
 		statuses,
 
 		async connectPending(): Promise<void> {
-			const servers = api.getMcpServers?.() ?? [];
+			let servers: RegisteredMcpServerLike[] = [];
+			try {
+				servers = api.getMcpServers?.() ?? [];
+			} catch (error) {
+				// The runtime cannot list the servers yet. The connector has
+				// nothing to work with, and it says so instead of failing
+				// with an error the caller cannot act on.
+				log(
+					`the registered MCP servers are not readable: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				return;
+			}
 			const wanted = servers.filter(
 				(server) => server?.name && server.config?.enabled !== false,
 			);
