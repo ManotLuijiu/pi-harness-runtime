@@ -508,3 +508,32 @@ test("a runtime that cannot register tools connects nothing", async () => {
 	assert.match(status.reason, /cannot register tools/, "the reason names the cause");
 	assert.equal(calls.transports.length, 0, "the server was not connected");
 });
+
+test("a runtime that cannot list the servers connects nothing", async () => {
+	const { createMcpConnector } = loadConnector();
+	const { library, calls } = fakeLibrary([{ name: "search" }]);
+	const logs = [];
+	const connector = createMcpConnector(
+		{
+			getMcpServers: () => {
+				throw new Error("the runtime is not bound yet");
+			},
+			getAllTools: () => [],
+			registerTool: () => {},
+		},
+		{
+			loadLibrary: async () => library,
+			delay: async () => {},
+			log: (message) => logs.push(message),
+		},
+	);
+
+	await connector.connectPending();
+
+	assert.equal(calls.transports.length, 0, "nothing was connected");
+	assert.equal(connector.statuses.size, 0, "no server was reported");
+	assert.ok(
+		logs.some((line) => line.includes("not readable")),
+		`the connector says that the servers are not readable: ${logs.join(" | ")}`,
+	);
+});
