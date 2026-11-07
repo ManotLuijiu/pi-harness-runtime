@@ -23,6 +23,18 @@ export { canShowModeValue, isEnvShapedKey, isSecretLikeKey, MASKED_MODE_VALUE } 
 export { isTemplateDotenvName, listDotenvFiles, readDotenvFiles } from "./workspace-dotenv.js";
 export type { DotenvVar, EnvEvidence, ServerState, WorkspaceEnvResult, WorkspaceMode };
 /**
+ * The child of a workspace that holds a repository.
+ *
+ * A workspace is often the folder above the repository: the root of a
+ * monorepo, a directory of applications, a directory of workspaces. The
+ * repository of such a workspace is below it, and the search finds the
+ * nearest one in a stable order.
+ *
+ * @param workspacePath The workspace
+ * @returns The directory that holds the repository ("" when there is none)
+ */
+export declare function findRepositoryChild(workspacePath: string): string;
+/**
  * Detect and store workspace environment
  */
 export declare function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult;

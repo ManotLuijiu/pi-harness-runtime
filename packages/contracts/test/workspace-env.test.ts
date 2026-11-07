@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -31,6 +31,7 @@ import {
 	isTemplateDotenvName,
 	readDotenvFiles,
 } from "../src/workspace-dotenv.ts";
+import { detectWorkspaceEnv, findRepositoryChild } from "../src/workspace-env.ts";
 import type { EnvEvidence, WorkspaceEnvResult } from "../src/workspace-env-format.ts";
 
 function makeEnv(overrides: Partial<WorkspaceEnvResult> = {}): WorkspaceEnvResult {
@@ -93,6 +94,17 @@ describe("workspace mode wording", () => {
 
 		expect(describeWorkspaceMode(makeEnv({ evidence }))).toBe(
 			"UNKNOWN (NODE_ENV=staging is not a known mode)",
+		);
+	});
+
+	test("the label names the detection and the variable that did not decide", () => {
+		const evidence: EnvEvidence[] = [
+			{ source: "process.env", key: "VIRTUAL_ENV", value: "<set>", timestamp: 0 },
+			{ source: "detection", key: "source-only repository", value: "development", timestamp: 0 },
+		];
+
+		expect(describeWorkspaceMode(makeEnv({ mode: "development", evidence }))).toBe(
+			"DEVELOPMENT (source-only repository; VIRTUAL_ENV names no known mode)",
 		);
 	});
 
@@ -798,5 +810,109 @@ describe("the build permission", () => {
 			makeEnv({ mode: "development", buildAllowed: false, lowRamWarning: true }),
 		);
 		expect(message).toContain("Build allowed: no - low memory");
+	});
+});
+
+describe("a variable that names no known mode", () => {
+	test("it does not decide the mode of the workspace", () => {
+		// The scenario of the user: VIRTUAL_ENV holds the path of a virtualenv.
+		// It says nothing about the environment of the workspace, so the facts
+		// about the repository may still name the mode.
+		const resolved = resolveWorkspaceMode(
+			collectProcessEnvVars({ VIRTUAL_ENV: "/home/tester/.venvs/demo" }),
+			[],
+		);
+
+		expect(resolved.mode).toBe("unknown");
+		expect(resolved.hint?.key).toBe("VIRTUAL_ENV");
+		expect(resolved.decides).toBe(false);
+	});
+
+	test("an explicit NODE_ENV still decides", () => {
+		const resolved = resolveWorkspaceMode(
+			collectProcessEnvVars({ NODE_ENV: "staging" }),
+			[],
+		);
+
+		expect(resolved.mode).toBe("unknown");
+		expect(resolved.decides).toBe(true);
+	});
+
+	test("a variable that names a known mode decides", () => {
+		const resolved = resolveWorkspaceMode(
+			collectProcessEnvVars({ AMOS_ENV: "production" }),
+			[],
+		);
+
+		expect(resolved.mode).toBe("production");
+		expect(resolved.decides).toBe(true);
+	});
+});
+
+describe("the repository of a workspace", () => {
+	test("a repository below the workspace is found", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pi-repository-child-"));
+		try {
+			mkdirSync(join(scratch, "app", ".git"), { recursive: true });
+
+			expect(findRepositoryChild(scratch)).toBe(join(scratch, "app"));
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+
+	test("a repository two levels below the workspace is found", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pi-repository-child-"));
+		try {
+			mkdirSync(join(scratch, "apps", "app", ".git"), { recursive: true });
+
+			expect(findRepositoryChild(scratch)).toBe(join(scratch, "apps", "app"));
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+
+	test("a folder without a repository names none", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pi-repository-child-"));
+		try {
+			mkdirSync(join(scratch, "app", "src"), { recursive: true });
+
+			expect(findRepositoryChild(scratch)).toBe("");
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("the mode of a workspace in a repository", () => {
+	test("the repository names the mode when a variable names no known mode", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pi-workspace-mode-"));
+		const previousNodeEnv = process.env["NODE_ENV"];
+		const previousVirtualEnv = process.env["VIRTUAL_ENV"];
+		try {
+			// The workspace holds a published package without a runtime of its
+			// own: source code that the user runs on their own machine.
+			const repo = join(scratch, "repo");
+			mkdirSync(join(repo, ".git"), { recursive: true });
+			writeFileSync(
+				join(repo, "package.json"),
+				JSON.stringify({ name: "demo-app", version: "1.0.0", files: ["dist"] }),
+			);
+			// The virtualenv of the shell says nothing about the workspace.
+			delete process.env["NODE_ENV"];
+			process.env["VIRTUAL_ENV"] = "/home/tester/.venvs/demo";
+
+			const result = detectWorkspaceEnv(scratch);
+
+			expect(result.mode).toBe("development");
+			expect(describeWorkspaceMode(result)).toContain("source-only repository");
+			expect(describeWorkspaceMode(result)).toContain("VIRTUAL_ENV");
+		} finally {
+			if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+			else process.env["NODE_ENV"] = previousNodeEnv;
+			if (previousVirtualEnv === undefined) delete process.env["VIRTUAL_ENV"];
+			else process.env["VIRTUAL_ENV"] = previousVirtualEnv;
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	});
 });

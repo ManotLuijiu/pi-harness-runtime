@@ -233,6 +233,16 @@ export interface ModeResolution {
     mode: WorkspaceMode;
     hint: DotenvVar | null;
     source: "process.env" | ".env file" | null;
+    /**
+     * The variable decides the mode.
+     *
+     * A variable whose value names a known mode always decides. A variable
+     * whose value names no known mode ("staging", a virtualenv path) only
+     * decides when it is an explicit NODE_ENV: the shape of the checkout may
+     * still name the mode, and a deliberate "staging" must not be replaced by
+     * it.
+     */
+    decides?: boolean;
 }
 /**
  * The deployment configuration of a repository.

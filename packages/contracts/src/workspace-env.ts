@@ -590,27 +590,150 @@ function detectPackageManager(workspacePath: string): string | null {
 }
 
 /**
+ * The directories that never hold a repository of their own.
+ *
+ * A search for a repository below the workspace must not walk into a build
+ * output or a dependency tree: those directories hold thousands of files and
+ * no repository.
+ */
+const REPOSITORY_SEARCH_SKIP = new Set([
+	".git",
+	"node_modules",
+	".venv",
+	"venv",
+	"env",
+	"dist",
+	"build",
+	"out",
+	"target",
+	".next",
+	".nuxt",
+	".cache",
+	".tox",
+	"vendor",
+	"__pycache__",
+	".mypy_cache",
+	".pytest_cache",
+]);
+
+/**
+ * The deepest level below the workspace that is searched for a repository.
+ *
+ * Two levels cover the shapes that matter: a folder of applications
+ * ("apps/m_capital") and a repository inside one of them ("apps/m_capital/
+ * frontend" with the repository one level above).
+ */
+const REPOSITORY_SEARCH_DEPTH = 2;
+
+/**
+ * The most directories that are read during the search.
+ *
+ * The search is bounded so a workspace with many folders cannot slow the
+ * startup down. A directory that holds a repository is found whatever its
+ * position is, as long as the search has not read that many directories.
+ */
+const REPOSITORY_SEARCH_CANDIDATES = 64;
+
+/**
+ * The branch of a checkout ("" when it cannot be read).
+ */
+function gitBranch(directory: string): string {
+	try {
+		const out = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
+			cwd: directory,
+			encoding: "utf8",
+			timeout: 1500,
+		});
+		const branch = out.trim();
+		// A detached HEAD reports "HEAD" - that is not a branch name.
+		return branch === "HEAD" ? "" : branch;
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * The repository of a directory, through its parents.
+ */
+function gitFactsIn(directory: string): { root: string; branch: string } {
+	try {
+		const out = execSync("git rev-parse --show-toplevel 2>/dev/null", {
+			cwd: directory,
+			encoding: "utf8",
+			timeout: 1500,
+		});
+		const root = out.trim();
+		if (!root) return { root: "", branch: "" };
+		return { root, branch: gitBranch(root) };
+	} catch {
+		// No git, no repository, or a timeout: nothing is known.
+		return { root: "", branch: "" };
+	}
+}
+
+/**
+ * The child of a workspace that holds a repository.
+ *
+ * A workspace is often the folder above the repository: the root of a
+ * monorepo, a directory of applications, a directory of workspaces. The
+ * repository of such a workspace is below it, and the search finds the
+ * nearest one in a stable order.
+ *
+ * @param workspacePath The workspace
+ * @returns The directory that holds the repository ("" when there is none)
+ */
+export function findRepositoryChild(workspacePath: string): string {
+	let candidates = 0;
+	let level = [workspacePath];
+	for (let depth = 0; depth < REPOSITORY_SEARCH_DEPTH && level.length > 0; depth += 1) {
+		const next: string[] = [];
+		for (const directory of level) {
+			let names: string[];
+			try {
+				names = readdirSync(directory, { withFileTypes: true })
+					.filter(
+						(entry) =>
+							entry.isDirectory() && !REPOSITORY_SEARCH_SKIP.has(entry.name),
+					)
+					.map((entry) => entry.name)
+					.sort();
+			} catch {
+				// An unreadable directory proves nothing.
+				continue;
+			}
+			for (const name of names) {
+				if (candidates >= REPOSITORY_SEARCH_CANDIDATES) return "";
+				candidates += 1;
+				const child = join(directory, name);
+				if (existsSync(join(child, ".git"))) return child;
+				next.push(child);
+			}
+		}
+		level = next;
+	}
+	return "";
+}
+
+/**
  * The git repository of a workspace.
+ *
+ * The repository is looked for in three places:
+ * 1. the workspace itself - `git rev-parse` walks up, so a folder inside a
+ *    repository finds the repository of its parent
+ * 2. a child of the workspace, when the workspace is not in a repository
  *
  * The root of the repository is the unit of the detection: a package
  * published from a monorepo is described by the root, not by the folder
  * the harness happens to run in.
  */
 function detectGitFacts(workspacePath: string): { root: string; branch: string } {
-	try {
-		const out = execSync(
-			"git rev-parse --show-toplevel 2>/dev/null; git rev-parse --abbrev-ref HEAD 2>/dev/null",
-			{ cwd: workspacePath, encoding: "utf8", timeout: 1500 },
-		);
-		const lines = out.split("\n").map((line) => line.trim());
-		const root = lines[0] ?? "";
-		const branch = lines[1] ?? "";
-		// A detached HEAD reports "HEAD" - that is not a branch name.
-		return { root, branch: branch === "HEAD" ? "" : branch };
-	} catch {
-		// No git, no repository, or a timeout: nothing is known.
-		return { root: "", branch: "" };
-	}
+	const own = gitFactsIn(workspacePath);
+	if (own.root) return own;
+	// The workspace is not in a repository. It may hold one: a directory of
+	// applications, a monorepo root.
+	const child = findRepositoryChild(workspacePath);
+	if (!child) return { root: "", branch: "" };
+	return { root: child, branch: gitBranch(child) };
 }
 
 /**
@@ -720,11 +843,17 @@ function determineMode(
 			timestamp: Date.now(),
 			file: resolved.hint.file,
 		});
-		// An explicit variable decides - even when it names no known mode
-		// ("staging"). The mode stays unknown and the label names the value.
-		return resolved.mode;
+		// A variable whose value names a known mode decides.
+		if (resolved.mode !== "unknown") return resolved.mode;
+		// An explicit NODE_ENV decides even when it names no known mode
+		// ("staging"). A deliberate value must not be replaced by the shape
+		// of the checkout.
+		if (resolved.decides === true) return resolved.mode;
 	}
-	// No variable names the environment: the repository may still name it.
+	// No variable names a known mode: the repository may still name it. A
+	// variable that names no known mode (VIRTUAL_ENV, a path) is a fact about
+	// the machine, not a declaration of the environment, so it does not keep
+	// the mode unknown when the checkout names it.
 	const detection = modeFromRepositoryFacts(repositoryFacts);
 	if (!detection) return resolved.mode;
 	evidence.push({

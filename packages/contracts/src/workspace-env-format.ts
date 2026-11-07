@@ -467,6 +467,16 @@ export interface ModeResolution {
 	mode: WorkspaceMode;
 	hint: DotenvVar | null;
 	source: "process.env" | ".env file" | null;
+	/**
+	 * The variable decides the mode.
+	 *
+	 * A variable whose value names a known mode always decides. A variable
+	 * whose value names no known mode ("staging", a virtualenv path) only
+	 * decides when it is an explicit NODE_ENV: the shape of the checkout may
+	 * still name the mode, and a deliberate "staging" must not be replaced by
+	 * it.
+	 */
+	decides?: boolean;
 }
 
 /**
@@ -580,19 +590,26 @@ export function resolveWorkspaceMode(
 	const processNodeEnv = processVars.find((v) => v.key === "NODE_ENV");
 	if (processNodeEnv) {
 		const mode = modeFromValue(processNodeEnv.value);
-		if (mode) return { mode, hint: processNodeEnv, source: "process.env" };
+		if (mode) return { mode, hint: processNodeEnv, source: "process.env", decides: true };
 		// An explicit NODE_ENV that names no known mode decides: the mode
 		// stays unknown instead of falling through to the files.
-		return { mode: "unknown", hint: processNodeEnv, source: "process.env" };
+		return { mode: "unknown", hint: processNodeEnv, source: "process.env", decides: true };
 	}
 	const dotenvHint = detectModeHint(dotenvVars, { allowValueMatch: true });
 	if (dotenvHint) {
 		const mode = modeFromValue(dotenvHint.value);
-		if (mode) return { mode, hint: dotenvHint, source: ".env file" };
-		// The workspace file is explicit - even when its value names no known
-		// mode ("APP_MODE=staging"). It must not be replaced by an unrelated
-		// variable of the process env.
-		return { mode: "unknown", hint: dotenvHint, source: ".env file" };
+		if (mode) return { mode, hint: dotenvHint, source: ".env file", decides: true };
+		// The workspace file is the declaration of the workspace: a value that
+		// names a known mode decides. A value that names no known mode
+		// ("APP_MODE=staging") does not decide - unless it is an explicit
+		// NODE_ENV, which is a deliberate value.
+		const explicit = dotenvHint.key === "NODE_ENV";
+		return {
+			mode: "unknown",
+			hint: dotenvHint,
+			source: ".env file",
+			decides: explicit,
+		};
 	}
 	// Last resort: an environment shaped key of the process env (the files
 	// are silent).
@@ -601,10 +618,14 @@ export function resolveWorkspaceMode(
 	);
 	if (processEnvHint) {
 		const mode = modeFromValue(processEnvHint.value);
-		if (mode) return { mode, hint: processEnvHint, source: "process.env" };
-		return { mode: "unknown", hint: processEnvHint, source: "process.env" };
+		if (mode) return { mode, hint: processEnvHint, source: "process.env", decides: true };
+		// The value names no known mode, so the variable does not decide: a
+		// virtualenv path (VIRTUAL_ENV) says nothing about the environment
+		// of the workspace, and the facts about the repository may still
+		// name the mode.
+		return { mode: "unknown", hint: processEnvHint, source: "process.env", decides: false };
 	}
-	return { mode: "unknown", hint: null, source: null };
+	return { mode: "unknown", hint: null, source: null, decides: false };
 }
 
 /**
@@ -643,11 +664,28 @@ function findDetectionEvidence(env: WorkspaceEnvResult): EnvEvidence | undefined
 export function describeWorkspaceMode(env: WorkspaceEnvResult): string {
 	const hint = findModeEvidence(env);
 	const where = hint?.file ? ` in ${hint.file}` : "";
+	const detection = findDetectionEvidence(env);
+	// A variable decides only when its value names a known mode. When the
+	// repository named the mode instead, the variable was seen but did not
+	// decide, and the label says so.
+	const hintDecides = hint ? modeFromValue(hint.value) !== null : false;
 	if (env.mode !== "unknown") {
+		if (detection && !hintDecides) {
+			const named = modeFromValue(detection.value);
+			if (named) {
+				// The variable was seen but did not decide: the label names it,
+				// so the reason for the mode stays visible.
+				let note = "";
+				if (hint) {
+					const state = hint.value ? "names no known mode" : "is empty";
+					note = `; ${hint.key}${where} ${state}`;
+				}
+				return `${env.mode.toUpperCase()} (${detection.key}${note})`;
+			}
+		}
 		if (hint) return `${env.mode.toUpperCase()} (from ${hint.key}${where})`;
 		// The mode came from the repository, not from a variable: the label
 		// names the reason ("DEVELOPMENT (source-only repository)").
-		const detection = findDetectionEvidence(env);
 		if (detection) return `${env.mode.toUpperCase()} (${detection.key})`;
 		return env.mode.toUpperCase();
 	}
@@ -668,7 +706,6 @@ export function describeWorkspaceMode(env: WorkspaceEnvResult): string {
 	}
 	// A stale cache row can carry a detection next to an unknown mode: the
 	// detection names a mode, so the mode is shown.
-	const detection = findDetectionEvidence(env);
 	if (detection) {
 		const named = modeFromValue(detection.value);
 		if (named) return `${named.toUpperCase()} (${detection.key})`;
