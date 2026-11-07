@@ -77,13 +77,14 @@ export interface ChoiceDecisionContext {
         truncated: boolean;
         /** What the evaluation does not see. */
         omittedInformation: string[];
-        /** Where the facts came from. */
+        /** Where the facts came from: the structure, the message, or both. */
         derived: "structured" | "extracted" | "mixed";
         /** Whether every option carries its meaning. */
         complete: boolean;
     };
 }
-/** The facts the agent supplied itself. They win over extracted ones. */
+/** The facts the agent supplied itself. They come first; the facts of the
+ * message are merged with them. */
 export interface StructuredChoiceFacts {
     /** The problem the choice is about. */
     problem?: string;
@@ -135,6 +136,15 @@ export interface ExtractedOption {
     found: boolean;
     /** The line of the header the facts were found at, -1 when there was none. */
     headerIndex: number;
+    /**
+     * Whether the description of the option states a restriction.
+     *
+     * The wording of the source for an option can carry the caveat of that
+     * option ("it must actually connect"). When another wording is supplied
+     * for the option, this tells the caller which list the source wording
+     * belongs to.
+     */
+    descriptionConstraint: boolean;
 }
 /** What the extraction needs to know about one option. */
 export interface OptionExtractionInput {

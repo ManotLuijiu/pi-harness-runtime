@@ -80,7 +80,7 @@ export interface ChoiceDecisionContext {
 		truncated: boolean;
 		/** What the evaluation does not see. */
 		omittedInformation: string[];
-		/** Where the facts came from. */
+		/** Where the facts came from: the structure, the message, or both. */
 		derived: "structured" | "extracted" | "mixed";
 		/** Whether every option carries its meaning. */
 		complete: boolean;
@@ -90,7 +90,8 @@ export interface ChoiceDecisionContext {
 /** One option as the agent supplied it. */
 type StructuredOption = NonNullable<StructuredChoiceFacts["options"]>[number];
 
-/** The facts the agent supplied itself. They win over extracted ones. */
+/** The facts the agent supplied itself. They come first; the facts of the
+ * message are merged with them. */
 export interface StructuredChoiceFacts {
 	/** The problem the choice is about. */
 	problem?: string;
@@ -141,6 +142,15 @@ export interface ExtractedOption {
 	found: boolean;
 	/** The line of the header the facts were found at, -1 when there was none. */
 	headerIndex: number;
+	/**
+	 * Whether the description of the option states a restriction.
+	 *
+	 * The wording of the source for an option can carry the caveat of that
+	 * option ("it must actually connect"). When another wording is supplied
+	 * for the option, this tells the caller which list the source wording
+	 * belongs to.
+	 */
+	descriptionConstraint: boolean;
 }
 
 /** What the extraction needs to know about one option. */
@@ -366,6 +376,17 @@ function mentionsAny(text: string, anchors: string[]): boolean {
 }
 
 /**
+ * The offset of a line in the source message.
+ */
+function lineOffset(lines: string[], index: number): number {
+	let offset = 0;
+	for (let position = 0; position < index; position += 1) {
+		offset += (lines[position] as string).length + 1;
+	}
+	return offset;
+}
+
+/**
  * Whether a paragraph is a fact of one option.
  *
  * The paragraph has to name the option near its beginning, and it must not
@@ -433,6 +454,7 @@ export function extractOptionFacts(
 		constraints: [],
 		found: false,
 		headerIndex: -1,
+		descriptionConstraint: false,
 	};
 	if (headerCandidates.length === 0 || source.length === 0) return empty;
 
@@ -442,12 +464,17 @@ export function extractOptionFacts(
 	const paragraphs = splitParagraphs(source);
 	let description = "";
 	let region: Paragraph[] = [];
+	// The range of the section of the option in the source message.
+	let sectionRange: { start: number; end: number } | null = null;
+	// The paragraphs of the source that the section of the option covers.
+	const covered = new Set<number>();
 
 	if (headerIndex >= 0) {
 		// The region of the option ends at the next option header, at the
 		// next heading of the message, or at the question itself.
 		const regionLines: string[] = [];
 		const questionMarker = question.trim().slice(0, 40);
+		let lastIndex = headerIndex;
 		for (let index = headerIndex; index < lines.length; index += 1) {
 			const line = lines[index] as string;
 			if (index > headerIndex) {
@@ -462,7 +489,14 @@ export function extractOptionFacts(
 				}
 			}
 			regionLines.push(line);
+			lastIndex = index;
 		}
+		sectionRange = {
+			start: lineOffset(lines, headerIndex),
+			end:
+				lineOffset(lines, lastIndex) +
+				(lines[lastIndex] as string).length,
+		};
 		region = splitParagraphs(regionLines.join("\n"));
 		if (region.length > 0) {
 			const anchor =
@@ -476,30 +510,45 @@ export function extractOptionFacts(
 	} else {
 		// No header: the first paragraph that names the option and no other
 		// one carries its meaning.
-		const own = region;
-		const candidate = paragraphs.find((paragraph) =>
+		const candidateIndex = paragraphs.findIndex((paragraph) =>
 			belongsToOption(
 				paragraph.text,
 				mentionAnchors,
 				otherMentionAnchors,
 			),
 		);
+		const candidate =
+			candidateIndex >= 0
+				? (paragraphs[candidateIndex] as Paragraph)
+				: undefined;
 		if (candidate) {
 			const anchor =
 				mentionAnchors.find((token) =>
 					mentionsAnchor(candidate.text.slice(0, MENTION_WINDOW_CHARS), token),
 				) ?? (mentionAnchors[0] as string);
 			description = stripMarkdown(stripLeadingAnchor(candidate.text, anchor));
-			region = own;
+			covered.add(candidateIndex);
 		}
+	}
+
+	// The paragraphs that the section of the option covers: they belong to
+	// the option, and they are not looked at a second time.
+	if (sectionRange) {
+		paragraphs.forEach((paragraph, paragraphIndex) => {
+			const paragraphEnd = paragraph.start + paragraph.text.length;
+			if (
+				paragraph.start < sectionRange.end &&
+				paragraphEnd > sectionRange.start
+			) {
+				covered.add(paragraphIndex);
+			}
+		});
 	}
 
 	const tradeoffs: string[] = [];
 	const constraints: string[] = [];
-	const addFact = (text: string): void => {
-		const value = stripMarkdown(text);
-		if (value.length === 0) return;
-		if (!belongsToOption(value, mentionAnchors, otherMentionAnchors)) return;
+	/** Remember a fact, as a constraint when it states a restriction. */
+	const recordFact = (value: string): void => {
 		if (statesConstraint(value)) {
 			if (!constraints.includes(value)) constraints.push(value);
 		} else if (!tradeoffs.includes(value)) {
@@ -507,17 +556,44 @@ export function extractOptionFacts(
 		}
 	};
 
-	// The paragraphs of the region after the description.
+	/**
+	 * A fact of the section of the option belongs to it by position: the
+	 * section writes about that option, and a paragraph that names it with
+	 * a pronoun ("it must actually connect") is still about it. A paragraph
+	 * that names another option belongs to that one.
+	 */
+	const addSectionFact = (text: string): void => {
+		const value = stripMarkdown(text);
+		if (value.length === 0) return;
+		if (
+			mentionsAny(value.slice(0, MENTION_WINDOW_CHARS), otherMentionAnchors)
+		) {
+			return;
+		}
+		recordFact(value);
+	};
+
+	/**
+	 * A fact from outside the section has to name the option, and it must
+	 * not name another one: "Caveat for B: ..." is about B.
+	 */
+	const addNamedFact = (text: string): void => {
+		const value = stripMarkdown(text);
+		if (value.length === 0) return;
+		if (!belongsToOption(value, mentionAnchors, otherMentionAnchors)) return;
+		recordFact(value);
+	};
+
+	// The paragraphs of the section after the description.
 	for (const paragraph of region.slice(1)) {
-		addFact(paragraph.text);
+		addSectionFact(paragraph.text);
 	}
 
 	// A caveat that names the option belongs to the option, even when it
-	// stands outside the region: "Caveat for B: ..." is about B.
-	const regionStart = region[0]?.start ?? Number.MAX_SAFE_INTEGER;
-	for (const paragraph of paragraphs) {
-		if (paragraph.start <= regionStart) continue;
-		addFact(paragraph.text);
+	// stands outside the section: "Caveat for B: ..." is about B.
+	for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
+		if (covered.has(paragraphIndex)) continue;
+		addNamedFact(paragraph.text);
 	}
 
 	return {
@@ -526,6 +602,7 @@ export function extractOptionFacts(
 		constraints,
 		found: description.length > 0,
 		headerIndex,
+		descriptionConstraint: statesConstraint(description),
 	};
 }
 
@@ -587,9 +664,17 @@ export function buildChoiceDecisionContext(
 	const primarySets = alternatives.map((alternative) =>
 		derivePrimaryAnchors(alternative),
 	);
-	const headerSets = alternatives.map((alternative) =>
-		deriveOptionAnchors(alternative),
-	);
+	const headerSets = alternatives.map((alternative, index) => {
+		// A token that is the primary label of another option belongs to
+		// that option and to no other: the header of "A+B" is not the header
+		// of the option "A", whatever the order of the alternatives is.
+		const otherPrimaries = primarySets
+			.flat()
+			.filter((token) => !primarySets[index]?.includes(token));
+		return deriveOptionAnchors(alternative).filter(
+			(token) => !otherPrimaries.includes(token),
+		);
+	});
 	// The mention anchors of every option: a part of a combination belongs
 	// to the option that names it and to no other.
 	const mentionSets = primarySets.map((primaries) =>
@@ -610,6 +695,7 @@ export function buildChoiceDecisionContext(
 	const claimed = new Set<number>();
 	let derivedFromStructured = 0;
 	let derivedFromMessage = 0;
+	let derivedFromBoth = 0;
 	let missingMeaning = false;
 
 	const readFacts = (
@@ -629,6 +715,32 @@ export function buildChoiceDecisionContext(
 				: trimmed;
 		});
 		return { facts, cut: list.length > MAX_OPTION_FACTS };
+	};
+
+	/**
+	 * The facts of an option: the supplied ones come first, the facts of the
+	 * source follow. A fact that is in both lists is kept once.
+	 *
+	 * The result is undefined when the supplied facts are not a list: the
+	 * facts of the source are then the only ones, and the caller reports
+	 * the malformed facts itself.
+	 */
+	const mergeFacts = (
+		supplied: unknown,
+		sourceFacts: string[],
+	): string[] | undefined => {
+		if (!Array.isArray(supplied)) return undefined;
+		const merged: string[] = [];
+		for (const value of supplied) {
+			if (typeof value !== "string") continue;
+			const trimmed = value.trim();
+			if (trimmed.length === 0) continue;
+			if (!merged.includes(trimmed)) merged.push(trimmed);
+		}
+		for (const fact of sourceFacts) {
+			if (!merged.includes(fact)) merged.push(fact);
+		}
+		return merged;
 	};
 
 	for (const [index, alternative] of alternatives.entries()) {
@@ -666,26 +778,26 @@ export function buildChoiceDecisionContext(
 			);
 		}
 
-		const extracted =
-			suppliedDescription.length > 0
-				? null
-				: extractOptionFacts({
-						source,
-						headerCandidates,
-						mentionAnchors,
-						otherHeaderCandidates,
-						otherMentionAnchors,
-						claimed,
-						question: input.question,
-					});
-		if (extracted && extracted.headerIndex >= 0) {
+		// The extraction always runs. A supplied description is the meaning
+		// of the option, not a replacement for the facts of the message: a
+		// caveat that only the message carries has to survive it.
+		const extracted = extractOptionFacts({
+			source,
+			headerCandidates,
+			mentionAnchors,
+			otherHeaderCandidates,
+			otherMentionAnchors,
+			claimed,
+			question: input.question,
+		});
+		if (extracted.headerIndex >= 0) {
 			claimed.add(extracted.headerIndex);
 		}
 
 		let description =
 			suppliedDescription.length > 0
 				? suppliedDescription
-				: (extracted?.description ?? "");
+				: extracted.description;
 		if (description.length > MAX_OPTION_DESCRIPTION_CHARS) {
 			description = description.slice(0, MAX_OPTION_DESCRIPTION_CHARS);
 			omitted.push(
@@ -693,13 +805,37 @@ export function buildChoiceDecisionContext(
 			);
 		}
 
+		// The wording of the source for the option survives a supplied
+		// description: it can carry the caveat of the option ("it must
+		// actually connect").
+		const sourceWording =
+			suppliedDescription.length > 0 &&
+			extracted.description.length > 0 &&
+			extracted.description !== suppliedDescription
+				? extracted.description
+				: "";
+		const sourceConstraints = [
+			...(sourceWording.length > 0 && extracted.descriptionConstraint
+				? [sourceWording]
+				: []),
+			...extracted.constraints,
+		];
+		const sourceTradeoffs = [
+			...(sourceWording.length > 0 && !extracted.descriptionConstraint
+				? [sourceWording]
+				: []),
+			...extracted.tradeoffs,
+		];
+		const sourceFacts =
+			sourceConstraints.length > 0 || sourceTradeoffs.length > 0;
+
 		const tradeoffsResult = readFacts(
-			supplied?.tradeoffs,
-			extracted?.tradeoffs ?? [],
+			mergeFacts(supplied?.tradeoffs, sourceTradeoffs),
+			sourceTradeoffs,
 		);
 		const constraintsResult = readFacts(
-			supplied?.constraints,
-			extracted?.constraints ?? [],
+			mergeFacts(supplied?.constraints, sourceConstraints),
+			sourceConstraints,
 		);
 		if (tradeoffsResult.cut || constraintsResult.cut) {
 			omitted.push(
@@ -719,9 +855,13 @@ export function buildChoiceDecisionContext(
 			);
 		}
 
-		if (suppliedDescription.length > 0) {
+		if (suppliedDescription.length > 0 && sourceFacts) {
+			// The meaning comes from the structure, the facts of the message
+			// are merged with it: the provenance is mixed.
+			derivedFromBoth += 1;
+		} else if (suppliedDescription.length > 0) {
 			derivedFromStructured += 1;
-		} else if (extracted?.found) {
+		} else if (extracted.found) {
 			derivedFromMessage += 1;
 		} else {
 			missingMeaning = true;
@@ -804,7 +944,8 @@ export function buildChoiceDecisionContext(
 	}
 
 	const derived =
-		derivedFromStructured > 0 && derivedFromMessage > 0
+		derivedFromBoth > 0 ||
+		(derivedFromStructured > 0 && derivedFromMessage > 0)
 			? "mixed"
 			: derivedFromStructured > 0
 				? "structured"
