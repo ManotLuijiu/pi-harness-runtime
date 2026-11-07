@@ -15,6 +15,10 @@
  * - Nothing here decides: the module never selects an option and never
  *   invents an approval. Missing information is surfaced as an uncertainty
  *   so that a wait outcome stays possible.
+ * - A comparison is never dropped: a statement that names two options
+ *   ("Unlike A, B must connect every server") is kept with the option it
+ *   constrains, and a comparison whose subject is not established is
+ *   reported as an uncertainty.
  * - Every bound is declared and every cut is reported, so a reader can tell
  *   what the evaluation did not see.
  */
@@ -145,6 +149,14 @@ export interface ExtractedOption {
      * belongs to.
      */
     descriptionConstraint: boolean;
+    /**
+     * The comparisons that could not be attributed to one option.
+     *
+     * A statement that compares the options without saying which one it
+     * constrains is kept with every option it names, and it is reported here
+     * so that the comparison does not disappear silently.
+     */
+    comparative: string[];
 }
 /** What the extraction needs to know about one option. */
 export interface OptionExtractionInput {

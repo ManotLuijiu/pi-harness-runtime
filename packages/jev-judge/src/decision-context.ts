@@ -15,6 +15,10 @@
  * - Nothing here decides: the module never selects an option and never
  *   invents an approval. Missing information is surfaced as an uncertainty
  *   so that a wait outcome stays possible.
+ * - A comparison is never dropped: a statement that names two options
+ *   ("Unlike A, B must connect every server") is kept with the option it
+ *   constrains, and a comparison whose subject is not established is
+ *   reported as an uncertainty.
  * - Every bound is declared and every cut is reported, so a reader can tell
  *   what the evaluation did not see.
  */
@@ -151,6 +155,14 @@ export interface ExtractedOption {
 	 * belongs to.
 	 */
 	descriptionConstraint: boolean;
+	/**
+	 * The comparisons that could not be attributed to one option.
+	 *
+	 * A statement that compares the options without saying which one it
+	 * constrains is kept with every option it names, and it is reported here
+	 * so that the comparison does not disappear silently.
+	 */
+	comparative: string[];
 }
 
 /** What the extraction needs to know about one option. */
@@ -313,20 +325,53 @@ function isOptionHeader(line: string, anchor: string): boolean {
 	return HEADER_SEPARATORS.includes(next);
 }
 
-/** Whether a line mentions the anchor as a word. */
-function mentionsAnchor(line: string, anchor: string): boolean {
-	if (anchor.length === 0) return false;
+/**
+ * The position of the first mention of an anchor in a text (-1 when the
+ * anchor is not mentioned).
+ */
+function firstMention(text: string, anchor: string): number {
+	if (anchor.length === 0) return -1;
 	let from = 0;
 	for (;;) {
-		const index = line.indexOf(anchor, from);
-		if (index === -1) return false;
-		const before = index > 0 ? line.charAt(index - 1) : "";
-		const after = line.charAt(index + anchor.length);
+		const index = text.indexOf(anchor, from);
+		if (index === -1) return -1;
+		const before = index > 0 ? text.charAt(index - 1) : "";
+		const after = text.charAt(index + anchor.length);
 		if (
 			(before === "" || !isWordCharacter(before)) &&
 			(after === "" || !isWordCharacter(after))
 		) {
-			return true;
+			return index;
+		}
+		from = index + 1;
+	}
+}
+
+/** Whether a line mentions the anchor as a word. */
+function mentionsAnchor(line: string, anchor: string): boolean {
+	return firstMention(line, anchor) >= 0;
+}
+
+/**
+ * The position of a word in a text (-1 when the word is not there).
+ *
+ * The word has to stand on its own: "unlike" inside "unlikelihood" is not a
+ * connective.
+ */
+function indexOfWord(text: string, word: string): number {
+	const lowerText = text.toLowerCase();
+	const lowerWord = word.toLowerCase();
+	let from = 0;
+	for (;;) {
+		const index = lowerText.indexOf(lowerWord, from);
+		if (index === -1) return -1;
+		const before = index > 0 ? text.charAt(index - 1) : "";
+		const after = text.charAt(index + lowerWord.length);
+		if (
+			(before === "" || !isWordCharacter(before)) &&
+			(after === "" || !isWordCharacter(after))
+		) {
+			return index;
 		}
 		from = index + 1;
 	}
@@ -366,6 +411,55 @@ function statesConstraint(paragraph: string): boolean {
 			paragraph,
 		)
 	);
+}
+
+/**
+ * The connectives that name the option that is contrasted with.
+ *
+ * "Unlike A, B must ..." contrasts B with A: the connective names the option
+ * that is not the subject of the statement.
+ */
+const CONTRASTED_CONNECTIVES = [
+	"unlike",
+	"in contrast to",
+	"as opposed to",
+	"compared with",
+	"compared to",
+	"rather than",
+	"instead of",
+];
+
+/**
+ * The anchor of the option that a comparative statement is about.
+ *
+ * A statement that names more than one option compares them, and the
+ * comparison usually says which option the statement is about:
+ *
+ * - "Unlike A, B must connect every registered server before reporting
+ *   ready" is about B: the connective names the option that is contrasted
+ *   with, so the subject is the other one.
+ * - "A and B both need the scheduler" is about both: no option is
+ *   contrasted with the other one, so the statement is shared.
+ *
+ * @param text The statement
+ * @param anchors The anchors of every option
+ * @returns The anchor of the subject ("" when the statement is shared)
+ */
+function comparativeSubjectAnchor(text: string, anchors: string[]): string {
+	const mentions = anchors
+		.map((anchor) => ({ anchor, at: firstMention(text, anchor) }))
+		.filter((mention) => mention.at >= 0)
+		.sort((left, right) => left.at - right.at);
+	if (mentions.length <= 1) return "";
+	for (const connective of CONTRASTED_CONNECTIVES) {
+		const at = indexOfWord(text, connective);
+		if (at < 0) continue;
+		const contrasted = mentions.find((mention) => mention.at > at);
+		if (!contrasted) continue;
+		const others = mentions.filter((mention) => mention.anchor !== contrasted.anchor);
+		return others.length === 1 ? (others[0] as { anchor: string }).anchor : "";
+	}
+	return "";
 }
 
 /**
@@ -455,6 +549,7 @@ export function extractOptionFacts(
 		found: false,
 		headerIndex: -1,
 		descriptionConstraint: false,
+		comparative: [],
 	};
 	if (headerCandidates.length === 0 || source.length === 0) return empty;
 
@@ -547,6 +642,8 @@ export function extractOptionFacts(
 
 	const tradeoffs: string[] = [];
 	const constraints: string[] = [];
+	/** The comparisons that could not be attributed to one option. */
+	const comparisons: string[] = [];
 	/** Remember a fact, as a constraint when it states a restriction. */
 	const recordFact = (value: string): void => {
 		if (statesConstraint(value)) {
@@ -557,10 +654,40 @@ export function extractOptionFacts(
 	};
 
 	/**
+	 * A statement that names more than one option is a comparison, and it is
+	 * never dropped: the comparison is kept with the option it constrains.
+	 *
+	 * The comparison says which option that is when a connective contrasts
+	 * the options ("Unlike A, B must ..."). A comparison without such a
+	 * connective is about the options it names, so it is kept with every one
+	 * of them and reported, so that the reader knows that the subject of the
+	 * comparison was not established.
+	 */
+	const recordComparison = (value: string): void => {
+		const window = value.slice(0, MENTION_WINDOW_CHARS);
+		const subject = comparativeSubjectAnchor(window, [
+			...mentionAnchors,
+			...otherMentionAnchors,
+		]);
+		if (subject.length > 0) {
+			// The comparison constrains one option: it belongs to that one
+			// and to no other.
+			if (!mentionAnchors.includes(subject)) return;
+			recordFact(value);
+			return;
+		}
+		// The comparison is shared: it is kept with every option it names.
+		if (!mentionsAny(window, mentionAnchors)) return;
+		recordFact(value);
+		if (!comparisons.includes(value)) comparisons.push(value);
+	};
+
+	/**
 	 * A fact of the section of the option belongs to it by position: the
 	 * section writes about that option, and a paragraph that names it with
 	 * a pronoun ("it must actually connect") is still about it. A paragraph
-	 * that names another option belongs to that one.
+	 * that names another option is a comparison, and it is kept with the
+	 * option it constrains.
 	 */
 	const addSectionFact = (text: string): void => {
 		const value = stripMarkdown(text);
@@ -568,6 +695,7 @@ export function extractOptionFacts(
 		if (
 			mentionsAny(value.slice(0, MENTION_WINDOW_CHARS), otherMentionAnchors)
 		) {
+			recordComparison(value);
 			return;
 		}
 		recordFact(value);
@@ -575,11 +703,21 @@ export function extractOptionFacts(
 
 	/**
 	 * A fact from outside the section has to name the option, and it must
-	 * not name another one: "Caveat for B: ..." is about B.
+	 * not name another one: "Caveat for B: ..." is about B. A fact that names
+	 * two options is a comparison, and it is kept with the option it
+	 * constrains.
 	 */
 	const addNamedFact = (text: string): void => {
 		const value = stripMarkdown(text);
 		if (value.length === 0) return;
+		const window = value.slice(0, MENTION_WINDOW_CHARS);
+		if (
+			mentionsAny(window, mentionAnchors) &&
+			mentionsAny(window, otherMentionAnchors)
+		) {
+			recordComparison(value);
+			return;
+		}
 		if (!belongsToOption(value, mentionAnchors, otherMentionAnchors)) return;
 		recordFact(value);
 	};
@@ -603,6 +741,7 @@ export function extractOptionFacts(
 		found: description.length > 0,
 		headerIndex,
 		descriptionConstraint: statesConstraint(description),
+		comparative: comparisons,
 	};
 }
 
@@ -792,6 +931,15 @@ export function buildChoiceDecisionContext(
 		});
 		if (extracted.headerIndex >= 0) {
 			claimed.add(extracted.headerIndex);
+		}
+
+		// A comparison that the source does not attach to one option stays
+		// visible: the evaluation knows that the alternatives were compared
+		// and that the subject of the comparison was not established.
+		for (const comparison of extracted.comparative) {
+			uncertainties.push(
+				`${id} (${label}): a statement compares the alternatives and its subject was not established: ${comparison.slice(0, MAX_OPTION_FACT_CHARS)}`,
+			);
 		}
 
 		let description =
