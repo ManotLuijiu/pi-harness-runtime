@@ -399,6 +399,35 @@ describe("the decision context of a choice", () => {
 		expect(renderChoiceExcerpt(context)).toContain("Uncertain:");
 	});
 
+	it("does not file the question of the choice under the options", () => {
+		// The question names both options, so it compares them - but it is
+		// the question of the context, not a fact of an option.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"**A. The report.**",
+				"",
+				"It reports the registration as connected.",
+				"",
+				"**B. The connector.**",
+				"",
+				"It connects the registered servers itself.",
+				"",
+				"Should I take A or B?",
+			].join("\n"),
+		});
+
+		for (const option of context.options) {
+			expect(option.tradeoffs.join(" ")).not.toContain("Should I take A or B");
+			expect(option.constraints.join(" ")).not.toContain("Should I take A or B");
+		}
+		// The question is not a comparison whose subject is unknown either.
+		expect(context.uncertainties.join(" ")).not.toContain(
+			"compares the alternatives",
+		);
+	});
+
 	it("keeps the option ids stable and mappable to the alternatives", () => {
 		const context = buildChoiceDecisionContext({
 			question: HONCHO_QUESTION,

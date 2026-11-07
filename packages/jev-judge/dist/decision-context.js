@@ -232,6 +232,21 @@ function stripMarkdown(value) {
         .trim();
 }
 /**
+ * Whether a paragraph is the question of the choice.
+ *
+ * The question names both options, so it is a comparison of them - but it is
+ * the question of the context, not a fact of an option: it is already carried
+ * by the context itself, and a comparison that only repeats it would be noise
+ * in the facts of every option.
+ */
+function isQuestionParagraph(text, question) {
+    const value = stripMarkdown(text).trim().toLowerCase();
+    const asked = stripMarkdown(question).trim().toLowerCase();
+    if (asked.length === 0)
+        return false;
+    return value === asked || value.endsWith(asked);
+}
+/**
  * Remove the anchor of an option from the beginning of its description, so
  * the description starts with the meaning and not with the label.
  */
@@ -526,9 +541,12 @@ export function extractOptionFacts(input) {
         addSectionFact(paragraph.text);
     }
     // A caveat that names the option belongs to the option, even when it
-    // stands outside the section: "Caveat for B: ..." is about B.
+    // stands outside the section: "Caveat for B: ..." is about B. The
+    // question of the choice is not a caveat of an option.
     for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
         if (covered.has(paragraphIndex))
+            continue;
+        if (isQuestionParagraph(paragraph.text, question))
             continue;
         addNamedFact(paragraph.text);
     }
