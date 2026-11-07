@@ -145,6 +145,15 @@ export type HonchoMcpClientFactory = (
 export interface HonchoMcpRegistrar {
   registerMcpServer?: (name: string, config: unknown) => void;
   unregisterMcpServer?: (name: string) => void;
+  /**
+   * The tools the session has.
+   *
+   * The registration of a server is a declaration: the tools of the server
+   * reach the model only when an MCP connector connected it. The runtime
+   * that reports the tools is the only one that can tell the difference
+   * between a registered server and a connected one.
+   */
+  getAllTools?: () => Array<{ name?: unknown }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +165,27 @@ const HONCHO_MCP_URL = "https://mcp.honcho.dev";
 
 /** The name of the Honcho MCP server in Pi. */
 const HONCHO_SERVER_NAME = "honcho";
+
+/**
+ * The prefix of the names of the tools of the Honcho server.
+ *
+ * The tools of an MCP server are named `mcp__<server>__<tool>`, and the
+ * namespace of a server replaces a dash with an underscore. The name is the
+ * evidence that a connector connected the server: a registration alone
+ * creates no tool.
+ */
+export const HONCHO_MCP_TOOL_PREFIX = "mcp__honcho__";
+
+/**
+ * What the session knows about the MCP server of Honcho.
+ *
+ * - "not_registered": the registration was refused, so there is no server.
+ * - "registered": Pi knows the server, but no connector connected it, so
+ *   the model has no Honcho tools.
+ * - "connected": the tools of the server are in the session, so the model can
+ *   call them.
+ */
+export type HonchoMcpState = "not_registered" | "registered" | "connected";
 
 /**
  * Pi's native MCP client library.
@@ -1066,6 +1096,108 @@ export function registerHonchoMcpServer(
     });
     return { registered: false, reason };
   }
+}
+
+/**
+ * The names of the Honcho tools that the session has.
+ *
+ * The tools of an MCP server are named `mcp__<server>__<tool>`, so the name
+ * of a tool tells which server it belongs to. A runtime that cannot report
+ * the tools reports none: the harness must not guess a connection it did
+ * not see.
+ *
+ * @param pi The extension API of Pi
+ * @returns The names of the Honcho tools of the session
+ */
+export function honchoMcpTools(
+  pi: HonchoMcpRegistrar | undefined | null
+): string[] {
+  if (!pi || typeof pi.getAllTools !== "function") return [];
+  let tools: Array<{ name?: unknown }>;
+  try {
+    tools = pi.getAllTools();
+  } catch {
+    // A runtime that refuses to answer has no tools to report.
+    return [];
+  }
+  if (!Array.isArray(tools)) return [];
+  const names: string[] = [];
+  for (const tool of tools) {
+    const name = typeof tool?.name === "string" ? tool.name : "";
+    if (name.startsWith(HONCHO_MCP_TOOL_PREFIX) && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * The state of the MCP server of Honcho in this session.
+ *
+ * The state is read from the session, not from the registration: a
+ * registration that Pi accepted says that Pi knows the server, and nothing
+ * about a connection.
+ *
+ * @param pi The extension API of Pi
+ * @param registered Whether Pi accepted the registration
+ * @returns The state of the server
+ */
+export function honchoMcpState(
+  pi: HonchoMcpRegistrar | undefined | null,
+  registered: boolean
+): HonchoMcpState {
+  if (!registered) return "not_registered";
+  return honchoMcpTools(pi).length > 0 ? "connected" : "registered";
+}
+
+/** The report of the MCP server of Honcho in the startup. */
+export interface HonchoMcpReport {
+  /** The short text of the report. */
+  text: string;
+  /** The severity of the report. */
+  status: "ok" | "warn";
+  /** The lines that explain the report. */
+  details: string[];
+}
+
+/**
+ * The report of the MCP server of Honcho.
+ *
+ * The report names the state that the session shows. It never claims a
+ * connection that did not happen: a registered server without tools is
+ * reported as registered, and the report says that the tools reach the
+ * model only while an MCP connector is active.
+ *
+ * @param state The state of the server in the session
+ * @param reason The cause of a refused registration, already redacted
+ * @returns The report of the startup
+ */
+export function honchoMcpReport(
+  state: HonchoMcpState,
+  reason?: string
+): HonchoMcpReport {
+  if (state === "connected") {
+    return { text: "MCP connected", status: "ok", details: [] };
+  }
+  if (state === "registered") {
+    return {
+      text: "MCP registered, not connected",
+      status: "warn",
+      details: [
+        "The Honcho server is registered with Pi.",
+        "Its tools reach the model only while an MCP connector is active.",
+        "Check /mcp for the connection state.",
+      ],
+    };
+  }
+  return {
+    text: "native MCP tools not registered",
+    status: "warn",
+    details: [
+      `The registration failed: ${reason ?? "the reason was not reported"}`,
+      "Check /tmp/pi-harness.log for the Honcho reason.",
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------
