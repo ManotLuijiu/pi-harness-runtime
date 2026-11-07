@@ -311,6 +311,94 @@ describe("the decision context of a choice", () => {
 		expect(context.options[1]?.description).toBe("the second one");
 	});
 
+	it("keeps a comparative caveat with the option it constrains", () => {
+		// The caveat names the other option, so the section extractor used to
+		// drop it: the requirement of B disappeared without a warning.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"**A. The report.**",
+				"",
+				"It reports the registration as connected.",
+				"",
+				"**B. The connector.**",
+				"",
+				"It connects the registered servers itself.",
+				"",
+				"Unlike A, B must connect every registered server before reporting ready.",
+				"",
+				"Should I take A or B?",
+			].join("\n"),
+		});
+
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"must connect every registered server",
+		);
+		// The comparison is about B: A does not inherit the requirement.
+		expect(context.options[0]?.constraints.join(" ")).not.toContain(
+			"must connect every registered server",
+		);
+		expect(renderChoiceExcerpt(context)).toContain(
+			"must connect every registered server",
+		);
+	});
+
+	it("keeps a comparative caveat that stands outside every section", () => {
+		// Without a header there is no section: the paragraph that names both
+		// options used to be rejected by the fallback.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"Option A reports the registration as connected.",
+				"",
+				"Unlike A, option B must connect every registered server before reporting ready.",
+			].join("\n"),
+		});
+
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"must connect every registered server",
+		);
+		expect(context.options[0]?.constraints.join(" ")).not.toContain(
+			"must connect every registered server",
+		);
+	});
+
+	it("reports a comparison whose subject is not established", () => {
+		// The statement compares the options without saying which one it
+		// constrains: it is kept with both options and the comparison stays
+		// visible.
+		const context = buildChoiceDecisionContext({
+			question: "Should I take A or B?",
+			alternatives: ["A", "B"],
+			contextText: [
+				"**A. The report.**",
+				"",
+				"It reports the registration as connected.",
+				"",
+				"**B. The connector.**",
+				"",
+				"It connects the registered servers itself.",
+				"",
+				"A and B must both connect the scheduler.",
+				"",
+				"Should I take A or B?",
+			].join("\n"),
+		});
+
+		expect(context.options[0]?.constraints.join(" ")).toContain(
+			"A and B must both connect the scheduler",
+		);
+		expect(context.options[1]?.constraints.join(" ")).toContain(
+			"A and B must both connect the scheduler",
+		);
+		expect(context.uncertainties.join(" ")).toContain(
+			"a statement compares the alternatives and its subject was not established",
+		);
+		expect(renderChoiceExcerpt(context)).toContain("Uncertain:");
+	});
+
 	it("keeps the option ids stable and mappable to the alternatives", () => {
 		const context = buildChoiceDecisionContext({
 			question: HONCHO_QUESTION,
