@@ -467,6 +467,16 @@ export interface ModeResolution {
 	mode: WorkspaceMode;
 	hint: DotenvVar | null;
 	source: "process.env" | ".env file" | null;
+	/**
+	 * The variable decides the mode.
+	 *
+	 * A variable whose value names a known mode always decides. A variable
+	 * whose value names no known mode ("staging", a virtualenv path) only
+	 * decides when it is an explicit NODE_ENV: the shape of the checkout may
+	 * still name the mode, and a deliberate "staging" must not be replaced by
+	 * it.
+	 */
+	decides?: boolean;
 }
 
 /**
@@ -562,6 +572,166 @@ export function modeFromRepositoryFacts(facts: RepositoryFacts): RepositoryModeD
 }
 
 /**
+ * The facts about a Frappe bench the workspace belongs to.
+ *
+ * A bench is the runtime of a Frappe site, and it says much more about the
+ * environment than a single flag. `developer_mode` in
+ * `sites/common_site_config.json` says that the developer conveniences are
+ * on - it does NOT say that the server is a development server. A bench that
+ * supervisor and nginx manage is a deployed bench, a bench that runs a
+ * development server is a bench somebody works on.
+ */
+export interface FrappeBenchFacts {
+	/** The bench root ("" when the workspace is not inside a bench). */
+	benchRoot: string;
+	/**
+	 * The `developer_mode` of the bench.
+	 *
+	 * null when the bench does not declare it.
+	 */
+	developerMode: boolean | null;
+	/** A site of the bench is in maintenance mode. */
+	maintenanceMode: boolean | null;
+	/** The bench reloads the code on a change ("live_reload"). */
+	liveReload: boolean;
+	/** The scheduled jobs of the bench are paused ("pause_scheduler"). */
+	pauseScheduler: boolean;
+	/** A supervisor program group manages the bench. */
+	supervisorManaged: boolean;
+	/** Nginx serves the bench. */
+	nginxManaged: boolean;
+	/** The bench carries a deployment configuration (Dockerfile, compose, ...). */
+	deploymentMarker: boolean;
+	/** A development server of the bench runs ("bench serve"). */
+	devServerRunning: boolean;
+	/** A production-style run of the bench is active ("bench start"). */
+	productionRun: boolean;
+	/** The branch of the checkout the workspace belongs to ("" when unknown). */
+	branch: string;
+}
+
+/**
+ * A mode that the facts about a Frappe bench named.
+ */
+export interface FrappeBenchModeDetection {
+	mode: WorkspaceMode;
+	/** The phrase that names the detection ("frappe bench: supervisor, nginx"). */
+	key: string;
+}
+
+/**
+ * The strength of a signal of a bench.
+ *
+ * A strong signal is a fact about the way the bench RUNS (supervisor
+ * manages it, nginx serves it, a development server runs). A medium signal
+ * is a fact about its configuration (developer_mode on, a site in
+ * maintenance, a deployment configuration). A weak signal is a fact that a
+ * developer may change without noticing (developer_mode off).
+ */
+type BenchSignalStrength = "weak" | "medium" | "strong";
+
+const BENCH_SIGNAL_WEIGHT: Record<BenchSignalStrength, number> = {
+	weak: 1,
+	medium: 2,
+	strong: 3,
+};
+
+interface BenchSignal {
+	reason: string;
+	strength: BenchSignalStrength;
+}
+
+/**
+ * Name the mode of a workspace from the facts about its Frappe bench.
+ *
+ * The bench is the runtime of a site, so its facts are stronger than the
+ * shape of the checkout. The signals are weighed:
+ *
+ * - a strong signal decides (supervisor, nginx, a running development
+ *   server). Two strong signals of opposite kinds are a conflict: no mode is
+ *   claimed, because the facts contradict each other.
+ * - otherwise the sum of the weights decides: the configuration of the bench
+ *   (developer_mode, a site in maintenance, a deployment configuration, the
+ *   branch) against the way it runs.
+ * - a tie is no claim: the bench does not say which environment it is.
+ *
+ * `developer_mode` is deliberately not a strong signal: a production bench
+ * with the flag left on is still a production bench, and a development bench
+ * with the flag off is still a development bench.
+ */
+export function modeFromFrappeBenchFacts(
+	facts: FrappeBenchFacts,
+): FrappeBenchModeDetection | null {
+	if (!facts.benchRoot) return null;
+
+	const { development, production } = benchSignals(facts);
+	const strongDevelopment = development.filter((signal) => signal.strength === "strong");
+	const strongProduction = production.filter((signal) => signal.strength === "strong");
+	// A contradiction is not a mode: the facts say both, so nothing is claimed.
+	if (strongDevelopment.length > 0 && strongProduction.length > 0) return null;
+
+	const score = (signals: BenchSignal[]): number =>
+		signals.reduce((total, signal) => total + BENCH_SIGNAL_WEIGHT[signal.strength], 0);
+	const developmentScore = score(development);
+	const productionScore = score(production);
+	if (developmentScore === productionScore) return null;
+
+	const deciding = developmentScore > productionScore ? development : production;
+	const mode = developmentScore > productionScore ? "development" : "production";
+	return {
+		mode,
+		key: `frappe bench: ${deciding.map((signal) => signal.reason).join(", ")}`,
+	};
+}
+
+/**
+ * The signals of a bench, grouped by the environment they name.
+ */
+function benchSignals(facts: FrappeBenchFacts): {
+	development: BenchSignal[];
+	production: BenchSignal[];
+} {
+	const development: BenchSignal[] = [];
+	const production: BenchSignal[] = [];
+
+	if (facts.developerMode === true) {
+		development.push({ reason: "developer_mode on", strength: "medium" });
+	}
+	if (facts.developerMode === false) {
+		production.push({ reason: "developer_mode off", strength: "weak" });
+	}
+	if (facts.devServerRunning) {
+		development.push({ reason: "development server running", strength: "strong" });
+	}
+	if (facts.productionRun) {
+		production.push({ reason: "bench start running", strength: "medium" });
+	}
+	if (facts.supervisorManaged) {
+		production.push({ reason: "supervisor", strength: "strong" });
+	}
+	if (facts.nginxManaged) {
+		production.push({ reason: "nginx", strength: "strong" });
+	}
+	if (facts.maintenanceMode === true) {
+		production.push({ reason: "site in maintenance mode", strength: "medium" });
+	}
+	if (facts.liveReload) {
+		development.push({ reason: "live reload on", strength: "medium" });
+	}
+	if (facts.pauseScheduler) {
+		development.push({ reason: "scheduler paused", strength: "weak" });
+	}
+	if (facts.deploymentMarker) {
+		production.push({ reason: "deployment configuration", strength: "medium" });
+	}
+	const branch = facts.branch.trim().toLowerCase();
+	if (DEVELOPMENT_BRANCHES.has(branch)) {
+		development.push({ reason: `git branch ${branch}`, strength: "medium" });
+	}
+	return { development, production };
+}
+
+/**
  * Resolve the workspace mode from the variables that were found.
  *
  * The order is:
@@ -580,19 +750,26 @@ export function resolveWorkspaceMode(
 	const processNodeEnv = processVars.find((v) => v.key === "NODE_ENV");
 	if (processNodeEnv) {
 		const mode = modeFromValue(processNodeEnv.value);
-		if (mode) return { mode, hint: processNodeEnv, source: "process.env" };
+		if (mode) return { mode, hint: processNodeEnv, source: "process.env", decides: true };
 		// An explicit NODE_ENV that names no known mode decides: the mode
 		// stays unknown instead of falling through to the files.
-		return { mode: "unknown", hint: processNodeEnv, source: "process.env" };
+		return { mode: "unknown", hint: processNodeEnv, source: "process.env", decides: true };
 	}
 	const dotenvHint = detectModeHint(dotenvVars, { allowValueMatch: true });
 	if (dotenvHint) {
 		const mode = modeFromValue(dotenvHint.value);
-		if (mode) return { mode, hint: dotenvHint, source: ".env file" };
-		// The workspace file is explicit - even when its value names no known
-		// mode ("APP_MODE=staging"). It must not be replaced by an unrelated
-		// variable of the process env.
-		return { mode: "unknown", hint: dotenvHint, source: ".env file" };
+		if (mode) return { mode, hint: dotenvHint, source: ".env file", decides: true };
+		// The workspace file is the declaration of the workspace: a value that
+		// names a known mode decides. A value that names no known mode
+		// ("APP_MODE=staging") does not decide - unless it is an explicit
+		// NODE_ENV, which is a deliberate value.
+		const explicit = dotenvHint.key === "NODE_ENV";
+		return {
+			mode: "unknown",
+			hint: dotenvHint,
+			source: ".env file",
+			decides: explicit,
+		};
 	}
 	// Last resort: an environment shaped key of the process env (the files
 	// are silent).
@@ -601,10 +778,14 @@ export function resolveWorkspaceMode(
 	);
 	if (processEnvHint) {
 		const mode = modeFromValue(processEnvHint.value);
-		if (mode) return { mode, hint: processEnvHint, source: "process.env" };
-		return { mode: "unknown", hint: processEnvHint, source: "process.env" };
+		if (mode) return { mode, hint: processEnvHint, source: "process.env", decides: true };
+		// The value names no known mode, so the variable does not decide: a
+		// virtualenv path (VIRTUAL_ENV) says nothing about the environment
+		// of the workspace, and the facts about the repository may still
+		// name the mode.
+		return { mode: "unknown", hint: processEnvHint, source: "process.env", decides: false };
 	}
-	return { mode: "unknown", hint: null, source: null };
+	return { mode: "unknown", hint: null, source: null, decides: false };
 }
 
 /**
@@ -643,11 +824,28 @@ function findDetectionEvidence(env: WorkspaceEnvResult): EnvEvidence | undefined
 export function describeWorkspaceMode(env: WorkspaceEnvResult): string {
 	const hint = findModeEvidence(env);
 	const where = hint?.file ? ` in ${hint.file}` : "";
+	const detection = findDetectionEvidence(env);
+	// A variable decides only when its value names a known mode. When the
+	// repository named the mode instead, the variable was seen but did not
+	// decide, and the label says so.
+	const hintDecides = hint ? modeFromValue(hint.value) !== null : false;
 	if (env.mode !== "unknown") {
+		if (detection && !hintDecides) {
+			const named = modeFromValue(detection.value);
+			if (named) {
+				// The variable was seen but did not decide: the label names it,
+				// so the reason for the mode stays visible.
+				let note = "";
+				if (hint) {
+					const state = hint.value ? "names no known mode" : "is empty";
+					note = `; ${hint.key}${where} ${state}`;
+				}
+				return `${env.mode.toUpperCase()} (${detection.key}${note})`;
+			}
+		}
 		if (hint) return `${env.mode.toUpperCase()} (from ${hint.key}${where})`;
 		// The mode came from the repository, not from a variable: the label
 		// names the reason ("DEVELOPMENT (source-only repository)").
-		const detection = findDetectionEvidence(env);
 		if (detection) return `${env.mode.toUpperCase()} (${detection.key})`;
 		return env.mode.toUpperCase();
 	}
@@ -668,7 +866,6 @@ export function describeWorkspaceMode(env: WorkspaceEnvResult): string {
 	}
 	// A stale cache row can carry a detection next to an unknown mode: the
 	// detection names a mode, so the mode is shown.
-	const detection = findDetectionEvidence(env);
 	if (detection) {
 		const named = modeFromValue(detection.value);
 		if (named) return `${named.toUpperCase()} (${detection.key})`;

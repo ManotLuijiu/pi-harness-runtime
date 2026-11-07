@@ -233,6 +233,16 @@ export interface ModeResolution {
     mode: WorkspaceMode;
     hint: DotenvVar | null;
     source: "process.env" | ".env file" | null;
+    /**
+     * The variable decides the mode.
+     *
+     * A variable whose value names a known mode always decides. A variable
+     * whose value names no known mode ("staging", a virtualenv path) only
+     * decides when it is an explicit NODE_ENV: the shape of the checkout may
+     * still name the mode, and a deliberate "staging" must not be replaced by
+     * it.
+     */
+    decides?: boolean;
 }
 /**
  * The deployment configuration of a repository.
@@ -289,6 +299,71 @@ export interface RepositoryModeDetection {
  * 2. a branch that names a development line of work ("develop")
  */
 export declare function modeFromRepositoryFacts(facts: RepositoryFacts): RepositoryModeDetection | null;
+/**
+ * The facts about a Frappe bench the workspace belongs to.
+ *
+ * A bench is the runtime of a Frappe site, and it says much more about the
+ * environment than a single flag. `developer_mode` in
+ * `sites/common_site_config.json` says that the developer conveniences are
+ * on - it does NOT say that the server is a development server. A bench that
+ * supervisor and nginx manage is a deployed bench, a bench that runs a
+ * development server is a bench somebody works on.
+ */
+export interface FrappeBenchFacts {
+    /** The bench root ("" when the workspace is not inside a bench). */
+    benchRoot: string;
+    /**
+     * The `developer_mode` of the bench.
+     *
+     * null when the bench does not declare it.
+     */
+    developerMode: boolean | null;
+    /** A site of the bench is in maintenance mode. */
+    maintenanceMode: boolean | null;
+    /** The bench reloads the code on a change ("live_reload"). */
+    liveReload: boolean;
+    /** The scheduled jobs of the bench are paused ("pause_scheduler"). */
+    pauseScheduler: boolean;
+    /** A supervisor program group manages the bench. */
+    supervisorManaged: boolean;
+    /** Nginx serves the bench. */
+    nginxManaged: boolean;
+    /** The bench carries a deployment configuration (Dockerfile, compose, ...). */
+    deploymentMarker: boolean;
+    /** A development server of the bench runs ("bench serve"). */
+    devServerRunning: boolean;
+    /** A production-style run of the bench is active ("bench start"). */
+    productionRun: boolean;
+    /** The branch of the checkout the workspace belongs to ("" when unknown). */
+    branch: string;
+}
+/**
+ * A mode that the facts about a Frappe bench named.
+ */
+export interface FrappeBenchModeDetection {
+    mode: WorkspaceMode;
+    /** The phrase that names the detection ("frappe bench: supervisor, nginx"). */
+    key: string;
+}
+/**
+ * Name the mode of a workspace from the facts about its Frappe bench.
+ *
+ * The bench is the runtime of a site, so its facts are stronger than the
+ * shape of the checkout. The signals are weighed:
+ *
+ * - a strong signal decides (supervisor, nginx, a running development
+ *   server). Two strong signals of opposite kinds are a conflict: no mode is
+ *   claimed, because the facts contradict each other.
+ * - otherwise the sum of the weights decides: the configuration of the bench
+ *   (developer_mode, a site in maintenance, a deployment configuration, the
+ *   branch) against the way it runs.
+ * - a tie is no claim: the bench does not say which environment it is.
+ *
+ * `developer_mode` is deliberately not a strong signal: a production bench
+ * with the flag left on is still a production bench, and a development bench
+ * with the flag off is still a development bench.
+ */
+export declare function modeFromFrappeBenchFacts(facts: FrappeBenchFacts): FrappeBenchModeDetection | null;
 /**
  * Resolve the workspace mode from the variables that were found.
  *

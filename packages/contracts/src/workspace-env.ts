@@ -16,7 +16,7 @@ import { homedir as osHomedir } from "node:os";
 import { createRequire } from "node:module";
 import { execSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, mkdirSync, readlinkSync, realpathSync } from "fs";
-import { join } from "path";
+import { dirname, join, resolve, sep } from "path";
 import { platform, totalmem, freemem } from "os";
 import {
 	canShowModeValue,
@@ -36,6 +36,7 @@ import {
 	isLowRamWarning,
 	MASKED_MODE_VALUE,
 	MIN_BUILD_HEADROOM_GB,
+	modeFromFrappeBenchFacts,
 	modeFromRepositoryFacts,
 	modeFromValue,
 	orderDotenvFileNames,
@@ -46,6 +47,7 @@ import { readDotenvFiles } from "./workspace-dotenv.js";
 import type {
 	DotenvVar,
 	EnvEvidence,
+	FrappeBenchFacts,
 	RepositoryFacts,
 	ServerState,
 	WorkspaceEnvResult,
@@ -590,27 +592,170 @@ function detectPackageManager(workspacePath: string): string | null {
 }
 
 /**
+ * The directories that never hold a repository of their own.
+ *
+ * A search for a repository below the workspace must not walk into a build
+ * output or a dependency tree: those directories hold thousands of files and
+ * no repository.
+ */
+const REPOSITORY_SEARCH_SKIP = new Set([
+	".git",
+	"node_modules",
+	".venv",
+	"venv",
+	"env",
+	"dist",
+	"build",
+	"out",
+	"target",
+	".next",
+	".nuxt",
+	".cache",
+	".tox",
+	"vendor",
+	"__pycache__",
+	".mypy_cache",
+	".pytest_cache",
+]);
+
+/**
+ * The deepest level below the workspace that is searched for a repository.
+ *
+ * Two levels cover the shapes that matter: a folder of applications
+ * ("apps/store") and a repository inside one of them ("apps/store/web"
+ * with the repository one level above).
+ */
+const REPOSITORY_SEARCH_DEPTH = 2;
+
+/**
+ * The most directories that are read during the search.
+ *
+ * The search is bounded so a workspace with many folders cannot slow the
+ * startup down. A directory that holds a repository is found whatever its
+ * position is, as long as the search has not read that many directories.
+ */
+const REPOSITORY_SEARCH_CANDIDATES = 64;
+
+/**
+ * The branch of a checkout ("" when it cannot be read).
+ */
+function gitBranch(directory: string): string {
+	try {
+		const out = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
+			cwd: directory,
+			encoding: "utf8",
+			timeout: 1500,
+		});
+		const branch = out.trim();
+		// A detached HEAD reports "HEAD" - that is not a branch name.
+		return branch === "HEAD" ? "" : branch;
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * The repository of a directory, through its parents.
+ */
+function gitFactsIn(directory: string): { root: string; branch: string } {
+	try {
+		const out = execSync("git rev-parse --show-toplevel 2>/dev/null", {
+			cwd: directory,
+			encoding: "utf8",
+			timeout: 1500,
+		});
+		const root = out.trim();
+		if (!root) return { root: "", branch: "" };
+		return { root, branch: gitBranch(root) };
+	} catch {
+		// No git, no repository, or a timeout: nothing is known.
+		return { root: "", branch: "" };
+	}
+}
+
+/**
+ * The child of a workspace that holds a repository.
+ *
+ * A workspace is often the folder above the repository: the root of a
+ * monorepo, a directory of applications, a directory of workspaces. The
+ * repository of such a workspace is below it, and the search finds the
+ * nearest one in a stable order.
+ *
+ * @param workspacePath The workspace
+ * @returns The directory that holds the repository ("" when there is none)
+ */
+export function findRepositoryChild(workspacePath: string): string {
+	return findChildDirectory(workspacePath, (directory) =>
+		existsSync(join(directory, ".git")),
+	);
+}
+
+/**
+ * The child of a workspace that matches a predicate.
+ *
+ * A workspace is often the folder above the repository: the root of a
+ * monorepo, a directory of applications, a directory of workspaces. The
+ * nearest match in a stable order is returned.
+ *
+ * @param workspacePath The workspace
+ * @param matches The predicate of a directory
+ * @returns The directory that matches ("" when there is none)
+ */
+export function findChildDirectory(
+	workspacePath: string,
+	matches: (directory: string) => boolean,
+): string {
+	let candidates = 0;
+	let level = [workspacePath];
+	for (let depth = 0; depth < REPOSITORY_SEARCH_DEPTH && level.length > 0; depth += 1) {
+		const next: string[] = [];
+		for (const directory of level) {
+			let names: string[];
+			try {
+				names = readdirSync(directory, { withFileTypes: true })
+					.filter(
+						(entry) =>
+							entry.isDirectory() && !REPOSITORY_SEARCH_SKIP.has(entry.name),
+					)
+					.map((entry) => entry.name)
+					.sort();
+			} catch {
+				// An unreadable directory proves nothing.
+				continue;
+			}
+			for (const name of names) {
+				if (candidates >= REPOSITORY_SEARCH_CANDIDATES) return "";
+				candidates += 1;
+				const child = join(directory, name);
+				if (matches(child)) return child;
+				next.push(child);
+			}
+		}
+		level = next;
+	}
+	return "";
+}
+
+/**
  * The git repository of a workspace.
+ *
+ * The repository is looked for in three places:
+ * 1. the workspace itself - `git rev-parse` walks up, so a folder inside a
+ *    repository finds the repository of its parent
+ * 2. a child of the workspace, when the workspace is not in a repository
  *
  * The root of the repository is the unit of the detection: a package
  * published from a monorepo is described by the root, not by the folder
  * the harness happens to run in.
  */
 function detectGitFacts(workspacePath: string): { root: string; branch: string } {
-	try {
-		const out = execSync(
-			"git rev-parse --show-toplevel 2>/dev/null; git rev-parse --abbrev-ref HEAD 2>/dev/null",
-			{ cwd: workspacePath, encoding: "utf8", timeout: 1500 },
-		);
-		const lines = out.split("\n").map((line) => line.trim());
-		const root = lines[0] ?? "";
-		const branch = lines[1] ?? "";
-		// A detached HEAD reports "HEAD" - that is not a branch name.
-		return { root, branch: branch === "HEAD" ? "" : branch };
-	} catch {
-		// No git, no repository, or a timeout: nothing is known.
-		return { root: "", branch: "" };
-	}
+	const own = gitFactsIn(workspacePath);
+	if (own.root) return own;
+	// The workspace is not in a repository. It may hold one: a directory of
+	// applications, a monorepo root.
+	const child = findRepositoryChild(workspacePath);
+	if (!child) return { root: "", branch: "" };
+	return { root: child, branch: gitBranch(child) };
 }
 
 /**
@@ -683,6 +828,269 @@ function detectRepositoryFacts(
 }
 
 /**
+ * The configuration file of a Frappe bench.
+ *
+ * The file is the marker of a bench: every bench has one, and it holds the
+ * configuration that is shared by all its sites.
+ */
+const FRAPPE_BENCH_CONFIG = join("sites", "common_site_config.json");
+
+/**
+ * The deepest level of parents that is searched for a bench.
+ */
+const MAX_PARENT_DEPTH = 12;
+
+/**
+ * The directories that hold the configuration of a supervisor program group.
+ */
+const SUPERVISOR_CONFIG_DIRS = ["/etc/supervisor/conf.d", "/etc/supervisor"];
+
+/**
+ * The directories that hold the configuration of an nginx site.
+ */
+const NGINX_CONFIG_DIRS = ["/etc/nginx/conf.d", "/etc/nginx/sites-enabled"];
+
+/**
+ * The most site configurations of a bench that are read.
+ */
+const MAX_BENCH_SITES = 10;
+
+/**
+ * The workspace and its parents.
+ *
+ * The workspace of a bench is usually inside the bench (the bench holds its
+ * apps), so the parents have to be searched as well.
+ */
+function workspaceAndParents(workspacePath: string): string[] {
+	const directories: string[] = [];
+	let current = resolve(workspacePath);
+	for (let depth = 0; depth < MAX_PARENT_DEPTH; depth += 1) {
+		directories.push(current);
+		const parent = dirname(current);
+		if (parent === current) break;
+		current = parent;
+	}
+	return directories;
+}
+
+/**
+ * A JSON file as an object (null when it cannot be read or parsed).
+ */
+function readJsonFile(path: string): Record<string, unknown> | null {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8"));
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+		return parsed as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * A boolean field of a configuration file.
+ *
+ * Frappe writes "1" and "0", but a JSON file may hold a real boolean. A
+ * field that is absent or holds anything else is no claim.
+ */
+function booleanField(
+	config: Record<string, unknown> | null,
+	key: string,
+): boolean | null {
+	if (!config) return null;
+	const value = config[key];
+	if (value === true || value === 1) return true;
+	if (value === false || value === 0) return false;
+	return null;
+}
+
+/**
+ * The sites of a bench.
+ */
+function frappeSiteNames(benchRoot: string): string[] {
+	try {
+		return readdirSync(join(benchRoot, "sites"), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+			.map((entry) => entry.name)
+			.sort()
+			.slice(0, MAX_BENCH_SITES);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * A site of the bench is in maintenance mode.
+ */
+function siteMaintenanceMode(benchRoot: string): boolean | null {
+	for (const site of frappeSiteNames(benchRoot)) {
+		const config = readJsonFile(
+			join(benchRoot, "sites", site, "site_config.json"),
+		);
+		if (booleanField(config, "maintenance_mode") === true) return true;
+	}
+	return null;
+}
+
+/**
+ * Does a configuration directory mention one of the needles?
+ *
+ * The production setup of a bench is written into the configuration of the
+ * process manager (supervisor) and of the web server (nginx): those files
+ * name the bench, not the other way round.
+ */
+function configMentions(directories: string[], needles: string[]): boolean {
+	const wanted = needles.filter((needle) => needle.length > 0);
+	if (wanted.length === 0) return false;
+	for (const directory of directories) {
+		let entries: string[];
+		try {
+			entries = readdirSync(directory);
+		} catch {
+			continue;
+		}
+		for (const entry of entries.slice(0, 64)) {
+			if (!entry.endsWith(".conf")) continue;
+			let content: string;
+			try {
+				content = readFileSync(join(directory, entry), "utf8");
+			} catch {
+				continue;
+			}
+			if (wanted.some((needle) => content.includes(needle))) return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Does a process belong to a bench?
+ *
+ * The working directory of the process is the strongest evidence (Linux
+ * exposes it); otherwise the command line must name the bench.
+ */
+function processBelongsToBench(pid: string, benchRoot: string): boolean {
+	if (platform() === "linux") {
+		try {
+			const cwd = readlinkSync(`/proc/${pid}/cwd`);
+			return cwd === benchRoot || cwd.startsWith(benchRoot + sep);
+		} catch {
+			// The process is gone or its directory cannot be read.
+		}
+	}
+	const cmdline = processCmdline(pid);
+	return cmdline.includes(benchRoot);
+}
+
+/**
+ * The processes of a bench.
+ *
+ * "bench serve" is the development server of a bench, "bench start" runs it
+ * the way a server runs it (web, workers, scheduler).
+ */
+function benchProcesses(benchRoot: string): { dev: boolean; production: boolean } {
+	const none = { dev: false, production: false };
+	const os = platform();
+	if (os !== "linux" && os !== "darwin") return none;
+	if (!hasProcessTool()) return none;
+	try {
+		const script = `echo $$; pgrep -f ${JSON.stringify(
+			"bench (serve|start)|frappe\\.serve",
+		)} 2>/dev/null || true`;
+		const out = execSync(script, {
+			encoding: "utf8",
+			timeout: 1000,
+		});
+		const lines = out.split("\n");
+		const ownPids = [
+			String(process.pid),
+			String(process.ppid),
+			(lines[0] ?? "").trim(),
+			...ancestorPids(String(process.pid)),
+		];
+		const pids = filterOwnPids(lines.slice(1), ownPids);
+		let dev = false;
+		let production = false;
+		for (const pid of pids) {
+			const cmdline = processCmdline(pid);
+			if (!cmdline) continue;
+			if (isShellExe(processExe(pid)) && /(^|\s)-c(\s|$)/.test(cmdline)) continue;
+			if (!processBelongsToBench(pid, benchRoot)) continue;
+			if (/frappe\.serve|bench\s+serve/.test(cmdline)) dev = true;
+			else if (/bench\s+start/.test(cmdline)) production = true;
+		}
+		return { dev, production };
+	} catch {
+		return none;
+	}
+}
+
+/**
+ * The bench of a workspace.
+ *
+ * The bench is the workspace itself, one of its parents (a bench holds its
+ * apps, so a workspace inside a bench is below it), or one of its children
+ * (a directory of workspaces).
+ */
+function findFrappeBench(workspacePath: string): string {
+	for (const directory of workspaceAndParents(workspacePath)) {
+		if (existsSync(join(directory, FRAPPE_BENCH_CONFIG))) return directory;
+	}
+	return findChildDirectory(workspacePath, (directory) =>
+		existsSync(join(directory, FRAPPE_BENCH_CONFIG)),
+	);
+}
+
+/**
+ * The facts about the Frappe bench of a workspace.
+ *
+ * A bench says much more about the environment than one flag: the flag says
+ * that the developer conveniences are on, the way the bench runs says
+ * whether it is a development or a deployed bench.
+ */
+function detectFrappeBenchFacts(
+	workspacePath: string,
+	branch: string,
+): FrappeBenchFacts {
+	const facts: FrappeBenchFacts = {
+		benchRoot: "",
+		developerMode: null,
+		maintenanceMode: null,
+		liveReload: false,
+		pauseScheduler: false,
+		supervisorManaged: false,
+		nginxManaged: false,
+		deploymentMarker: false,
+		devServerRunning: false,
+		productionRun: false,
+		branch,
+	};
+	const benchRoot = findFrappeBench(workspacePath);
+	if (!benchRoot) return facts;
+	facts.benchRoot = benchRoot;
+	const config = readJsonFile(join(benchRoot, FRAPPE_BENCH_CONFIG));
+	facts.developerMode = booleanField(config, "developer_mode");
+	facts.liveReload = booleanField(config, "live_reload") === true;
+	facts.pauseScheduler = booleanField(config, "pause_scheduler") === true;
+	// The common configuration may declare the maintenance mode, and a site
+	// may declare it for itself.
+	facts.maintenanceMode =
+		booleanField(config, "maintenance_mode") === true
+			? true
+			: siteMaintenanceMode(benchRoot);
+	facts.deploymentMarker = hasDeploymentConfiguration(benchRoot);
+	const needles = [
+		benchRoot,
+		...frappeSiteNames(benchRoot).filter((site) => site.length >= 4),
+	];
+	facts.supervisorManaged = configMentions(SUPERVISOR_CONFIG_DIRS, needles);
+	facts.nginxManaged = configMentions(NGINX_CONFIG_DIRS, needles);
+	const processes = benchProcesses(benchRoot);
+	facts.devServerRunning = processes.dev;
+	facts.productionRun = processes.production;
+	return facts;
+}
+
+/**
  * Determine workspace mode with proper precedence
  * Never assume production - unknown requires investigation
  *
@@ -693,7 +1101,8 @@ function detectRepositoryFacts(
  *    key whose value names a known mode, then any other environment shaped
  *    key
  * 3. an environment shaped key of the process env (the files are silent)
- * 4. the facts about the repository (only when NO variable names the
+ * 4. the facts about a Frappe bench - the bench is the runtime of a site
+ * 5. the facts about the repository (only when NO variable names the
  *    environment at all) - a published source repository without a runtime
  *    of its own is a development checkout
  */
@@ -702,6 +1111,7 @@ function determineMode(
 	dotenvVars: DotenvVar[],
 	evidence: EnvEvidence[],
 	repositoryFacts: RepositoryFacts,
+	frappeBenchFacts: FrappeBenchFacts,
 ): WorkspaceMode {
 	const resolved = resolveWorkspaceMode(processVars, dotenvVars);
 	if (resolved.hint && resolved.source) {
@@ -720,11 +1130,29 @@ function determineMode(
 			timestamp: Date.now(),
 			file: resolved.hint.file,
 		});
-		// An explicit variable decides - even when it names no known mode
-		// ("staging"). The mode stays unknown and the label names the value.
-		return resolved.mode;
+		// A variable whose value names a known mode decides.
+		if (resolved.mode !== "unknown") return resolved.mode;
+		// An explicit NODE_ENV decides even when it names no known mode
+		// ("staging"). A deliberate value must not be replaced by the shape
+		// of the checkout.
+		if (resolved.decides === true) return resolved.mode;
 	}
-	// No variable names the environment: the repository may still name it.
+	// No variable names a known mode: the facts about the workspace may still
+	// name it. A variable that names no known mode (VIRTUAL_ENV, a path) is a
+	// fact about the machine, not a declaration of the environment, so it does
+	// not keep the mode unknown when the checkout names it.
+	// A Frappe bench comes first: the bench is the runtime of a site, so its
+	// facts say more about the environment than the shape of a checkout.
+	const benchDetection = modeFromFrappeBenchFacts(frappeBenchFacts);
+	if (benchDetection) {
+		evidence.push({
+			source: "detection",
+			key: benchDetection.key,
+			value: benchDetection.mode,
+			timestamp: Date.now(),
+		});
+		return benchDetection.mode;
+	}
 	const detection = modeFromRepositoryFacts(repositoryFacts);
 	if (!detection) return resolved.mode;
 	evidence.push({
@@ -792,7 +1220,17 @@ export function detectWorkspaceEnv(workspacePath: string): WorkspaceEnvResult {
 		workspacePath,
 		devServerState === "running" || buildServerState === "running",
 	);
-	const mode = determineMode(processVars, dotenvVars, evidence, repositoryFacts);
+	const frappeBenchFacts = detectFrappeBenchFacts(
+		workspacePath,
+		repositoryFacts.branch,
+	);
+	const mode = determineMode(
+		processVars,
+		dotenvVars,
+		evidence,
+		repositoryFacts,
+		frappeBenchFacts,
+	);
 
 	// Determine build permission
 	let buildAllowed = false;

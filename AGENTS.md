@@ -730,9 +730,11 @@ bun run build && bun run start   # Server deployment
   mode (`*_ENV`, `*_ENVIRONMENT`, `*_MODE`, `*_STAGE`, e.g. `AMOS_ENV`), then
   any other environment shaped key - and only then an environment shaped key
   of the process env → development/production/test
-- The facts about the repository (only when NO variable names the environment
-  at all) → a published source repository without a runtime of its own is a
-  development checkout; a `develop`/`development` branch is the fallback
+- The facts about a Frappe bench (when no variable names a KNOWN mode) → the
+  bench is the runtime of a site: its facts name the mode
+- The facts about the repository (when no variable names a KNOWN mode) → a
+  published source repository without a runtime of its own is a development
+  checkout; a `develop`/`development` branch is the fallback
 - System RAM → Low RAM warning (<4GB free, or a small machine (<16GB total)
   with less than 6GB free). The warning is about the headroom that is
   actually free, not about the size of the machine: a 15GB laptop with 6.5GB
@@ -753,8 +755,13 @@ desktop session, never the environment of a workspace. Some of them end in
 `_MODE` or `_ENV`, so they are excluded from the candidates by NAMESPACE,
 not by value: their value ("ubuntu", "wayland") says nothing about the mode.
 
-**The repository tier (last resort, never production).** It runs only when
-no variable names the environment at all. A published package (a
+**The repository tier (never production).** It runs when no variable names a
+KNOWN mode. A variable whose value names no known mode does not decide: a
+virtualenv path (`VIRTUAL_ENV=/home/user/.venvs/app`) and a value this
+detector does not know ("staging") say nothing about the environment of the
+workspace, so the shape of the checkout may still name the mode. An explicit
+`NODE_ENV` keeps deciding - a deliberate "staging" is not replaced by the
+shape of the checkout. A published package (a
 `package.json` with a name, a version and declared content - `files`,
 `bin` or `publishConfig`) without a deployment configuration (no Dockerfile,
 compose file, Procfile, fly.toml, render.yaml, railway.json, vercel.json,
@@ -764,6 +771,41 @@ their own machine → `DEVELOPMENT (source-only repository)`. A branch named
 `develop` or `development` is the fallback → `DEVELOPMENT (git branch
 develop)`. A production branch is NEVER a development checkout, and this
 tier never claims production.
+
+**The Frappe bench tier comes before the repository.** A bench is the runtime
+of a Frappe site, so it says more about the environment than the shape of a
+checkout. The bench is the workspace itself, one of its parents (a bench
+holds its apps) or one of its children. The signals are weighed:
+
+| Signal | Names | Weight |
+|--------|-------|--------|
+| supervisor manages the bench, nginx serves it | production | strong |
+| a development server of the bench runs (`bench serve`) | development | strong |
+| `developer_mode` on, `live_reload` on, a development branch | development | medium |
+| a site in maintenance mode, `bench start` runs, a deployment configuration | production | medium |
+| `developer_mode` off | production | weak |
+| the scheduler is paused (`pause_scheduler`) | development | weak |
+
+A strong signal decides, unless a strong signal of the other kind contradicts
+it - then no mode is claimed. Otherwise the weights decide, and a tie is no
+claim. `developer_mode` is deliberately NOT a strong signal: a production
+bench with the flag left on is still a production bench, and a development
+bench with the flag off is still a development bench. The label names the
+deciding signals: `DEVELOPMENT (frappe bench: live reload on, git branch
+develop)`.
+
+**The repository is found in the workspace, in its parents, or in a child.**
+`git rev-parse` walks up, so a folder inside a repository (a package of a
+monorepo) finds the repository of its parent. When the workspace is not in a
+repository at all, the children are searched (two levels deep, the heavy
+directories are skipped, the first repository in a stable order wins): the
+workspace is often the folder above the repository - the root of a monorepo, a
+directory of applications, a directory of workspaces.
+
+**The label names what decided.** A mode that came from the repository says
+so: `DEVELOPMENT (source-only repository)`. When a variable was seen but did
+not decide, the label names it too:
+`DEVELOPMENT (source-only repository; VIRTUAL_ENV names no known mode)`.
 
 **This info is shown in UI and delivered to agent context:**
 ```text
@@ -810,9 +852,14 @@ Check the .env and .env.* files of the workspace second
   (NODE_ENV, then an environment shaped key whose value names a mode,
    then any other environment shaped key)
 Only then an environment shaped key of the process env (e.g. AMOS_ENV)
+A variable whose value names no known mode does not decide
+  (VIRTUAL_ENV, a path, a value this detector does not know)
+Only then the facts about a Frappe bench
+  (the bench is the runtime of a site: its signals decide)
 Only then the facts about the repository
   (a published source repository without a runtime of its own,
    or a develop/development branch)
+The repository is found in the workspace, in its parents, or in a child
 Presence of dev script = capability, not proof of mode
 UNKNOWN requires investigation, not auto-build
 Production detection ≠ deployment authorization
