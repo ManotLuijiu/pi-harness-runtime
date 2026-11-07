@@ -1001,3 +1001,14 @@ test("the startup reports the state of the server, not the registration", () => 
     "a registration is not reported as a working server",
   );
 });
+
+test("the report names the reason a connection failed", () => {
+  const { honcho } = loadHoncho();
+
+  const report = honcho.honchoMcpReport("registered", "the credential was refused");
+  assert.ok(
+    report.details.some((line) => line.includes("the credential was refused")),
+    "the reason of the failure is in the report",
+  );
+  assert.equal(report.status, "warn", "a server without tools is a warning");
+});
