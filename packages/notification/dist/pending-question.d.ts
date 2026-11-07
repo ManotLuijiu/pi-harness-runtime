@@ -164,8 +164,10 @@ export declare function askTypeForKind(kind: QuestionKind): AskType;
  * The typed ask of a detected question.
  *
  * A choice keeps its type: the agent offers concrete alternatives, and a
- * decision may pick one of them. Every other ask that the message
- * explicitly reserves for the human is an explicit authorization.
+ * decision may pick one of them. An ask that the message explicitly
+ * reserves for the human stays an explicit authorization, also when the
+ * message offers alternatives: the reservation of the human wins over the
+ * kind of the question.
  */
 export declare function computeAskType(kind: QuestionKind, explicitAuthorization: boolean): AskType;
 /**

@@ -9,6 +9,7 @@
  */
 import { JevJudge } from "./index.js";
 import { logError } from "./file-logger.js";
+import { buildChoiceDecisionContext, describeChoiceOption, renderChoiceExcerpt, MAX_CHOICE_OPTIONS, } from "./decision-context.js";
 /** How many task titles reach the evaluation. */
 export const MAX_LISTED_TASKS = 10;
 /** How much of the question text reaches the evaluation. */
@@ -283,11 +284,22 @@ export class AutoContinueJudge {
             // A choice is only decidable with the alternatives in front of the
             // evaluation: the decision has to pick one of them, and it has to
             // say how far the work goes with it.
-            const alternatives = (taskState.context?.question?.alternatives ?? []).slice(0, MAX_LISTED_TASKS);
+            const alternatives = (taskState.context?.question?.alternatives ?? []).slice(0, MAX_CHOICE_OPTIONS);
             if (alternatives.length >= 2) {
                 const criteria = {};
+                // The criterion carries the meaning of the option, not only its
+                // label: "implement A" alone does not tell the evaluation what
+                // A does.
+                const choiceContext = buildChoiceDecisionContext({
+                    question: taskState.context?.question?.text ?? "",
+                    alternatives,
+                    contextText: taskState.context?.question?.contextText,
+                });
                 alternatives.forEach((alternative, index) => {
-                    criteria[`option_${index + 1}`] = alternative;
+                    const option = choiceContext.options[index];
+                    criteria[`option_${index + 1}`] = option
+                        ? describeChoiceOption(option.id, option.label, option.description, option.constraints)
+                        : alternative;
                 });
                 criteria["none_of_these"] = "none of the alternatives is the right one";
                 questions.selectedOption = {
@@ -528,6 +540,19 @@ export function buildDecisionState(taskState) {
     const completionPercent = Math.round((taskState.completedTasks.length / taskState.totalTasks) * 100);
     const context = taskState.context;
     const question = context?.question;
+    // A choice is only decidable when the evaluation sees what the
+    // alternatives MEAN. The helper owns that policy: the short labels do
+    // not carry the meaning, and the beginning of a long message is not
+    // where the decisive facts stand.
+    const choiceContext = question &&
+        question.kind === "choice" &&
+        (question.alternatives ?? []).length >= 2
+        ? buildChoiceDecisionContext({
+            question: question.text,
+            alternatives: question.alternatives ?? [],
+            contextText: question.contextText,
+        })
+        : undefined;
     return {
         task_summary: {
             completed: taskState.completedTasks.length,
@@ -554,10 +579,20 @@ export function buildDecisionState(taskState) {
                 text: question.text.slice(0, MAX_QUESTION_CHARS),
                 // The alternatives of a choice question: without them the
                 // decision cannot pick one.
-                alternatives: (question.alternatives ?? []).slice(0, MAX_LISTED_TASKS),
+                // The alternatives the evaluation may choose from. The bound is
+                // the one of the criteria, so every listed alternative has a
+                // criterion of its own.
+                alternatives: (question.alternatives ?? []).slice(0, MAX_CHOICE_OPTIONS),
                 // The surrounding message: the question sentence often leaves
-                // out what the agent is really waiting for.
-                context_excerpt: (question.contextText ?? "").slice(0, MAX_QUESTION_CHARS),
+                // out what the agent is really waiting for. A choice carries the
+                // facts of the alternatives instead of the first characters of
+                // the message.
+                context_excerpt: choiceContext
+                    ? renderChoiceExcerpt(choiceContext)
+                    : (question.contextText ?? "").slice(0, MAX_QUESTION_CHARS),
+                // The facts of a choice: the labels alone do not say what the
+                // alternatives mean.
+                choice_context: choiceContext ?? null,
                 proposed_action: question.proposedAction ?? "unknown",
                 consequence_of_approval: question.consequence ?? "unknown",
                 // The risk facts are unknown when they were not determined: an
