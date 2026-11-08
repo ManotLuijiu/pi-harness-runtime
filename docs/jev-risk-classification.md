@@ -21,7 +21,12 @@ const action = extractProposedAction(contextText, questionText);
 ```
 
 - The sentences that state what happens are the action.
-- The question sentence is not an action: it asks, it does not act.
+- The question sentence is not an action: it asks, it does not act - unless it
+  names an action itself. "I can update the status text. Want me to delete the
+  production database?" states a harmless action in the message and asks for a
+  deletion in the question. The action of the question is therefore assessed
+  together with the sentences of the message: the risk of the proposal is the
+  risk of everything that is proposed.
 - A message that names no action falls back to the question text: the risk of
   the question is then the risk of the ask.
 - The action is bounded (`MAX_ACTION_CHARS`), so one long message cannot
@@ -112,6 +117,7 @@ authorization turns the decision into a wait.
 `packages/jev-judge/tests/question-risk.test.ts` holds the rules:
 
 - the action is extracted from the message, not from the whole message,
+- the action of the question is assessed together with the message,
 - a prohibition is not a proposal,
 - a prohibition does not hide a later destructive action,
 - a plain negation and a modal negation are prohibitions,

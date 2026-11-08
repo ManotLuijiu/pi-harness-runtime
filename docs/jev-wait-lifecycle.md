@@ -37,6 +37,15 @@ measure the same wait.
   of the log and to the work.
 - **Every late result is discarded.** An evaluation that finishes after the
   question was answered, replaced or the session changed changes nothing.
+- **An open question blocks the work.** The wait can be over while the
+  question is not: Jev asked a human, or the evaluation failed. The question
+  is the thing that needs an answer, so the work waits for it until the
+  question is answered or cancelled. `harness/pending-question-state.ts` holds
+  the rule, and `index.ts` uses it in the handler of a user message and in
+  the handler of an `agent_settled` event.
+- **A reply of the user closes the question.** A reply in Pi answers the
+  question, also when the wait is already over. The question is closed with
+  it, so the buttons of the old notification cannot inject a second answer.
 
 ## The decision belongs to the question it was evaluated for
 
@@ -171,6 +180,9 @@ decision is applied, nothing is paused, and the question is not closed.
 | `test/pending-wait.test.mjs` | The runtime checks the identity before it resolves, continues, pauses, clears the wait or changes the status. |
 | `test/pending-wait.test.mjs` | A discarded decision releases the guard, so the next question can be decided. |
 | `test/pending-countdown.test.mjs` | The countdown has one policy: there is no recheck. |
+| `test/pending-question-state.test.mjs` | The work does not continue behind an open question, also when the wait is over. |
+| `test/pending-question-state.test.mjs` | A reply of the user closes a question of a terminal state. |
+| `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed together with the message. |
 
 ## The rule that stays
 

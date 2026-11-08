@@ -33,6 +33,11 @@ import {
 	type KeyFileAuditResult,
 } from "./harness/key-file-audit.ts";
 import { renderDetailLines } from "./harness/startup-lines.ts";
+import {
+	isQuestionOpen,
+	mayContinue,
+	userReplyEffect,
+} from "./harness/pending-question-state.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
@@ -1029,6 +1034,18 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			);
 		}
 
+		/**
+		 * Is the question of this session still open?
+		 *
+		 * The wait can be over while the question is not: after the decision
+		 * of Jev asked a human, and after an evaluation that failed, the
+		 * question stays open so the human can still answer it. Its buttons
+		 * stay valid with it, so a later click would inject a second answer.
+		 */
+		function hasOpenQuestion(): boolean {
+			return isQuestionOpen(sharedState.pqController?.getCurrentQuestion?.());
+		}
+
 		// A continuation was dispatched and its turn has not settled yet.
 		// The gate owns that state: the status stays "RUN" until the turn
 		// settles, and no timer may clear it in the meantime.
@@ -1670,14 +1687,25 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						}
 					}
 				lastUserMessage = new Date();
-				if (isWaitingForUser()) {
+				const replyEffect = userReplyEffect({
+					waiting: isWaitingForUser(),
+					questionOpen: hasOpenQuestion(),
+				});
+				if (replyEffect !== "none") {
 					// The user answered in Pi: the wait and the countdown of
-					// the wait are over with it.
+					// the wait are over with it, and the question is closed
+					// so that its buttons cannot inject a second answer.
 					clearWait();
 					updateAutoContinueStatus("IDLE");
 					// Cancel pending question on user response
 					// (User answered via Pi instead of button)
 					sharedState.pqController?.cancel("User responded via Pi");
+					if (replyEffect === "cancelled-question") {
+						// The wait was over - Jev asked a human, or the
+						// evaluation failed - and the work was paused for the
+						// answer. The human is here: the work continues.
+						(sharedState.todoContinuationController as any)?.resume?.();
+					}
 				}
 			}
 		});
@@ -2116,6 +2144,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				logToFile("[auto-continue]", "The evaluation of the question failed:", message);
 				_inferenceInProgress = false;
 				updateAutoContinueStatus("ERROR");
+				// The question is still open: the work must not continue
+				// behind it. The pause ends when the question is answered
+				// (a channel answer resumes it) or cancelled (a reply of
+				// the user in Pi cancels it).
+				(sharedState.todoContinuationController as any)?.explicitPause?.();
 				addHarnessMessage("Jev", "auto-continue evaluation failed", "err", [
 					"How to fix: Check logs at /tmp/pi-harness.log for API errors",
 					"Ensure TYPESAFE_API_KEY is valid, then restart.",
@@ -2378,8 +2411,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				updateAutoContinueStatus("IDLE");
 			}
 
-			// Don't continue if user is waiting for response
-			if (isWaitingForUser()) {
+			// Don't continue if user is waiting for response, and do not
+			// continue behind a question that is still open: the work waits
+			// for the answer, also when the wait itself is over.
+			if (!mayContinue({ waiting: isWaitingForUser(), questionOpen: hasOpenQuestion() })) {
 				todoContinuationController?.clearQueue();
 				return;
 			}
