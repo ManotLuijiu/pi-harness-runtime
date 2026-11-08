@@ -46,6 +46,15 @@ export interface QuestionRiskInput {
      * the action that is proposed.
      */
     proposedAction?: string;
+    /**
+     * The action of the question itself.
+     *
+     * It is assessed on its own text: the risk of the question is the risk of
+     * the question, not of the message around it. A long message cannot push
+     * the action of the question out of the assessment, and a negation of the
+     * message cannot govern it.
+     */
+    questionAction?: string;
 }
 /**
  * How much of the action reaches the classifier.
@@ -57,18 +66,34 @@ export declare const MAX_ACTION_CHARS = 600;
  * The message carries the ask ("may I proceed?") and the action ("I will
  * delete the branch"). The risk is about the action, so the action is
  * extracted: the sentences of the message that state what happens. The
- * question sentence itself is not an action - it asks, it does not act -
- * unless it names an action itself.
- *
- * The question is assessed when it names an action: "I can update the status
- * text. Want me to delete the production database?" states a harmless action
- * in the message and asks for a deletion in the question. The action of the
- * question is therefore always part of the action that is classified.
+ * question sentence itself is not an action - it asks, it does not act.
  *
  * When the message names no action, the question text is the action: the
  * risk of the question is then the risk of the ask.
+ *
+ * The action of the question is not part of this text. It is extracted on
+ * its own (`extractQuestionAction`) and assessed on its own, so a long
+ * message around it cannot push it out of the assessment.
  */
 export declare function extractProposedAction(contextText: string | undefined, questionText: string | undefined): string;
+/**
+ * The action of the question itself.
+ *
+ * The question can carry the action that the message does not name: "I can
+ * update the status text. Want me to delete the production database?" states
+ * a harmless action in the message and asks for a deletion in the question.
+ *
+ * The action of the question is extracted and assessed on its own text:
+ *
+ *  - a long explanation around it cannot push it out of the assessment (the
+ *    bound of the context is a bound of the context, not of the question),
+ *  - a negation in the message cannot govern it (the negation of the
+ *    message speaks about the message).
+ *
+ * `undefined` means that the question names no action: it asks, it does not
+ * act.
+ */
+export declare function extractQuestionAction(questionText: string | undefined): string | undefined;
 /**
  * Derive the risk facts of a pending question.
  *

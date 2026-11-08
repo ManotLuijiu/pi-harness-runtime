@@ -932,7 +932,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Resolve the provider chain. Every credential stays bound to its own
 		// provider: a TypeSafe key is never sent to OpenRouter and an OpenRouter
 		// key is never sent to the TypeSafe API.
-		const { resolveJevProviders, classifyQuestionRisk, extractProposedAction } = await import("./packages/jev-judge/dist/index.js");
+		const { resolveJevProviders, classifyQuestionRisk, extractProposedAction, extractQuestionAction } = await import("./packages/jev-judge/dist/index.js");
 		const jevProviders = resolveJevProviders({ keysDir });
 
 		// Create pending question controller - works independently of Jev
@@ -1483,11 +1483,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					result.contextText,
 					result.questionText,
 				);
+				// The action of the question is assessed on its own text: a
+				// long message around it cannot push it out of the
+				// assessment, and a negation of the message cannot govern
+				// it.
+				const questionAction = extractQuestionAction(result.questionText);
 				const riskFacts = classifyQuestionRisk({
 					kind: questionKind,
 					askType: result.askType,
 					text: result.questionText,
 					proposedAction,
+					questionAction,
 				});
 				const question = pqController.createQuestion({
 					text: result.questionText,
@@ -1700,12 +1706,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// Cancel pending question on user response
 					// (User answered via Pi instead of button)
 					sharedState.pqController?.cancel("User responded via Pi");
-					if (replyEffect === "cancelled-question") {
-						// The wait was over - Jev asked a human, or the
-						// evaluation failed - and the work was paused for the
-						// answer. The human is here: the work continues.
-						(sharedState.todoContinuationController as any)?.resume?.();
-					}
+					// Closing the question is not an authorization: the work
+					// that waits for an answer stays paused, also when the
+					// reply declines the proposal. Only an explicit resume
+					// directive continues the work - an acknowledgment
+					// ("okay", "yes") never does.
+					logToFile(
+						"[auto-continue]",
+						"The reply closed the question; the work stays paused until it is resumed explicitly",
+					);
 				}
 			}
 		});
@@ -1827,6 +1836,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								text: pendingQuestion.questionText,
 								proposedAction: extractProposedAction(
 									pendingQuestion.contextText,
+									pendingQuestion.questionText,
+								),
+								questionAction: extractQuestionAction(
 									pendingQuestion.questionText,
 								),
 							})

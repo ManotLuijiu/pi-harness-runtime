@@ -73,11 +73,18 @@ function createRuntime(question) {
 				state.question.state = "cancelled";
 				state.question = null;
 			}
-			if (effect === "cancelled-question") continuation.resume();
+			// Closing the question is not an authorization: the work that
+			// waits for an answer stays paused.
 			return effect;
 		},
 		/** The handler of an `agent_settled` event of the runtime. */
 		agentSettled() {
+			// A paused continuation dispatches nothing: the pause is what
+			// the controller checks before it sends a steer.
+			if (state.paused) {
+				continuation.clearQueue();
+				return false;
+			}
 			if (
 				!mayContinue({
 					waiting: state.waiting,
@@ -179,7 +186,28 @@ test("the runtime closes the question on a reply in a terminal state", () => {
 		false,
 		"the buttons of the question cannot inject a second answer",
 	);
-	assert.equal(runtime.state.paused, false, "the work continues");
+	assert.equal(
+		runtime.state.paused,
+		true,
+		"closing the question is not an authorization: the work stays paused",
+	);
+});
+
+test("a declining reply retains the pause", () => {
+	const runtime = createRuntime({ requestId: "q-1", state: "pending" });
+	runtime.state.waiting = false;
+	runtime.evaluationError();
+
+	// "No, do not implement it" is an answer, not a resume directive.
+	runtime.userMessage();
+
+	assert.equal(runtime.state.paused, true, "the work does not continue");
+	assert.equal(
+		runtime.agentSettled(),
+		false,
+		"the next settled turn does not dispatch work behind the pause",
+	);
+	assert.equal(runtime.state.dispatched, false);
 });
 
 test("the runtime closes the question on a reply while the wait runs", () => {
@@ -215,5 +243,9 @@ test("the runtime uses the rules in its handlers", () => {
 		indexSource,
 		/evaluation_error[\s\S]*?explicitPause\?\.\(\)/,
 		"a failed evaluation pauses the work",
+	);
+	assert.ok(
+		!/const replyEffect[\s\S]*?resume\?\.\(\)/.test(indexSource),
+		"closing the question never resumes the work on its own",
 	);
 });

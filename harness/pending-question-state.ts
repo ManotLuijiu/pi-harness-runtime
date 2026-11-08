@@ -53,9 +53,14 @@ export function mayContinue(options: {
  *  - `cancelled-wait-and-question`: the wait was running. The reply ends the
  *    wait and closes the question.
  *  - `cancelled-question`: the wait was over, but the question was still
- *    open. The reply closes the question. The work that was paused for the
- *    answer continues, because the human is here.
+ *    open. The reply closes the question.
  *  - `none`: there is nothing to close.
+ *
+ * Closing the question is not an authorization: the reply says that the
+ * question is answered, not that the work may continue. The work that waits
+ * for an answer stays paused until it is resumed explicitly - a decline has
+ * to retain the pause, and an acknowledgment ("okay", "yes") never clears
+ * it.
  */
 export type UserReplyEffect =
 	| "cancelled-wait-and-question"

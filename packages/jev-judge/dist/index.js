@@ -559,7 +559,7 @@ export { buildChoiceDecisionContext, describeChoiceOption, deriveOptionAnchor, e
 // Export the instruction an autonomous decision sends to the agent
 export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 // Export the deterministic risk classifier of a pending question
-export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction, extractQuestionAction } from "./question-risk.js";
 // Export WrapUpJudge
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 // Export EnvironmentJudge
