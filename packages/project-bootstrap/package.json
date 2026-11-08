@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/project-bootstrap",
-  "version": "1.1.473",
+  "version": "1.1.474",
   "description": "Project scaffolding from typed ProjectSpec",
   "type": "module",
   "main": "./dist/index.js",
