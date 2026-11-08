@@ -22,9 +22,12 @@ import type {
 import { HarnessStartupStatus, harnessStatusMarker, type HarnessStatus } from "./harness-startup-status.ts";
 import {
 	auditKeyFiles,
+	displayKeysDir,
 	fallbackKeyFileFixes,
+	formatExposedKeyFileFixes,
 	formatKeyFileFixes,
 	formatKeyPermissionFixes,
+	formatUnrepairableKeyFix,
 	selectKeyFileFixes,
 	secureKeyTree,
 	type KeyFileAuditResult,
@@ -259,16 +262,30 @@ function reportExposedKeyFiles(): void {
 		}
 	}
 
+	// The entries the harness could not repair are only reported when they
+	// are the exposed ones: an entry that is already private needs nothing.
+	const exposedPaths = new Set<string>();
+	for (const entry of exposed) exposedPaths.add(join(harnessKeysDir(), entry.file));
+	for (const entry of exposedDirectories) {
+		exposedPaths.add(join(harnessKeysDir(), entry.name));
+	}
+	const unrepairable = repair.failures
+		.filter((failure) => exposedPaths.has(failure.path))
+		.map((failure) => ({
+			path: displayKeysDir(failure.path),
+			command: formatUnrepairableKeyFix(failure),
+			reason: failure.reason,
+		}));
+
 	const report = exposedKeyFilesReport({
 		exposed,
 		exposedDirectories,
 		fixes: formatKeyPermissionFixes({ keysDir: harnessKeysDir() }),
+		fileFixes: formatExposedKeyFileFixes(exposed, harnessKeysDir()),
+		unrepairable,
 	});
 	if (!report) return;
-	const failedPaths = repair.failedPaths.length > 0
-		? [`Could not change permissions for: ${repair.failedPaths.join(", ")}`]
-		: [];
-	addHarnessMessage(report.label, report.text, report.status, [...failedPaths, ...report.details]);
+	addHarnessMessage(report.label, report.text, report.status, report.details);
 }
 
 /**
