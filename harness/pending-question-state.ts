@@ -51,19 +51,24 @@ export function mayContinue(options: {
  * The wordings that decline a proposal.
  *
  * A decline is a directive to the harness, so it is recognized at the start
- * of the reply: "No, do not implement it", "Never mind", "Cancel that". A
- * negation in the middle of a sentence ("there is no error in the log") is a
- * statement, not a decline.
+ * of the reply: "No, do not implement it", "No thanks", "Never mind",
+ * "Cancel that". A negation in the middle of a sentence ("there is no error
+ * in the log") is a statement, not a decline.
+ *
+ * A decline names an action. A negative statement about a state ("I don't
+ * see any errors") declines nothing, so it must not pause the work.
  */
 const REJECTION_PATTERNS: RegExp[] = [
-	// "No", "No, do not implement it", "Nope"
-	/^(?:no|nope|nah)\b\s*(?:[,.!]|$)/i,
+	// "No", "No, do not implement it", "Nope", "No thanks"
+	/^(?:no|nope|nah)\b\s*(?:[,.!]|$|thanks\b|thank\s+you\b)/i,
 	// "Never mind", "Cancel that", "Abort", "Reject"
 	/^(?:never\s*mind|nevermind|cancel|abort|reject)\b/i,
 	// "Do not implement it", "Don't do it", "Never do that"
 	/^(?:do\s*not|don't|dont|never)\s+\S/i,
-	// "I do not want that", "I won't do it", "I will not do that"
-	/^i\s+(?:do\s*not|don't|dont|won't|will\s+not|never)\s+/i,
+	// "I do not want that", "I won't do it", "I will not do that".
+	// The object of the decline has to be the action: "I don't see any
+	// errors" declines nothing, it is a statement about a state.
+	/^i\s+(?:do\s*not|don't|dont|won't|will\s+not|never)\s+(?:want|need|wish|like|do|apply|proceed|continue|run|implement|merge|deploy|publish|send|make|execute|perform)\b/i,
 	// a directive about the work, anywhere in the reply
 	/\b(?:do\s*not|don't|dont)\s+(?:implement|do|apply|proceed|continue|run|merge|deploy|publish|make|perform|execute|send|delete)\b/i,
 ];
@@ -75,6 +80,9 @@ const REJECTION_PATTERNS: RegExp[] = [
  * behind it. The wording of a decline is a directive to the harness, so it
  * is recognized at the start of the reply - a mention of a negation in the
  * middle of a sentence is not a decline.
+ *
+ * The decline names an action. A negative statement about a state ("I don't
+ * see any errors") is not a decline.
  */
 export function isRejection(text: string | undefined): boolean {
 	const reply = (text ?? "").trim();

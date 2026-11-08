@@ -55,8 +55,13 @@ measure the same wait.
   decision about the work: it pauses the continuation explicitly, also
   during the countdown, when nothing was paused yet. The wording of a
   decline is a directive to the harness, so it is recognized at the start of
-  the reply ("No, do not implement it", "Never mind", "Cancel that") - a
-  negation in the middle of a sentence is not a decline.
+  the reply ("No, do not implement it", "No thanks", "Never mind", "Cancel
+  that") - a negation in the middle of a sentence is not a decline.
+- **A decline names an action.** A negative statement about a state ("I
+  don't see any errors", "I do not think we should do that") declines
+  nothing, so it is not a decline and it must not pause the session. A
+  decline only pauses the work while there is a proposal to decline: an
+  open question or a running wait.
 
 ## The decision belongs to the question it was evaluated for
 
@@ -195,6 +200,8 @@ decision is applied, nothing is paused, and the question is not closed.
 | `test/pending-question-state.test.mjs` | A reply of the user closes a question of a terminal state. |
 | `test/pending-question-state.test.mjs` | A declining reply retains the pause. |
 | `test/pending-question-state.test.mjs` | A rejection during the countdown pauses the work. |
+| `test/pending-question-state.test.mjs` | A refusal during the countdown pauses the work. |
+| `test/pending-question-state.test.mjs` | A negative statement does not pause the work. |
 | `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed on its own text. |
 
 ## The rule that stays
