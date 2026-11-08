@@ -35,6 +35,7 @@ import {
 import { renderDetailLines } from "./harness/startup-lines.ts";
 import {
 	isQuestionOpen,
+	isRejection,
 	mayContinue,
 	userReplyEffect,
 } from "./harness/pending-question-state.ts";
@@ -1706,15 +1707,32 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// Cancel pending question on user response
 					// (User answered via Pi instead of button)
 					sharedState.pqController?.cancel("User responded via Pi");
-					// Closing the question is not an authorization: the work
-					// that waits for an answer stays paused, also when the
-					// reply declines the proposal. Only an explicit resume
-					// directive continues the work - an acknowledgment
-					// ("okay", "yes") never does.
-					logToFile(
-						"[auto-continue]",
-						"The reply closed the question; the work stays paused until it is resumed explicitly",
-					);
+					if (isRejection(content)) {
+						// The reply declines the proposal. The work must not
+						// continue behind a decline: the pause is explicit,
+						// so nothing but an explicit resume directive clears
+						// it.
+						(sharedState.todoContinuationController as any)?.explicitPause?.();
+						logToFile(
+							"[auto-continue]",
+							"The reply declined the proposal; the work is paused",
+						);
+					} else if (replyEffect === "cancelled-question") {
+						// Closing the question is not an authorization: the
+						// work that waits for an answer stays paused, also
+						// when the reply declines the proposal. Only an
+						// explicit resume directive continues the work - an
+						// acknowledgment ("okay", "yes") never does.
+						logToFile(
+							"[auto-continue]",
+							"The reply closed the question; the work stays paused until it is resumed explicitly",
+						);
+					} else {
+						logToFile(
+							"[auto-continue]",
+							"The reply closed the question and ended the wait",
+						);
+					}
 				}
 			}
 		});
@@ -2385,7 +2403,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					return true;
 				}
 			}
-			return false;
+			// A decline of the proposal is a decision about the work: it
+			// pauses the work like a stop directive does. "No, do not
+			// implement it" is not one of the wordings above.
+			return isRejection(text);
 		}
 
 		// Detect resume requests - ONLY explicit resume directives, not acknowledgments

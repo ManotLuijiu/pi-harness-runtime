@@ -48,6 +48,41 @@ export function mayContinue(options: {
 }
 
 /**
+ * The wordings that decline a proposal.
+ *
+ * A decline is a directive to the harness, so it is recognized at the start
+ * of the reply: "No, do not implement it", "Never mind", "Cancel that". A
+ * negation in the middle of a sentence ("there is no error in the log") is a
+ * statement, not a decline.
+ */
+const REJECTION_PATTERNS: RegExp[] = [
+	// "No", "No, do not implement it", "Nope"
+	/^(?:no|nope|nah)\b\s*(?:[,.!]|$)/i,
+	// "Never mind", "Cancel that", "Abort", "Reject"
+	/^(?:never\s*mind|nevermind|cancel|abort|reject)\b/i,
+	// "Do not implement it", "Don't do it", "Never do that"
+	/^(?:do\s*not|don't|dont|never)\s+\S/i,
+	// "I do not want that", "I won't do it", "I will not do that"
+	/^i\s+(?:do\s*not|don't|dont|won't|will\s+not|never)\s+/i,
+	// a directive about the work, anywhere in the reply
+	/\b(?:do\s*not|don't|dont)\s+(?:implement|do|apply|proceed|continue|run|merge|deploy|publish|make|perform|execute|send|delete)\b/i,
+];
+
+/**
+ * Does the reply decline the proposal?
+ *
+ * A decline is a decision about the proposal: the work must not continue
+ * behind it. The wording of a decline is a directive to the harness, so it
+ * is recognized at the start of the reply - a mention of a negation in the
+ * middle of a sentence is not a decline.
+ */
+export function isRejection(text: string | undefined): boolean {
+	const reply = (text ?? "").trim();
+	if (reply.length === 0) return false;
+	return REJECTION_PATTERNS.some((pattern) => pattern.test(reply));
+}
+
+/**
  * What a reply of the user does to the wait and to the question.
  *
  *  - `cancelled-wait-and-question`: the wait was running. The reply ends the
