@@ -563,6 +563,24 @@ Use tools in this order (highest to lowest priority):
 - Wiki/documentation changes go in `wiki/` (gitignored)
 - API keys, tokens, credentials: **never commit**
 
+### Key Files That Need `sudo` (CRITICAL)
+
+The startup summary names every key file that other accounts on the machine can
+read. The harness repairs the permissions itself whenever it can, and a file it
+cannot repair is reported with the reason and with the command.
+
+**When the startup report offers a `sudo` command:**
+
+- **Ask the user once.** Offer the command that is in the report: "May I run
+  this command for you?" The user decides.
+- **Run it with `sudo -n`.** The agent never waits for a password: `sudo -n`
+  fails immediately when a password is required.
+- **Never ask for a password in the chat.** A password belongs in the terminal
+  of the user. When `sudo -n` fails, tell the user to run the command in their
+  own terminal.
+- **Never run `sudo` without the answer of the user.** The harness repairs what
+  it owns; everything else needs the permission of the user.
+
 ---
 
 ## React Best Practices (CRITICAL)

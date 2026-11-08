@@ -153,28 +153,121 @@ export function relayEndpointReport(options: {
  * the harness reads the file successfully, so no feature fails and no other
  * line warns. This line is the only place where the fact can surface.
  *
- * The line names the count and the command. It never names a value.
+ * The line tells the user what to do. A fact without an action leaves the
+ * reader with a warning they cannot act on, so the text carries the command
+ * itself: "make it private: chmod 600 <file>". The line names the count, the
+ * command and the reason a repair did not happen - and never a value.
  */
 export function exposedKeyFilesReport(options: {
 	/** The key files that other users can read. */
 	exposed: ExposedKeyFile[];
 	/** The directories of the key tree that other users can reach. */
 	exposedDirectories?: ExposedKeyDirectory[];
-	/** The `chmod` command for each of them. */
+	/** The `chmod` command that repairs the whole key tree. */
 	fixes: string[];
+	/** The `chmod` command that repairs one exposed key file. */
+	fileFixes?: string[];
+	/** The entries the harness could not repair itself. */
+	unrepairable?: {
+		/** The path as the user reads it (the home directory as "~"). */
+		path: string;
+		/** The command that repairs it (with sudo). */
+		command: string;
+		/** Why the harness could not repair it. */
+		reason: string;
+	}[];
 }): StartupReport | null {
 	const directories = options.exposedDirectories ?? [];
 	if (options.exposed.length === 0 && directories.length === 0) return null;
 	const files = options.exposed.length;
 	const dirs = directories.length;
-	const text = exposedPermissionText(files, dirs);
-	const details = [...options.fixes];
-	if (details.length === 0) {
-		details.push(
-			"Make the key directory private: chmod 700 ~/.pi-harness-runtime/keys",
-		);
+	const fact = exposedPermissionText(files, dirs);
+	const details: string[] = [];
+
+	// The entries the harness could not repair: the user has to do it, and
+	// the reason decides how.
+	for (const failure of options.unrepairable ?? []) {
+		details.push(...unrepairableAdvice(failure));
 	}
+
+	const fileFixes = options.fileFixes ?? [];
+	const oneFile = files === 1 && dirs === 0 && fileFixes.length === 1;
+	const oneDirectory = files === 0 && dirs === 1 && options.fixes.length > 0;
+
+	let text: string;
+	if (oneFile) {
+		text = `${fact} - make it private: ${fileFixes[0]}`;
+	} else if (oneDirectory) {
+		text = `${fact} - make it private: ${options.fixes[0]}`;
+	} else {
+		text = `${fact} - make them private with the command below`;
+		details.push(...options.fixes);
+		if (options.fixes.length === 0) {
+			details.push(
+				"Make the key directory private: chmod 700 ~/.pi-harness-runtime/keys",
+			);
+		}
+	}
+
+	// Why the warning appears on some machines and not on others.
+	details.push(
+		"A key file is private with the mode 600. The mode comes from the shell that created the file: the umask 022 gives a new file the mode 644. That is why the warning appears on some machines and not on others.",
+	);
+
 	return { label: "Keys", text, status: "warn", details };
+}
+
+/**
+ * What the user has to do about an entry the harness could not repair.
+ *
+ * The reason decides the action: another account needs `sudo` or its owner,
+ * a read-only file system cannot be changed at all, and a file that is gone
+ * needs nothing. The path is a line of its own, so the instruction that
+ * follows stays readable on a narrow terminal.
+ */
+function unrepairableAdvice(failure: {
+	path: string;
+	command: string;
+	reason: string;
+}): string[] {
+	const path = failure.path;
+	const command = failure.command;
+	switch (failure.reason) {
+		case "owned by another account":
+			return [
+				path,
+				"The harness could not change it: the file belongs to another account.",
+				sudoAsk(),
+				command,
+			];
+		case "not permitted":
+			return [
+				path,
+				"The harness could not change it: the permissions are not yours to change.",
+				sudoAsk(),
+				command,
+			];
+		case "read-only":
+			return [
+				path,
+				"The harness could not change it: the file system is read-only. Run the command where the file can be written.",
+			];
+		case "gone":
+			return [path, "The harness could not change it: the file is gone. Nothing to do."];
+		default:
+			return [path, "The harness could not change it. Run the command yourself."];
+	}
+}
+
+/**
+ * The offer to run the command with `sudo`.
+ *
+ * The offer is a question, so the user decides. The command runs with
+ * `sudo -n`, so it never waits for a password: a password belongs in the
+ * terminal of the user and never in the chat of the agent.
+ */
+function sudoAsk(): string {
+	return "May the agent run the command below with sudo for you? It uses `sudo -n`, so it never waits for a password. If your sudo asks for one, run the command in your own terminal. A password never belongs in the chat.";
 }
 
 /**

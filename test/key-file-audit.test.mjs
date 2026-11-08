@@ -21,8 +21,11 @@ import {
 	formatKeyFileFixes,
 	formatKeyPermissionFix,
 	formatKeyPermissionFixes,
+	keyPermissionFailureReason,
+	formatUnrepairableKeyFix,
 	scanExposedKeyDirectories,
 	scanExposedKeyFiles,
+	secureKeyTree,
 	selectKeyFileFixes,
 	KEY_REQUIREMENTS,
 } from "../harness/key-file-audit.ts";
@@ -835,6 +838,14 @@ test("a single key file gets a command of its own", () => {
 	assert.equal(fix, "chmod 600 /home/user/.pi-harness-runtime/keys/openai-api-key.txt");
 });
 
+test("a file name with a space stays one command", () => {
+	const fix = formatExposedKeyFileFix(
+		{ file: "my key.txt", mode: "644", readableBy: "others" },
+		"/home/user/.pi-harness-runtime/keys",
+	);
+	assert.equal(fix, "chmod 600 '/home/user/.pi-harness-runtime/keys/my key.txt'");
+});
+
 // The mode of the key directory.
 //
 // A directory of mode 755 hands the NAME of every key file to every
@@ -994,4 +1005,96 @@ test("Windows gets Windows guidance and no Unix command", () => {
 test("the repair never names a value", () => {
 	const command = formatKeyPermissionFix("/home/user/.pi-harness-runtime/keys", "linux");
 	assert.equal(command.includes("sk-"), false);
+});
+
+// Why a permission could not be changed.
+//
+// The reason decides what the user has to do, so every reason of the mapping
+// is tested here - a second account and a read-only file system cannot be
+// created by a test.
+
+test("a file of another account is named as such", () => {
+	assert.equal(
+		keyPermissionFailureReason({ code: "EPERM", ownedByAnother: true }),
+		"owned by another account",
+	);
+	assert.equal(
+		keyPermissionFailureReason({ code: "EACCES", ownedByAnother: true }),
+		"owned by another account",
+	);
+});
+
+test("a permission that is not ours is not another account", () => {
+	assert.equal(keyPermissionFailureReason({ code: "EPERM" }), "not permitted");
+	assert.equal(keyPermissionFailureReason({ code: "EACCES" }), "not permitted");
+});
+
+test("a read-only file system and a missing file are named as such", () => {
+	assert.equal(keyPermissionFailureReason({ code: "EROFS" }), "read-only");
+	assert.equal(keyPermissionFailureReason({ code: "ENOENT" }), "gone");
+});
+
+test("an unknown failure stays unknown", () => {
+	assert.equal(keyPermissionFailureReason({ code: "EIO" }), "unknown");
+	assert.equal(keyPermissionFailureReason({}), "unknown");
+});
+
+// The repair of the key tree.
+//
+// The repair records why it failed, so the startup report can tell the user
+// what to do instead of naming a path it cannot explain.
+
+test("the repair of a private key tree reports no failure", async () => {
+	const dir = await makeKeysDir({ "openai-api-key.txt": "sk-test" });
+	try {
+		const repair = secureKeyTree(dir);
+		assert.equal(repair.supported, true);
+		assert.equal(repair.failures.length, 0);
+		assert.equal(repair.failedPaths.length, 0);
+		assert.ok(repair.securedFiles >= 1);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a key directory that does not exist is a failure with a reason", () => {
+	const missing = join(tmpdir(), "pi-harness-missing-keys-dir");
+	const repair = secureKeyTree(missing);
+	assert.equal(repair.failures.length, 1);
+	assert.equal(repair.failures[0].path, missing);
+	assert.equal(repair.failures[0].kind, "directory");
+	assert.ok(repair.failures[0].reason.length > 0);
+});
+
+// The command the user gets for an entry of another account.
+//
+// The command needs sudo, so it is quoted: a path with a space must stay one
+// command, and a name is never interpreted by the shell.
+
+test("the command of another account uses sudo and the mode of the entry", () => {
+	assert.equal(
+		formatUnrepairableKeyFix({
+			path: "/home/user/.pi-harness-runtime/keys/openai-api-key.txt",
+			kind: "file",
+			reason: "owned by another account",
+		}),
+		"sudo chmod 600 '/home/user/.pi-harness-runtime/keys/openai-api-key.txt'",
+	);
+	assert.equal(
+		formatUnrepairableKeyFix({
+			path: "/home/user/.pi-harness-runtime/keys",
+			kind: "directory",
+			reason: "owned by another account",
+		}),
+		"sudo chmod 700 '/home/user/.pi-harness-runtime/keys'",
+	);
+});
+
+test("a path with a space stays one command", () => {
+	const command = formatUnrepairableKeyFix({
+		path: "/home/user/.pi-harness-runtime/keys/my key.txt",
+		kind: "file",
+		reason: "owned by another account",
+	});
+	assert.equal(command, "sudo chmod 600 '/home/user/.pi-harness-runtime/keys/my key.txt'");
 });

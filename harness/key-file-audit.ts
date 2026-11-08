@@ -358,6 +358,8 @@ export interface KeyEntryInfo {
 	isDirectory?: boolean;
 	/** Is it a symbolic link? */
 	isSymbolicLink?: boolean;
+	/** The owner of the entry (Unix only). */
+	uid?: number;
 }
 
 /** How deep the audit walks into the key tree. */
@@ -396,12 +398,35 @@ export interface KeyFileAuditResult {
 	exposedDirectories: ExposedKeyDirectory[];
 }
 
+/**
+ * An entry of the key tree that the harness could not restrict.
+ *
+ * The reason is the part the user needs: "it belongs to another account" and
+ * "the file system is read-only" ask for two different actions, and a report
+ * that names neither leaves the user without a way to act.
+ */
+export interface SecureKeyTreeFailure {
+	/** The path the harness could not restrict. */
+	path: string;
+	/** What the path is. */
+	kind: "file" | "directory";
+	/** Why the harness could not restrict it. */
+	reason:
+		| "owned by another account"
+		| "not permitted"
+		| "read-only"
+		| "gone"
+		| "unknown";
+}
+
 export interface SecureKeyTreeResult {
 	/** False on platforms where chmod does not express the required ACL. */
 	supported: boolean;
 	securedFiles: number;
 	securedDirectories: number;
 	failedPaths: string[];
+	/** The failed paths with the reason of each failure. */
+	failures: SecureKeyTreeFailure[];
 }
 
 /**
@@ -421,12 +446,24 @@ export function secureKeyTree(
 		securedFiles: 0,
 		securedDirectories: 0,
 		failedPaths: [],
+		failures: [],
 	};
 	if (!result.supported) return result;
 
+	// A failure is recorded with the reason, so the report can tell the user
+	// what to do instead of naming a path it cannot explain.
+	const recordFailure = (
+		path: string,
+		kind: "file" | "directory",
+		error: unknown,
+	): void => {
+		result.failedPaths.push(path);
+		result.failures.push({ path, kind, reason: failureReason(path, error) });
+	};
+
 	const root = defaultStat(keysDir);
 	if (!root?.isDirectory || root.isSymbolicLink) {
-		result.failedPaths.push(keysDir);
+		recordFailure(keysDir, "directory", new Error("the key directory is not a directory"));
 		return result;
 	}
 
@@ -435,8 +472,8 @@ export function secureKeyTree(
 			chmodSync(path, 0o700);
 			result.securedDirectories++;
 			return true;
-		} catch {
-			result.failedPaths.push(path);
+		} catch (error) {
+			recordFailure(path, "directory", error);
 			return false;
 		}
 	};
@@ -445,8 +482,8 @@ export function secureKeyTree(
 		try {
 			chmodSync(path, 0o600);
 			result.securedFiles++;
-		} catch {
-			result.failedPaths.push(path);
+		} catch (error) {
+			recordFailure(path, "file", error);
 		}
 	};
 
@@ -502,10 +539,52 @@ function defaultStat(path: string): KeyEntryInfo | undefined {
 			isFile: info.isFile(),
 			isDirectory: info.isDirectory(),
 			isSymbolicLink: info.isSymbolicLink(),
+			uid: info.uid,
 		};
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * The reason a permission could not be changed.
+ *
+ * The mapping is pure, so every reason can be tested without a second
+ * account and without a read-only file system.
+ */
+export function keyPermissionFailureReason(options: {
+	/** The error code of the failed change (e.g. "EPERM"). */
+	code?: string;
+	/** Does the entry belong to another account? */
+	ownedByAnother?: boolean;
+}): SecureKeyTreeFailure["reason"] {
+	const code = options.code;
+	if (code === "ENOENT") return "gone";
+	if (code === "EROFS") return "read-only";
+	if (code === "EPERM" || code === "EACCES") {
+		return options.ownedByAnother ? "owned by another account" : "not permitted";
+	}
+	return "unknown";
+}
+
+/**
+ * Why the harness could not restrict an entry of the key tree.
+ *
+ * The reason decides what the user has to do: a file of another account is
+ * changed with `sudo` or by its owner, a read-only file system is changed
+ * nowhere, and a file that is gone needs nothing at all.
+ */
+function failureReason(path: string, error: unknown): SecureKeyTreeFailure["reason"] {
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	let ownedByAnother = false;
+	if (code === "EPERM" || code === "EACCES") {
+		const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		const info = defaultStat(path);
+		ownedByAnother = Boolean(
+			info && uid !== undefined && info.uid !== undefined && info.uid !== uid,
+		);
+	}
+	return keyPermissionFailureReason({ code, ownedByAnother });
 }
 
 /**
@@ -707,7 +786,7 @@ export function formatExposedKeyFileFix(
 	entry: ExposedKeyFile,
 	keysDir: string,
 ): string {
-	return `chmod 600 ${join(displayKeysDir(keysDir), entry.file)}`;
+	return `chmod 600 ${shellQuoteIfNeeded(join(displayKeysDir(keysDir), entry.file))}`;
 }
 
 /**
@@ -719,6 +798,27 @@ export function formatExposedKeyFileFix(
  */
 export function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Quote a path for a POSIX shell, but only when it needs it.
+ *
+ * A plain path stays readable (`chmod 600 ~/.pi-harness-runtime/keys/x.txt`)
+ * and a path with a space or a quote becomes one quoted argument.
+ */
+function shellQuoteIfNeeded(value: string): string {
+	return /^[A-Za-z0-9_@%+=:,./~-]+$/.test(value) ? value : shellQuote(value);
+}
+
+/**
+ * The command that makes an entry of another account private.
+ *
+ * The command needs `sudo`, so it is not a command the harness runs: the
+ * report offers it to the user as a question.
+ */
+export function formatUnrepairableKeyFix(failure: SecureKeyTreeFailure): string {
+	const mode = failure.kind === "directory" ? "700" : "600";
+	return `sudo chmod ${mode} ${shellQuote(failure.path)}`;
 }
 
 /**

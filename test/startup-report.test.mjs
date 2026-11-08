@@ -494,13 +494,14 @@ test("a key file that other users can read gets a line with the command", () => 
 	const report = exposedKeyFilesReport({
 		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "group and others" }],
 		fixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+		fileFixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
 	});
 	assert.ok(report, "the line is reported");
 	assert.equal(report.label, "Keys");
 	assert.equal(report.status, "warn");
 	assert.match(report.text, /1 key file can be read by other users/);
-	assert.equal(report.details.length, 1);
-	assert.match(report.details[0], /^chmod 600 /);
+	// The line tells the user what to do: the command is in the line itself.
+	assert.match(report.text, /make it private: chmod 600 ~\/\.pi-harness-runtime\/keys\/openai-api-key\.txt/);
 });
 
 test("several key files that other users can read are counted", () => {
@@ -546,7 +547,6 @@ test("the exposure line shows one command for the whole key tree", () => {
 		fixes: ["chmod 700 'keys' && find 'keys' -type d -exec chmod 700 {} + && find 'keys' -type f -exec chmod 600 {} +"],
 	});
 	assert.ok(report);
-	assert.equal(report.details.length, 1);
 	assert.match(report.details[0], /-type f -exec chmod 600 \{\} \+/);
 });
 
@@ -582,4 +582,83 @@ test("a private key tree means no line", () => {
 		exposedKeyFilesReport({ exposed: [], exposedDirectories: [], fixes: [] }),
 		null,
 	);
+});
+
+// The instruction of the exposure line.
+//
+// A warning without an action leaves the reader with a fact they cannot use.
+// The line therefore carries the command, and an entry the harness could not
+// repair carries the reason and the offer to run it with sudo.
+
+test("the line explains why the warning appears on some machines and not on others", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "others" }],
+		fixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+		fileFixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+	});
+	assert.ok(report);
+	const details = report.details.join("\n");
+	assert.match(details, /mode 600/);
+	assert.match(details, /umask 022/);
+});
+
+test("an entry of another account is offered to the user with sudo", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "telegram-webhook-url.txt", mode: "644", readableBy: "others" }],
+		fixes: ["chmod 700 ~/.pi-harness-runtime/keys"],
+		fileFixes: ["chmod 600 ~/.pi-harness-runtime/keys/telegram-webhook-url.txt"],
+		unrepairable: [
+			{
+				path: "~/.pi-harness-runtime/keys/telegram-webhook-url.txt",
+				command: "sudo chmod 600 '/home/user/.pi-harness-runtime/keys/telegram-webhook-url.txt'",
+				reason: "owned by another account",
+			},
+		],
+	});
+	assert.ok(report);
+	const details = report.details.join("\n");
+	assert.match(details, /belongs to another account/);
+	assert.match(details, /May the agent run the command below with sudo for you\?/);
+	assert.match(details, /sudo -n/);
+	assert.match(details, /sudo chmod 600 '\/home\/user\/\.pi-harness-runtime\/keys\/telegram-webhook-url\.txt'/);
+	// A password is never asked for in the chat.
+	assert.match(details, /A password never belongs in the chat/);
+});
+
+test("a read-only file system is not offered a sudo command", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "others" }],
+		fixes: ["chmod 700 ~/.pi-harness-runtime/keys"],
+		fileFixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+		unrepairable: [
+			{
+				path: "~/.pi-harness-runtime/keys/openai-api-key.txt",
+				command: "sudo chmod 600 '/home/user/.pi-harness-runtime/keys/openai-api-key.txt'",
+				reason: "read-only",
+			},
+		],
+	});
+	assert.ok(report);
+	const details = report.details.join("\n");
+	assert.match(details, /read-only/);
+	assert.equal(details.includes("sudo chmod"), false);
+});
+
+test("the line never asks for a password", () => {
+	const report = exposedKeyFilesReport({
+		exposed: [{ file: "openai-api-key.txt", mode: "644", readableBy: "others" }],
+		fixes: ["chmod 700 ~/.pi-harness-runtime/keys"],
+		fileFixes: ["chmod 600 ~/.pi-harness-runtime/keys/openai-api-key.txt"],
+		unrepairable: [
+			{
+				path: "~/.pi-harness-runtime/keys/openai-api-key.txt",
+				command: "sudo chmod 600 '/home/user/.pi-harness-runtime/keys/openai-api-key.txt'",
+				reason: "not permitted",
+			},
+		],
+	});
+	assert.ok(report);
+	const text = [report.text, ...report.details].join("\n").toLowerCase();
+	assert.equal(text.includes("give me the password"), false);
+	assert.equal(text.includes("enter your password"), false);
 });
