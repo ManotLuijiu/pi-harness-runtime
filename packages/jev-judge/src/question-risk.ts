@@ -46,12 +46,67 @@ export interface QuestionRiskInput {
   askType?: string;
   /** The complete question text. */
   text?: string;
+  /**
+   * The concrete action the agent proposes.
+   *
+   * The risk is about the action, not about the whole message: a message
+   * that talks about many things carries words that have nothing to do with
+   * the action that is proposed.
+   */
+  proposedAction?: string;
 }
 
 interface RiskPattern {
   /** The name of the signal, used for diagnostics. */
   name: string;
   pattern: RegExp;
+}
+
+/**
+ * How much of the action reaches the classifier.
+ */
+export const MAX_ACTION_CHARS = 600;
+
+/**
+ * The verbs that state a concrete action.
+ *
+ * The risk is about the action that is proposed, so the action has to be
+ * found in the message. A sentence that names no action does not belong to
+ * the action: it talks about the request, not about what happens.
+ */
+const ACTION_VERBS =
+  /\b(delete|deletes|deleting|removed?|removing|drop|dropped|dropping|wipe|wipes|wiping|erase|erases|erasing|purge|purges|purging|truncate|truncates|truncating|revoke|revokes|revoking|rotate|rotates|rotating|reset|resets|resetting|rebuild|rebuilds|reinstall|reinstalls|uninstall|uninstalls|deploy|deploys|deploying|publish|publishes|publishing|release|releases|releasing|ship|ships|shipping|push|pushes|pushing|merge|merges|merging|rebase|rebases|force[- ]?push|squash|squashes|send|sends|sending|post|posts|posting|mail|mails|email|emails|notify|notifies|upload|uploads|uploading|transfer|transfers|wire|wires|pay|pays|paying|invoice|invoices|refund|refunds|migrate|migrates|migrating|upgrade|upgrades|downgrade|downgrades|install|installs|installing|overwrite|overwrites|overwriting|replace|replaces|replacing|rename|renames|renaming|move|moves|moving|copy|copies|copying|run|runs|running|execute|executes|restart|restarts|stop|stops|stopping|kill|kills|killing|close|closes|closing|grant|grants|granting|enable|enables|enabling|disable|disables|disabling|update|updates|updating|modify|modifies|modifying|write|writes|writing|patch|patches|patching|commit|commits|committing|revert|reverts|refactor|refactors|rewrite|rewrites|format|formats|lint|lints|generate|generates|create|creates|add|adds|implement|implements|build|builds|compile|compiles|seed|seeds|backfill|backfills|sync|syncs|fetch|fetches|query|queries|benchmark|benchmarks|profile|profiles|cleanup|cleanups|clean|cleans|prune|prunes)\b/i;
+
+/**
+ * The action the agent proposes.
+ *
+ * The message carries the ask ("may I proceed?") and the action ("I will
+ * delete the branch"). The risk is about the action, so the action is
+ * extracted: the sentences of the message that state what happens. The
+ * question sentence itself is not an action - it asks, it does not act.
+ *
+ * When the message names no action, the question text is the action: the
+ * risk of the question is then the risk of the ask.
+ */
+export function extractProposedAction(
+  contextText: string | undefined,
+  questionText: string | undefined,
+): string {
+  const question = (questionText ?? "").trim();
+  const context = (contextText ?? "").trim();
+  if (context.length === 0) return question.slice(0, MAX_ACTION_CHARS);
+
+  const sentences = context
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+  const actionSentences = sentences.filter(
+    (sentence) => sentence !== question && ACTION_VERBS.test(sentence),
+  );
+  if (actionSentences.length === 0) {
+    return question.slice(0, MAX_ACTION_CHARS);
+  }
+  return actionSentences.join(" ").slice(0, MAX_ACTION_CHARS);
 }
 
 /**
@@ -86,6 +141,36 @@ const SENSITIVE_PATTERNS: RiskPattern[] = [
 	{ name: "credentials", pattern: /\b(secret|credential|api[\s-]?key|token|password)\b/ },
 ];
 
+/**
+ * The words that turn an action into a prohibition.
+ *
+ * "do not delete anything" is a prohibition, not a proposal: the risk of a
+ * message must not turn the words of a prohibition into a destructive
+ * action that blocks the work for good.
+ */
+const NEGATION_WORDS =
+  /\b(do not|don'?t|never|without|avoid|refrain from|no need to)\b/;
+
+/**
+ * Is the action at this position prohibited?
+ *
+ * The negation has to stand in front of the action, in the same clause: a
+ * negation that belongs to another clause ("delete the branch, do not touch
+ * main") does not prohibit the deletion.
+ */
+function isNegated(text: string, index: number): boolean {
+	const before = text.slice(Math.max(0, index - 40), index);
+	// The clause of the action starts after the last sentence break.
+	const clause = before.split(/[.;!?\n]/).pop() ?? before;
+	return NEGATION_WORDS.test(clause);
+}
+
+/**
+ * Match the patterns of one kind of risk in a text.
+ *
+ * A pattern that is prohibited does not count: the words of a prohibition
+ * are not a proposal.
+ */
 function matchPatterns(
 	text: string,
 	patterns: RiskPattern[],
@@ -93,10 +178,11 @@ function matchPatterns(
 ): boolean {
 	let matched = false;
 	for (const { name, pattern } of patterns) {
-		if (pattern.test(text)) {
-			signals.push(name);
-			matched = true;
-		}
+		const match = pattern.exec(text);
+		if (!match) continue;
+		if (isNegated(text, match.index)) continue;
+		signals.push(name);
+		matched = true;
 	}
 	return matched;
 }
@@ -122,7 +208,12 @@ function matchPatterns(
 export function classifyQuestionRisk(
 	input: QuestionRiskInput,
 ): QuestionRiskFacts {
-	const text = (input.text ?? "").toLowerCase();
+	// The risk is about the action that is proposed. The proposed action
+	// describes it best; without one the question text does. The whole
+	// message is not the input: it carries the words of everything the
+	// agent said, and a word is not a risk.
+	const action = (input.proposedAction ?? input.text ?? "").trim();
+	const text = action.toLowerCase();
 	const kind = input.kind;
 	const signals: string[] = [];
 

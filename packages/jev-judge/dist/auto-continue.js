@@ -10,6 +10,7 @@
 import { JevJudge } from "./index.js";
 import { logError } from "./file-logger.js";
 import { buildChoiceDecisionContext, describeChoiceOption, renderChoiceExcerpt, MAX_CHOICE_OPTIONS, } from "./decision-context.js";
+import { classifyQuestionRisk } from "./question-risk.js";
 /** How many task titles reach the evaluation. */
 export const MAX_LISTED_TASKS = 10;
 /** How much of the question text reaches the evaluation. */
@@ -199,12 +200,15 @@ const DEFAULT_CONFIG = {
 export class AutoContinueJudge {
     jev;
     config;
-    constructor(config) {
+    constructor(config, judge) {
         this.config = {
             ...DEFAULT_CONFIG,
             ...config,
         };
-        this.jev = new JevJudge(config);
+        // The judge can be injected. The evaluation is the boundary to the
+        // provider, and a test has to be able to make that boundary fail: a
+        // provider failure is not a decision, and that has to be provable.
+        this.jev = judge ?? new JevJudge(config);
     }
     /**
      * Judge whether to continue or wait
@@ -285,16 +289,20 @@ export class AutoContinueJudge {
             // evaluation: the decision has to pick one of them, and it has to
             // say how far the work goes with it.
             const alternatives = (taskState.context?.question?.alternatives ?? []).slice(0, MAX_CHOICE_OPTIONS);
-            if (alternatives.length >= 2) {
+            // The facts of the alternatives. The risk of the selected option is
+            // derived from them, so they are kept for the whole decision.
+            const choiceContext = alternatives.length >= 2
+                ? buildChoiceDecisionContext({
+                    question: taskState.context?.question?.text ?? "",
+                    alternatives,
+                    contextText: taskState.context?.question?.contextText,
+                })
+                : null;
+            if (choiceContext) {
                 const criteria = {};
                 // The criterion carries the meaning of the option, not only its
                 // label: "implement A" alone does not tell the evaluation what
                 // A does.
-                const choiceContext = buildChoiceDecisionContext({
-                    question: taskState.context?.question?.text ?? "",
-                    alternatives,
-                    contextText: taskState.context?.question?.contextText,
-                });
                 alternatives.forEach((alternative, index) => {
                     const option = choiceContext.options[index];
                     criteria[`option_${index + 1}`] = option
@@ -319,12 +327,64 @@ export class AutoContinueJudge {
                 };
             }
             const result = await this.jev.evaluate(state, questions);
-            return this.applyPolicy(this.buildDecision(result, taskState), taskState);
+            const decision = this.buildDecision(result, taskState);
+            // The risk of the option that was selected, not only the risk of the
+            // question: an alternative can ask for something the question did not
+            // mention.
+            this.applySelectedOptionRisk(decision, taskState, choiceContext);
+            return this.applyPolicy(decision, taskState);
         }
         catch (error) {
             logError("[AutoContinueJudge]", `Jev call failed: ${error}`);
-            return this.applyPolicy(this.fallbackDecision(taskState), taskState);
+            const decision = this.fallbackDecision(taskState);
+            // The evaluation failed. The fallback is not a decision of Jev: it is
+            // marked, so the runtime can tell a provider failure from a decision
+            // to wait.
+            decision.evaluationError = {
+                kind: "provider",
+                message: error instanceof Error ? error.message : String(error),
+            };
+            return this.applyPolicy(decision, taskState);
         }
+    }
+    /**
+     * The risk of the option the evaluation selected.
+     *
+     * The option carries its own action, and that action can be riskier than
+     * the question that offered it. An option that needs an explicit human
+     * authorization is not decided autonomously, whatever the evaluation
+     * proposed.
+     */
+    applySelectedOptionRisk(decision, taskState, choiceContext) {
+        if (!decision.selectedOption || !choiceContext)
+            return;
+        // The decision names the alternative the evaluation picked. The option
+        // of the context is found by its position: the alternatives and the
+        // options have the same order.
+        const alternatives = taskState.context?.question?.alternatives ?? [];
+        const index = alternatives.indexOf(decision.selectedOption);
+        const option = index >= 0 ? choiceContext.options[index] : undefined;
+        if (!option)
+            return;
+        // The action of the option: its label (what the agent offered), its
+        // description and its constraints. The label alone can name the
+        // action: "delete the production database" is the action.
+        const action = [option.label, option.description, ...option.constraints]
+            .filter((part) => part.length > 0)
+            .join(" ");
+        if (action.length === 0)
+            return;
+        const risk = classifyQuestionRisk({
+            kind: taskState.context?.question?.kind,
+            askType: taskState.context?.question?.askType,
+            text: action,
+        });
+        if (!risk.requiresExplicitAuthorization)
+            return;
+        decision.outcome = "wait";
+        decision.action = "wait";
+        decision.policyApplied = "selected-option-requires-authorization";
+        decision.reasoning = `${decision.reasoning} - the selected option needs an explicit human authorization`;
     }
     /**
      * Apply the deterministic policy to a proposed decision.
@@ -616,19 +676,27 @@ export function buildDecisionState(taskState) {
 }
 /**
  * Helper: Create task state from todo list
+ *
+ * The wait is measured from the moment the question was asked. The last
+ * activity of the user is only the fallback: a session that coded for twenty
+ * minutes and then waited five minutes for an answer must not tell the
+ * evaluation that it waited twenty-five minutes.
  */
-export function createTaskState(completedTasks, remainingTasks, lastUserActivity, sessionStartTime, context) {
+export function createTaskState(completedTasks, remainingTasks, lastUserActivity, sessionStartTime, context, options) {
     const totalTasks = completedTasks.length + remainingTasks.length;
+    const now = options?.now ?? (() => Date.now());
+    const waitStartedAt = options?.questionAskedAt ?? lastUserActivity;
     return {
         completedTasks,
         remainingTasks,
         totalTasks,
-        waitTimeMinutes: lastUserActivity
-            ? Math.round((Date.now() - lastUserActivity.getTime()) / 60000)
+        waitTimeMinutes: waitStartedAt
+            ? Math.round((now() - waitStartedAt.getTime()) / 60000)
             : 0,
         userResponded: false,
         lastUserActivity,
         sessionStartTime: sessionStartTime ?? new Date(),
+        questionAskedAt: options?.questionAskedAt,
         context,
     };
 }

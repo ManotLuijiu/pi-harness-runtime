@@ -184,16 +184,13 @@ test("a release that throws does not leave the countdown running", () => {
 });
 
 test("the wait state is cleared in one place only", () => {
-	// Every way out of a wait goes through one release, so a way out that
-	// forgets the countdown cannot be added without failing this check.
-	const clears = [...indexSource.matchAll(/(?<![.\w])waitingForUserSince = null;/g)];
-	assert.equal(clears.length, 1, "the wait state is cleared in one place only");
-
+	// The controller owns the wait: it is released in one place only, so a
+	// way out that forgets it cannot be added without failing this check.
 	const stateFn = indexSource.match(/function clearWaitState\(\): void \{[^}]*\}/);
 	assert.ok(stateFn, "the shared release of the wait state exists");
 	assert.ok(
-		stateFn[0].includes("waitingForUserSince = null"),
-		"the release of the wait state clears the wait",
+		stateFn[0].includes("waitLifecycle.cancel()"),
+		"the release of the wait state cancels the wait of the controller",
 	);
 
 	const releaseFn = indexSource.match(/function clearWait\(\): void \{[\s\S]*?\n\t\t\}/);
@@ -219,8 +216,8 @@ test("every way out of a wait goes through the shared release", () => {
 		const around = indexSource.slice(Math.max(0, stop.index - 300), stop.index + 300);
 		if (around.includes("clearWaitState")) continue;
 		assert.ok(
-			!/waitingForUserSince = null;/.test(around),
-			"a countdown that is stopped by hand does not clear the wait state",
+			!/waitLifecycle\.cancel\(\);/.test(around),
+			"a countdown that is stopped by hand does not cancel the wait",
 		);
 	}
 });
@@ -231,17 +228,84 @@ test("the wait of a session that is gone is never decided about", () => {
 	// decide about after a switch of the session.
 	assert.match(
 		indexSource,
-		/if \(!waitingForUserSince\) return;/,
+		/const result = await waitLifecycle\.evaluateDue\(\);/,
 		"the judge is asked only while a wait is running",
 	);
 	assert.match(
 		indexSource,
-		/function clearWaitState\(\): void \{\s*\n\s*waitingForUserSince = null;/,
-		"the release of a wait clears the wait state",
+		/function clearWaitState\(\): void \{[\s\S]{0,200}waitLifecycle\.cancel\(\);/,
+		"the release of a wait cancels the wait of the controller",
 	);
 	assert.match(
 		indexSource,
 		/expireQuestion: \(requestId: string, why: string\) =>\s*\n\s*sharedState\.pqController\?\.expireByTimeout\?\.\(requestId, why\)/,
 		"the release of a wait closes the question",
+	);
+});
+
+test("the decision is applied only to the request it was evaluated for", () => {
+	// A decision belongs to the question it was evaluated for. The
+	// controller stamps that identity on the result, and the result is
+	// applied only while it is the request that waits: a decision of a
+	// question that was replaced must not close, continue, pause or clear
+	// the question that waits now.
+	const applyFn = indexSource.match(
+		/const applyWaitDecision = async \([\s\S]*?\n\t\t\};/,
+	);
+	assert.ok(applyFn, "the application of the decision exists");
+	const source = applyFn[0];
+
+	const gate = source.indexOf("waitLifecycle.ownsEvaluation(evaluation)");
+	assert.notEqual(
+		gate,
+		-1,
+		"the decision is checked against the request that waits",
+	);
+
+	for (const [what, marker] of [
+		["the question is resolved", "resolveByJev"],
+		["the work is paused", "explicitPause"],
+		["the agent continues", "sendUserMessage"],
+		["the wait is cleared", "clearWait()"],
+		["the status changes", "updateAutoContinueStatus"],
+	]) {
+		const at = source.indexOf(marker);
+		assert.notEqual(at, -1, `${what} happens in the application of the decision`);
+		assert.ok(gate < at, `${what} happens after the check of the request`);
+	}
+
+	assert.ok(
+		source.includes("const requestId = evaluation.requestId;"),
+		"the request of the decision is the one it was evaluated for",
+	);
+	assert.ok(
+		!source.includes("waitLifecycle.currentRequestId"),
+		"the application does not read the request that happens to be current",
+	);
+});
+
+test("a decision that was discarded does not block the next question", () => {
+	// The guard against a second, overlapping evaluation is released when
+	// the attempt is over. A decision that was discarded leaves no guard
+	// behind, so the next question can be decided.
+	const checkFn = indexSource.match(
+		/const checkAndAutoContinue = async \([\s\S]*?\n\t\t\};/,
+	);
+	assert.ok(checkFn, "the decision of the pending question exists");
+	const source = checkFn[0];
+
+	const notApplied = source.indexOf("if (!result.applied || !result.evaluation)");
+	assert.notEqual(notApplied, -1, "the path of a result that was not applied exists");
+	const release = source.indexOf("_inferenceInProgress = false;", notApplied);
+	assert.ok(
+		release > notApplied && release < source.indexOf("return;", notApplied),
+		"a result that was not applied releases the guard against a second evaluation",
+	);
+
+	const applied = source.indexOf("await applyWaitDecision(result.evaluation)");
+	assert.notEqual(applied, -1, "the decision is applied");
+	assert.ok(
+		source.indexOf("_inferenceInProgress = false;", applied) > applied,
+		"the guard is released after the decision was applied",
 	);
 });

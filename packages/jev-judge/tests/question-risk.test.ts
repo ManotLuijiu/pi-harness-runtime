@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { classifyQuestionRisk } from "../src/question-risk.js";
+import { classifyQuestionRisk, extractProposedAction } from "../src/question-risk.js";
 
 describe("classifyQuestionRisk", () => {
 	describe("a routine continuation question", () => {
@@ -125,5 +125,68 @@ describe("classifyQuestionRisk", () => {
 
 			expect(risk.external).toBe(true);
 		});
+	});
+});
+
+describe("the action that is proposed", () => {
+	it("is extracted from the message, not from the whole message", () => {
+		const action = extractProposedAction(
+			"The parser is slow. I will refactor the tokenizer. May I proceed?",
+			"May I proceed?",
+		);
+
+		// The sentence that states what happens is the action. The question
+		// sentence is not: it asks, it does not act.
+		expect(action).toContain("refactor the tokenizer");
+		expect(action).not.toContain("May I proceed?");
+	});
+
+	it("falls back to the question when the message names no action", () => {
+		const action = extractProposedAction("May I proceed?", "May I proceed?");
+
+		expect(action).toBe("May I proceed?");
+	});
+
+	it("does not turn a prohibition into a proposal", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "do not delete anything from the workspace",
+		});
+
+		// The words of a prohibition are not a destructive action.
+		expect(risk.destructive).toBe(false);
+		expect(risk.requiresExplicitAuthorization).toBe(false);
+	});
+
+	it("still sees the destructive action when it is proposed", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "delete the release branch",
+		});
+
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("does not let a negation of another clause hide the action", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "delete the branch, do not touch main",
+		});
+
+		// The negation belongs to the second clause: the deletion stands.
+		expect(risk.destructive).toBe(true);
+	});
+
+	it("keeps a question that names no action harmless", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Want me to implement the toggle buttons now?",
+		});
+
+		expect(risk.requiresExplicitAuthorization).toBe(false);
 	});
 });

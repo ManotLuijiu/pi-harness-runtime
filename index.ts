@@ -298,7 +298,14 @@ function keyFileFixesOrFallback(feature: string, labels: string[]): string[] {
 
 // Shared state for callback handlers (accessible across init functions)
 const sharedState = {
-	waitingForUserSince: null as Date | null,
+	/**
+	 * Release the wait of the lifecycle controller.
+	 *
+	 * The controller owns the wait: a question that was answered must
+	 * release it, so a late evaluation of that question cannot change
+	 * anything.
+	 */
+	cancelWait: null as null | (() => void),
 	todoContinuationController: null as unknown,
 	// The ledger of the validation runs. The two-phase workflow reads it to
 	// know whether the final tier of a test item passed.
@@ -349,7 +356,9 @@ function applyChannelApproval(
 
 	// The question is answered, so the wait is over. The wait state is only
 	// cleared after a successful resolution.
-	sharedState.waitingForUserSince = null;
+	// The controller owns the wait: the answer ends it, and an evaluation
+	// that is still running is invalidated with it.
+	sharedState.cancelWait?.();
 	sharedState.updateAutoContinueStatus?.("IDLE");
 	// The countdown of the answered question is over with it.
 	sharedState.pendingCountdown?.stop();
@@ -901,7 +910,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// Resolve the provider chain. Every credential stays bound to its own
 		// provider: a TypeSafe key is never sent to OpenRouter and an OpenRouter
 		// key is never sent to the TypeSafe API.
-		const { resolveJevProviders, classifyQuestionRisk } = await import("./packages/jev-judge/dist/index.js");
+		const { resolveJevProviders, classifyQuestionRisk, extractProposedAction } = await import("./packages/jev-judge/dist/index.js");
 		const jevProviders = resolveJevProviders({ keysDir });
 
 		// Create pending question controller - works independently of Jev
@@ -941,12 +950,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// JavaScript, so importing "src/auto-continue.js" would depend on
 		// build artifacts that are not part of the package.
 		const mod = await import("./packages/jev-judge/dist/auto-continue.js");
+		// The lifecycle of the wait for a human answer.
+		//
+		// The controller owns the question that is waiting, the moment it
+		// was asked, the countdown and the decision. The runtime reads the
+		// state of the wait; it does not keep a second copy of it, so the
+		// countdown, the evaluation and the log always measure the same
+		// wait.
+		const { WaitLifecycleController } = await import(
+			"./packages/jev-judge/dist/wait-lifecycle.js"
+		);
 		// The instruction of an autonomous decision: it names the selected
 		// option, the scope and the reasoning of the decision.
 		const autonomy = await import("./packages/jev-judge/dist/autonomy-instruction.js");
 
-		// Track waiting state
-		let waitingForUserSince: Date | null = null;
 		let lastUserMessage: Date | null = null;
 		let autoContinueTimer: NodeJS.Timeout | null = null;
 		let _inferenceInProgress = false; // Track for overlap prevention
@@ -954,8 +971,47 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// decision of the judge use the same constants, so the displayed
 		// deadline and the decision can never drift apart.
 		const AUTO_CONTINUE_INTERVAL_MS = 60 * 1000; // Fallback poll: every minute
-		const MIN_WAIT_MINUTES = 5; // Minimum wait before auto-continue
-		const MAX_WAIT_MINUTES = 30; // After this the work pauses instead of waiting
+		const MIN_WAIT_MINUTES = 5; // The question is decided once, after this wait
+		// The lifecycle of the wait.
+		//
+		// The controller owns the request the wait belongs to, the moment
+		// the question was asked, the countdown and the evaluation. It runs
+		// the evaluation exactly once: a decision to wait ends the automatic
+		// attempt, and a provider failure is an error, not a decision.
+		const waitLifecycle = new WaitLifecycleController({
+			waitMinutes: MIN_WAIT_MINUTES,
+			countdown: {
+				get active() {
+					return pendingCountdown.active;
+				},
+				start: (requestId: string, startedAt: number) => {
+					_countdownSessionId = _piSessionId;
+					pendingCountdown.start(requestId, startedAt);
+				},
+				stop: () => pendingCountdown.stop(),
+			},
+			currentSessionId: () => _sessionId,
+			evaluate: (request, waitedMs) => evaluatePendingQuestion(request, waitedMs),
+			onState: (state, detail) => {
+				logToFile("[auto-continue]", `The wait is ${state}: ${detail.reason}`);
+			},
+			onError: (error) => {
+				logToFile("[auto-continue]", "The wait lifecycle failed:", oneLineError(error));
+			},
+		});
+
+		/**
+		 * Is the harness waiting for an answer of a human?
+		 *
+		 * The controller owns that state: the runtime only asks.
+		 */
+		function isWaitingForUser(): boolean {
+			return (
+				waitLifecycle.currentState === "waiting" ||
+				waitLifecycle.currentState === "evaluating"
+			);
+		}
+
 		// A continuation was dispatched and its turn has not settled yet.
 		// The gate owns that state: the status stays "RUN" until the turn
 		// settles, and no timer may clear it in the meantime.
@@ -1088,31 +1144,33 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		// judge exactly at the deadline. The fallback poll only takes over
 		// when there is no countdown, so a decision is never started twice.
 		const pendingCountdown = new PendingQuestionCountdown({
-			// The two policies of the wait belong to the countdown, so the
+			// The one policy of the wait belongs to the countdown, so the
 			// displayed deadline and the deadline of the judge cannot drift
 			// apart.
 			waitMinutes: MIN_WAIT_MINUTES,
-			recheckIntervalMs: AUTO_CONTINUE_INTERVAL_MS,
 			render: (view: CountdownView) => {
 				_countdownRowRequestId = view.requestId;
 				updateAutoContinueStatus(
 					"WAITING",
 					view.requestId.slice(0, 8),
-					view.mode === "recheck"
-						? `Jev will recheck in ${view.remaining}`
-						: `Jev decision in ${view.remaining}`,
+					`Jev decision in ${view.remaining}`,
 				);
 			},
 			onDeadline: (requestId: string) => {
 				logToFile("[auto-continue]", "The decision deadline was reached:", requestId);
 				checkAndAutoContinue("countdown")
 					.then(() => {
-						// The decision did not start - another one was still in
+						// The decision did not start: another one was still in
 						// flight, or the wait was gone before it ran. The
-						// deadline is not lost: the countdown is armed again
-						// and the decision follows.
+						// deadline is not lost: the fallback poll takes the
+						// decision over, because the lifecycle evaluates a
+						// request exactly once.
 						if (pendingCountdown.fired && pendingCountdown.requestId === requestId) {
-							pendingCountdown.startRecheck(requestId);
+							logToFile(
+								"[auto-continue]",
+								"The decision did not start - the fallback poll takes over:",
+								requestId,
+							);
 						}
 					})
 					.catch((error) => {
@@ -1126,7 +1184,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// The wait must still belong to the request: a late tick of
 				// an answered or replaced question must not draw its status
 				// and must not trigger a decision.
-				if (!waitingForUserSince) return false;
+				if (!isWaitingForUser()) return false;
 				if (_countdownSessionId !== _piSessionId) return false;
 				const current = sharedState.pqController?.getCurrentQuestion?.();
 				if (!current) return false;
@@ -1157,31 +1215,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		sharedState.pendingCountdown = pendingCountdown;
 
 		// Wire shared state for callback handlers
-		sharedState.waitingForUserSince = waitingForUserSince;
+		sharedState.cancelWait = () => {
+			waitLifecycle.cancel();
+		};
 		sharedState.updateAutoContinueStatus = updateAutoContinueStatus;
 
 		/**
-		 * Start the countdown of a pending question.
+		 * The short hash of the current question.
 		 *
-		 * The deadline of the decision is derived from the wait that is
-		 * already running, so the displayed deadline and the decision of
-		 * the judge can never drift apart.
+		 * It identifies the question in the status row without showing the
+		 * question itself.
 		 */
-		function startPendingCountdown(requestId: string): void {
-			_countdownSessionId = _piSessionId;
-			const startedAt = waitingForUserSince?.getTime() ?? Date.now();
-			pendingCountdown.start(requestId, startedAt);
-		}
-
-		/**
-		 * Start the countdown of the next attempt.
-		 *
-		 * The judge asked to wait longer: the countdown counts down to the
-		 * next attempt instead of to the deadline of the decision.
-		 */
-		function startRecheckCountdown(requestId: string): void {
-			_countdownSessionId = _piSessionId;
-			pendingCountdown.startRecheck(requestId);
+		function questionHash(): string {
+			return _lastNotifiedQuestion
+				? Math.abs(
+						_lastNotifiedQuestion.split("").reduce((a, c) => {
+							a = ((a << 5) - a) + c.charCodeAt(0);
+							return a & a;
+						}, 0),
+					).toString(36)
+				: "";
 		}
 
 		// Update auto-continue status in TUI footer
@@ -1225,8 +1278,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		 * not keep the harness from noticing the same question again.
 		 */
 		function clearWaitState(): void {
-			waitingForUserSince = null;
-			sharedState.waitingForUserSince = null;
+			// The controller owns the wait: it releases the request, the
+			// countdown and the timestamp in one move.
+			waitLifecycle.cancel();
 			_lastNotifiedQuestion = "";
 		}
 
@@ -1376,7 +1430,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 			// Only trigger if: we found a question AND it's different from last notification
 			// Skip routine continuation questions - let Jev/todo controller decide
-			if (result.detected && result.questionText && result.questionText !== _lastNotifiedQuestion && !waitingForUserSince) {
+			if (result.detected && result.questionText && result.questionText !== _lastNotifiedQuestion && !isWaitingForUser()) {
 				// Skip routine continuation - don't block automatic continuation
 				if (result.isRoutine) {
 					logToFile("[auto-continue]", "Routine continuation detected, not blocking");
@@ -1385,15 +1439,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				
 				// Create question in controller
 				const questionKind = result.kind || "approval";
-				// The risk facts of the proposed action are derived from the
-				// whole message, not from the question sentence alone: the
-				// sentence often leaves out what the agent is really waiting
-				// for. They are recorded with the request: the autonomous
-				// decision is only as safe as these facts.
+				// The risk is about the action that is proposed, not about the
+				// whole message: a message that talks about many things
+				// carries words that have nothing to do with the action that
+				// is proposed. The action is extracted from the message, and
+				// a prohibition ("do not delete anything") does not count as
+				// a proposal.
+				const proposedAction = extractProposedAction(
+					result.contextText,
+					result.questionText,
+				);
 				const riskFacts = classifyQuestionRisk({
 					kind: questionKind,
 					askType: result.askType,
-					text: result.contextText || result.questionText,
+					text: result.questionText,
+					proposedAction,
 				});
 				const question = pqController.createQuestion({
 					text: result.questionText,
@@ -1416,21 +1476,30 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				logQuestionTransition(question.requestId, "detected", result.askType ?? questionKind);
 
 					_lastNotifiedQuestion = result.questionText;
-					waitingForUserSince = new Date();
 
 					// Use question.requestId as the jobId for callback matching
 					const questionJobId = question.requestId;
 
-					// The status row counts down to the decision of the judge.
-					// The countdown is bound to this request, so a newer
-					// question replaces it.
-					startPendingCountdown(questionJobId);
+					// The wait starts here. The controller owns the question,
+					// the moment it was asked and the countdown, so the
+					// deadline of the decision and the deadline of the
+					// countdown are the same moment. A question that replaces
+					// this one invalidates the evaluation of this one.
+					waitLifecycle.begin({
+						requestId: questionJobId,
+						sessionId: _sessionId,
+						kind: questionKind,
+						askType: result.askType,
+						text: result.questionText,
+						contextText: result.contextText,
+						alternatives: result.alternatives,
+					});
 
 				// Get task context for additional info
 				const taskContext = await getTaskContext().catch(() => ({ total: 0, completed: 0, remaining: [] as string[] }));
 
 				// Build rich context message
-				const waitMinutes = Math.round((Date.now() - waitingForUserSince!.getTime()) / 60000);
+				const waitMinutes = Math.round(waitLifecycle.waitedMinutes());
 				const taskInfo = taskContext.total > 0
 					? `Tasks: ${taskContext.completed}/${taskContext.total} done`
 					: "No active tasks";
@@ -1584,7 +1653,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						}
 					}
 				lastUserMessage = new Date();
-				if (waitingForUserSince) {
+				if (isWaitingForUser()) {
 					// The user answered in Pi: the wait and the countdown of
 					// the wait are over with it.
 					clearWait();
@@ -1598,23 +1667,30 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Periodic check for auto-continue decision
 
-		const checkAndAutoContinue = async (source: "countdown" | "poll" = "poll") => {
-			// Prevent overlap if inference is already in progress
-			if (_inferenceInProgress) {
-				// A deadline that was blocked is armed again by the caller of
-				// the countdown, so the decision is not lost.
-				return;
-			}
-
-			if (!waitingForUserSince) return;
-
-			// The countdown owns the wait while it runs: the fallback poll
-			// only takes over when there is no countdown, so the decision is
-			// never started twice.
-			if (source === "poll" && pendingCountdown.active) return;
-
-			// Capture session ID at check time for post-inference validation
-			const checkSessionId = _sessionId;
+		/**
+		 * The evaluation of the pending question.
+		 *
+		 * The controller owns the lifecycle of the wait; this function is
+		 * the evaluation itself: it asks the judge once and returns the
+		 * result. The application of the outcome happens in the caller, so
+		 * a result that belongs to a question that is gone never reaches
+		 * the work.
+		 */
+		const evaluatePendingQuestion = async (
+			request: {
+				requestId: string;
+				sessionId: string;
+				kind?: string;
+				askType?: string;
+				text?: string;
+				contextText?: string;
+				alternatives?: string[];
+			},
+			waitedMs: number,
+		): Promise<import("./packages/jev-judge/dist/wait-lifecycle.js").WaitEvaluation> => {
+			// The one elapsed time: the wait that the controller measured
+			// from the moment the question was asked.
+			const waitMinutes = waitedMs / 60000;
 			// Use same hash algorithm as detection
 			const questionHash = _lastNotifiedQuestion
 				? Math.abs(_lastNotifiedQuestion.split("").reduce((a, c) => {
@@ -1623,13 +1699,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					}, 0)).toString(36)
 				: "";
 
-			const waitMinutes = (Date.now() - waitingForUserSince.getTime()) / 60000;
-			// The judge is only asked once the question waited long enough.
-			if (!mod.isEligibleForDecision?.(waitMinutes, MIN_WAIT_MINUTES)) return;
-
 			// Update status to checking
 			updateAutoContinueStatus("CHECKING", questionHash);
-
 			try {
 				// Mark inference as in progress to prevent overlap
 				_inferenceInProgress = true;
@@ -1674,10 +1745,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (taskContext.total === 0 && !hasPendingQuestion) {
 					logToFile("[auto-continue]", "No tasks and no pending questions, skipping auto-continue check");
 					_inferenceInProgress = false;
-					// The countdown is over: the fallback poll takes over the
-					// next attempt.
-					pendingCountdown.stop();
-					return;
+					// There is nothing to decide about: the work has no task
+					// and no question. The wait ends with it, and no decision
+					// is made: a decision would claim that a human is
+					// needed, and nobody is. The controller releases the
+					// wait, so the result of this evaluation is discarded as
+					// stale and the work is not paused.
+					waitLifecycle.cancel();
+					// The countdown is over with the wait.
+					updateAutoContinueStatus("IDLE");
+					return {
+						outcome: "wait",
+						reasoning: "there is no task and no pending question to decide about",
+						policyApplied: "nothing-to-decide",
+					};
 				}
 
 				// The question Jev has to decide about. Without it Jev only
@@ -1698,24 +1779,43 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						: classifyQuestionRisk({
 								kind: pendingQuestion.kind,
 								askType: pendingQuestion.askType,
-								text:
-									pendingQuestion.contextText ?? pendingQuestion.questionText,
+								text: pendingQuestion.questionText,
+								proposedAction: extractProposedAction(
+									pendingQuestion.contextText,
+									pendingQuestion.questionText,
+								),
 							})
 					: undefined;
-				const questionContext = pendingQuestion
-					? {
-						requestId: pendingQuestion.requestId,
-						text: pendingQuestion.questionText,
-						kind: pendingQuestion.kind,
-						askType: pendingQuestion.askType,
-						alternatives: pendingQuestion.alternatives,
-						contextText: pendingQuestion.contextText,
-						requiresExplicitAuthorization: riskFacts?.requiresExplicitAuthorization,
-						destructive: riskFacts?.destructive,
-						external: riskFacts?.external,
-						reversible: riskFacts?.reversible,
-					}
-					: undefined;
+				// The question of the request that was evaluated. The request
+				// owns it: the evaluation belongs to that request, not to
+				// whatever question happens to be current.
+				const questionContext = {
+					requestId: request.requestId,
+					text: pendingQuestion?.questionText ?? request.text ?? "",
+					kind: (pendingQuestion?.kind ?? request.kind ?? "approval") as
+						| "routine"
+						| "approval"
+						| "choice"
+						| "clarification"
+						| "explicit",
+					askType: (pendingQuestion?.askType ?? request.askType) as
+						| "approval"
+						| "choice"
+						| "clarification"
+						| "explicit_authorization"
+						| "routine"
+						| undefined,
+					alternatives: request.alternatives ?? pendingQuestion?.alternatives,
+					contextText: request.contextText ?? pendingQuestion?.contextText,
+					proposedAction: extractProposedAction(
+						request.contextText ?? pendingQuestion?.contextText,
+						request.text ?? pendingQuestion?.questionText,
+					),
+					requiresExplicitAuthorization: riskFacts?.requiresExplicitAuthorization,
+					destructive: riskFacts?.destructive,
+					external: riskFacts?.external,
+					reversible: riskFacts?.reversible,
+				};
 
 				const decisionContext = {
 					question: questionContext,
@@ -1733,7 +1833,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							? `${pendingFinalTier.length} final tier(s) pending`
 							: "no pending final tier",
 					waitedMinutes: Math.round(waitMinutes),
-					deadlineMinutes: MAX_WAIT_MINUTES,
+					deadlineMinutes: MIN_WAIT_MINUTES,
 					lastUserActivity: lastUserMessage || undefined,
 				};
 
@@ -1743,38 +1843,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					lastUserMessage || undefined,
 					new Date(Date.now() - waitMinutes * 60000),
 					decisionContext,
+					// The wait is measured from the moment the question was
+					// asked: the evaluation and the countdown see one time.
+					{ questionAskedAt: new Date(Date.now() - waitedMs) },
 				);
 
-					logQuestionTransition(questionContext?.requestId, "eligible", `waited ${Math.round(waitMinutes)}m`);
+					logQuestionTransition(request.requestId, "eligible", `waited ${Math.round(waitMinutes)}m`);
 
 				const decision = await judge.decide(taskState);
-				logQuestionTransition(questionContext?.requestId, "jev-outcome", decision.outcome ?? decision.action);
-
-					// Check session validity and user response before applying
-					if (checkSessionId !== _sessionId) {
-						// Session changed - cancel pending question
-						sharedState.pqController?.cancel("Session switched");
-						_inferenceInProgress = false;
-						updateAutoContinueStatus("IDLE");
-						return;
-					}
-
-					if (!waitingForUserSince) {
-						_inferenceInProgress = false;
-						updateAutoContinueStatus("IDLE");
-						return;
-					}
-
-					// Check if question was explicitly rejected - don't auto-continue after "Not yet"
-					if (sharedState.pqController?.isResolved()) {
-						const resolution = sharedState.pqController?.getResolution();
-						if (resolution === "no") {
-							logToFile("[auto-continue]", "Question was rejected - not auto-continuing");
-							_inferenceInProgress = false;
-							updateAutoContinueStatus("IDLE");
-							return;
-						}
-					}
+				logQuestionTransition(request.requestId, "jev-outcome", decision.outcome ?? decision.action);
 
 				// The typed outcome of the decision. The action is the
 				// fallback for a judge that does not know the outcome yet.
@@ -1786,174 +1863,254 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					else outcome = "wait";
 				}
 
-				if (outcome === "wait") {
-					// A wait decision is bounded: after the deadline the work
-					// pauses instead of waiting for a user who is not there.
-					// The question stays open: it is not closed with a Jev
-					// decision, so the next check can still decide about it.
-					logToFile(
-						"[auto-continue]",
-						`Jev decided to wait (${Math.round(waitMinutes)}m waited, deadline ${MAX_WAIT_MINUTES}m): ${logReasoning(decision.reasoning)}`,
-					);
-					logQuestionTransition(
-						questionContext?.requestId,
-						"wait",
-						decision.policyApplied ?? "retry",
-					);
-					if (waitMinutes >= MAX_WAIT_MINUTES) {
-						logToFile("[auto-continue]", "Decision deadline reached - pausing the work");
-						// The deadline is a terminal path: the pending question
-						// is closed, so the notification does not stay open
-						// with nobody waiting for it any more.
-						const expired = questionContext?.requestId
-							? sharedState.pqController?.expireByTimeout?.(
-									questionContext.requestId,
-									"deadline-expired",
-								) === true
-							: false;
-						logQuestionTransition(
-							questionContext?.requestId,
-							expired ? "expired" : "deadline",
-							"deadline-expired",
-						);
-						(sharedState.todoContinuationController as any)?.explicitPause?.();
-						if (questionContext?.requestId) {
-							_nc?.notify("Info", {
-								jobId: `expired-${questionContext.requestId}`,
-								requirement:
-									"The request expired: no answer was received before the decision deadline. The work is paused until you answer.",
-							}).catch((e) =>
-								logToFile("[Notification]", "Expiry notification failed:", String(e)),
-							);
-						}
-						// The deadline belongs to the captured question: a newer
-						// question keeps its own wait state.
-						if (waitBelongsToRequest(questionContext?.requestId)) {
-							// The request expired: the wait and the countdown
-							// of the wait are over with it.
-							clearWait();
-							updateAutoContinueStatus("IDLE");
-						}
-					} else {
-						// The request stays open: the countdown counts down to
-						// the next check, so the retry does not wait for the
-						// fallback poll.
-						if (questionContext?.requestId) {
-							startRecheckCountdown(questionContext.requestId);
-						} else {
-							updateAutoContinueStatus("WAITING");
-						}
-					}
-				} else {
-					// Close the question with the Jev decision. The buttons of
-					// that request ID become stale and no synthetic user
-					// answer is injected: nobody clicked anything.
-					//
-					// A failed close means the request is no longer pending: a
-					// human answered while Jev was still evaluating. The
-					// human answer wins, so the stale decision is discarded
-					// and no continuation steer is sent.
-					const closed = questionContext?.requestId
-						? sharedState.pqController?.resolveByJev?.(
-								questionContext.requestId,
-								outcome,
-								decision.reasoning,
-								{
-									selectedOption: decision.selectedOption,
-									scope: decision.scope,
-									reasoning: decision.reasoning,
-								},
-							) === true
-						: false;
-					const application = mod.decideOutcomeApplication(outcome, closed);
+				// The evaluation is done. The controller decides whether the
+				// result still belongs to the question that waits: a result
+				// of an answered or replaced question is discarded there.
+				return {
+					outcome,
+					selectedOption: decision.selectedOption,
+					scope: decision.scope,
+					reasoning: decision.reasoning,
+					policyApplied: decision.policyApplied,
+					riskLevel: decision.riskLevel,
+					error: decision.evaluationError,
+				};
+			} catch (error) {
+				// The evaluation failed. That is an error, not a decision:
+				// nothing was decided, the question stays open and the work
+				// is not continued.
+				_inferenceInProgress = false;
+				logToFile("[auto-continue]", "The evaluation of the question failed:", oneLineError(error));
+				return {
+					outcome: "wait",
+					reasoning: "",
+					error: {
+						kind: "provider",
+						message: error instanceof Error ? error.message : String(error),
+					},
+				};
+			}
+		};
 
-					if (application === "discard") {
-						logToFile(
-							"[auto-continue]",
-							"Question is no longer pending - discarding the stale Jev decision",
-						);
-						_inferenceInProgress = false;
-						// The wait state belongs to the captured question: a
-						// newer question keeps its own wait.
-						if (waitBelongsToRequest(questionContext?.requestId)) {
-							// The stale decision is discarded: the wait and
-							// the countdown of the wait are over with it.
-							clearWait();
-							updateAutoContinueStatus("IDLE");
-						} else {
-							logToFile(
-								"[auto-continue]",
-								"A newer question is active - keeping its wait state",
-							);
-						}
-						return;
-					}
+		/**
+		 * Apply the decision of the judge.
+		 *
+		 * The decision belongs to the request that was evaluated: the
+		 * controller stamps that identity on the result, and the result is
+		 * applied only while it is the request that waits. The question
+		 * itself may have been answered in the meantime, and then the
+		 * decision is discarded.
+		 */
+		const applyWaitDecision = async (
+			evaluation: import("./packages/jev-judge/dist/wait-lifecycle.js").WaitEvaluation,
+		): Promise<void> => {
+			// The decision belongs to the request it was evaluated for.
+			//
+			// The controller stamps that identity on the result. A decision
+			// of a question that was answered, replaced or cancelled in the
+			// meantime belongs to a question that is gone: it must not
+			// resolve, continue, pause or clear anything. The question that
+			// is current now is a different one and owns its own wait.
+			if (!waitLifecycle.ownsEvaluation(evaluation)) {
+				logToFile(
+					"[auto-continue]",
+					"The decision belongs to a question that is gone - discarding it",
+				);
+				return;
+			}
+			const outcome = evaluation.outcome;
+			const requestId = evaluation.requestId;
+			const waitMinutes = waitLifecycle.waitedMinutes();
+			const pendingQuestion = sharedState.pqController?.getCurrentQuestion?.();
+			const questionText = pendingQuestion?.questionText;
+			const reasoning = evaluation.reasoning;
 
-					if (application === "pause") {
-						// Jev refused the proposed action. The question is
-						// closed and the work pauses: no continuation steer
-						// is sent, so the agent waits for a human.
-						logToFile(
-							"[auto-continue]",
-							`Question ${questionContext?.requestId} closed by Jev (reject) - pausing the work`,
-						);
-						(sharedState.todoContinuationController as any)?.explicitPause?.();
-						if (waitBelongsToRequest(questionContext?.requestId)) {
-							// The work pauses for a human: the wait and the
-							// countdown of the wait are over with it.
-							clearWait();
-							updateAutoContinueStatus("IDLE");
-						}
-						return;
-					}
-
-					logToFile(
-						"[auto-continue]",
-						`Question ${questionContext?.requestId} closed by Jev (${outcome})`,
-					);
-					logQuestionTransition(questionContext?.requestId, "applied", outcome);
-
-					// Update status to continuing
-					updateAutoContinueStatus("CONTINUING", questionHash);
-
-					// The steer names the selected option, the scope and the
-					// reasoning of the decision. A bare "continue with the
-					// remaining tasks" does not answer the question the
-					// agent asked, and it would pretend that the user
-					// answered.
-					const instruction = autonomy.buildAutonomyInstruction({
-						outcome,
-						questionText: questionContext?.text,
-						selectedOption: decision.selectedOption,
-						scope: decision.scope,
-						reasoning: decision.reasoning,
-						riskLevel: decision.riskLevel,
-						waitedMinutes: Math.round(waitMinutes),
-						deadlineMinutes: MAX_WAIT_MINUTES,
-					});
-					pi.sendUserMessage(instruction, { deliverAs: "steer" });
-					// The question is closed: the wait and the countdown of
-					// the wait are over with it.
-					clearWait();
-
-					// The status stays "RUN" until the turn that the steer
-					// started has settled. A timer would clear it while the
-					// agent is still working, and the status would claim
-					// that nothing runs any more.
-					_continuation.begin();
+			// Check if question was explicitly rejected - don't auto-continue after "Not yet"
+			if (sharedState.pqController?.isResolved()) {
+				const resolution = sharedState.pqController?.getResolution();
+				if (resolution === "no") {
+					logToFile("[auto-continue]", "Question was rejected - not auto-continuing");
+					updateAutoContinueStatus("IDLE");
+					return;
 				}
+			}
+
+			if (outcome === "wait") {
+				// The decision asks for a human. The work pauses: the
+				// evaluation does not run again, and the question stays open
+				// so the human can still answer it.
+				logToFile(
+					"[auto-continue]",
+					`Jev needs a human (${Math.round(waitMinutes)}m waited): ${logReasoning(reasoning)}`,
+				);
+				logQuestionTransition(
+					requestId,
+					"wait",
+					evaluation.policyApplied ?? "human-required",
+				);
+				(sharedState.todoContinuationController as any)?.explicitPause?.();
+				// The wait is over: the work is paused until a human answers.
+				clearWait();
+				updateAutoContinueStatus("IDLE");
+				return;
+			}
+
+			// Close the question with the Jev decision. The buttons of
+			// that request ID become stale and no synthetic user answer is
+			// injected: nobody clicked anything.
+			//
+			// A failed close means the request is no longer pending: a
+			// human answered while Jev was still evaluating. The human
+			// answer wins, so the stale decision is discarded and no
+			// continuation steer is sent.
+			const closed = requestId
+				? sharedState.pqController?.resolveByJev?.(
+						requestId,
+						outcome,
+						reasoning,
+						{
+							selectedOption: evaluation.selectedOption,
+							scope: evaluation.scope,
+							reasoning,
+						},
+					) === true
+				: false;
+			const application = mod.decideOutcomeApplication(outcome, closed);
+
+			if (application === "discard") {
+				logToFile(
+					"[auto-continue]",
+					"Question is no longer pending - discarding the stale Jev decision",
+				);
+				// The wait state belongs to the captured question: a
+				// newer question keeps its own wait.
+				if (waitBelongsToRequest(requestId)) {
+					// The stale decision is discarded: the wait and
+					// the countdown of the wait are over with it.
+					clearWait();
+					updateAutoContinueStatus("IDLE");
+				} else {
+					logToFile(
+						"[auto-continue]",
+						"A newer question is active - keeping its wait state",
+					);
+				}
+				return;
+			}
+
+			if (application === "pause") {
+				// Jev refused the proposed action. The question is
+				// closed and the work pauses: no continuation steer
+				// is sent, so the agent waits for a human.
+				logToFile(
+					"[auto-continue]",
+					`Question ${requestId} closed by Jev (reject) - pausing the work`,
+				);
+				(sharedState.todoContinuationController as any)?.explicitPause?.();
+				if (waitBelongsToRequest(requestId)) {
+					// The work pauses for a human: the wait and the
+					// countdown of the wait are over with it.
+					clearWait();
+					updateAutoContinueStatus("IDLE");
+				}
+				return;
+			}
+
+			logToFile(
+				"[auto-continue]",
+				`Question ${requestId} closed by Jev (${outcome})`,
+			);
+			logQuestionTransition(requestId, "applied", outcome);
+
+			// Update status to continuing
+			updateAutoContinueStatus("CONTINUING", questionHash());
+
+			// The steer names the selected option, the scope and the
+			// reasoning of the decision. A bare "continue with the
+			// remaining tasks" does not answer the question the
+			// agent asked, and it would pretend that the user
+			// answered.
+			const instruction = autonomy.buildAutonomyInstruction({
+				outcome,
+				questionText,
+				selectedOption: evaluation.selectedOption,
+				scope: evaluation.scope,
+				reasoning,
+				riskLevel: evaluation.riskLevel,
+				waitedMinutes: Math.round(waitMinutes),
+				deadlineMinutes: MIN_WAIT_MINUTES,
+			});
+			pi.sendUserMessage(instruction, { deliverAs: "steer" });
+			// The question is closed: the wait and the countdown of
+			// the wait are over with it.
+			clearWait();
+
+			// The status stays "RUN" until the turn that the steer
+			// started has settled. A timer would clear it while the
+			// agent is still working, and the status would claim
+			// that nothing runs any more.
+			_continuation.begin();
+		};
+
+		/**
+		 * The decision of the pending question.
+		 *
+		 * The controller owns the lifecycle: it knows whether the wait is
+		 * due, it runs the evaluation exactly once and it discards a
+		 * result that belongs to a question that is gone.
+		 */
+		const checkAndAutoContinue = async (source: "countdown" | "poll" = "poll") => {
+			// Prevent overlap if inference is already in progress
+			if (_inferenceInProgress) {
+				// A deadline that was blocked is armed again by the caller of
+				// the countdown, so the decision is not lost.
+				return;
+			}
+
+			// The countdown owns the wait while it counts down: the fallback
+			// poll only takes over after the countdown fired, so the decision
+			// is never started twice and a blocked deadline is not lost.
+			if (source === "poll" && pendingCountdown.active && !pendingCountdown.fired) return;
+
+			const result = await waitLifecycle.evaluateDue();
+			if (!result.applied || !result.evaluation) {
+				// Nothing was decided: the wait is not due yet, the
+				// evaluation was stale, or the wait is already in a state
+				// that does not decide.
+				//
+				// The attempt is over either way: the guard against a
+				// second, overlapping evaluation is released, so a later
+				// question can still be decided.
 				_inferenceInProgress = false;
-			} catch {
+				if (result.discardReason === "other-session") {
+					// The session changed: the question of the old session
+					// is closed with it.
+					sharedState.pqController?.cancel("Session switched");
+					waitLifecycle.cancel();
+					updateAutoContinueStatus("IDLE");
+				}
+				return;
+			}
+
+			if (result.state === "evaluation_error") {
+				// The provider failed. Nothing was decided: the question
+				// stays open for the human and the work is not continued.
+				const message = result.evaluation.error?.message ?? "the evaluation failed";
+				logToFile("[auto-continue]", "The evaluation of the question failed:", message);
 				_inferenceInProgress = false;
-				// The countdown is over: the fallback poll takes over the next
-				// attempt.
-				pendingCountdown.stop();
 				updateAutoContinueStatus("ERROR");
 				addHarnessMessage("Jev", "auto-continue evaluation failed", "err", [
 					"How to fix: Check logs at /tmp/pi-harness.log for API errors",
 					"Ensure TYPESAFE_API_KEY is valid, then restart.",
 				]);
+				return;
 			}
+
+			await applyWaitDecision(result.evaluation);
+			// The decision was applied or discarded. The guard against a
+			// second, overlapping evaluation is released here, so a
+			// decision that was discarded does not block the next question.
+			_inferenceInProgress = false;
 		};
 
 		// --- todo continuation: Retain one controller per session ----------
@@ -2205,7 +2362,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 
 			// Don't continue if user is waiting for response
-			if (waitingForUserSince) {
+			if (isWaitingForUser()) {
 				todoContinuationController?.clearQueue();
 				return;
 			}

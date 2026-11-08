@@ -181,7 +181,7 @@ export type { ChoiceContextInput, ChoiceDecisionContext, ChoiceOptionFacts, Stru
 export type { TaskState, AutoContinueDecision, AutoContinueConfig, DecisionScope, DecisionOutcome, DecisionContext, PendingQuestionContext, } from "./auto-continue.js";
 export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 export type { AutonomyInstructionInput } from "./autonomy-instruction.js";
-export { classifyQuestionRisk } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
 export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { WrapUpResult } from "./wrap-up-judge.js";
@@ -209,4 +209,6 @@ export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.
 export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-breaker.js";
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";
+export { WaitLifecycleController } from "./wait-lifecycle.js";
+export type { WaitCountdown, WaitDiscardReason, WaitEvaluation, WaitLifecycleDeps, WaitLifecycleResult, WaitLifecycleState, WaitRequest, WaitStateDetail, } from "./wait-lifecycle.js";
 //# sourceMappingURL=index.d.ts.map
