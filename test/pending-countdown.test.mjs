@@ -71,8 +71,8 @@ function createClock(start = 1_700_000_000_000) {
 /**
  * A countdown with the recording of what it did.
  *
- * The countdown owns the two policies of the wait: the deadline of the
- * decision (five minutes) and the interval of the next attempt (a minute).
+ * The countdown owns the one policy of the wait: the deadline of the
+ * decision (five minutes).
  */
 function createCountdown(clock, overrides = {}) {
 	const views = [];
@@ -82,7 +82,6 @@ function createCountdown(clock, overrides = {}) {
 
 	const countdown = new PendingQuestionCountdown({
 		waitMinutes: 5,
-		recheckIntervalMs: 60_000,
 		now: clock.now,
 		setInterval: clock.setInterval,
 		clearInterval: clock.clearInterval,
@@ -136,7 +135,6 @@ test("the countdown shows the remaining time at once", () => {
 	assert.equal(views[0].remaining, "05:00");
 	assert.equal(views[0].remainingMs, 300_000);
 	assert.equal(views[0].requestId, "q-1");
-	assert.equal(views[0].mode, "initial");
 });
 
 test("the countdown refreshes once per second", () => {
@@ -435,19 +433,15 @@ test("stopping a countdown that never started is a no-op", () => {
 	assert.equal(clock.startCalls, 0, "a countdown that never started registers no timer");
 });
 
-test("the recheck counts down to the next attempt", () => {
+test("the countdown has no second policy: there is no recheck", () => {
 	const clock = createClock();
-	const { countdown, views, deadlines } = createCountdown(clock);
+	const { countdown } = createCountdown(clock);
 
-	countdown.startRecheck("q-1");
-
-	assert.equal(views.length, 1, "the row is drawn at once");
-	assert.equal(views[0].mode, "recheck");
-	assert.equal(views[0].remaining, "01:00");
-	assert.equal(views[0].remainingMs, 60_000);
-
-	clock.advance(60_000);
-	assert.deepEqual(deadlines, ["q-1"], "the next attempt starts at its deadline");
+	assert.equal(
+		typeof countdown.startRecheck,
+		"undefined",
+		"a question is decided once, so the countdown has no recheck",
+	);
 });
 
 test("a stopped countdown clears the row", () => {
@@ -488,22 +482,22 @@ test("a countdown that stops does not clear the row of another request", () => {
 test("the deadline of the countdown and the decision share one timestamp", () => {
 	assert.match(
 		indexSource,
-		/const startedAt = waitingForUserSince\?\.getTime\(\) \?\? Date\.now\(\);/,
-		"the countdown counts from the moment the wait started",
+		/const waitLifecycle = new WaitLifecycleController\(/,
+		"the lifecycle of the wait is owned by the controller",
 	);
 	assert.match(
 		indexSource,
 		/pendingCountdown\.start\(requestId, startedAt\);/,
-		"the countdown is started with that timestamp",
+		"the countdown is started with the timestamp of the question",
 	);
 	assert.match(
 		indexSource,
-		/const waitMinutes = \(Date\.now\(\) - waitingForUserSince\.getTime\(\)\) \/ 60000;/,
+		/waitLifecycle\.waitedMinutes\(\)/,
 		"the judge measures the same wait",
 	);
 	assert.match(
 		indexSource,
-		/isEligibleForDecision\?\.\(waitMinutes, MIN_WAIT_MINUTES\)/,
+		/waitMinutes: MIN_WAIT_MINUTES,/,
 		"the judge uses the same threshold as the countdown",
 	);
 	assert.ok(
@@ -515,8 +509,8 @@ test("the deadline of the countdown and the decision share one timestamp", () =>
 test("the fallback poll waits for the countdown", () => {
 	assert.match(
 		indexSource,
-		/if \(source === "poll" && pendingCountdown\.active\) return;/,
-		"the poll does not start a decision while the countdown owns the wait",
+		/if \(source === "poll" && pendingCountdown\.active && !pendingCountdown\.fired\) return;/,
+		"the poll does not start a decision while the countdown counts down",
 	);
 	assert.match(
 		indexSource,
@@ -525,7 +519,7 @@ test("the fallback poll waits for the countdown", () => {
 	);
 });
 
-test("a decision that did not start is armed again", () => {
+test("a decision that did not start is taken over by the fallback poll", () => {
 	assert.match(
 		indexSource,
 		/if \(pendingCountdown\.fired && pendingCountdown\.requestId === requestId\) \{/,
@@ -533,8 +527,13 @@ test("a decision that did not start is armed again", () => {
 	);
 	assert.match(
 		indexSource,
-		/pendingCountdown\.startRecheck\(requestId\);/,
-		"the countdown is armed again",
+		/"The decision did not start - the fallback poll takes over:"/,
+		"the blocked decision is handed over to the fallback poll",
+	);
+	assert.match(
+		indexSource,
+		/if \(source === "poll" && pendingCountdown\.active && !pendingCountdown\.fired\) return;/,
+		"the poll takes over once the countdown fired",
 	);
 });
 
@@ -543,7 +542,7 @@ test("the countdown is stopped on every way out of the wait", () => {
 		["// must never clear a valid pending wait.", "the answer of a human"],
 		["// The countdown of the answered question is over with it.", "an answer over a channel"],
 		["// The user answered in Pi: the wait and the countdown of", "a message of the user"],
-		["// The request expired: the wait and the countdown", "the expiry of the request"],
+		["// The wait is over: the work is paused until a human answers.", "a decision that needs a human"],
 		["// The stale decision is discarded: the wait and", "a discarded decision"],
 		["// The work pauses for a human: the wait and the", "the pause of the judge"],
 		["// The question is closed: the wait and the countdown of", "the judge that continues"],
@@ -591,16 +590,21 @@ test("the settled continuation does not stop the countdown", () => {
 	);
 });
 
-test("the recheck of the judge starts a new countdown", () => {
-	assert.match(
+test("the judge does not recheck: the question is decided once", () => {
+	assert.doesNotMatch(
 		indexSource,
-		/startRecheckCountdown\(questionContext\.requestId\);/,
-		"a wait outcome of the judge counts down to the next attempt",
+		/startRecheckCountdown\(/,
+		"a wait outcome does not arm another attempt",
+	);
+	assert.doesNotMatch(
+		indexSource,
+		/pendingCountdown\.startRecheck\(/,
+		"the countdown has no recheck policy any more",
 	);
 	assert.match(
 		indexSource,
-		/function startRecheckCountdown\(requestId: string\): void \{[^}]*pendingCountdown\.startRecheck\(requestId\);/,
-		"the recheck uses the policy of the countdown",
+		/const result = await waitLifecycle\.evaluateDue\(\);/,
+		"the decision goes through the lifecycle of the wait",
 	);
 });
 
@@ -645,16 +649,16 @@ test("the row of a newer state survives the countdown", () => {
 	);
 });
 
-test("the row names the deadline of the judge and the next check", () => {
+test("the row names the deadline of the decision", () => {
 	assert.match(
 		indexSource,
 		/`Jev decision in \$\{view\.remaining\}`/,
 		"the row names the deadline of the decision",
 	);
-	assert.match(
+	assert.doesNotMatch(
 		indexSource,
-		/`Jev will recheck in \$\{view\.remaining\}`/,
-		"the row names the next check after the judge asked to wait",
+		/Jev will recheck/,
+		"the row does not promise another attempt",
 	);
 });
 

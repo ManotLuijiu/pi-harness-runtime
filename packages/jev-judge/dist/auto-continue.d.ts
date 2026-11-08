@@ -7,6 +7,7 @@
  * Scenario: Agent completes 2/5 tasks, asks "Continue?" User asleep.
  * Jev decides: proceed, wait, or proceed with caution.
  */
+import { JevJudge } from "./index.js";
 import type { JevJudgeConfig } from "./types.js";
 /**
  * Task tracking state
@@ -19,6 +20,8 @@ export interface TaskState {
     userResponded: boolean;
     lastUserActivity?: Date;
     sessionStartTime: Date;
+    /** The moment the question was asked (the wait is measured from it). */
+    questionAskedAt?: Date;
     /** The bounded decision context (question, risk, task state). */
     context?: DecisionContext;
 }
@@ -213,6 +216,17 @@ export interface AutoContinueDecision {
     selectedOption?: string;
     /** The scope the evaluation selected. */
     scope?: DecisionScope;
+    /**
+     * The evaluation failed.
+     *
+     * A failed evaluation is not a decision: the outcome above is only the
+     * fallback of the failure, and the runtime must not record it as a
+     * decision of Jev.
+     */
+    evaluationError?: {
+        kind: "provider" | "unknown";
+        message: string;
+    };
 }
 /**
  * Auto-Continue Judge configuration
@@ -236,11 +250,20 @@ export interface AutoContinueConfig extends JevJudgeConfig {
 export declare class AutoContinueJudge {
     private jev;
     private config;
-    constructor(config: AutoContinueConfig);
+    constructor(config: AutoContinueConfig, judge?: JevJudge);
     /**
      * Judge whether to continue or wait
      */
     decide(taskState: TaskState): Promise<AutoContinueDecision>;
+    /**
+     * The risk of the option the evaluation selected.
+     *
+     * The option carries its own action, and that action can be riskier than
+     * the question that offered it. An option that needs an explicit human
+     * authorization is not decided autonomously, whatever the evaluation
+     * proposed.
+     */
+    private applySelectedOptionRisk;
     /**
      * Apply the deterministic policy to a proposed decision.
      *
@@ -290,6 +313,25 @@ export declare function isEligibleForDecision(waitedMinutes: number, minWaitMinu
 export declare function buildDecisionState(taskState: TaskState): Record<string, unknown>;
 /**
  * Helper: Create task state from todo list
+ *
+ * The wait is measured from the moment the question was asked. The last
+ * activity of the user is only the fallback: a session that coded for twenty
+ * minutes and then waited five minutes for an answer must not tell the
+ * evaluation that it waited twenty-five minutes.
  */
-export declare function createTaskState(completedTasks: string[], remainingTasks: string[], lastUserActivity?: Date, sessionStartTime?: Date, context?: DecisionContext): TaskState;
+export declare function createTaskState(completedTasks: string[], remainingTasks: string[], lastUserActivity?: Date, sessionStartTime?: Date, context?: DecisionContext, options?: TaskStateOptions): TaskState;
+/**
+ * The optional facts of a task state.
+ */
+export interface TaskStateOptions {
+    /**
+     * The moment the question was asked.
+     *
+     * The wait is measured from it, so the countdown, the evaluation and the
+     * fallback of the judge see the same time.
+     */
+    questionAskedAt?: Date;
+    /** The clock. The tests drive it. */
+    now?: () => number;
+}
 //# sourceMappingURL=auto-continue.d.ts.map

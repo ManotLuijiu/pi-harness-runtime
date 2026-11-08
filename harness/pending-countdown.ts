@@ -5,12 +5,11 @@
  * and the countdown shows the remaining time in the status row of the TUI
  * and starts the decision of the judge exactly at that deadline.
  *
- * The module owns the two policies of the wait:
- *
- * - the first countdown counts down to the deadline of the decision, which
- *   is derived from the moment the wait started,
- * - the recheck counts down to the next attempt, after the judge asked to
- *   wait longer.
+ * The module owns the one policy of the wait: the countdown counts down to
+ * the deadline of the decision, which is derived from the moment the wait
+ * started. The deadline fires once and hands the decision over to the
+ * runtime. A question is decided once, so there is no second countdown for
+ * a later attempt.
  *
  * The caller cannot pass a deadline of its own: the displayed deadline and
  * the deadline the judge uses therefore cannot drift apart.
@@ -20,9 +19,6 @@
  * one countdown and never a timer without a request.
  */
 
-/** What the countdown counts to. */
-export type CountdownMode = "initial" | "recheck";
-
 /** The state of the countdown that is drawn in the status row. */
 export interface CountdownView {
 	/** The request the countdown belongs to. */
@@ -31,8 +27,6 @@ export interface CountdownView {
 	remainingMs: number;
 	/** The remaining time as "MM:SS". */
 	remaining: string;
-	/** What the countdown counts to. */
-	mode: CountdownMode;
 }
 
 /** The dependencies of a countdown. */
@@ -54,8 +48,6 @@ export interface PendingCountdownDeps {
 	onStop?: (requestId: string | null) => void;
 	/** The minutes the judge waits for a human answer. */
 	waitMinutes: number;
-	/** The milliseconds until the next attempt after the judge asked to wait. */
-	recheckIntervalMs: number;
 	/** The clock (the tests drive it). */
 	now?: () => number;
 	/** The timer that drives the ticks (the tests drive it). */
@@ -107,7 +99,6 @@ export function formatRemainingTime(remainingMs: number): string {
 interface CountdownBinding {
 	requestId: string;
 	deadlineAt: number;
-	mode: CountdownMode;
 }
 
 /**
@@ -140,10 +131,11 @@ export class PendingQuestionCountdown {
 	 */
 	private engaged = false;
 	/**
-	 * True when the deadline fired and the decision did not start yet.
+	 * True when the deadline fired.
 	 *
-	 * The countdown owns the wait in that state, but it has no timer: the
-	 * caller arms it again when the decision did not start.
+	 * The countdown owns the wait in that state, but it has no timer any
+	 * more: the decision was handed over to the runtime. A decision that
+	 * could not start is taken over by the fallback poll.
 	 */
 	private deadlineFired = false;
 
@@ -174,11 +166,6 @@ export class PendingQuestionCountdown {
 		return this.binding?.requestId ?? null;
 	}
 
-	/** What the countdown counts to. */
-	get mode(): CountdownMode | null {
-		return this.binding?.mode ?? null;
-	}
-
 	/**
 	 * Start the countdown of a request, or replace the running one.
 	 *
@@ -187,17 +174,7 @@ export class PendingQuestionCountdown {
 	 * deadline. The countdown and the judge therefore share one timestamp.
 	 */
 	start(requestId: string, startedAt: number): void {
-		this.begin(requestId, decisionDeadlineAt(startedAt, this.deps.waitMinutes), "initial");
-	}
-
-	/**
-	 * Start the countdown of the next attempt.
-	 *
-	 * The judge asked to wait longer: the countdown counts down to the next
-	 * attempt instead of to the deadline of the decision.
-	 */
-	startRecheck(requestId: string): void {
-		this.begin(requestId, this.now() + this.deps.recheckIntervalMs, "recheck");
+		this.begin(requestId, decisionDeadlineAt(startedAt, this.deps.waitMinutes));
 	}
 
 	/**
@@ -218,11 +195,11 @@ export class PendingQuestionCountdown {
 	}
 
 	/** Bind the countdown to a request and start its timer. */
-	private begin(requestId: string, deadlineAt: number, mode: CountdownMode): void {
+	private begin(requestId: string, deadlineAt: number): void {
 		this.clearTimer();
 		this.generation += 1;
 		const generation = this.generation;
-		this.binding = { requestId, deadlineAt, mode };
+		this.binding = { requestId, deadlineAt };
 		this.engaged = true;
 		this.deadlineFired = false;
 		try {
@@ -282,7 +259,6 @@ export class PendingQuestionCountdown {
 				requestId: binding.requestId,
 				remainingMs: 0,
 				remaining: formatRemainingTime(0),
-				mode: binding.mode,
 			});
 			// A failing decision handler must not leave a countdown that owns
 			// the wait without a timer: the countdown stops, so the fallback
@@ -300,7 +276,6 @@ export class PendingQuestionCountdown {
 			requestId: binding.requestId,
 			remainingMs,
 			remaining: formatRemainingTime(remainingMs),
-			mode: binding.mode,
 		});
 	}
 

@@ -38,7 +38,31 @@ export interface QuestionRiskInput {
     askType?: string;
     /** The complete question text. */
     text?: string;
+    /**
+     * The concrete action the agent proposes.
+     *
+     * The risk is about the action, not about the whole message: a message
+     * that talks about many things carries words that have nothing to do with
+     * the action that is proposed.
+     */
+    proposedAction?: string;
 }
+/**
+ * How much of the action reaches the classifier.
+ */
+export declare const MAX_ACTION_CHARS = 600;
+/**
+ * The action the agent proposes.
+ *
+ * The message carries the ask ("may I proceed?") and the action ("I will
+ * delete the branch"). The risk is about the action, so the action is
+ * extracted: the sentences of the message that state what happens. The
+ * question sentence itself is not an action - it asks, it does not act.
+ *
+ * When the message names no action, the question text is the action: the
+ * risk of the question is then the risk of the ask.
+ */
+export declare function extractProposedAction(contextText: string | undefined, questionText: string | undefined): string;
 /**
  * Derive the risk facts of a pending question.
  *

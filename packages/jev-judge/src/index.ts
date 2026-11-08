@@ -734,7 +734,7 @@ export {
 export type { AutonomyInstructionInput } from "./autonomy-instruction.js";
 
 // Export the deterministic risk classifier of a pending question
-export { classifyQuestionRisk } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
 export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
 
 // Export WrapUpJudge
@@ -876,3 +876,18 @@ export type { ValidationVerdict, ValidationTieBreaker } from "./validation-tie-b
 // Export Task Intake
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
 export type { TaskIntakeConfig, TaskIntakeResult } from "./task-intake.js";
+
+// Export the lifecycle of a wait for a human answer. The controller owns
+// the request, the session, the moment the question was asked and the one
+// evaluation of that question.
+export { WaitLifecycleController } from "./wait-lifecycle.js";
+export type {
+	WaitCountdown,
+	WaitDiscardReason,
+	WaitEvaluation,
+	WaitLifecycleDeps,
+	WaitLifecycleResult,
+	WaitLifecycleState,
+	WaitRequest,
+	WaitStateDetail,
+} from "./wait-lifecycle.js";

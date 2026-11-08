@@ -559,7 +559,7 @@ export { buildChoiceDecisionContext, describeChoiceOption, deriveOptionAnchor, e
 // Export the instruction an autonomous decision sends to the agent
 export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 // Export the deterministic risk classifier of a pending question
-export { classifyQuestionRisk } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
 // Export WrapUpJudge
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 // Export EnvironmentJudge
@@ -586,4 +586,8 @@ export { assessWorkload, declaredRecordCount, describeWorkload, workloadBatchPla
 export { tieBreakValidation, formatTieBreaker, } from "./validation-tie-breaker.js";
 // Export Task Intake
 export { TaskIntakeController, createTaskIntake } from "./task-intake.js";
+// Export the lifecycle of a wait for a human answer. The controller owns
+// the request, the session, the moment the question was asked and the one
+// evaluation of that question.
+export { WaitLifecycleController } from "./wait-lifecycle.js";
 //# sourceMappingURL=index.js.map
