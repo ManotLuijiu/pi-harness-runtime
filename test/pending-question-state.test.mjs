@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 
 import {
 	isQuestionOpen,
+	isRejection,
 	mayContinue,
 	userReplyEffect,
 } from "../harness/pending-question-state.ts";
@@ -60,7 +61,7 @@ function createRuntime(question) {
 	return {
 		state,
 		/** The handler of a user message of the runtime. */
-		userMessage() {
+		userMessage(text = "") {
 			const effect = userReplyEffect({
 				waiting: state.waiting,
 				questionOpen: isQuestionOpen(state.question),
@@ -72,6 +73,11 @@ function createRuntime(question) {
 				state.cancelled.push(state.question.requestId);
 				state.question.state = "cancelled";
 				state.question = null;
+			}
+			// A decline of the proposal pauses the work: the work must not
+			// continue behind a decline.
+			if (isRejection(text)) {
+				continuation.explicitPause();
 			}
 			// Closing the question is not an authorization: the work that
 			// waits for an answer stays paused.
@@ -199,7 +205,7 @@ test("a declining reply retains the pause", () => {
 	runtime.evaluationError();
 
 	// "No, do not implement it" is an answer, not a resume directive.
-	runtime.userMessage();
+	runtime.userMessage("No, do not implement it");
 
 	assert.equal(runtime.state.paused, true, "the work does not continue");
 	assert.equal(
@@ -208,6 +214,53 @@ test("a declining reply retains the pause", () => {
 		"the next settled turn does not dispatch work behind the pause",
 	);
 	assert.equal(runtime.state.dispatched, false);
+});
+
+test("a rejection during the countdown pauses the work", () => {
+	// The wait runs, the question is open, and the work is not paused yet:
+	// the countdown is the deadline of the decision, not a pause.
+	const runtime = createRuntime({ requestId: "q-1", state: "pending" });
+	runtime.state.waiting = true;
+
+	assert.equal(runtime.state.paused, false, "the countdown pauses nothing yet");
+
+	const effect = runtime.userMessage("No, do not implement it");
+
+	assert.equal(effect, "cancelled-wait-and-question", "the question is closed");
+	assert.deepEqual(runtime.state.cancelled, ["q-1"]);
+	assert.equal(runtime.state.waiting, false, "the wait is over");
+	assert.equal(
+		runtime.state.paused,
+		true,
+		"a rejection pauses the work, also during the countdown",
+	);
+	assert.equal(
+		runtime.agentSettled(),
+		false,
+		"the next settled turn does not dispatch work behind the decline",
+	);
+	assert.equal(runtime.state.dispatched, false);
+});
+
+test("a reply that declines is a rejection", () => {
+	assert.equal(isRejection("No, do not implement it"), true);
+	assert.equal(isRejection("No"), true);
+	assert.equal(isRejection("No."), true);
+	assert.equal(isRejection("Nope"), true);
+	assert.equal(isRejection("Never mind"), true);
+	assert.equal(isRejection("Cancel that"), true);
+	assert.equal(isRejection("Don't do it"), true);
+	assert.equal(isRejection("Do not implement it"), true);
+	assert.equal(isRejection("I do not want that"), true);
+});
+
+test("a reply that does not decline is not a rejection", () => {
+	assert.equal(isRejection("Yes, go ahead"), false);
+	assert.equal(isRejection("resume"), false);
+	assert.equal(isRejection("No changes are needed, everything works"), false);
+	assert.equal(isRejection("There is no error in the log"), false);
+	assert.equal(isRejection(""), false);
+	assert.equal(isRejection(undefined), false);
 });
 
 test("the runtime closes the question on a reply while the wait runs", () => {
@@ -247,5 +300,15 @@ test("the runtime uses the rules in its handlers", () => {
 	assert.ok(
 		!/const replyEffect[\s\S]*?resume\?\.\(\)/.test(indexSource),
 		"closing the question never resumes the work on its own",
+	);
+	assert.match(
+		indexSource,
+		/isRejection\(content\)[\s\S]*?explicitPause\?\.\(\)/,
+		"a rejection of the proposal pauses the work",
+	);
+	assert.match(
+		indexSource,
+		/detectExplicitPause[\s\S]*?isRejection\(text\)/,
+		"a rejection is a pause directive for the later handler as well",
 	);
 });

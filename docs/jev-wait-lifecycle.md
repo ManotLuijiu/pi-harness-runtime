@@ -51,6 +51,12 @@ measure the same wait.
   for an answer stays paused - also when the reply declines the proposal
   ("No, do not implement it"). Only an explicit resume directive continues
   the work; an acknowledgment ("okay", "yes") never does.
+- **A decline pauses the work.** A reply that declines the proposal is a
+  decision about the work: it pauses the continuation explicitly, also
+  during the countdown, when nothing was paused yet. The wording of a
+  decline is a directive to the harness, so it is recognized at the start of
+  the reply ("No, do not implement it", "Never mind", "Cancel that") - a
+  negation in the middle of a sentence is not a decline.
 
 ## The decision belongs to the question it was evaluated for
 
@@ -188,6 +194,7 @@ decision is applied, nothing is paused, and the question is not closed.
 | `test/pending-question-state.test.mjs` | The work does not continue behind an open question, also when the wait is over. |
 | `test/pending-question-state.test.mjs` | A reply of the user closes a question of a terminal state. |
 | `test/pending-question-state.test.mjs` | A declining reply retains the pause. |
+| `test/pending-question-state.test.mjs` | A rejection during the countdown pauses the work. |
 | `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed on its own text. |
 
 ## The rule that stays
