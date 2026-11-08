@@ -46,6 +46,11 @@ measure the same wait.
 - **A reply of the user closes the question.** A reply in Pi answers the
   question, also when the wait is already over. The question is closed with
   it, so the buttons of the old notification cannot inject a second answer.
+- **Closing the question is not an authorization.** The reply says that the
+  question is answered, not that the work may continue. The work that waits
+  for an answer stays paused - also when the reply declines the proposal
+  ("No, do not implement it"). Only an explicit resume directive continues
+  the work; an acknowledgment ("okay", "yes") never does.
 
 ## The decision belongs to the question it was evaluated for
 
@@ -182,7 +187,8 @@ decision is applied, nothing is paused, and the question is not closed.
 | `test/pending-countdown.test.mjs` | The countdown has one policy: there is no recheck. |
 | `test/pending-question-state.test.mjs` | The work does not continue behind an open question, also when the wait is over. |
 | `test/pending-question-state.test.mjs` | A reply of the user closes a question of a terminal state. |
-| `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed together with the message. |
+| `test/pending-question-state.test.mjs` | A declining reply retains the pause. |
+| `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed on its own text. |
 
 ## The rule that stays
 

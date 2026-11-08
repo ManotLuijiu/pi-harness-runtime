@@ -21,18 +21,44 @@ const action = extractProposedAction(contextText, questionText);
 ```
 
 - The sentences that state what happens are the action.
-- The question sentence is not an action: it asks, it does not act - unless it
-  names an action itself. "I can update the status text. Want me to delete the
-  production database?" states a harmless action in the message and asks for a
-  deletion in the question. The action of the question is therefore assessed
-  together with the sentences of the message: the risk of the proposal is the
-  risk of everything that is proposed.
+- The question sentence is not an action: it asks, it does not act.
 - A message that names no action falls back to the question text: the risk of
   the question is then the risk of the ask.
 - The action is bounded (`MAX_ACTION_CHARS`), so one long message cannot
   dominate the classification.
 
 The risk patterns then run on that action, not on the message.
+
+## The action of the question is assessed on its own text
+
+The question can carry the action that the message does not name: "I can
+update the status text. Want me to delete the production database?" states a
+harmless action in the message and asks for a deletion in the question.
+
+That action is extracted on its own (`extractQuestionAction`) and classified
+on its own text:
+
+```ts
+const risk = classifyQuestionRisk({
+  kind: "approval",
+  text: questionText,
+  proposedAction: extractProposedAction(contextText, questionText),
+  questionAction: extractQuestionAction(questionText),
+});
+```
+
+Two things follow from the separation:
+
+- **The bound of the message is a bound of the message.** The action of the
+  question is not appended to the action of the message and truncated with
+  it: a long harmless explanation cannot push the deletion out of the
+  assessment.
+- **A negation of the message cannot govern the question.** "I will not
+  delete anything in the workspace. Want me to delete the production
+  database?" asks for a deletion; the prohibition speaks about the message.
+
+A prohibition in the question is still not a proposal: "Do not delete the
+production database." names no action that is proposed.
 
 ## A prohibition is not a proposal
 
@@ -117,7 +143,7 @@ authorization turns the decision into a wait.
 `packages/jev-judge/tests/question-risk.test.ts` holds the rules:
 
 - the action is extracted from the message, not from the whole message,
-- the action of the question is assessed together with the message,
+- the action of the question is assessed on its own text,
 - a prohibition is not a proposal,
 - a prohibition does not hide a later destructive action,
 - a plain negation and a modal negation are prohibitions,

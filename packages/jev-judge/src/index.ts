@@ -734,7 +734,7 @@ export {
 export type { AutonomyInstructionInput } from "./autonomy-instruction.js";
 
 // Export the deterministic risk classifier of a pending question
-export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction, extractQuestionAction } from "./question-risk.js";
 export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
 
 // Export WrapUpJudge

@@ -54,6 +54,15 @@ export interface QuestionRiskInput {
    * the action that is proposed.
    */
   proposedAction?: string;
+  /**
+   * The action of the question itself.
+   *
+   * It is assessed on its own text: the risk of the question is the risk of
+   * the question, not of the message around it. A long message cannot push
+   * the action of the question out of the assessment, and a negation of the
+   * message cannot govern it.
+   */
+  questionAction?: string;
 }
 
 interface RiskPattern {
@@ -83,16 +92,14 @@ const ACTION_VERBS =
  * The message carries the ask ("may I proceed?") and the action ("I will
  * delete the branch"). The risk is about the action, so the action is
  * extracted: the sentences of the message that state what happens. The
- * question sentence itself is not an action - it asks, it does not act -
- * unless it names an action itself.
- *
- * The question is assessed when it names an action: "I can update the status
- * text. Want me to delete the production database?" states a harmless action
- * in the message and asks for a deletion in the question. The action of the
- * question is therefore always part of the action that is classified.
+ * question sentence itself is not an action - it asks, it does not act.
  *
  * When the message names no action, the question text is the action: the
  * risk of the question is then the risk of the ask.
+ *
+ * The action of the question is not part of this text. It is extracted on
+ * its own (`extractQuestionAction`) and assessed on its own, so a long
+ * message around it cannot push it out of the assessment.
  */
 export function extractProposedAction(
   contextText: string | undefined,
@@ -112,14 +119,41 @@ export function extractProposedAction(
   if (actionSentences.length === 0) {
     return question.slice(0, MAX_ACTION_CHARS);
   }
-  // The question can carry the action that the message does not name. It is
-  // assessed together with the sentences of the message: the risk of the
-  // proposal is the risk of everything that is proposed.
-  const questionIsAction = question.length > 0 && ACTION_VERBS.test(question);
-  const parts = questionIsAction
-    ? [...actionSentences, question]
-    : actionSentences;
-  return parts.join(" ").slice(0, MAX_ACTION_CHARS);
+  return actionSentences.join(" ").slice(0, MAX_ACTION_CHARS);
+}
+
+/**
+ * The action of the question itself.
+ *
+ * The question can carry the action that the message does not name: "I can
+ * update the status text. Want me to delete the production database?" states
+ * a harmless action in the message and asks for a deletion in the question.
+ *
+ * The action of the question is extracted and assessed on its own text:
+ *
+ *  - a long explanation around it cannot push it out of the assessment (the
+ *    bound of the context is a bound of the context, not of the question),
+ *  - a negation in the message cannot govern it (the negation of the
+ *    message speaks about the message).
+ *
+ * `undefined` means that the question names no action: it asks, it does not
+ * act.
+ */
+export function extractQuestionAction(
+  questionText: string | undefined,
+): string | undefined {
+  const question = (questionText ?? "").trim();
+  if (question.length === 0) return undefined;
+
+  const sentences = question
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+  const actionSentences = sentences.filter((sentence) =>
+    ACTION_VERBS.test(sentence),
+  );
+  if (actionSentences.length === 0) return undefined;
+  return actionSentences.join(" ").slice(0, MAX_ACTION_CHARS);
 }
 
 /**
@@ -292,6 +326,36 @@ function matchPatterns(
 }
 
 /**
+ * The risk that one text carries.
+ *
+ * The texts are assessed one by one: the action of the message and the
+ * action of the question are two texts, and a negation in one of them says
+ * nothing about the other.
+ */
+interface ActionRisk {
+	/** The text names a destructive action. */
+	destructive: boolean;
+	/** The text reaches the outside world. */
+	external: boolean;
+	/** The text touches a secret. */
+	sensitive: boolean;
+}
+
+/**
+ * The risk patterns of one text.
+ *
+ * The signal names are collected, so the diagnostics name every pattern that
+ * matched - in the message as well as in the question.
+ */
+function classifyActionText(text: string, signals: string[]): ActionRisk {
+	return {
+		destructive: matchPatterns(text, DESTRUCTIVE_PATTERNS, signals),
+		external: matchPatterns(text, EXTERNAL_PATTERNS, signals),
+		sensitive: matchPatterns(text, SENSITIVE_PATTERNS, signals),
+	};
+}
+
+/**
  * Derive the risk facts of a pending question.
  *
  * The rules:
@@ -321,9 +385,20 @@ export function classifyQuestionRisk(
 	const kind = input.kind;
 	const signals: string[] = [];
 
-	const destructive = matchPatterns(text, DESTRUCTIVE_PATTERNS, signals);
-	const external = matchPatterns(text, EXTERNAL_PATTERNS, signals);
-	const sensitive = matchPatterns(text, SENSITIVE_PATTERNS, signals);
+	const actionRisk = classifyActionText(text, signals);
+	// The question can carry an action of its own, and it is assessed on
+	// its own text: the bound of the message is a bound of the message, and
+	// a negation of the message speaks about the message.
+	const questionAction = (input.questionAction ?? "").trim();
+	const questionRisk =
+		questionAction.length > 0
+			? classifyActionText(questionAction.toLowerCase(), signals)
+			: null;
+
+	const destructive =
+		actionRisk.destructive || (questionRisk?.destructive ?? false);
+	const external = actionRisk.external || (questionRisk?.external ?? false);
+	const sensitive = actionRisk.sensitive || (questionRisk?.sensitive ?? false);
 
 	// Only an explicitly demanded authorization blocks the autonomous
 	// decision. An "approval" question is the agent proposing work: it
@@ -349,8 +424,10 @@ export function classifyQuestionRisk(
 		requiresExplicitAuthorization = true;
 	}
 
-	// Unknown kind or unknown text: the action cannot be judged.
-	if (!kind || !text.trim()) {
+	// Unknown kind or unknown text: the action cannot be judged. The action
+	// of the question counts as a known text: it is judged on its own.
+	const knownText = text.trim().length > 0 || questionAction.length > 0;
+	if (!kind || !knownText) {
 		requiresExplicitAuthorization = true;
 		signals.push("unknown-question");
 	}

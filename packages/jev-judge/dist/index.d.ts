@@ -181,7 +181,7 @@ export type { ChoiceContextInput, ChoiceDecisionContext, ChoiceOptionFacts, Stru
 export type { TaskState, AutoContinueDecision, AutoContinueConfig, DecisionScope, DecisionOutcome, DecisionContext, PendingQuestionContext, } from "./auto-continue.js";
 export { buildAutonomyInstruction, AUTONOMY_INSTRUCTION_HEADER, } from "./autonomy-instruction.js";
 export type { AutonomyInstructionInput } from "./autonomy-instruction.js";
-export { classifyQuestionRisk, extractProposedAction } from "./question-risk.js";
+export { classifyQuestionRisk, extractProposedAction, extractQuestionAction } from "./question-risk.js";
 export type { QuestionRiskFacts, QuestionRiskInput } from "./question-risk.js";
 export { checkWrapUp, getTodoSummary } from "./wrap-up-judge.js";
 export type { WrapUpResult } from "./wrap-up-judge.js";

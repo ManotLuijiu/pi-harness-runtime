@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { classifyQuestionRisk, extractProposedAction } from "../src/question-risk.js";
+import { classifyQuestionRisk, extractProposedAction, extractQuestionAction } from "../src/question-risk.js";
 
 describe("classifyQuestionRisk", () => {
 	describe("a routine continuation question", () => {
@@ -147,34 +147,95 @@ describe("the action that is proposed", () => {
 		expect(action).toBe("May I proceed?");
 	});
 
-	it("keeps the action of the question when the message names another one", () => {
+	it("keeps the action of the question out of the action of the message", () => {
 		const action = extractProposedAction(
 			"I can update the status text. Want me to delete the production database?",
 			"Want me to delete the production database?",
 		);
 
-		// The message states a harmless action and the question asks for a
-		// deletion. The deletion is the action that is proposed, so it has
-		// to be part of the action that is classified.
-		expect(action).toContain("delete the production database");
+		// The action of the message is the action of the message. The action
+		// of the question is extracted on its own, so that it is assessed on
+		// its own text.
 		expect(action).toContain("update the status text");
+		expect(action).not.toContain("delete the production database");
+		expect(extractQuestionAction("Want me to delete the production database?")).toBe(
+			"Want me to delete the production database?",
+		);
 	});
 
 	it("classifies the action of the question as destructive", () => {
-		const action = extractProposedAction(
-			"I can update the status text. Want me to delete the production database?",
-			"Want me to delete the production database?",
-		);
 		const risk = classifyQuestionRisk({
 			kind: "approval",
 			text: "Want me to delete the production database?",
-			proposedAction: action,
+			proposedAction: extractProposedAction(
+				"I can update the status text. Want me to delete the production database?",
+				"Want me to delete the production database?",
+			),
+			questionAction: extractQuestionAction(
+				"Want me to delete the production database?",
+			),
 		});
 
 		// Without the action of the question the classification would see
 		// the harmless update and approve the deletion.
 		expect(risk.destructive).toBe(true);
 		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("keeps the action of the question when the message is long", () => {
+		// A long harmless explanation must not push the dangerous action of
+		// the question out of the assessment.
+		const explanation =
+			"The parser is slow because the tokenizer keeps a cache of every " +
+			"document it has seen, and the cache grows with every file that is " +
+			"read, so the process uses more and more memory over the day. " +
+			"I can update the status text of the job to show the current size.";
+		const question = "Want me to delete the production database?";
+
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: question,
+			proposedAction: extractProposedAction(explanation, question),
+			questionAction: extractQuestionAction(question),
+		});
+
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("does not let a negation of the message govern the action of the question", () => {
+		// The message forbids a deletion; the question asks for one. The
+		// negation speaks about the message.
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Want me to delete the production database?",
+			proposedAction: extractProposedAction(
+				"I will not delete anything in the workspace. Want me to delete the production database?",
+				"Want me to delete the production database?",
+			),
+			questionAction: extractQuestionAction(
+				"Want me to delete the production database?",
+			),
+		});
+
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("does not turn a prohibition of the question into a proposal", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Do not delete the production database.",
+			proposedAction: extractProposedAction(
+				"The parser is slow. Do not delete the production database.",
+				"Do not delete the production database.",
+			),
+			questionAction: extractQuestionAction("Do not delete the production database."),
+		});
+
+		// The question forbids the deletion: it is not a proposal.
+		expect(risk.destructive).toBe(false);
+		expect(risk.requiresExplicitAuthorization).toBe(false);
 	});
 
 	it("does not turn a question that asks for nothing into an action", () => {
@@ -187,6 +248,7 @@ describe("the action that is proposed", () => {
 		// message.
 		expect(action).toContain("refactor the tokenizer");
 		expect(action).not.toContain("May I proceed?");
+		expect(extractQuestionAction("May I proceed?")).toBeUndefined();
 	});
 
 	it("does not turn a prohibition into a proposal", () => {
