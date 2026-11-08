@@ -1523,6 +1523,24 @@ async function runInit(options?: {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = errorStatus(err);
+    // The session ended while the tools were listed: the connection was
+    // closed by the end of the session, not by the server. Nothing is
+    // claimed about the server.
+    if (options?.isSessionEnded?.()) {
+      logServiceEvent({
+        ts: new Date().toISOString(),
+        level: "info",
+        service: "honcho",
+        operation: "mcp_tools",
+        phase: "ended",
+      });
+      await closeUnusedClient(client);
+      return {
+        status: "session_ended",
+        memory: null,
+        reason: "the session ended before the Honcho MCP was checked",
+      };
+    }
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_tools", phase: "failed", reason: redact(message) });
     honchoStatus.recordFailure("init", "list_tools_failed", { error: redact(message) });
 

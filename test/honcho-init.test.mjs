@@ -1043,3 +1043,39 @@ test("a probe that fails while the session lives is still a failure", async () =
   assert.equal(result.status, "mcp_unavailable", "the status names the cause");
   assert.match(result.reason, /MCP connection closed/, "the reason names the cause");
 });
+
+test("a tools listing that the end of the session cuts off is not a failure of the server", async () => {
+  // The client of the session is closed when the session ends, and the
+  // closed connection says nothing about the server: the server was never
+  // asked for its tools.
+  const { honcho, createClient } = loadHoncho({ listToolsFails: true });
+
+  const result = await honcho.initHoncho({
+    apiKey: "test-key",
+    createClient,
+    isSessionEnded: () => true,
+  });
+  assert.equal(result.status, "session_ended", "the status names the end of the session");
+  assert.equal(result.memory, null, "a session that ended has no memory");
+  assert.match(
+    result.reason,
+    /the session ended/,
+    "the reason names the end of the session, not a broken server",
+  );
+});
+
+test("a tools listing that fails while the session lives is still a failure", async () => {
+  const { honcho, createClient } = loadHoncho({ listToolsFails: true });
+
+  const result = await honcho.initHoncho({
+    apiKey: "test-key",
+    createClient,
+    isSessionEnded: () => false,
+  });
+  assert.equal(result.status, "mcp_unavailable", "the status names the cause");
+  assert.match(
+    result.reason,
+    /did not list its tools/,
+    "the reason names the cause",
+  );
+});
