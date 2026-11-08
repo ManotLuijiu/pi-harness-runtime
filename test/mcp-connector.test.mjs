@@ -537,3 +537,133 @@ test("a runtime that cannot list the servers connects nothing", async () => {
 		`the connector says that the servers are not readable: ${logs.join(" | ")}`,
 	);
 });
+
+test("the connector connects nothing after the session ended", async () => {
+	const { createMcpConnector } = loadConnector();
+	const { library, calls } = fakeLibrary([{ name: "search" }]);
+	const connector = createMcpConnector(
+		{
+			getMcpServers: () => [httpServer()],
+			getAllTools: () => [],
+			registerTool: () => {},
+		},
+		{ loadLibrary: async () => library, delay: async () => {} },
+	);
+
+	await connector.stop();
+	await connector.connectPending();
+
+	assert.equal(calls.transports.length, 0, "nothing was connected");
+});
+
+test("the connector stops while it waits for the other connector", async () => {
+	const { createMcpConnector } = loadConnector();
+	const { library, calls } = fakeLibrary([{ name: "search" }]);
+	let release = () => {};
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const connector = createMcpConnector(
+		{
+			getMcpServers: () => [httpServer()],
+			getAllTools: () => [],
+			registerTool: () => {},
+		},
+		{ loadLibrary: async () => library, delay: () => gate },
+	);
+
+	const pending = connector.connectPending();
+	await connector.stop();
+	release();
+	await pending;
+
+	assert.equal(calls.transports.length, 0, "nothing was connected");
+});
+
+test("a session that is gone is not a broken server", async () => {
+	const { createMcpConnector } = loadConnector();
+	const { library } = fakeLibrary([{ name: "search" }], {
+		failConnect:
+			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession().",
+	});
+	const logs = [];
+	const connector = createMcpConnector(
+		{
+			getMcpServers: () => [httpServer()],
+			getAllTools: () => [],
+			registerTool: () => {},
+		},
+		{
+			loadLibrary: async () => library,
+			delay: async () => {},
+			log: (message) => logs.push(message),
+		},
+	);
+
+	await connector.connectPending();
+
+	const status = connector.statuses.get("honcho");
+	assert.equal(status?.state, "ended", "the server was not refused");
+	assert.ok(
+		logs.some((line) => line.includes("the session ended before")),
+		`the connector names the end of the session: ${logs.join(" | ")}`,
+	);
+	assert.ok(
+		!logs.some((line) => line.includes("could not be connected")),
+		`the connector does not report a broken server: ${logs.join(" | ")}`,
+	);
+});
+
+test("two calls at the same time connect the server once", async () => {
+	const { createMcpConnector } = loadConnector();
+	const { library, calls } = fakeLibrary([{ name: "search" }]);
+	let release = () => {};
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const connector = createMcpConnector(
+		{
+			getMcpServers: () => [httpServer()],
+			getAllTools: () => [],
+			registerTool: () => {},
+		},
+		{ loadLibrary: async () => library, delay: () => gate },
+	);
+
+	const first = connector.connectPending();
+	const second = connector.connectPending();
+	release();
+	await Promise.all([first, second]);
+
+	assert.equal(calls.transports.length, 1, "the server is not connected twice");
+});
+
+test("the extension stops the connector when the session ends", () => {
+	const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+
+	assert.match(
+		indexSource,
+		/connector\.stop\(\)/,
+		"the connector stops with the session",
+	);
+	assert.match(
+		indexSource,
+		/on\("session_shutdown"[\s\S]{0,400}?connector\.stop\(\)/,
+		"the connector stops on the shutdown of the session",
+	);
+});
+
+test("the watcher of the Honcho tools stops with the session", () => {
+	const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+
+	assert.match(
+		indexSource,
+		/stopHonchoMcpWatcher/,
+		"the watcher of the Honcho tools has a stop",
+	);
+	assert.match(
+		indexSource,
+		/on\("session_shutdown"[\s\S]{0,400}?stopHonchoMcpWatcher\?\.\(\)/,
+		"the watcher stops on the shutdown of the session",
+	);
+});
