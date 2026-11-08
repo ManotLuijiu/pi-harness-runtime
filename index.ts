@@ -3682,7 +3682,10 @@ function initMcpConnector(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", () => {
-		void connector.close().catch(() => {
+		// The session is over. The connector stops: nothing that is still
+		// pending may touch the runtime, because the runtime refuses those
+		// calls and the refusal would be read as a broken server.
+		void connector.stop().catch(() => {
 			// A broken connection needs no closing.
 		});
 	});
@@ -3757,17 +3760,38 @@ let mcpConnector: McpConnector | null = null;
 const HONCHO_MCP_SERVER_NAME = "honcho";
 
 /**
+ * The stop of the watcher of the Honcho tools.
+ *
+ * The watcher corrects the report of the startup while the session lives.
+ * When the session ends, the watcher stops: a report that is corrected
+ * after the end belongs to no session.
+ */
+let stopHonchoMcpWatcher: (() => void) | null = null;
+
+/**
  * Correct the report when the tools of the Honcho server appear.
  *
  * The connector of Pi connects the registered servers in the background, so
  * the report of the startup is written before the connection happens. The
  * wait is bounded and the report is only corrected when the tools are
  * really there.
+ *
+ * The watcher stops when the session ends. A watcher that outlives the
+ * session reads the tools of a session that is gone, and the runtime
+ * refuses that read: the report would be corrected by a failure that
+ * belongs to no session.
+ *
+ * @param pi The extension API
+ * @param honcho The Honcho module
+ * @returns The stop of the watcher
  */
-function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): void {
+function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): () => void {
 	const registrar = pi as unknown as HonchoMcpRegistrar;
 	const deadline = Date.now() + HONCHO_MCP_WAIT_MS;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let stopped = false;
 	const check = (): void => {
+		if (stopped) return;
 		const state = honcho.honchoMcpState(registrar, true);
 		if (state === "connected") {
 			logStartup("[pi-harness] Honcho: native MCP server connected");
@@ -3791,11 +3815,19 @@ function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): void {
 			}
 			return;
 		}
-		const timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
-		if (typeof timer.unref === "function") timer.unref();
+		const next = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
+		if (typeof next.unref === "function") next.unref();
+		timer = next;
 	};
-	const timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
+	timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
 	if (typeof timer.unref === "function") timer.unref();
+	return () => {
+		stopped = true;
+		if (timer) {
+			clearTimeout(timer);
+			timer = undefined;
+		}
+	};
 }
 
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
@@ -3889,7 +3921,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 						addHarnessMessage("Honcho", report.text, report.status, report.details);
 						// A connector connects the server in the background:
 						// the report is corrected when the tools appear.
-						watchHonchoMcpTools(pi, honcho);
+						// A watcher of a session that is gone is stopped
+						// first: only one watcher reads the tools.
+						stopHonchoMcpWatcher?.();
+						stopHonchoMcpWatcher = watchHonchoMcpTools(pi, honcho);
 					}
 				} else {
 					// The memory works, but the model has no Honcho tools: the
@@ -3985,6 +4020,13 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 			"Honcho memory stays disabled for this session.",
 		]);
 	}
+	// The session is over: the watcher of the tools stops. It reads the
+	// tools of the session, and the runtime refuses that read once the
+	// session is gone.
+	pi.on("session_shutdown", () => {
+		stopHonchoMcpWatcher?.();
+		stopHonchoMcpWatcher = null;
+	});
 }
 
 // --- langchain-loop: Ping-pong write-review loop via harness/langchain/ -----------

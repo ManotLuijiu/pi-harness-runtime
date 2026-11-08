@@ -151,11 +151,13 @@ export interface McpServerStatus {
 	 * - "skipped": another connector connected the server.
 	 * - "failed": the connector could not connect the server, and the
 	 *   reason says why.
+	 * - "ended": the session ended before the connection was made. The
+	 *   server was not refused; there was no session left to connect it to.
 	 */
-	state: "connected" | "skipped" | "failed";
+	state: "connected" | "skipped" | "failed" | "ended";
 	/** The names of the tools of the server. */
 	tools: string[];
-	/** The reason of a failure or of a skip. */
+	/** The reason of a failure, of a skip or of an end. */
 	reason?: string;
 }
 
@@ -167,6 +169,11 @@ export interface McpConnector {
 	readonly statuses: Map<string, McpServerStatus>;
 	/** Close the connections of the connector. */
 	close(): Promise<void>;
+	/**
+	 * Stop the connector: the session is over, so nothing that is still
+	 * pending may touch the runtime any more.
+	 */
+	stop(): Promise<void>;
 }
 
 /** The default wait before the connector connects a server. */
@@ -407,6 +414,26 @@ export function createMcpConnector(
 	const log = options.log ?? ((): void => {});
 	const statuses = new Map<string, McpServerStatus>();
 	const clients = new Map<string, McpClientLike>();
+	/** Whether the session is over. A stopped connector touches nothing. */
+	let stopped = false;
+	/** The attempts that are running, so a server is connected only once. */
+	const inFlight = new Map<string, Promise<McpServerStatus>>();
+
+	/**
+	 * Whether the error says that the session the connector works in is
+	 * gone.
+	 *
+	 * The runtime refuses every call through a session that was replaced or
+	 * reloaded. The refusal is not a broken server: the connector was talking
+	 * to a session that no longer exists, and the truth is that the session
+	 * ended before the server was connected.
+	 *
+	 * @param message The message of the error
+	 * @returns Whether the error names a session that is gone
+	 */
+	function isStaleSessionError(message: string): boolean {
+		return message.includes("ctx is stale") || message.includes("session replacement");
+	}
 
 	async function connectServer(
 		server: RegisteredMcpServerLike,
@@ -454,8 +481,37 @@ export function createMcpConnector(
 			} catch {
 				// The connection is already broken: the reason is the error.
 			}
+			if (stopped || isStaleSessionError(reason)) {
+				// The session is over. The server was not refused, and there
+				// was no session left to connect it to.
+				log(
+					`the session ended before the MCP server "${server.name}" was connected`,
+				);
+				return {
+					state: "ended",
+					tools: [],
+					reason: "the session ended before the connection was made",
+				};
+			}
 			log(`MCP server "${server.name}" could not be connected: ${reason}`);
 			return { state: "failed", tools: [], reason };
+		}
+	}
+
+	/**
+	 * Close the connections of the connector.
+	 *
+	 * Only the connections the connector owns are closed. A connection of
+	 * another connector is not in the map and stays untouched.
+	 */
+	async function closeClients(): Promise<void> {
+		for (const [name, client] of clients) {
+			try {
+				await client.close();
+			} catch {
+				// A broken connection needs no closing.
+			}
+			clients.delete(name);
 		}
 	}
 
@@ -463,6 +519,7 @@ export function createMcpConnector(
 		statuses,
 
 		async connectPending(): Promise<void> {
+			if (stopped) return;
 			let servers: RegisteredMcpServerLike[] = [];
 			try {
 				servers = api.getMcpServers?.() ?? [];
@@ -482,6 +539,10 @@ export function createMcpConnector(
 			// Another connector may be at work. The wait gives it the time,
 			// and its work is visible in the tools of the session.
 			await delay(graceMs);
+			// The session may have ended during the wait. A connector that
+			// works on a session that is gone reports a failure that never
+			// happened, so the work stops here.
+			if (stopped) return;
 			for (const server of wanted) {
 				const known = statuses.get(server.name);
 				// A server that was connected is done, and a server that
@@ -500,19 +561,44 @@ export function createMcpConnector(
 					);
 					continue;
 				}
-				statuses.set(server.name, await connectServer(server));
+				// Two calls may be at work (the start of the session and a
+				// change of the servers). The server is connected once: the
+				// second call waits for the attempt of the first one.
+				const running = inFlight.get(server.name);
+				if (running) {
+					statuses.set(server.name, await running);
+					continue;
+				}
+				const attempt = connectServer(server);
+				inFlight.set(server.name, attempt);
+				try {
+					statuses.set(server.name, await attempt);
+				} finally {
+					inFlight.delete(server.name);
+				}
 			}
 		},
 
 		async close(): Promise<void> {
-			for (const [name, client] of clients) {
-				try {
-					await client.close();
-				} catch {
-					// A broken connection needs no closing.
+			await closeClients();
+		},
+
+		async stop(): Promise<void> {
+			// The session is over. Nothing that is still pending may touch
+			// the runtime: the runtime refuses those calls, and the refusal
+			// would be read as a broken server.
+			stopped = true;
+			for (const [name, status] of statuses) {
+				if (status.state === "connected" || status.state === "skipped") {
+					continue;
 				}
-				clients.delete(name);
+				statuses.set(name, {
+					state: "ended",
+					tools: [],
+					reason: "the session ended before the connection was made",
+				});
 			}
+			await closeClients();
 		},
 	};
 }
