@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/tencentdb-memory",
-  "version": "1.1.475",
+  "version": "1.1.476",
   "description": "TencentDB Agent Memory client - sync skills to centralized knowledge base",
   "type": "module",
   "main": "src/index.ts",
