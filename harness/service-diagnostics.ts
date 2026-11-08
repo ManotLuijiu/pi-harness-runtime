@@ -20,7 +20,14 @@ export interface ServiceEvent {
 	level: ServiceLevel;
 	service: ServiceName;
 	operation: string;
-	phase: "start" | "completed" | "failed";
+	/**
+	 * The phase of the operation.
+	 *
+	 * "ended" is for an operation that was cut off because the session it
+	 * belonged to is over. It is neither a completion nor a failure of the
+	 * thing the operation was about.
+	 */
+	phase: "start" | "completed" | "failed" | "ended";
 	sessionId?: string;
 	requestId?: string;
 	durationMs?: number;

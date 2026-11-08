@@ -3709,6 +3709,8 @@ interface HonchoModule {
 	initHoncho: (options: {
 		apiKey?: string;
 		pi?: HonchoMcpRegistrar;
+		/** Whether the session is over. The probe of the credential stops with it. */
+		isSessionEnded?: () => boolean;
 	}) => Promise<HonchoInitResult>;
 	registerHonchoLifecycle: (pi: unknown) => void;
 	/** The credential: the environment wins over the key file. */
@@ -3758,6 +3760,15 @@ let mcpConnector: McpConnector | null = null;
  * a value import here would load the whole integration at the startup.
  */
 const HONCHO_MCP_SERVER_NAME = "honcho";
+
+/**
+ * Whether the session is over.
+ *
+ * The work of a session stops with it. A work that is cut off by the end of
+ * the session says nothing about the thing it was about: a closed
+ * connection is not a refusal of a server that was never asked.
+ */
+let sessionEnded = false;
 
 /**
  * The stop of the watcher of the Honcho tools.
@@ -3885,6 +3896,10 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		const result = await honcho.initHoncho({
 			apiKey,
 			pi: pi as unknown as HonchoMcpRegistrar,
+			// The probe of the credential runs while the session lives. A
+			// session that ends cuts the probe off, and a cut-off probe says
+			// nothing about the server.
+			isSessionEnded: () => sessionEnded,
 		});
 
 		if (!result || !result.status) {
@@ -3898,6 +3913,14 @@ async function initHoncho(pi: ExtensionAPI): Promise<void> {
 		}
 
 		switch (result.status) {
+			case "session_ended": {
+				// The session ended while the Honcho MCP was checked. The
+				// server was never asked, so nothing is claimed about it.
+				logStartup(
+					"[pi-harness] Honcho: the session ended before the Honcho MCP was checked",
+				);
+				return;
+			}
 			case "ready": {
 				logStartup("[pi-harness] Honcho integration ready");
 				if (result.mcpRegistered) {
@@ -5758,6 +5781,14 @@ if (hasReviewMarker) {
 	// Note: initHoncho registers the MCP server but workspace creation is deferred to session_start
 	// because MCP tool calls require an active Pi session.
 	asyncInitPromises.push(initHoncho(pi));
+
+	// The session decides how long the work of the session may live.
+	pi.on("session_start", () => {
+		sessionEnded = false;
+	});
+	pi.on("session_shutdown", () => {
+		sessionEnded = true;
+	});
 
 	// Defer Honcho workspace/identity creation until we have an active session
 	// Use a ref object so we can check and update atomically

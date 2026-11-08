@@ -44,7 +44,8 @@ export type HonchoInitStatus =
   | "ready"
   | "missing_key"
   | "mcp_unavailable"
-  | "registration_rejected";
+  | "registration_rejected"
+  | "session_ended";
 
 export interface HonchoInitResult {
   /** What happened. */
@@ -1280,11 +1281,13 @@ function isTimeoutOutcome(
 type CredentialVerdict =
   | { verdict: "accepted" }
   | { verdict: "rejected"; reason: string; httpStatus?: number }
-  | { verdict: "unavailable"; reason: string };
+  | { verdict: "unavailable"; reason: string }
+  | { verdict: "session_ended" };
 
 async function probeCredential(
   client: HonchoMcpClient,
-  timeoutMs: number = CREDENTIAL_PROBE_TIMEOUT_MS
+  timeoutMs: number = CREDENTIAL_PROBE_TIMEOUT_MS,
+  isSessionEnded?: () => boolean
 ): Promise<CredentialVerdict> {
   const persisted = loadPersistedWorkspace();
   const workspaceId = persisted?.workspaceId ?? DEFAULT_WORKSPACE_NAME;
@@ -1314,6 +1317,12 @@ async function probeCredential(
         ...(status ? { httpStatus: status } : {}),
       };
     }
+    // The session may have ended while the probe was running. The client
+    // of the session is closed then, and the closed connection is not a
+    // refusal of the server: there was no session left to ask.
+    if (isSessionEnded?.()) {
+      return { verdict: "session_ended" };
+    }
     // The probe did not get an answer. A workspace that does not exist is
     // answered with a result (the server creates it), so an exception here
     // is a transport failure - never a proof that the credential is good.
@@ -1330,6 +1339,9 @@ async function probeCredential(
 
   if (isTimeoutOutcome(outcome)) {
     controller.abort();
+    if (isSessionEnded?.()) {
+      return { verdict: "session_ended" };
+    }
     return {
       verdict: "unavailable",
       reason: `the server did not answer the credential probe within ${timeoutMs}ms`,
@@ -1382,6 +1394,13 @@ export async function initHoncho(options?: {
   loadMcpLibrary?: HonchoMcpLibraryLoader;
   /** The timeout of the credential probe. The tests shorten it. */
   probeTimeoutMs?: number;
+  /**
+   * Whether the session is over.
+   *
+   * A probe that runs while the session ends is cut off by the closing of
+   * the session, and the cut-off connection says nothing about the server.
+   */
+  isSessionEnded?: () => boolean;
 }): Promise<HonchoInitResult> {
   const result = await runInit(options);
   // The diagnostics commands report the outcome of the last attempt, so
@@ -1407,6 +1426,8 @@ async function runInit(options?: {
   createClient?: HonchoMcpClientFactory;
   loadMcpLibrary?: HonchoMcpLibraryLoader;
   probeTimeoutMs?: number;
+  /** Whether the session is over. The probe then stops with it. */
+  isSessionEnded?: () => boolean;
 }): Promise<HonchoInitResult> {
   if (_disposed) {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "dispose", phase: "failed", reason: "integration has been disposed, cannot reinitialize" });
@@ -1524,7 +1545,28 @@ async function runInit(options?: {
 
   // The handshake does not check the credential: the verdict arrives with
   // the first tool call. The probe asks for it, with a short timeout.
-  const probe = await probeCredential(client, options?.probeTimeoutMs ?? CREDENTIAL_PROBE_TIMEOUT_MS);
+  const probe = await probeCredential(
+    client,
+    options?.probeTimeoutMs ?? CREDENTIAL_PROBE_TIMEOUT_MS,
+    options?.isSessionEnded
+  );
+  if (probe.verdict === "session_ended") {
+    // The session ended while the probe was running. The server was never
+    // asked, so nothing is claimed about it.
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "info",
+      service: "honcho",
+      operation: "credential_probe",
+      phase: "ended",
+    });
+    await closeUnusedClient(client);
+    return {
+      status: "session_ended",
+      memory: null,
+      reason: "the session ended before the Honcho MCP was checked",
+    };
+  }
   if (probe.verdict === "rejected") {
     logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "credential_probe", phase: "failed", reason: redact(probe.reason) });
     honchoStatus.setConnected(false);
