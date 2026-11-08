@@ -147,6 +147,48 @@ describe("the action that is proposed", () => {
 		expect(action).toBe("May I proceed?");
 	});
 
+	it("keeps the action of the question when the message names another one", () => {
+		const action = extractProposedAction(
+			"I can update the status text. Want me to delete the production database?",
+			"Want me to delete the production database?",
+		);
+
+		// The message states a harmless action and the question asks for a
+		// deletion. The deletion is the action that is proposed, so it has
+		// to be part of the action that is classified.
+		expect(action).toContain("delete the production database");
+		expect(action).toContain("update the status text");
+	});
+
+	it("classifies the action of the question as destructive", () => {
+		const action = extractProposedAction(
+			"I can update the status text. Want me to delete the production database?",
+			"Want me to delete the production database?",
+		);
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Want me to delete the production database?",
+			proposedAction: action,
+		});
+
+		// Without the action of the question the classification would see
+		// the harmless update and approve the deletion.
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("does not turn a question that asks for nothing into an action", () => {
+		const action = extractProposedAction(
+			"I will refactor the tokenizer. May I proceed?",
+			"May I proceed?",
+		);
+
+		// The question names no action: the action stays the sentence of the
+		// message.
+		expect(action).toContain("refactor the tokenizer");
+		expect(action).not.toContain("May I proceed?");
+	});
+
 	it("does not turn a prohibition into a proposal", () => {
 		const risk = classifyQuestionRisk({
 			kind: "approval",

@@ -83,7 +83,13 @@ const ACTION_VERBS =
  * The message carries the ask ("may I proceed?") and the action ("I will
  * delete the branch"). The risk is about the action, so the action is
  * extracted: the sentences of the message that state what happens. The
- * question sentence itself is not an action - it asks, it does not act.
+ * question sentence itself is not an action - it asks, it does not act -
+ * unless it names an action itself.
+ *
+ * The question is assessed when it names an action: "I can update the status
+ * text. Want me to delete the production database?" states a harmless action
+ * in the message and asks for a deletion in the question. The action of the
+ * question is therefore always part of the action that is classified.
  *
  * When the message names no action, the question text is the action: the
  * risk of the question is then the risk of the ask.
@@ -106,7 +112,14 @@ export function extractProposedAction(
   if (actionSentences.length === 0) {
     return question.slice(0, MAX_ACTION_CHARS);
   }
-  return actionSentences.join(" ").slice(0, MAX_ACTION_CHARS);
+  // The question can carry the action that the message does not name. It is
+  // assessed together with the sentences of the message: the risk of the
+  // proposal is the risk of everything that is proposed.
+  const questionIsAction = question.length > 0 && ACTION_VERBS.test(question);
+  const parts = questionIsAction
+    ? [...actionSentences, question]
+    : actionSentences;
+  return parts.join(" ").slice(0, MAX_ACTION_CHARS);
 }
 
 /**
