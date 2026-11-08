@@ -22,7 +22,7 @@ export const MAX_ACTION_CHARS = 600;
  * found in the message. A sentence that names no action does not belong to
  * the action: it talks about the request, not about what happens.
  */
-const ACTION_VERBS = /\b(delete|deletes|deleting|removed?|removing|drop|dropped|dropping|wipe|wipes|wiping|erase|erases|erasing|purge|purges|purging|truncate|truncates|truncating|revoke|revokes|revoking|rotate|rotates|rotating|reset|resets|resetting|rebuild|rebuilds|reinstall|reinstalls|uninstall|uninstalls|deploy|deploys|deploying|publish|publishes|publishing|release|releases|releasing|ship|ships|shipping|push|pushes|pushing|merge|merges|merging|rebase|rebases|force[- ]?push|squash|squashes|send|sends|sending|post|posts|posting|mail|mails|email|emails|notify|notifies|upload|uploads|uploading|transfer|transfers|wire|wires|pay|pays|paying|invoice|invoices|refund|refunds|migrate|migrates|migrating|upgrade|upgrades|downgrade|downgrades|install|installs|installing|overwrite|overwrites|overwriting|replace|replaces|replacing|rename|renames|renaming|move|moves|moving|copy|copies|copying|run|runs|running|execute|executes|restart|restarts|stop|stops|stopping|kill|kills|killing|close|closes|closing|grant|grants|granting|enable|enables|enabling|disable|disables|disabling|update|updates|updating|modify|modifies|modifying|write|writes|writing|patch|patches|patching|commit|commits|committing|revert|reverts|refactor|refactors|rewrite|rewrites|format|formats|lint|lints|generate|generates|create|creates|add|adds|implement|implements|build|builds|compile|compiles|seed|seeds|backfill|backfills|sync|syncs|fetch|fetches|query|queries|benchmark|benchmarks|profile|profiles|cleanup|cleanups|clean|cleans|prune|prunes)\b/i;
+const ACTION_VERBS = /\b(delete|deletes|deleted|deleting|remove|removes|removed|removing|drop|drops|dropped|dropping|wipe|wipes|wiped|wiping|erase|erases|erased|erasing|purge|purges|purged|purging|truncate|truncates|truncated|truncating|destroy|destroys|destroyed|destroying|revoke|revokes|revoked|revoking|rotate|rotates|rotated|rotating|reset|resets|resetting|rebuild|rebuilds|reinstall|reinstalls|uninstall|uninstalls|deploy|deploys|deploying|publish|publishes|publishing|release|releases|releasing|ship|ships|shipping|push|pushes|pushing|merge|merges|merging|rebase|rebases|force[- ]?push|squash|squashes|send|sends|sending|post|posts|posting|mail|mails|email|emails|notify|notifies|upload|uploads|uploading|transfer|transfers|wire|wires|pay|pays|paying|invoice|invoices|refund|refunds|migrate|migrates|migrating|upgrade|upgrades|downgrade|downgrades|install|installs|installing|overwrite|overwrites|overwritten|overwriting|replace|replaces|replacing|rename|renames|renaming|move|moves|moving|copy|copies|copying|run|runs|running|execute|executes|restart|restarts|stop|stops|stopped|stopping|kill|kills|killed|killing|close|closes|closing|grant|grants|granting|enable|enables|enabling|disable|disables|disabling|update|updates|updating|modify|modifies|modifying|write|writes|writing|patch|patches|patching|commit|commits|committing|revert|reverts|reverted|reverting|refactor|refactors|rewrite|rewrites|format|formats|lint|lints|generate|generates|create|creates|add|adds|implement|implements|build|builds|compile|compiles|seed|seeds|backfill|backfills|sync|syncs|fetch|fetches|query|queries|benchmark|benchmarks|profile|profiles|cleanup|cleanups|clean|cleans|prune|prunes)\b/i;
 /**
  * The action the agent proposes.
  *
@@ -51,16 +51,47 @@ export function extractProposedAction(contextText, questionText) {
 }
 /**
  * Words that name an action that destroys, drops or overwrites something.
+ *
+ * The destructive verbs and their inflected forms.
+ *
+ * A risk pattern that only knows the bare singular of its verb misses the
+ * action in every other form: "the production database will be removed"
+ * destroys exactly as much as "remove the production database". The forms
+ * are the ones the action verbs of this file name (see ACTION_VERBS).
  */
 const DESTRUCTIVE_PATTERNS = [
-    { name: "delete", pattern: /\b(delete|remove|drop|truncate|wipe|purge|destroy|erase)\b/ },
-    { name: "reset", pattern: /\b(reset|rollback|revert)\b/ },
-    { name: "revoke", pattern: /\b(revoke|rotate|invalidate)\b/ },
-    { name: "force-push", pattern: /\b(force[\s-]?push|push\s+(--force|-f\b)|reset\s+--hard|clean\s+-\w*f)\b/ },
-    { name: "drop-object", pattern: /\bdrop\s+(table|database|schema|collection|index|bucket)\b/ },
-    { name: "delete-object", pattern: /\bdelete\s+(the\s+)?(database|table|file|folder|branch|tag|user|account|volume|key)\b/ },
-    { name: "terminate", pattern: /\b(terminate|kill|shutdown|stop)\b/ },
-    { name: "overwrite", pattern: /\boverwrite\b/ },
+    {
+        name: "delete",
+        pattern: /\b(delete|deletes|deleted|deleting|remove|removes|removed|removing|drop|drops|dropped|dropping|truncate|truncates|truncated|truncating|wipe|wipes|wiped|wiping|purge|purges|purged|purging|destroy|destroys|destroyed|destroying|erase|erases|erased|erasing)\b/,
+    },
+    {
+        name: "reset",
+        pattern: /\b(reset|resets|resetting|rollback|rollbacks|rolled\s+back|revert|reverts|reverted|reverting)\b/,
+    },
+    {
+        name: "revoke",
+        pattern: /\b(revoke|revokes|revoked|revoking|rotate|rotates|rotated|rotating|invalidate|invalidates|invalidated|invalidating)\b/,
+    },
+    {
+        name: "force-push",
+        pattern: /\b(force[\s-]?push(es|ed|ing)?|push(es|ed|ing)?\s+(--force|-f\b)|reset\s+--hard|clean\s+-\w*f)\b/,
+    },
+    {
+        name: "drop-object",
+        pattern: /\b(drop|drops|dropped|dropping)\s+(the\s+)?(table|database|schema|collection|index|bucket)\b/,
+    },
+    {
+        name: "delete-object",
+        pattern: /\b(delete|deletes|deleted|deleting|remove|removes|removed|removing)\s+(the\s+)?(database|table|file|folder|branch|tag|user|account|volume|key)\b/,
+    },
+    {
+        name: "terminate",
+        pattern: /\b(terminate|terminates|terminated|terminating|kill|kills|killed|killing|shutdown|shut\s+down|stop|stops|stopped|stopping)\b/,
+    },
+    {
+        name: "overwrite",
+        pattern: /\b(overwrite|overwrites|overwritten|overwriting)\b/,
+    },
 ];
 /**
  * Words that name an action that reaches the outside world.
@@ -84,37 +115,86 @@ const SENSITIVE_PATTERNS = [
  * "do not delete anything" is a prohibition, not a proposal: the risk of a
  * message must not turn the words of a prohibition into a destructive
  * action that blocks the work for good.
+ *
+ * The list carries the forms that really occur: the plain "not" of "will
+ * not delete" belongs to it, and so do the contractions. "not" alone is
+ * only a negation when it governs the action - see isNegated().
  */
-const NEGATION_WORDS = /\b(do not|don'?t|never|without|avoid|refrain from|no need to)\b/;
+const NEGATION_WORDS = /\b(do not|don'?t|never|without|avoid|refrain from|no need to|must not|shall not|cannot|can'?t|won'?t|shouldn'?t|mustn'?t|not)\b/;
+/**
+ * The words that stand between a negation and the action it governs.
+ *
+ * A negation that is separated from the action by a comma, a conjunction
+ * or a colon belongs to another part of the sentence: "this is not a test,
+ * delete the production database" proposes the deletion, "do not approve
+ * the request, then delete the branch" proposes the deletion too.
+ *
+ * "or" is not one of them: "do not remove or delete the branch" prohibits
+ * both actions, and the negation governs the second one as well.
+ */
+const NEGATION_BREAK = /[;:,]|\band\b|\bthen\b/;
+/**
+ * How many words may stand between a negation and the action.
+ *
+ * A negation governs the words that follow it closely: "will not delete",
+ * "cannot deploy", "never remove". A negation that is further away
+ * belongs to something else ("the plan is not ready so we should delete
+ * the branch").
+ */
+const NEGATION_DISTANCE_WORDS = 3;
 /**
  * Is the action at this position prohibited?
  *
  * The negation has to stand in front of the action, in the same clause: a
  * negation that belongs to another clause ("delete the branch, do not touch
  * main") does not prohibit the deletion.
+ *
+ * The last negation of the clause is the one that counts, and it has to
+ * govern the action: nothing may stand between them that would make the
+ * negation belong to another part of the sentence.
  */
 function isNegated(text, index) {
-    const before = text.slice(Math.max(0, index - 40), index);
+    const before = text.slice(0, index);
     // The clause of the action starts after the last sentence break.
     const clause = before.split(/[.;!?\n]/).pop() ?? before;
-    return NEGATION_WORDS.test(clause);
+    const matches = [...clause.matchAll(new RegExp(NEGATION_WORDS.source, "gi"))];
+    const last = matches[matches.length - 1];
+    if (!last)
+        return false;
+    const between = clause.slice(last.index + last[0].length);
+    if (NEGATION_BREAK.test(between))
+        return false;
+    // The negation governs the action only when it stands close to it.
+    const words = between.trim().length === 0 ? 0 : between.trim().split(/\s+/).length;
+    return words <= NEGATION_DISTANCE_WORDS;
 }
 /**
  * Match the patterns of one kind of risk in a text.
  *
  * A pattern that is prohibited does not count: the words of a prohibition
  * are not a proposal.
+ *
+ * Every occurrence of a pattern is examined: a prohibited occurrence does
+ * not hide a later one that is proposed ("do not delete the branch, instead
+ * delete the production database"). The pattern counts when at least one
+ * of its occurrences is not prohibited.
  */
 function matchPatterns(text, patterns, signals) {
     let matched = false;
     for (const { name, pattern } of patterns) {
-        const match = pattern.exec(text);
-        if (!match)
-            continue;
-        if (isNegated(text, match.index))
-            continue;
-        signals.push(name);
-        matched = true;
+        const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+        let match;
+        while ((match = global.exec(text)) !== null) {
+            if (match[0].length === 0) {
+                global.lastIndex += 1;
+                continue;
+            }
+            if (isNegated(text, match.index))
+                continue;
+            signals.push(name);
+            matched = true;
+            break;
+        }
     }
     return matched;
 }
