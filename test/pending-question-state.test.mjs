@@ -242,10 +242,57 @@ test("a rejection during the countdown pauses the work", () => {
 	assert.equal(runtime.state.dispatched, false);
 });
 
+test("a refusal during the countdown pauses the work", () => {
+	// "No thanks" is a refusal without punctuation: the wording of a
+	// decline is a directive, so the courtesy closing counts as well.
+	const runtime = createRuntime({ requestId: "q-1", state: "pending" });
+	runtime.state.waiting = true;
+
+	const effect = runtime.userMessage("No thanks");
+
+	assert.equal(effect, "cancelled-wait-and-question", "the question is closed");
+	assert.deepEqual(runtime.state.cancelled, ["q-1"]);
+	assert.equal(
+		runtime.state.paused,
+		true,
+		"a refusal pauses the work, also during the countdown",
+	);
+	assert.equal(
+		runtime.agentSettled(),
+		false,
+		"the next settled turn does not dispatch work behind the refusal",
+	);
+	assert.equal(runtime.state.dispatched, false);
+});
+
+test("a negative statement does not pause the work", () => {
+	// "I don't see any errors" is a statement about a state: it declines
+	// nothing, so it must not pause the session.
+	const runtime = createRuntime({ requestId: "q-1", state: "pending" });
+	runtime.state.waiting = true;
+
+	const effect = runtime.userMessage("I don't see any errors");
+
+	assert.equal(effect, "cancelled-wait-and-question", "the reply ends the wait");
+	assert.equal(
+		runtime.state.paused,
+		false,
+		"a statement about a state is not a decline",
+	);
+	assert.equal(
+		runtime.agentSettled(),
+		true,
+		"the work continues after a statement that declines nothing",
+	);
+	assert.equal(runtime.state.dispatched, true);
+});
+
 test("a reply that declines is a rejection", () => {
 	assert.equal(isRejection("No, do not implement it"), true);
 	assert.equal(isRejection("No"), true);
 	assert.equal(isRejection("No."), true);
+	assert.equal(isRejection("No thanks"), true);
+	assert.equal(isRejection("No thank you"), true);
 	assert.equal(isRejection("Nope"), true);
 	assert.equal(isRejection("Never mind"), true);
 	assert.equal(isRejection("Cancel that"), true);
@@ -259,6 +306,9 @@ test("a reply that does not decline is not a rejection", () => {
 	assert.equal(isRejection("resume"), false);
 	assert.equal(isRejection("No changes are needed, everything works"), false);
 	assert.equal(isRejection("There is no error in the log"), false);
+	assert.equal(isRejection("I don't see any errors"), false);
+	assert.equal(isRejection("I do not think we should do that"), false);
+	assert.equal(isRejection("I won't be able to finish the migration"), false);
 	assert.equal(isRejection(""), false);
 	assert.equal(isRejection(undefined), false);
 });
@@ -310,5 +360,10 @@ test("the runtime uses the rules in its handlers", () => {
 		indexSource,
 		/detectExplicitPause[\s\S]*?isRejection\(text\)/,
 		"a rejection is a pause directive for the later handler as well",
+	);
+	assert.match(
+		indexSource,
+		/!hasOpenQuestion\(\) && !isWaitingForUser\(\)[^\n]*\n\s*return isRejection\(text\)/,
+		"a decline pauses the work only when there is a proposal to decline",
 	);
 });

@@ -2404,8 +2404,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}
 			}
 			// A decline of the proposal is a decision about the work: it
-			// pauses the work like a stop directive does. "No, do not
-			// implement it" is not one of the wordings above.
+			// pauses the work like a stop directive does - but only when
+			// there is a proposal to decline. An ordinary negative
+			// statement ("I don't see any errors") declines nothing and
+			// must not pause the session.
+			if (!hasOpenQuestion() && !isWaitingForUser()) return false;
 			return isRejection(text);
 		}
 
