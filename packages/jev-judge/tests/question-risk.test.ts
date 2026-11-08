@@ -181,6 +181,79 @@ describe("the action that is proposed", () => {
 		expect(risk.destructive).toBe(true);
 	});
 
+	it("does not let a prohibition hide a later destructive action", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction:
+				"Do not delete the branch. Instead, delete the production database.",
+		});
+
+		// The first occurrence of "delete" is prohibited, the second one is
+		// proposed. A prohibition must not hide a destructive action.
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("reads a plain negation as a prohibition", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "I will not delete the production database.",
+		});
+
+		// "will not delete" is a prohibition, not a proposal.
+		expect(risk.destructive).toBe(false);
+		expect(risk.requiresExplicitAuthorization).toBe(false);
+	});
+
+	it("reads a negation of a modal verb as a prohibition", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "The system cannot deploy to production.",
+		});
+
+		// "cannot deploy" is a prohibition: no action is proposed.
+		expect(risk.external).toBe(false);
+		expect(risk.requiresExplicitAuthorization).toBe(false);
+	});
+
+	it("keeps a destructive action that a distant negation does not govern", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "This is not a test, delete the production database.",
+		});
+
+		// The negation belongs to the first part of the sentence: the
+		// deletion is proposed.
+		expect(risk.destructive).toBe(true);
+	});
+
+	it("sees a destructive action in another grammatical form", () => {
+		const risk = classifyQuestionRisk({
+			kind: "approval",
+			text: "Should I proceed?",
+			proposedAction: "The production database will be removed.",
+		});
+
+		// "will be removed" destroys as much as "remove": the risk is about
+		// the action, not about the form of its verb.
+		expect(risk.destructive).toBe(true);
+		expect(risk.requiresExplicitAuthorization).toBe(true);
+	});
+
+	it("extracts an action that is stated in the past tense", () => {
+		const action = extractProposedAction(
+			"The release branch was deleted. May I proceed?",
+			"May I proceed?",
+		);
+
+		// The sentence states what happened: it is part of the action.
+		expect(action).toContain("deleted");
+	});
+
 	it("keeps a question that names no action harmless", () => {
 		const risk = classifyQuestionRisk({
 			kind: "approval",
