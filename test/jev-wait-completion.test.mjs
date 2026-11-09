@@ -145,6 +145,36 @@ test("a question about the requested scope is registered", () => {
 	assert.equal(harness.questions.hasPendingQuestion(), true);
 });
 
+test("a necessary clarification is registered and protects the continuation", () => {
+	// Todo: "Configure authentication." Question: "Which identity provider
+	// should I use?" The question names nothing of the request, but the
+	// agent cannot continue without the answer, so it is registered and it
+	// holds the continuation.
+	const relevance = questionRelevance({
+		text: "Which identity provider should I use?",
+		work: "unfinished",
+		scope: ["Configure authentication"],
+		action: "Which identity provider should I use?",
+		kind: "clarification",
+	});
+	assert.equal(relevance, "current-request");
+
+	const harness = createHarness();
+	const question = harness.questions.createQuestion({
+		text: "Which identity provider should I use?",
+		sessionId: "s-1",
+		workspacePath: "/tmp",
+		kind: "clarification",
+		relevance,
+	});
+	assert.ok(question, "the clarification is registered");
+	assert.equal(
+		harness.questions.hasPendingQuestion(),
+		true,
+		"the question protects the continuation against an automatic decision",
+	);
+});
+
 test("a question outside the requested scope is not registered", () => {
 	const scope = ["Implement A"];
 	const relevance = questionRelevance({

@@ -68,6 +68,68 @@ test("an offer never reaches the judge", () => {
 	assert.match(decision.reason, /not asked for/);
 });
 
+test("a shared verb is not evidence of the requested scope", () => {
+	// Todo: "Implement login." Question: "Want me to implement analytics?"
+	// Both contain "implement", but the work is not the same work: the
+	// subject of the proposal is not the subject of the request.
+	const relevance = questionRelevance({
+		text: "Want me to implement analytics?",
+		work: "unfinished",
+		scope: ["Implement login"],
+		action: "Want me to implement analytics?",
+		kind: "approval",
+	});
+	assert.equal(relevance, "optional-offer");
+	assert.equal(
+		jevWaitEligibility({ relevance, work: "unfinished" }).eligible,
+		false,
+		"the proposal names other work than the request",
+	);
+});
+
+test("an approval about the requested work is kept", () => {
+	const relevance = questionRelevance({
+		text: "Want me to implement login?",
+		work: "unfinished",
+		scope: ["Implement login"],
+		action: "Want me to implement login?",
+		kind: "approval",
+	});
+	assert.equal(relevance, "current-request");
+});
+
+test("a necessary clarification is preserved", () => {
+	// Todo: "Configure authentication." Question: "Which identity provider
+	// should I use?" The question names nothing of the request, but the
+	// agent cannot configure the authentication without the answer.
+	const relevance = questionRelevance({
+		text: "Which identity provider should I use?",
+		work: "unfinished",
+		scope: ["Configure authentication"],
+		action: "Which identity provider should I use?",
+		kind: "clarification",
+	});
+	assert.equal(relevance, "current-request");
+	assert.equal(
+		jevWaitEligibility({ relevance, work: "unfinished" }).eligible,
+		true,
+		"a clarification is needed for the requested work",
+	);
+});
+
+test("the kind of the question decides before the scope", () => {
+	// A choice names the options of the request. The scope cannot reject
+	// it, because one of the options may be the requested work.
+	const relevance = questionRelevance({
+		text: "Want me to implement A, or A+B?",
+		work: "unfinished",
+		scope: ["Implement A"],
+		action: "Want me to implement A, or A+B?",
+		kind: "choice",
+	});
+	assert.equal(relevance, "current-request");
+});
+
 test("the requested scope decides, not the wording", () => {
 	// "Want me to implement A, or A+B?" is phrased like an offer and asks
 	// about the request itself. The scope of the request is what decides.
