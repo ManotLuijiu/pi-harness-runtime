@@ -145,6 +145,46 @@ describe("harness footer rows", () => {
 		expect(workspaceText).toContain("RAM:");
 	});
 
+	it("gives the pending actions their own row, before the quota", () => {
+		const footer = createHarnessFooter(
+			{} as never,
+			plainTheme,
+			makeFooterData({
+				"harness-runtime": QUOTA,
+				"harness-actions":
+					"[BLOCKED] provider retry | MiniMax usage limit reached (2067)\n" +
+					"[WAIT] jev-decision in 04:12 | the decision of the judge",
+			}),
+		);
+
+		const lines = footer.render(120);
+		const actionsIndex = lines.findIndex((line) => line.includes("[BLOCKED]"));
+		const quotaIndex = lines.findIndex((line) => line.includes("MiniMax: 5h:"));
+
+		expect(actionsIndex).toBeGreaterThanOrEqual(0);
+		expect(quotaIndex).toBeGreaterThanOrEqual(0);
+		expect(actionsIndex).toBeLessThan(quotaIndex);
+		expect(lines[actionsIndex]).toContain("[WAIT] jev-decision in 04:12");
+	});
+
+	it("keeps the pending actions visible next to an unrelated status", () => {
+		const footer = createHarnessFooter(
+			{} as never,
+			plainTheme,
+			makeFooterData({
+				"harness-runtime": QUOTA,
+				"harness-actions": "[BLOCKED] provider retry | the plan is exhausted",
+				"other-extension": "hello",
+			}),
+		);
+
+		const lines = footer.render(120);
+		const text = lines.join("\n");
+
+		expect(text).toContain("[BLOCKED] provider retry");
+		expect(text).toContain("hello");
+	});
+
 	it("keeps Pi's footer information (cwd, branch, stats, model)", () => {
 		const footer = createHarnessFooter(
 			{} as never,
