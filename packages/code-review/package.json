@@ -1,6 +1,6 @@
 {
   "name": "@pi/code-review",
-  "version": "1.1.489",
+  "version": "1.1.490",
   "description": "Automated code review engine for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
