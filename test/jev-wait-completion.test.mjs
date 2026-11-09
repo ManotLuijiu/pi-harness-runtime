@@ -9,6 +9,7 @@ import {
 	clearObsoleteWait,
 	isObsoleteQuestion,
 	jevWaitEligibility,
+	jevWaitRegistration,
 	questionRelevance,
 	workStateFromTodos,
 } from "../harness/jev-wait-eligibility.ts";
@@ -175,7 +176,10 @@ test("a necessary clarification is registered and protects the continuation", ()
 	);
 });
 
-test("a question outside the requested scope is not registered", () => {
+test("a question outside the requested scope stays open without a countdown", () => {
+	// Keeping the question open and letting the judge answer it are two
+	// decisions: the question waits for the human, and its silence decides
+	// nothing.
 	const scope = ["Implement A"];
 	const relevance = questionRelevance({
 		text: "May I add an export feature?",
@@ -184,6 +188,27 @@ test("a question outside the requested scope is not registered", () => {
 	});
 	assert.equal(relevance, "optional-offer");
 	assert.equal(jevWaitEligibility({ relevance, work: "unfinished" }).eligible, false);
+	assert.equal(jevWaitRegistration({ relevance, work: "unfinished" }).register, true);
+
+	const harness = createHarness();
+	const question = harness.questions.createQuestion({
+		text: "May I add an export feature?",
+		sessionId: "s-1",
+		workspacePath: "/tmp",
+		kind: "approval",
+		relevance,
+	});
+	assert.ok(question, "the question is registered");
+	assert.equal(
+		harness.questions.hasPendingQuestion(),
+		true,
+		"the question holds the continuation against an automatic decision",
+	);
+	assert.equal(
+		harness.lifecycle.currentState,
+		"idle",
+		"no countdown runs for a question that may not be answered by silence",
+	);
 });
 
 test("an offer in the form of a question after the completion starts no countdown", () => {

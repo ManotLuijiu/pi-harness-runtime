@@ -6,6 +6,7 @@ import {
 	clearObsoleteWait,
 	isObsoleteQuestion,
 	jevWaitEligibility,
+	jevWaitRegistration,
 	questionRelevance,
 	workStateFromTodos,
 } from "../harness/jev-wait-eligibility.ts";
@@ -117,9 +118,9 @@ test("a necessary clarification is preserved", () => {
 	);
 });
 
-test("the kind of the question decides before the scope", () => {
-	// A choice names the options of the request. The scope cannot reject
-	// it, because one of the options may be the requested work.
+test("a choice is compared with the scope like every approval", () => {
+	// A choice names options. The kind of a question never establishes a
+	// permission, so the scope decides what the options propose.
 	const relevance = questionRelevance({
 		text: "Want me to implement A, or A+B?",
 		work: "unfinished",
@@ -128,6 +129,46 @@ test("the kind of the question decides before the scope", () => {
 		kind: "choice",
 	});
 	assert.equal(relevance, "current-request");
+});
+
+test("a choice that proposes other work is not decided automatically", () => {
+	// Todo: "Implement login." Question: "Want me to add analytics or
+	// billing?" The question is a choice, and its kind does not make it
+	// permissible: the scope decides that it proposes other work.
+	const relevance = questionRelevance({
+		text: "Want me to add analytics or billing?",
+		work: "unfinished",
+		scope: ["Implement login"],
+		action: "Want me to add analytics or billing?",
+		kind: "choice",
+	});
+	assert.equal(relevance, "optional-offer");
+	assert.equal(
+		jevWaitEligibility({ relevance, work: "unfinished" }).eligible,
+		false,
+		"the silence of the user must not authorize the new work",
+	);
+	assert.equal(
+		jevWaitRegistration({ relevance, work: "unfinished" }).register,
+		true,
+		"the question stays open: the human may still answer it",
+	);
+});
+
+test("a question is not registered when the work of the request is done", () => {
+	assert.equal(
+		jevWaitRegistration({ relevance: "current-request", work: "complete" }).register,
+		false,
+		"the question is moot when the request is done",
+	);
+	assert.equal(
+		jevWaitRegistration({ relevance: "current-request", work: "unfinished" }).register,
+		true,
+	);
+	assert.equal(
+		jevWaitRegistration({ relevance: "optional-offer", work: "unknown" }).register,
+		true,
+	);
 });
 
 test("the requested scope decides, not the wording", () => {

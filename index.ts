@@ -43,6 +43,7 @@ import {
 	clearObsoleteWait,
 	isObsoleteQuestion,
 	jevWaitEligibility,
+	jevWaitRegistration,
 	ownsQuestion,
 	questionRelevance,
 	workStateFromTodos,
@@ -1947,18 +1948,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					action: questionAction,
 					kind: questionKind,
 				});
-				const eligibility = jevWaitEligibility({
+				// Keeping the question open and letting the judge answer it
+				// are two decisions. The question stays open while the
+				// request runs: it holds the continuation and the human can
+				// answer it.
+				const registration = jevWaitRegistration({
 					relevance,
 					work: workState,
 				});
-				if (!eligibility.eligible) {
-					// The question is not answered by silence: it waits for
-					// the user, and no countdown, no row and no notification
-					// claim that the agent is waiting.
+				if (!registration.register) {
 					logToFile(
 						"[auto-continue]",
-						"The question does not wait for an automatic decision:",
-						eligibility.reason,
+						"The question is not registered:",
+						registration.reason,
 					);
 					return;
 				}
@@ -1988,11 +1990,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// Use question.requestId as the jobId for callback matching
 					const questionJobId = question.requestId;
 
-					// The wait starts here. The controller owns the question,
-					// the moment it was asked and the countdown, so the
-					// deadline of the decision and the deadline of the
-					// countdown are the same moment. A question that replaces
-					// this one invalidates the evaluation of this one.
+				// The wait starts here. The controller owns the question,
+				// the moment it was asked and the countdown, so the
+				// deadline of the decision and the deadline of the
+				// countdown are the same moment. A question that replaces
+				// this one invalidates the evaluation of this one.
+				//
+				// The wait counts down only when the judge may answer the
+				// question: a question that offers work that was not asked
+				// for stays open, but its silence decides nothing.
+				const eligibility = jevWaitEligibility({
+					relevance,
+					work: workState,
+				});
+				if (eligibility.eligible) {
 					waitLifecycle.begin({
 						requestId: questionJobId,
 						sessionId: _sessionId,
@@ -2003,6 +2014,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						alternatives: result.alternatives,
 						relevance,
 					});
+				} else {
+					logToFile(
+						"[auto-continue]",
+						"The question does not wait for an automatic decision:",
+						eligibility.reason,
+					);
+				}
 
 				// Get task context for additional info
 				const taskContext = await getTaskContext().catch(() => ({ total: 0, completed: 0, remaining: [] as string[] }));
@@ -2012,7 +2030,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const taskInfo = taskContext.total > 0
 					? `Tasks: ${taskContext.completed}/${taskContext.total} done`
 					: "No active tasks";
-				const contextInfo = `Waiting: ${waitMinutes}m | ${taskInfo}`;
+				const contextInfo = eligibility.eligible
+					? `Waiting: ${waitMinutes}m | ${taskInfo}`
+					: `Waiting for your answer | ${taskInfo}`;
 
 				// Emit WaitingForUserInput to Telegram and LINE with the same
 				// Yes/No actions. The canonical request ID is the correlation

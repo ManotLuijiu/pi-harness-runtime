@@ -198,16 +198,16 @@ const TASK_VERBS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The kinds of a question that ask for information, not for an approval.
+ * The kinds of a question whose relevance is uncertain.
  *
- * A question of such a kind is about the work at hand: the agent cannot
- * continue the requested work without the answer. The scope of the request
- * cannot reject it, because a clarification often names nothing that the
- * request names.
+ * A question of such a kind asks for information that the request does not
+ * name: the agent cannot continue the requested work without the answer.
+ * The kind preserves the question, but it never establishes a permission:
+ * a choice may name work that was not asked for, and the scope decides
+ * that.
  */
-const INFORMATION_KINDS: ReadonlySet<string> = new Set([
+const PRESERVING_KINDS: ReadonlySet<string> = new Set([
 	"clarification",
-	"choice",
 	"routine",
 ]);
 
@@ -276,7 +276,7 @@ export function classifyQuestionRelevance(
 		return { offer: false, reason: "the question has no text" };
 	}
 	const kind = (options.kind ?? "").trim().toLowerCase();
-	if (INFORMATION_KINDS.has(kind)) {
+	if (PRESERVING_KINDS.has(kind)) {
 		return {
 			offer: false,
 			reason: `the question asks for information (${kind}) and is needed for the requested work`,
@@ -409,6 +409,37 @@ export function questionRelevance(input: {
 }
 
 /**
+ * May the question be kept open?
+ *
+ * Keeping a question open and letting the judge answer it are two
+ * decisions. A question that stays open holds the continuation and can be
+ * answered by the human. A question that the judge may answer gets a
+ * countdown, and its silence decides.
+ *
+ * A question is kept open while the request runs, whatever it proposes: an
+ * offer of work that was not asked for is still a question of the human,
+ * and the human may answer it. A question that is asked when the work of
+ * the request is done is moot and stays closed.
+ */
+export function jevWaitRegistration(input: {
+	/** What the question is about. */
+	relevance: JevQuestionRelevance;
+	/** The state of the work now. */
+	work: JevWorkState;
+}): { register: boolean; reason: string } {
+	if (input.work === "complete") {
+		return {
+			register: false,
+			reason: "the work of the request is done; the question is moot",
+		};
+	}
+	return {
+		register: true,
+		reason: "the question stays open until the human answers it",
+	};
+}
+
+/**
  * Is the open question obsolete?
  *
  * A question about work that has been done is obsolete: it blocks nothing
@@ -421,10 +452,10 @@ export function isObsoleteQuestion(input: {
 	/** The state of the work now. */
 	work: JevWorkState;
 }): { obsolete: boolean; reason: string } {
-	if (input.relevance !== "current-request") {
+	if (input.relevance === "final-request") {
 		return {
 			obsolete: false,
-			reason: "the question is not about work that remained",
+			reason: "the question was asked after the work of the request was done",
 		};
 	}
 	if (input.work === "complete") {
