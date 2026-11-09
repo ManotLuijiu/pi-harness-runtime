@@ -154,6 +154,8 @@ function loadHoncho({
   listToolsFails,
   neverAnswers,
   resultWith,
+  neverConnects,
+  lateConnectsMs,
 } = {}) {
   const calls = [];
   const logs = [];
@@ -241,6 +243,15 @@ function loadHoncho({
     factoryKeys.push(apiKey);
     if (connect) {
       throw connect;
+    }
+    if (neverConnects) {
+      // A server that accepts the connection and then stops talking: the
+      // handshake never finishes.
+      return new Promise(() => {});
+    }
+    if (lateConnectsMs !== undefined) {
+      // The handshake finishes after the timeout of the test.
+      await new Promise((resolve) => setTimeout(resolve, lateConnectsMs));
     }
     return client;
   };
@@ -1078,4 +1089,45 @@ test("a tools listing that fails while the session lives is still a failure", as
     /did not list its tools/,
     "the reason names the cause",
   );
+});
+
+test("a handshake that never finishes is named instead of hanging the initialization", async () => {
+  const { honcho, logs, createClient } = loadHoncho({ neverConnects: true });
+
+  const result = await honcho.initHoncho({
+    apiKey: "test-key",
+    createClient,
+    connectTimeoutMs: 60,
+  });
+  assert.equal(result.status, "mcp_unavailable", "the status names the cause");
+  assert.match(
+    result.reason,
+    /the handshake with the Honcho MCP server did not finish/,
+    "the reason names the stall, not a missing reason",
+  );
+  const failure = logs.find(
+    (entry) => entry.operation === "mcp_connect" && entry.phase === "failed",
+  );
+  assert.ok(failure, "the service log carries the failed connection");
+  assert.match(
+    failure.reason,
+    /did not finish/,
+    "the log names the stall",
+  );
+});
+
+test("a client that connects after the timeout is closed", async () => {
+  const { honcho, closeCalls, createClient } = loadHoncho({ lateConnectsMs: 120 });
+
+  const result = await honcho.initHoncho({
+    apiKey: "test-key",
+    createClient,
+    connectTimeoutMs: 30,
+  });
+  assert.equal(result.status, "mcp_unavailable", "the timeout wins the handshake");
+
+  // The handshake finishes after the timeout: the client that arrives then
+  // has nobody to use it, so it is closed instead of leaking.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(closeCalls.length, 1, "the late client is closed");
 });

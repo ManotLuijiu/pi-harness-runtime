@@ -200,6 +200,21 @@ const MCP_CLIENT_MODULE = "@earendil-works/pi-mcp";
 const MCP_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * The timeout of the handshake of the MCP client.
+ *
+ * The request timeout of the client bounds a *request*, not the
+ * handshake: a server that accepts the connection and then stops talking
+ * leaves `connect()` pending forever. The initialization waits for that
+ * handshake, so an unbounded wait turns a slow server into an
+ * initialization that never finishes and a session that reports nothing
+ * about the cause.
+ *
+ * The timeout turns the stall into a named failure: the initialization
+ * reports that the server did not answer, and the user learns why.
+ */
+const MCP_CONNECT_TIMEOUT_MS = 15_000;
+
+/**
  * The timeout of the credential probe.
  *
  * The probe is a courtesy, not a gate: it must never hold the startup for
@@ -386,7 +401,9 @@ function clientFactory(): HonchoMcpClientFactory {
  * The client stays alive for the whole session; a dropped connection is
  * re-established lazily, so a long session survives a server restart.
  */
-async function ensureMcpClient(): Promise<HonchoMcpClient | null> {
+async function ensureMcpClient(
+  connectTimeoutMs: number = MCP_CONNECT_TIMEOUT_MS,
+): Promise<HonchoMcpClient | null> {
   if (_disposed) {
     return null;
   }
@@ -413,9 +430,12 @@ async function ensureMcpClient(): Promise<HonchoMcpClient | null> {
   }
 
   const factory = clientFactory();
+  // The handshake is bounded here as well: a lazy reconnection must not
+  // hang a tool call on a server that stopped talking.
+  const pending = factory(_apiKey);
+  let outcome: { timedOut: true } | { timedOut: false; value: HonchoMcpClient };
   try {
-    _mcpClient = await factory(_apiKey);
-    return _mcpClient;
+    outcome = await withTimeout(pending, connectTimeoutMs);
   } catch (err) {
     logServiceEvent({
       ts: new Date().toISOString(),
@@ -427,6 +447,32 @@ async function ensureMcpClient(): Promise<HonchoMcpClient | null> {
     });
     return null;
   }
+  if (isTimeoutOutcome(outcome)) {
+    const reason = `the handshake with the Honcho MCP server did not finish within ${connectTimeoutMs / 1000}s`;
+    logServiceEvent({
+      ts: new Date().toISOString(),
+      level: "error",
+      service: "honcho",
+      operation: "mcp_connect",
+      phase: "failed",
+      reason,
+    });
+    // A client that connects after the timeout would stay open with
+    // nobody closing it.
+    void pending.then(
+      (late) => {
+        void late.close().catch(() => {
+          // A client that cannot be closed is dropped anyway.
+        });
+      },
+      () => {
+        // The failure is already reported.
+      },
+    );
+    return null;
+  }
+  _mcpClient = outcome.value;
+  return _mcpClient;
 }
 
 /**
@@ -1395,6 +1441,13 @@ export async function initHoncho(options?: {
   /** The timeout of the credential probe. The tests shorten it. */
   probeTimeoutMs?: number;
   /**
+   * The timeout of the handshake with the MCP server.
+   *
+   * The default bounds a server that stops talking. The tests shorten it,
+   * because a test must not wait for the real timeout.
+   */
+  connectTimeoutMs?: number;
+  /**
    * Whether the session is over.
    *
    * A probe that runs while the session ends is cut off by the closing of
@@ -1426,6 +1479,11 @@ async function runInit(options?: {
   createClient?: HonchoMcpClientFactory;
   loadMcpLibrary?: HonchoMcpLibraryLoader;
   probeTimeoutMs?: number;
+  /**
+   * The timeout of the handshake with the MCP server. The tests shorten
+   * it: a test must not wait for the real timeout.
+   */
+  connectTimeoutMs?: number;
   /** Whether the session is over. The probe then stops with it. */
   isSessionEnded?: () => boolean;
 }): Promise<HonchoInitResult> {
@@ -1482,8 +1540,14 @@ async function runInit(options?: {
   // Connect with the native MCP client.
   const factory = clientFactory();
   let client: HonchoMcpClient;
+  // The handshake is bounded: a server that stops talking must not hold
+  // the initialization forever. The timeout wins and the pending
+  // handshake is left to its own fate.
+  const pending = factory(key);
+  let connectOutcome: { timedOut: true } | { timedOut: false; value: HonchoMcpClient };
+  const connectTimeoutMs = options?.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
   try {
-    client = await factory(key);
+    connectOutcome = await withTimeout(pending, connectTimeoutMs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = errorStatus(err);
@@ -1513,6 +1577,36 @@ async function runInit(options?: {
       hint: `check the network and the endpoint ${HONCHO_MCP_URL}`,
     };
   }
+
+  if (isTimeoutOutcome(connectOutcome)) {
+    // The handshake did not finish in time. The failure is named, so the
+    // report of the startup says what happened instead of "no reason was
+    // reported".
+    const reason = `the handshake with the Honcho MCP server did not finish within ${connectTimeoutMs / 1000}s`;
+    logServiceEvent({ ts: new Date().toISOString(), level: "error", service: "honcho", operation: "mcp_connect", phase: "failed", reason });
+    honchoStatus.recordFailure("init", "connect_timeout", { error: reason });
+    // The handshake may still finish after the timeout. A client that
+    // connects then would stay open with nobody closing it, so it is
+    // closed as soon as it arrives.
+    void pending.then(
+      (late) => {
+        void late.close().catch(() => {
+          // A client that cannot be closed is dropped anyway.
+        });
+      },
+      () => {
+        // The failure is already reported.
+      },
+    );
+    return {
+      status: "mcp_unavailable",
+      memory: null,
+      reason: `the Honcho MCP server could not be reached: ${reason}`,
+      hint: `check the network and the endpoint ${HONCHO_MCP_URL}`,
+    };
+  }
+
+  client = connectOutcome.value;
 
   _mcpClient = client;
 
