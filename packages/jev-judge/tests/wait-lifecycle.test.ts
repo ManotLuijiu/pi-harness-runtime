@@ -332,6 +332,36 @@ describe("the wait for a human answer", () => {
 		expect(controller.currentState).toBe("idle");
 	});
 
+	it("does not clear a newer question with a stale eligibility check", async () => {
+		const clock = createClock();
+		const provider = createProvider();
+		const controller = new WaitLifecycleController({
+			now: clock.now,
+			waitMinutes: 5,
+			evaluate: (call, waitedMs) => provider.evaluate(call, waitedMs),
+			// The check of the old question finds that the work is done.
+			eligibility: () => ({
+				eligible: false,
+				reason: "the work of the question is done",
+			}),
+		});
+
+		controller.begin(request());
+		clock.advance(5 * 60_000);
+
+		// The question is replaced while the eligibility is read: the stale
+		// check must not clear the wait of the new question.
+		const running = controller.evaluateDue();
+		controller.begin(request({ requestId: "q-2", text: "A new question?" }));
+		const result = await running;
+
+		expect(result.applied).toBe(false);
+		expect(result.discardReason).toBe("stale");
+		expect(provider.calls).toHaveLength(0);
+		expect(controller.currentState).toBe("waiting");
+		expect(controller.currentRequestId).toBe("q-2");
+	});
+
 	it("asks the judge while the wait is eligible", async () => {
 		const clock = createClock();
 		const provider = createProvider();

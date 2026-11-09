@@ -122,6 +122,41 @@ test("an offer after the completion starts no countdown and no question", () => 
 	assert.equal(harness.actions.list().length, 0);
 });
 
+test("an offer in the form of a question after the completion starts no countdown", () => {
+	// The wording list does not have to know every offer: the request is
+	// done, so a question that follows it waits for an explicit request.
+	const work = workStateFromTodos([{ status: "completed" }]);
+	assert.equal(work, "complete");
+
+	const relevance = questionRelevance({
+		text: "May I add an export feature?",
+		work,
+	});
+	assert.equal(relevance, "final-request");
+	assert.equal(jevWaitEligibility({ relevance, work }).eligible, false);
+
+	// Nothing waits, nothing counts down, and the completion of the
+	// request is not blocked.
+	const harness = createHarness();
+	assert.equal(harness.questions.hasPendingQuestion(), false);
+	assert.equal(harness.lifecycle.currentState, "idle");
+	assert.equal(harness.actions.list().length, 0);
+});
+
+test("a pending validation keeps the question of the request", () => {
+	// The todos are marked complete, but the required final tier has not
+	// passed: the request is not finished, so a question about it is not
+	// obsolete.
+	const items = [{ status: "completed" }];
+	const work = workStateFromTodos(items, { validationPending: true });
+	assert.equal(work, "unfinished");
+
+	const relevance = questionRelevance({ text: "May I apply the migration?", work });
+	assert.equal(relevance, "current-request");
+	assert.equal(jevWaitEligibility({ relevance, work }).eligible, true);
+	assert.equal(isObsoleteQuestion({ relevance, work }).obsolete, false);
+});
+
 test("a question that becomes obsolete is cleared with its row", () => {
 	const harness = createHarness();
 	const question = harness.questions.createQuestion({

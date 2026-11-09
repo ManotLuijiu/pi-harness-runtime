@@ -1307,7 +1307,18 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (!controller) return "unknown";
 			try {
 				const snapshot = await controller.getSnapshot();
-				return workStateFromTodos(snapshot.items, { available: true });
+				// A todo that is marked complete while its final tier has not
+				// passed is not done: the required validation is work that
+				// remains, so the request is not finished.
+				const validationPending = validationLedger
+					? snapshot.items.some((item) =>
+							validationLedger?.isFinalTierPending(item),
+						)
+					: false;
+				return workStateFromTodos(snapshot.items, {
+					available: true,
+					validationPending,
+				});
 			} catch {
 				return "unknown";
 			}
