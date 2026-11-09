@@ -60,6 +60,7 @@ import {
 	createPendingActionTicker,
 } from "./harness/pending-actions.ts";
 import { classifyProviderFailure, usesBoundedRecovery } from "./harness/provider-failure.ts";
+import { watchHonchoMcpTools as watchHonchoMcpToolsModule } from "./harness/honcho-mcp-watcher.ts";
 import {
 	expectsPiRetry,
 	readPiRetrySettings,
@@ -4114,6 +4115,14 @@ const HONCHO_MCP_WAIT_MS = 15_000;
 const HONCHO_MCP_WAIT_INTERVAL_MS = 500;
 
 /**
+ * The interval between two checks after the deadline of the wait.
+ *
+ * The report of the deadline is true at the deadline, but a connector that
+ * is slow is not a connector that failed. The watcher keeps looking with a
+ * slower rhythm and corrects the row when the tools finally appear.
+ */
+const HONCHO_MCP_LATE_INTERVAL_MS = 5_000;
+/**
  * The connector of the session.
  *
  * The startup report of Honcho names the reason a connection failed, so the
@@ -4166,47 +4175,29 @@ let stopHonchoMcpWatcher: (() => void) | null = null;
  */
 function watchHonchoMcpTools(pi: ExtensionAPI, honcho: HonchoModule): () => void {
 	const registrar = pi as unknown as HonchoMcpRegistrar;
-	const deadline = Date.now() + HONCHO_MCP_WAIT_MS;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let stopped = false;
-	const check = (): void => {
-		if (stopped) return;
-		const state = honcho.honchoMcpState(registrar, true);
-		if (state === "connected") {
-			logStartup("[pi-harness] Honcho: native MCP server connected");
-			// The correction comes from the same report as the startup, so
-			// the two rows cannot drift apart.
-			const report = honcho.honchoMcpReport(state);
-			addHarnessMessage("Honcho", report.text, report.status, report.details);
-			return;
-		}
-		if (Date.now() >= deadline) {
-			// The fallback connector knows why the connection failed, and
-			// the reason is more useful than "nobody connected it".
+	return watchHonchoMcpToolsModule({
+		readState: () => honcho.honchoMcpState(registrar, true),
+		readFailureReason: () => {
 			const status = mcpConnector?.statuses.get(HONCHO_MCP_SERVER_NAME);
-			const reason = status?.state === "failed" ? status.reason : undefined;
-			logStartup(
-				`[pi-harness] Honcho: no connector connected the MCP server (the model sees no Honcho tools)${reason ? `: ${reason}` : ""}`,
-			);
-			if (reason) {
-				const report = honcho.honchoMcpReport("registered", reason);
-				addHarnessMessage("Honcho", report.text, report.status, report.details);
-			}
-			return;
-		}
-		const next = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
-		if (typeof next.unref === "function") next.unref();
-		timer = next;
-	};
-	timer = setTimeout(check, HONCHO_MCP_WAIT_INTERVAL_MS);
-	if (typeof timer.unref === "function") timer.unref();
-	return () => {
-		stopped = true;
-		if (timer) {
-			clearTimeout(timer);
-			timer = undefined;
-		}
-	};
+			return status?.state === "failed" ? status.reason : undefined;
+		},
+		report: (state, reason) => honcho.honchoMcpReport(state, reason),
+		log: logStartup,
+		setRow: (label, text, status, details) =>
+			addHarnessMessage(label, text, status, details),
+		now: () => Date.now(),
+		setTimeout: (callback, ms) => {
+			const handle = setTimeout(callback, ms);
+			// The watcher must not hold the process of the session.
+			if (typeof handle.unref === "function") handle.unref();
+			return handle;
+		},
+		clearTimeout: (handle) =>
+			clearTimeout(handle as ReturnType<typeof setTimeout>),
+		waitMs: HONCHO_MCP_WAIT_MS,
+		intervalMs: HONCHO_MCP_WAIT_INTERVAL_MS,
+		lateIntervalMs: HONCHO_MCP_LATE_INTERVAL_MS,
+	});
 }
 
 async function initHoncho(pi: ExtensionAPI): Promise<void> {
