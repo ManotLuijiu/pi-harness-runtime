@@ -27,6 +27,10 @@ const runtimeSource = readFileSync(
 	new URL("../harness/provider-recovery-runtime.ts", import.meta.url),
 	"utf8",
 );
+const policySource = readFileSync(
+	new URL("../harness/pi-retry-policy.ts", import.meta.url),
+	"utf8",
+);
 
 test("the runtime classifies the failure of a turn", () => {
 	assert.match(
@@ -287,18 +291,33 @@ test("the abort of the user is read from the signal of the run", () => {
 test("a cancelled retry of Pi leaves no recovery behind", () => {
 	assert.match(
 		indexSource,
-		/piRetryExpected: expectsPiRetry\(/,
-		"the harness tells the runtime whether Pi would retry the failure",
+		/const failedAttempt = m\.stopReason === "error";/,
+		"the harness counts the failed attempts of the run",
 	);
 	assert.match(
 		indexSource,
-		/piRetryAttempted: providerFailureAttemptsInRun > 1/,
-		"the harness tells the runtime whether Pi made the attempt",
+		/providerFailureAttemptsInRun \+= 1;/,
+		"every failed attempt of the run counts",
+	);
+	assert.match(
+		indexSource,
+		/piRetryOutcome: piRetryOutcome\([\s\S]{0,200}?providerFailureAttemptsInRun,/,
+		"the harness tells the runtime the verdict of the policy of the retry",
 	);
 	assert.match(
 		runtimeSource,
-		/if \(candidate\.piRetryExpected && !candidate\.piRetryAttempted\)[\s\S]{0,400}?return;/,
-		"a retry that Pi announces and never makes starts no recovery",
+		/if \(candidate\.piRetryOutcome === "cancelled"\)[\s\S]{0,400}?return;/,
+		"a cancelled retry starts no recovery",
+	);
+	assert.match(
+		policySource,
+		/if \(attempts >= piAttemptBudget\(settings\)\)[\s\S]{0,80}?"budget-spent"/,
+		"the budget of Pi decides between a cancellation and a spent budget",
+	);
+	assert.match(
+		policySource,
+		/export function piAttemptBudget[\s\S]{0,200}?settings\.maxRetries \+ 1/,
+		"the budget counts the first attempt",
 	);
 });
 

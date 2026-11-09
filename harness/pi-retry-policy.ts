@@ -9,14 +9,24 @@
  *
  * The harness therefore infers the retry from the facts it can observe:
  *
- * - the settings of Pi decide whether the retry exists at all,
+ * - the settings of Pi decide whether the retry exists at all, and how
+ *   many attempts it may make,
  * - the kind of the failure decides whether the retry applies to it,
- * - a retry attempt produces another failed message in the same run.
+ * - every failed attempt of Pi produces another failed message in the
+ *   same run, so the harness counts the attempts.
  *
  * The inference exists for one decision only: a retry delay that the user
  * cancelled (Escape) must not leave an automatic resume behind. The
  * harness cannot observe the cancellation directly, so it observes the
- * consequence: Pi announced a retry and never made the attempt.
+ * consequence: Pi announced a retry and made fewer attempts than its
+ * budget allows.
+ *
+ * The budget is what makes the inference exact. Pi stops early only when
+ * a delay is cancelled, and it makes at most `maxRetries` retries after
+ * the first attempt. So a run with fewer attempts than the budget ends in
+ * a cancellation, and a run with the whole budget ends in an exhausted
+ * budget - and a budget of zero retries is no cancellation at all, it is
+ * a run that settles right after the first failure.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -70,6 +80,51 @@ export function expectsPiRetry(
 	settings: PiRetrySettings,
 ): boolean {
 	return settings.enabled && piRetriesFailure(failure.kind);
+}
+
+/**
+ * The number of attempts Pi may make, including the first one.
+ *
+ * Pi makes the first attempt and then, at most, `maxRetries` retries. A
+ * budget of zero retries is one attempt: the run settles right after the
+ * first failure.
+ */
+export function piAttemptBudget(settings: PiRetrySettings): number {
+	return settings.maxRetries + 1;
+}
+
+/**
+ * What the attempts of the run say about the retry of Pi.
+ *
+ * - `not-retried`: Pi does not retry this failure. There is no delay that
+ *   a user could cancel, so the harness recovers.
+ * - `budget-spent`: Pi made every attempt its budget allows. The run
+ *   settled because the budget was spent, so the harness recovers.
+ * - `cancelled`: Pi would retry but made fewer attempts than its budget.
+ *   Pi stops early only when the delay is cancelled, so the user decided
+ *   that, and the harness does not recover.
+ */
+export type PiRetryOutcome = "not-retried" | "budget-spent" | "cancelled";
+
+/**
+ * The verdict about the retry of Pi, from the attempts of the run.
+ *
+ * @param failure The failure that Pi saw
+ * @param settings The retry settings of Pi
+ * @param attempts The failed attempts of the run
+ */
+export function piRetryOutcome(
+	failure: { kind: string },
+	settings: PiRetrySettings,
+	attempts: number,
+): PiRetryOutcome {
+	if (!expectsPiRetry(failure, settings)) {
+		return "not-retried";
+	}
+	if (attempts >= piAttemptBudget(settings)) {
+		return "budget-spent";
+	}
+	return "cancelled";
 }
 
 /**

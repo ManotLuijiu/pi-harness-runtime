@@ -28,6 +28,7 @@
  * dispatcher, which is the existing executor of the harness.
  */
 import type { ProviderFailure } from "./provider-failure.ts";
+import type { PiRetryOutcome } from "./pi-retry-policy.ts";
 import type { PendingAction, PendingActionRegistry } from "./pending-actions.ts";
 import type {
 	ProviderRecoveryController,
@@ -105,21 +106,18 @@ export interface ProviderFailureCandidate {
 	 */
 	boundedEligible: boolean;
 	/**
-	 * Whether Pi would retry this failure itself.
+	 * What the attempts of the run say about the retry of Pi.
 	 *
 	 * A failure that Pi retries has a retry delay, and the user can cancel
 	 * that delay. A failure that Pi does not retry has no delay, so no
 	 * cancellation can be read into it.
-	 */
-	piRetryExpected: boolean;
-	/**
-	 * Whether Pi made an internal retry attempt after this failure.
 	 *
-	 * A retry attempt produces another failed message in the same run, so
-	 * the harness counts the attempts. When Pi would retry and never did,
-	 * the delay was cancelled.
+	 * The verdict comes from the policy of the retry
+	 * (`harness/pi-retry-policy.ts`): `cancelled` means that Pi stopped
+	 * before its budget was spent, which only a cancellation of the delay
+	 * does. The other two verdicts mean that the harness may recover.
 	 */
-	piRetryAttempted: boolean;
+	piRetryOutcome?: PiRetryOutcome;
 }
 
 /**
@@ -199,8 +197,7 @@ export class ProviderRecoveryRuntime {
 			provider?: string;
 			overloadEligible?: boolean;
 			boundedEligible?: boolean;
-			piRetryExpected?: boolean;
-			piRetryAttempted?: boolean;
+			piRetryOutcome?: PiRetryOutcome;
 		} = {},
 	): void {
 		this.candidate = {
@@ -209,8 +206,7 @@ export class ProviderRecoveryRuntime {
 			provider: (options.provider ?? failure.provider ?? "provider").toLowerCase(),
 			overloadEligible: options.overloadEligible === true,
 			boundedEligible: options.boundedEligible === true,
-			piRetryExpected: options.piRetryExpected === true,
-			piRetryAttempted: options.piRetryAttempted === true,
+			piRetryOutcome: options.piRetryOutcome,
 		};
 	}
 
@@ -225,10 +221,11 @@ export class ProviderRecoveryRuntime {
 		this.candidate = null;
 		if (!candidate) return;
 
-		if (candidate.piRetryExpected && !candidate.piRetryAttempted) {
-			// Pi would retry this failure and never made the attempt: the
-			// delay of the retry was cancelled, and the user decided that.
-			// An automatic resume would fight that decision.
+		if (candidate.piRetryOutcome === "cancelled") {
+			// Pi would retry this failure and made fewer attempts than its
+			// budget allows: the delay of the retry was cancelled, and the
+			// user decided that. An automatic resume would fight that
+			// decision.
 			this.log(
 				`Pi's internal retry was cancelled: no recovery for ${candidate.failure.kind}`,
 			);
