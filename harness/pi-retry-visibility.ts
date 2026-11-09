@@ -11,6 +11,14 @@
  * countdown of the internal retry of Pi. Its own bounded recovery is
  * *additional* to that retry, never a replacement for it.
  *
+ * Two signals of the installed core do report the cancellation of the
+ * user, and the harness uses them: the abort signal of the run
+ * (`ctx.signal`) and the stop reason of an aborted turn
+ * (`stopReason === "aborted"`). The delay of the retry of Pi produces
+ * neither of them, so the harness infers that delay from the settings of
+ * Pi, from the kind of the failure, and from the attempts that Pi made
+ * (see `harness/pi-retry-policy.ts`).
+ *
  * This module reads the declarations of the installed core, so the finding
  * stays a checked fact instead of a belief. A newer core that exposes the
  * events changes the verdict, and the harness can wire the bridge.

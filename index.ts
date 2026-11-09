@@ -60,6 +60,10 @@ import {
 	createPendingActionTicker,
 } from "./harness/pending-actions.ts";
 import { classifyProviderFailure, usesBoundedRecovery } from "./harness/provider-failure.ts";
+import {
+	expectsPiRetry,
+	readPiRetrySettings,
+} from "./harness/pi-retry-policy.ts";
 import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
@@ -424,6 +428,25 @@ const providerRecovery = createProviderRecoveryController();
  * of it cannot be mistaken for a later attempt.
  */
 let providerFailureCounter = 0;
+
+/**
+ * The number of provider failures of the current run.
+ *
+ * Pi retries a failed turn internally. Every attempt of that retry
+ * produces another failed message, so the counter tells the harness
+ * whether Pi made a retry attempt after the failure that it holds.
+ */
+let providerFailureAttemptsInRun = 0;
+
+/**
+ * The abort signal of the run that is going.
+ *
+ * The signal of the context is the signal of the active run. The user
+ * aborts a run with Escape, and the aborted signal is the way the harness
+ * learns about it: the installed core does not carry an abort flag on the
+ * settled event.
+ */
+let activeRunAbortSignal: AbortSignal | undefined;
 
 /**
  * The identity of the pending action of the decision of the judge.
@@ -6440,24 +6463,37 @@ Run \`bd ready\` to see current bd issues.
 
 	// The run settled: the internal retries of Pi are over, so a failure
 	// that waited for the boundary is final and the recovery starts now.
-	//
-	// An aborted run is a decision of the user, not a failure of the
-	// provider: an automatic resume would fight the user.
 	pi.on("agent_settled", (event) => {
-		// The flag of the abort is optional: the installed core of Pi does
-		// not carry it yet, a newer one does. The check reads it when it is
-		// there, and it never assumes that it is.
-		if ("aborted" in event && event.aborted === true) {
+		// An aborted run is a decision of the user, not a failure of the
+		// provider: an automatic resume would fight the user.
+		//
+		// The installed core of Pi does not carry an abort flag on this
+		// event. The signal of the run is the way the harness learns about
+		// it: the signal belongs to the run that is going, and Escape
+		// aborts it. The optional flag of a newer core is read when it is
+		// there, and it is never assumed.
+		const abortedRun =
+			("aborted" in event && event.aborted === true) ||
+			activeRunAbortSignal?.aborted === true;
+		activeRunAbortSignal = undefined;
+		if (abortedRun) {
 			providerRecoveryRuntime?.cancel();
+			providerFailureAttemptsInRun = 0;
 			return;
 		}
 		providerRecoveryRuntime?.noteSettled();
+		// The run is over: the streak of its failures ends with it, so the
+		// next run starts its own count.
+		providerFailureAttemptsInRun = 0;
 	});
 
 	pi.on("message_end", async (event, ctx) => {
 		// The context of the running extension: the resume checks it before
 		// it dispatches, so it does not compete with the user.
 		activeExtensionContext = ctx;
+		// The signal of the run that is going: the user aborts a run with
+		// Escape, and the signal is the way the harness learns about it.
+		activeRunAbortSignal = ctx.signal ?? activeRunAbortSignal;
 		if (isOutputLimitResumePromptMessage(event.message)) {
 			pendingOutputLimitResumeAfterSettled = false;
 			return;
@@ -6488,6 +6524,15 @@ Run \`bd ready\` to see current bd issues.
 			};
 		};
 
+		// An aborted turn is a decision of the user, not a failure of the
+		// provider. The candidate of an earlier failure dies with it: an
+		// automatic resume would fight the decision of the user.
+		if (m.stopReason === "aborted" || ctx.signal?.aborted === true) {
+			providerRecoveryRuntime?.cancel();
+			providerFailureAttemptsInRun = 0;
+			return;
+		}
+
 		// A provider failure is classified before anything else happens. The
 		// classification reads the error of the turn; the text of an answer
 		// is only read when it names a known provider failure, so a sentence
@@ -6506,6 +6551,7 @@ Run \`bd ready\` to see current bd issues.
 			// settles, because Pi retries a failed turn internally first.
 			// A recovery that starts at the message of the failed attempt is
 			// a competing continuation.
+			providerFailureAttemptsInRun += 1;
 			let failureKey =
 				typeof m.responseId === "string" && m.responseId.length > 0
 					? m.responseId
@@ -6533,10 +6579,25 @@ Run \`bd ready\` to see current bd issues.
 					// exhausted plan join the cycle, an overload keeps its own
 					// executor. One failure has one executor.
 					boundedEligible: usesBoundedRecovery(providerFailure),
+					// Whether Pi would retry this failure itself, and whether
+					// it made the attempt. A retry that Pi announces and never
+					// makes was cancelled by the user.
+					piRetryExpected: expectsPiRetry(
+						providerFailure,
+						readPiRetrySettings({ cwd: ctx.cwd }),
+					),
+					piRetryAttempted: providerFailureAttemptsInRun > 1,
 				});
 			} else {
 				// No automatic retry can fix this failure: the row says that
 				// nothing is scheduled.
+				//
+				// A permanent failure also supersedes the retry of an
+				// earlier failure of the same run: a rate limit that was
+				// followed by a credential error must not schedule a resume
+				// when the run settles.
+				providerRecoveryRuntime?.cancelPending();
+				providerFailureAttemptsInRun = 0;
 				pendingActions.register({
 					id: PROVIDER_BLOCKED_ACTION_ID,
 					sessionId: activeSessionId,
@@ -6548,6 +6609,11 @@ Run \`bd ready\` to see current bd issues.
 					reason: providerFailure.reason,
 				});
 			}
+		} else {
+			// A turn that is not a provider failure ends the streak of the
+			// failures of the run: the next failure is the first attempt of
+			// its own retry.
+			providerFailureAttemptsInRun = 0;
 		}
 
 		if (

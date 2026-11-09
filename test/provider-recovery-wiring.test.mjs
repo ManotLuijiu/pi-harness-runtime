@@ -192,8 +192,13 @@ test("an overload keeps its own executor", () => {
 test("the recovery starts at the settled boundary, not at the failed attempt", () => {
 	assert.match(
 		indexSource,
-		/pi\.on\("agent_settled",[\s\S]{0,400}?providerRecoveryRuntime\?\.noteSettled\(\)/,
+		/pi\.on\("agent_settled",[\s\S]{0,900}?providerRecoveryRuntime\?\.noteSettled\(\)/,
 		"the recovery starts when the run settles",
+	);
+	assert.match(
+		indexSource,
+		/pi\.on\("agent_settled",[\s\S]{0,900}?activeRunAbortSignal\?\.aborted === true[\s\S]{0,400}?providerRecoveryRuntime\?\.cancel\(\)[\s\S]{0,400}?providerRecoveryRuntime\?\.noteSettled\(\)/,
+		"an aborted run is read before the recovery starts",
 	);
 	assert.doesNotMatch(
 		indexSource,
@@ -202,7 +207,7 @@ test("the recovery starts at the settled boundary, not at the failed attempt", (
 	);
 	assert.match(
 		runtimeSource,
-		/noteSettled\(\)[\s\S]{0,600}?this\.startRecovery\(candidate\)/,
+		/noteSettled\(\)[\s\S]{0,900}?this\.startRecovery\(candidate\)/,
 		"the runtime starts the cycle at the settled boundary",
 	);
 });
@@ -253,5 +258,54 @@ test("the runtime of the recovery owns the timers", () => {
 		indexSource,
 		/providerRecoveryTimer = setTimeout\(/,
 		"the wiring does not keep a second timer",
+	);
+});
+
+test("the abort of the user is read from the signal of the run", () => {
+	assert.match(
+		indexSource,
+		/activeRunAbortSignal = ctx\.signal \?\? activeRunAbortSignal/,
+		"the harness keeps the signal of the run that is going",
+	);
+	assert.match(
+		indexSource,
+		/activeRunAbortSignal\?\.aborted === true/,
+		"the settled boundary reads the abort of the signal",
+	);
+	assert.match(
+		indexSource,
+		/m\.stopReason === "aborted" \|\| ctx\.signal\?\.aborted === true/,
+		"an aborted turn is a decision of the user, not a failure",
+	);
+	assert.match(
+		indexSource,
+		/m\.stopReason === "aborted"[\s\S]{0,300}?providerRecoveryRuntime\?\.cancel\(\)/,
+		"an aborted turn clears the candidate of the recovery",
+	);
+});
+
+test("a cancelled retry of Pi leaves no recovery behind", () => {
+	assert.match(
+		indexSource,
+		/piRetryExpected: expectsPiRetry\(/,
+		"the harness tells the runtime whether Pi would retry the failure",
+	);
+	assert.match(
+		indexSource,
+		/piRetryAttempted: providerFailureAttemptsInRun > 1/,
+		"the harness tells the runtime whether Pi made the attempt",
+	);
+	assert.match(
+		runtimeSource,
+		/if \(candidate\.piRetryExpected && !candidate\.piRetryAttempted\)[\s\S]{0,400}?return;/,
+		"a retry that Pi announces and never makes starts no recovery",
+	);
+});
+
+test("a permanent failure supersedes the retry of an earlier failure", () => {
+	assert.match(
+		indexSource,
+		/\} else \{\s*\n\s*\/\/ No automatic retry can fix this failure[\s\S]{0,600}?providerRecoveryRuntime\?\.cancelPending\(\)/,
+		"a failure that no retry can fix cancels the pending recovery",
 	);
 });
