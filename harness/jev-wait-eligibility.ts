@@ -110,14 +110,15 @@ const SCOPE_STOP_WORDS: ReadonlySet<string> = new Set([
 	"is",
 	"it",
 	"its",
+	"may",
 	"me",
 	"my",
 	"of",
 	"on",
 	"or",
 	"our",
-	"should",
 	"shall",
+	"should",
 	"so",
 	"that",
 	"the",
@@ -145,6 +146,72 @@ const SCOPE_STOP_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The verbs that start an imperative task.
+ *
+ * The verb of a task is not its subject: "Implement login" asks for a login,
+ * and the word "implement" says nothing about it. A shared verb is never
+ * evidence that a question is about the requested work.
+ */
+const TASK_VERBS: ReadonlySet<string> = new Set([
+	"add",
+	"apply",
+	"build",
+	"change",
+	"check",
+	"clean",
+	"configure",
+	"create",
+	"delete",
+	"deploy",
+	"design",
+	"document",
+	"enable",
+	"evaluate",
+	"extend",
+	"extract",
+	"fix",
+	"handle",
+	"implement",
+	"improve",
+	"install",
+	"make",
+	"merge",
+	"migrate",
+	"move",
+	"optimize",
+	"plan",
+	"refactor",
+	"remove",
+	"rename",
+	"replace",
+	"review",
+	"run",
+	"seed",
+	"set",
+	"support",
+	"sync",
+	"test",
+	"update",
+	"upgrade",
+	"verify",
+	"write",
+]);
+
+/**
+ * The kinds of a question that ask for information, not for an approval.
+ *
+ * A question of such a kind is about the work at hand: the agent cannot
+ * continue the requested work without the answer. The scope of the request
+ * cannot reject it, because a clarification often names nothing that the
+ * request names.
+ */
+const INFORMATION_KINDS: ReadonlySet<string> = new Set([
+	"clarification",
+	"choice",
+	"routine",
+]);
+
+/**
  * The words of a text that name something.
  *
  * The comparison of the scope uses these words: a question is about the
@@ -160,12 +227,35 @@ function scopeTerms(text: string | undefined): string[] {
 }
 
 /**
+ * The subject of the requested scope.
+ *
+ * The verb of a task is not its subject, so it is left out: the subject of
+ * "Implement login" is "login". A task whose only word is its verb has no
+ * subject, and then nothing is left out.
+ */
+function scopeSubjectTerms(scope: readonly string[]): Set<string> {
+	const terms = new Set<string>();
+	for (const item of scope) {
+		const words = scopeTerms(item);
+		if (words.length === 0) continue;
+		const subject =
+			words.length > 1 && TASK_VERBS.has(words[0]) ? words.slice(1) : words;
+		for (const term of subject) terms.add(term);
+	}
+	return terms;
+}
+
+/**
  * Is the question an offer of work that was not asked for?
  *
- * The requested scope decides when it is known: a question that names the
- * work of the request is a question about the request, and a question that
- * names something else proposes work that was never asked for. The wording
- * of the question is the fallback, for the case that the scope is unknown.
+ * The kind of the question decides first: a question that asks for
+ * information or for a choice is about the work at hand and is never an
+ * offer, because the agent cannot continue the requested work without the
+ * answer.
+ *
+ * An approval is then compared with the requested scope. The comparison uses
+ * the subject of the work: a shared verb is never evidence, because every
+ * proposal shares the verb of the task it proposes.
  */
 export function classifyQuestionRelevance(
 	text: string | undefined,
@@ -174,6 +264,8 @@ export function classifyQuestionRelevance(
 		scope?: readonly string[] | undefined;
 		/** The action that the question proposes, when it was extracted. */
 		action?: string | undefined;
+		/** The kind of the question ("approval", "clarification", ...). */
+		kind?: string | undefined;
 	} = {},
 ): {
 	offer: boolean;
@@ -183,15 +275,31 @@ export function classifyQuestionRelevance(
 	if (!value) {
 		return { offer: false, reason: "the question has no text" };
 	}
+	const kind = (options.kind ?? "").trim().toLowerCase();
+	if (INFORMATION_KINDS.has(kind)) {
+		return {
+			offer: false,
+			reason: `the question asks for information (${kind}) and is needed for the requested work`,
+		};
+	}
 	const scope = options.scope;
 	if (scope && scope.length > 0) {
-		const wanted = new Set(scopeTerms(scope.join(" ")));
+		const wanted = scopeSubjectTerms(scope);
 		if (wanted.size > 0) {
 			// The action of the question is compared with the scope, not the
 			// whole message: a message around the question talks about many
 			// things and must not decide the question.
 			const action = options.action?.trim() || value;
-			const shared = scopeTerms(action).filter((term) => wanted.has(term));
+			const subject = scopeTerms(action);
+			if (subject.length === 0) {
+				// The action names nothing, so the harness cannot tell what
+				// the question proposes and does not guess.
+				return {
+					offer: false,
+					reason: "the action of the question names nothing",
+				};
+			}
+			const shared = subject.filter((term) => wanted.has(term));
 			if (shared.length > 0) {
 				return {
 					offer: false,
@@ -287,10 +395,13 @@ export function questionRelevance(input: {
 	scope?: readonly string[] | undefined;
 	/** The action that the question proposes, when it was extracted. */
 	action?: string | undefined;
+	/** The kind of the question ("approval", "clarification", ...). */
+	kind?: string | undefined;
 }): JevQuestionRelevance {
 	const offer = classifyQuestionRelevance(input.text, {
 		scope: input.scope,
 		action: input.action,
+		kind: input.kind,
 	});
 	if (offer.offer) return "optional-offer";
 	if (input.work === "complete") return "final-request";

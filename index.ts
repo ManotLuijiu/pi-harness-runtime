@@ -1945,6 +1945,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					work: workState,
 					scope: workContext.scope,
 					action: questionAction,
+					kind: questionKind,
 				});
 				const eligibility = jevWaitEligibility({
 					relevance,
