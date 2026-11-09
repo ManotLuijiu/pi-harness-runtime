@@ -135,6 +135,20 @@ The lifecycle of the cycle:
 - A credential failure is never retried by this policy. Buying credits or
   changing billing settings stays outside the automatic recovery.
 
+## The failures that own an executor
+
+| Failure | Kind | The executor |
+| --- | --- | --- |
+| `429`, a rate limit without a deadline | `rate-limit` | the bounded recovery cycle (1, 4, 9, 16 minutes) |
+| `429` with a `Retry-After` | `rate-limit` | the bounded recovery cycle, with the stated deadline as a lower bound |
+| `2067`, the usage limit of MiniMax | `usage-exhausted` | the bounded recovery cycle |
+| `529`, the peak hour of GLM | `overload` | the existing overload executor (a short random delay, its own limit) |
+| `401`, `403` | `credentials` | none - the row says that nothing is scheduled |
+
+One failure has one executor. An overload does not enter the cycle, so a
+failure never ends up with two resume loops, and the cycle never
+duplicates the executor that already exists.
+
 ## The owners that are registered today
 
 | Automatic action | Owner | What the row shows |
@@ -153,10 +167,23 @@ countdown leaves when the countdown ends: it never stays at `00:00`.
 ## What this does not cover
 
 - **The retries of Pi and of the provider SDK.** The core of Pi declares
-  `auto_retry_start` and `auto_retry_end`, but the installed extension
-  events do not expose them. Until a supported bridge exists, the harness
-  does not claim to observe them, and it does not start a competing loop on
-  top of them.
+  `auto_retry_start` and `auto_retry_end` for its own session
+  (`core/agent-session.d.ts`), and the interactive mode consumes them: it
+  shows a retry indicator and restores the escape handler. The extension
+  API of the core does not expose them (`core/extensions/types.d.ts`), and
+  the extension context carries no handle of the agent session, so an
+  extension cannot subscribe to them. The `subscribe` of the SDK belongs to
+  an application that embeds Pi, not to an extension.
+
+  The consequence is narrow: the harness does not observe the countdown of
+  the internal retry of Pi. Its own bounded recovery is *additional* to
+  that retry, never a replacement for it, and the harness does not claim
+  to cover it.
+
+  The finding is checked, not believed:
+  `test/pi-retry-visibility.test.mjs` reads the declarations of the
+  installed core and fails on purpose when a newer core exposes the events
+  to extensions. That is the moment to wire the bridge.
 - **The restored state after a restart.** The job resume persists its
   `resumeAt` in the checkpoint, but a persisted timestamp does not recreate
   an in-memory timer. A restart therefore shows no countdown until the job

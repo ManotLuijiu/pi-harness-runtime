@@ -16,6 +16,10 @@ const proactiveCompactSource = readFileSync(
 	new URL("../proactive-compact.ts", import.meta.url),
 	"utf8",
 );
+const providerFailureSource = readFileSync(
+	new URL("../harness/provider-failure.ts", import.meta.url),
+	"utf8",
+);
 
 test("the runtime classifies the failure of a turn", () => {
 	assert.match(
@@ -24,8 +28,8 @@ test("the runtime classifies the failure of a turn", () => {
 		"the runtime classifies the provider failure",
 	);
 	assert.match(
-		indexSource,
-		/providerFailure\.recovery === "bounded-recovery"/,
+		providerFailureSource,
+		/failure\.recovery === "bounded-recovery"/,
 		"the bounded recovery is entered by the classification, not by a guess",
 	);
 });
@@ -144,5 +148,36 @@ test("a continuation without a deadline shows that it is queued", () => {
 		indexSource,
 		/registerQueuedContinuation\(\s*POST_COMPACTION_CONTINUATION_ID/,
 		"the continuation of the compaction is registered",
+	);
+});
+
+test("the classification decides which executor owns a failure", () => {
+	assert.match(
+		indexSource,
+		/if \(usesBoundedRecovery\(providerFailure\)\)/,
+		"the wiring asks the classification which executor owns the failure",
+	);
+	assert.doesNotMatch(
+		indexSource,
+		/providerFailure\.recovery === "bounded-recovery" \|\|/,
+		"the wiring does not repeat the policy of the classification",
+	);
+});
+
+test("an overload keeps its own executor", () => {
+	assert.match(
+		indexSource,
+		/shouldQueueProviderOverloadResume\([\s\S]{0,300}?detected:/,
+		"the overload executor takes the verdict of the classification",
+	);
+	assert.match(
+		indexSource,
+		/detected:\s*\n?\s*providerFailure\?\.kind === "overload" &&/,
+		"only an overload is detected as an overload",
+	);
+	assert.match(
+		indexSource,
+		/!isProviderRetryFailedReport\(readMessageText\(event\.message\)\)/,
+		"the report of exhausted retries of the SDK is not a fresh failure",
 	);
 });

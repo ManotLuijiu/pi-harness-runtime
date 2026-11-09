@@ -59,7 +59,7 @@ import {
 	createPendingActionRegistry,
 	createPendingActionTicker,
 } from "./harness/pending-actions.ts";
-import { classifyProviderFailure } from "./harness/provider-failure.ts";
+import { classifyProviderFailure, usesBoundedRecovery } from "./harness/provider-failure.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -113,6 +113,7 @@ import {
 	PROACTIVE_COMPACT_COOLDOWN_MS,
 	shouldQueueOutputLimitResume,
 	shouldQueueProviderOverloadResume,
+	isProviderRetryFailedReport,
 	shouldQueuePostCompactionResume,
 	shouldTriggerProactiveCompact,
 } from "./proactive-compact.ts";
@@ -6423,10 +6424,10 @@ Run \`bd ready\` to see current bd issues.
 				})();
 
 		if (providerFailure) {
-			const recoverable =
-				providerFailure.recovery === "bounded-recovery" ||
-				providerFailure.recovery === "retry-after";
-			if (recoverable) {
+			// The bounded recovery cycle owns the rate limit and the exhausted
+			// plan. An overload keeps its own executor, so one failure never
+			// ends up with two resume loops.
+			if (usesBoundedRecovery(providerFailure)) {
 				// The bounded recovery cycle decides the deadline of the next
 				// attempt. The identity of the failure keeps a repeated copy
 				// of the same error from starting a second cycle.
@@ -6480,6 +6481,14 @@ Run \`bd ready\` to see current bd issues.
 				m,
 				providerOverloadResumeAttempts,
 				ctx.hasPendingMessages(),
+				{
+					// The classification may know an overload that the text
+					// of the answer does not repeat. A report of exhausted
+					// retries of the SDK is not a fresh failure.
+					detected:
+						providerFailure?.kind === "overload" &&
+						!isProviderRetryFailedReport(readMessageText(event.message)),
+				},
 			)
 		) {
 			providerOverloadResumeAttempts += 1;
