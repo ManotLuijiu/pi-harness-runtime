@@ -211,6 +211,18 @@ function cycleKey(key: {
 }
 
 /**
+ * The identity of a provider, in one spelling.
+ *
+ * The provider writes its own name ("MiniMax"), the classification of the
+ * harness keeps that spelling, and the cycle keys its provider in lower
+ * case. A comparison of the two spellings has to normalize them, or the
+ * evidence of a reset is discarded for a difference of case alone.
+ */
+export function normalizeProviderIdentity(provider: string): string {
+	return provider.trim().toLowerCase();
+}
+
+/**
  * Create the controller of the recovery cycles.
  */
 export function createProviderRecoveryController(
@@ -235,7 +247,12 @@ export function createProviderRecoveryController(
 		failureObservedAt: number,
 	): number | undefined => {
 		if (!evidence) return undefined;
-		if (evidence.provider !== input.provider) return undefined;
+		if (
+			normalizeProviderIdentity(evidence.provider) !==
+			normalizeProviderIdentity(input.provider)
+		) {
+			return undefined;
+		}
 		if (!input.window || evidence.window !== input.window) return undefined;
 		if (evidence.resetAt <= failureObservedAt) return undefined;
 		if (failureObservedAt - evidence.observedAt > maxResetEvidenceAgeMs) return undefined;

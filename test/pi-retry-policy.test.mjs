@@ -13,34 +13,67 @@ import {
 	DEFAULT_PI_RETRY_SETTINGS,
 	expectsPiRetry,
 	piAttemptBudget,
+	piRetriesErrorText,
 	piRetriesFailure,
 	piRetryOutcome,
 	readPiRetrySettings,
 } from "../harness/pi-retry-policy.ts";
+
+/**
+ * The payload of a MiniMax 2067: the plan of the account is exhausted.
+ *
+ * The payload carries the type `rate_limit_error`, so the predicate of Pi
+ * retries it - and a retry delay is what the user can cancel.
+ */
+const PAYLOAD_2067 = [
+	'{"type":"error","error":{"type":"rate_limit_error","code":2067,',
+	'"message":"The Token Plan usage limit has been reached. Please upgrade',
+	'your plan or buy credits to continue using the model. (2067)"}}',
+].join("\n");
 
 test("a rate limit and an overload are the failures that Pi retries", () => {
 	assert.equal(piRetriesFailure("rate-limit"), true);
 	assert.equal(piRetriesFailure("overload"), true);
 });
 
-test("an exhausted plan and a rejected credential are not retried by Pi", () => {
+test("the categories that usually match the predicate of Pi", () => {
 	assert.equal(piRetriesFailure("usage-exhausted"), false);
 	assert.equal(piRetriesFailure("credentials"), false);
 	assert.equal(piRetriesFailure("unknown"), false);
 });
 
-test("a failure is only expected to be retried when the retry of Pi is on", () => {
-	const failure = { kind: "rate-limit" };
-	assert.equal(expectsPiRetry(failure, DEFAULT_PI_RETRY_SETTINGS), true);
+test("the predicate of Pi decides, not the category of the harness", () => {
+	// The category of the harness calls this an exhausted plan, but the
+	// payload carries the type `rate_limit_error`, so Pi retries it and the
+	// user can cancel that delay.
+	assert.equal(piRetriesFailure("usage-exhausted"), false);
+	assert.equal(piRetriesErrorText(PAYLOAD_2067), true);
 	assert.equal(
-		expectsPiRetry(failure, { ...DEFAULT_PI_RETRY_SETTINGS, enabled: false }),
+		piRetriesErrorText(`API error 429: ${PAYLOAD_2067}`),
+		true,
+		"the status of the response is part of the text",
+	);
+});
+
+test("an error that Pi does not retry is not retried", () => {
+	assert.equal(piRetriesErrorText("invalid api key (401)"), false);
+	assert.equal(piRetriesErrorText("insufficient_quota: quota exceeded"), false);
+	assert.equal(piRetriesErrorText(""), false);
+	assert.equal(piRetriesErrorText(undefined), false);
+});
+
+test("an error is only expected to be retried when the retry of Pi is on", () => {
+	const text = "429 Too Many Requests";
+	assert.equal(expectsPiRetry(DEFAULT_PI_RETRY_SETTINGS, text), true);
+	assert.equal(
+		expectsPiRetry({ ...DEFAULT_PI_RETRY_SETTINGS, enabled: false }, text),
 		false,
 	);
 });
 
-test("a failure that Pi does not retry is never expected to be retried", () => {
+test("an error that Pi does not retry is never expected to be retried", () => {
 	assert.equal(
-		expectsPiRetry({ kind: "usage-exhausted" }, DEFAULT_PI_RETRY_SETTINGS),
+		expectsPiRetry(DEFAULT_PI_RETRY_SETTINGS, "invalid api key (401)"),
 		false,
 	);
 });
@@ -99,34 +132,41 @@ test("the budget of Pi counts the first attempt", () => {
 
 test("a run that used the whole budget of Pi hands over to the recovery", () => {
 	// Pi makes the first attempt and then three retries: four failures.
-	const failure = { kind: "rate-limit" };
-	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 1), "cancelled");
-	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 2), "cancelled");
-	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 3), "cancelled");
-	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 4), "budget-spent");
+	const text = "429 Too Many Requests";
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 1, text), "cancelled");
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 2, text), "cancelled");
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 3, text), "cancelled");
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 4, text), "budget-spent");
 });
 
 test("a run that stopped before the budget of Pi was cancelled", () => {
 	// The user pressed Escape during the delay after the second failure:
 	// Pi made two attempts and its budget allows four.
-	const failure = { kind: "rate-limit" };
-	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 2), "cancelled");
+	const text = "429 Too Many Requests";
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 2, text), "cancelled");
+});
+
+test("a cancelled delay of an exhausted plan is a cancellation too", () => {
+	// The 2067 is retried by Pi, so the user can cancel that delay.
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 1, PAYLOAD_2067), "cancelled");
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 2, PAYLOAD_2067), "cancelled");
+	assert.equal(piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 4, PAYLOAD_2067), "budget-spent");
 });
 
 test("a budget of zero retries is a spent budget, not a cancellation", () => {
 	// Pi settles right after the first failure, so there was never a delay
 	// that the user could have cancelled.
 	const settings = { ...DEFAULT_PI_RETRY_SETTINGS, maxRetries: 0 };
-	assert.equal(piRetryOutcome({ kind: "rate-limit" }, settings, 1), "budget-spent");
+	assert.equal(piRetryOutcome(settings, 1, "429 Too Many Requests"), "budget-spent");
 });
 
-test("a failure that Pi does not retry is never a cancellation", () => {
+test("an error that Pi does not retry is never a cancellation", () => {
 	assert.equal(
-		piRetryOutcome({ kind: "usage-exhausted" }, DEFAULT_PI_RETRY_SETTINGS, 1),
+		piRetryOutcome(DEFAULT_PI_RETRY_SETTINGS, 1, "invalid api key (401)"),
 		"not-retried",
 	);
 	assert.equal(
-		piRetryOutcome({ kind: "rate-limit" }, { ...DEFAULT_PI_RETRY_SETTINGS, enabled: false }, 1),
+		piRetryOutcome({ ...DEFAULT_PI_RETRY_SETTINGS, enabled: false }, 1, "429 Too Many Requests"),
 		"not-retried",
 	);
 });
