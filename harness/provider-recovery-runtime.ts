@@ -298,11 +298,20 @@ export class ProviderRecoveryRuntime {
 	 * The cycle keeps its budget: a cancelled attempt is not an attempt of
 	 * the budget, but the failure that caused it is still the failure of
 	 * the cycle.
+	 *
+	 * The deadline of the controller is cancelled with the timer of the
+	 * runtime. A deadline that nobody waits for must not own the next
+	 * attempt: the next failure of the cycle has to schedule its own
+	 * countdown, or the recovery would answer "already scheduled" to a
+	 * failure that has no timer.
 	 */
 	cancelPending(): void {
 		this.candidate = null;
 		this.cancelRecoveryAttempt();
 		this.cancelOverloadResume();
+		this.options.controller.invalidatePending({
+			sessionId: this.options.context().sessionId,
+		});
 	}
 
 	/**

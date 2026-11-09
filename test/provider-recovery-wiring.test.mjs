@@ -374,6 +374,24 @@ test("the dispatch checks that the session is idle", () => {
 	);
 });
 
+test("a cancellation invalidates the deadline of the controller", () => {
+	assert.match(
+		runtimeSource,
+		/cancelPending\(\): void \{[\s\S]{0,600}?this\.options\.controller\.invalidatePending\(/,
+		"the runtime tells the controller that nobody waits for the deadline",
+	);
+	assert.match(
+		controllerSource,
+		/invalidatePending\(key\): void \{[\s\S]{0,600}?dueAt: null/,
+		"the controller drops the pending deadline and keeps the budget",
+	);
+	assert.match(
+		controllerSource,
+		/attempt: Math\.max\(0, cycle\.attempt - 1\)/,
+		"the cancelled attempt is not an attempt of the budget",
+	);
+});
+
 test("the identity of the provider is normalized on both sides", () => {
 	assert.match(
 		indexSource,

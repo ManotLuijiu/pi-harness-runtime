@@ -146,6 +146,44 @@ test("a repeated copy of the same error does not reset the counter", () => {
 	assert.equal(second.delayMs, 4 * MINUTE);
 });
 
+test("an invalidated deadline lets the next failure schedule its own attempt", () => {
+	let now = 0;
+	const controller = createProviderRecoveryController({ now: () => now });
+
+	const first = controller.noteFailure(failure());
+	assert.equal(first.outcome, "scheduled");
+	assert.equal(first.attempt, 1);
+
+	// The countdown is cancelled before its deadline: nobody waits for it
+	// anymore, so it must not own the next attempt.
+	now = 10_000;
+	controller.invalidatePending({ sessionId: "s-1" });
+
+	const second = controller.noteFailure(failure({ failureKey: "turn-2" }));
+	assert.equal(second.outcome, "scheduled", "the new failure schedules its own attempt");
+	assert.equal(
+		second.attempt,
+		1,
+		"the cancelled attempt never ran, so it is not an attempt of the budget",
+	);
+	assert.equal(second.dueAt, now + MINUTE);
+});
+
+test("an attempt that ran keeps its place in the budget", () => {
+	let now = 0;
+	const controller = createProviderRecoveryController({ now: () => now });
+
+	const first = controller.noteFailure(failure());
+
+	// The attempt ran: its deadline is in the past.
+	now = first.dueAt;
+	controller.invalidatePending({ sessionId: "s-1" });
+
+	const second = controller.noteFailure(failure({ failureKey: "turn-2" }));
+	assert.equal(second.attempt, 2, "the attempt that ran is an attempt of the budget");
+	assert.equal(second.delayMs, 4 * MINUTE);
+});
+
 test("a successful turn resets the cycle", () => {
 	let now = 0;
 	const controller = createProviderRecoveryController({ now: () => now });
