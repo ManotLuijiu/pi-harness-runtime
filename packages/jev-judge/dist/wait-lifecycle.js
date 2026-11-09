@@ -196,7 +196,35 @@ export class WaitLifecycleController {
                 discardReason: "other-session",
             };
         }
+        // The identity of the request is captured before anything can
+        // await: a result of an older generation belongs to a request that
+        // is gone, and it must be discarded even when the request was
+        // answered while the runtime was still preparing the evaluation.
         const generation = this.generation;
+        // The wait is checked once more before the judge is asked: the work
+        // of the question can be done while it waited, and an obsolete wait
+        // must not decide anything. The wait ends here, so the timer, the
+        // state and the in-flight evaluation of that request end with it.
+        const eligibility = await this.deps.eligibility?.();
+        if (eligibility && !eligibility.eligible) {
+            this.end("idle", eligibility.reason);
+            return {
+                applied: false,
+                state: "idle",
+                reason: eligibility.reason,
+                discardReason: "not-eligible",
+            };
+        }
+        // The question may have been answered or replaced while the
+        // eligibility was read.
+        if (generation !== this.generation || this.request?.requestId !== request.requestId) {
+            return {
+                applied: false,
+                state: this.state,
+                reason: "the evaluation is stale",
+                discardReason: "stale",
+            };
+        }
         this.setState("evaluating", "the decision of the question is running");
         let evaluation;
         try {
