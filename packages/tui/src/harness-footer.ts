@@ -39,6 +39,15 @@ export const HARNESS_WORKSPACE_STATUS_KEY = "harness-workspace";
 /** Status key that carries the auto-continue state. */
 export const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
 
+/**
+ * Status key that carries the pending automatic actions.
+ *
+ * The actions of the session (a resume, a retry, a quota check, the
+ * decision of the judge) are published under this key and rendered on their
+ * own row, so a blocked provider stays visible next to the other statuses.
+ */
+export const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
+
 export interface HarnessFooterOptions {
 	/** Status key holding the quota summary (own row). */
 	quotaStatusKey?: string;
@@ -46,6 +55,8 @@ export interface HarnessFooterOptions {
 	workspaceStatusKey?: string;
 	/** Status key holding the auto-continue state (own row). */
 	autoContinueStatusKey?: string;
+	/** Status key holding the pending automatic actions (own row). */
+	actionsStatusKey?: string;
 	/**
 	 * Supplies the live extension context. May throw when the session was
 	 * replaced — the footer degrades to status-only rows in that case.
@@ -653,6 +664,7 @@ export function createHarnessFooter(
 	const workspaceKey = options.workspaceStatusKey ?? HARNESS_WORKSPACE_STATUS_KEY;
 	const autoContinueKey =
 		options.autoContinueStatusKey ?? HARNESS_AUTO_CONTINUE_STATUS_KEY;
+	const actionsKey = options.actionsStatusKey ?? HARNESS_ACTIONS_STATUS_KEY;
 	const getContext = options.getContext ?? (() => null);
 	const autoCompactEnabled = options.autoCompactEnabled ?? true;
 
@@ -683,6 +695,10 @@ export function createHarnessFooter(
 			}
 
 			const rows: FooterRow[] = [];
+			// The pending actions come first: a blocked provider has to stay
+			// visible even when another status has something to say.
+			const actions = statuses.get(actionsKey);
+			if (actions) rows.push({ label: "actions", text: actions, maxLines: 4 });
 			const quota = statuses.get(quotaKey);
 			if (quota) rows.push({ label: "quota", text: quota });
 			const workspace = statuses.get(workspaceKey);
@@ -698,7 +714,8 @@ export function createHarnessFooter(
 					([key]) =>
 						key !== quotaKey &&
 						key !== workspaceKey &&
-						key !== autoContinueKey,
+						key !== autoContinueKey &&
+						key !== actionsKey,
 				)
 				.sort(([a], [b]) => a.localeCompare(b))
 				.map(([, text]) => sanitizeStatusText(text))

@@ -27,6 +27,14 @@ export const HARNESS_QUOTA_STATUS_KEY = "harness-runtime";
 export const HARNESS_WORKSPACE_STATUS_KEY = "harness-workspace";
 /** Status key that carries the auto-continue state. */
 export const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
+/**
+ * Status key that carries the pending automatic actions.
+ *
+ * The actions of the session (a resume, a retry, a quota check, the
+ * decision of the judge) are published under this key and rendered on their
+ * own row, so a blocked provider stays visible next to the other statuses.
+ */
+export const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
 function readUsage(raw) {
     if (!raw || typeof raw !== "object")
         return null;
@@ -534,6 +542,7 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
     const quotaKey = options.quotaStatusKey ?? HARNESS_QUOTA_STATUS_KEY;
     const workspaceKey = options.workspaceStatusKey ?? HARNESS_WORKSPACE_STATUS_KEY;
     const autoContinueKey = options.autoContinueStatusKey ?? HARNESS_AUTO_CONTINUE_STATUS_KEY;
+    const actionsKey = options.actionsStatusKey ?? HARNESS_ACTIONS_STATUS_KEY;
     const getContext = options.getContext ?? (() => null);
     const autoCompactEnabled = options.autoCompactEnabled ?? true;
     // Last successfully collected session info. A stale extension context
@@ -563,6 +572,11 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
                 info = lastGoodInfo;
             }
             const rows = [];
+            // The pending actions come first: a blocked provider has to stay
+            // visible even when another status has something to say.
+            const actions = statuses.get(actionsKey);
+            if (actions)
+                rows.push({ label: "actions", text: actions, maxLines: 4 });
             const quota = statuses.get(quotaKey);
             if (quota)
                 rows.push({ label: "quota", text: quota });
@@ -578,7 +592,8 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
             const otherStatuses = Array.from(statuses.entries())
                 .filter(([key]) => key !== quotaKey &&
                 key !== workspaceKey &&
-                key !== autoContinueKey)
+                key !== autoContinueKey &&
+                key !== actionsKey)
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([, text]) => sanitizeStatusText(text))
                 .filter(Boolean)

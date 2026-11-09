@@ -27,6 +27,14 @@ export declare const HARNESS_QUOTA_STATUS_KEY = "harness-runtime";
 export declare const HARNESS_WORKSPACE_STATUS_KEY = "harness-workspace";
 /** Status key that carries the auto-continue state. */
 export declare const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
+/**
+ * Status key that carries the pending automatic actions.
+ *
+ * The actions of the session (a resume, a retry, a quota check, the
+ * decision of the judge) are published under this key and rendered on their
+ * own row, so a blocked provider stays visible next to the other statuses.
+ */
+export declare const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
 export interface HarnessFooterOptions {
     /** Status key holding the quota summary (own row). */
     quotaStatusKey?: string;
@@ -34,6 +42,8 @@ export interface HarnessFooterOptions {
     workspaceStatusKey?: string;
     /** Status key holding the auto-continue state (own row). */
     autoContinueStatusKey?: string;
+    /** Status key holding the pending automatic actions (own row). */
+    actionsStatusKey?: string;
     /**
      * Supplies the live extension context. May throw when the session was
      * replaced — the footer degrades to status-only rows in that case.
