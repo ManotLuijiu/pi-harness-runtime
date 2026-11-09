@@ -44,12 +44,14 @@ import {
 	isObsoleteQuestion,
 	jevWaitEligibility,
 	jevWaitRegistration,
+	jevWorkContext,
 	ownsQuestion,
 	questionRelevance,
-	workStateFromTodos,
 	type JevQuestionRelevance,
 	type JevWorkState,
+	type TodoStateLike,
 } from "./harness/jev-wait-eligibility.ts";
+import { RequestScopeTracker } from "./harness/jev-request-scope.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
@@ -586,6 +588,31 @@ const sharedState = {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	workspaceEnvMessage: null as string | null,
 };
+
+/**
+ * The scope of the request that is running.
+ *
+ * The task list is the history of the session: the todos of a request that
+ * was finished stay in it. A new request therefore inherits a list that is
+ * already complete, and the completion of the old request says nothing
+ * about the new one.
+ *
+ * The tracker remembers the list as it was when the request started, so the
+ * work of the request is told apart from the work that was done before it.
+ * Nothing is deleted: the history stays a record of what happened.
+ */
+const requestScopeTracker = new RequestScopeTracker({
+	readTodos: async () => {
+		const controller = sharedState.todoContinuationController as {
+			getSnapshot?: () => Promise<{ items?: TodoStateLike[] }>;
+		} | null;
+		if (!controller || typeof controller.getSnapshot !== "function") {
+			return null;
+		}
+		const snapshot = await controller.getSnapshot();
+		return snapshot?.items ?? null;
+	},
+});
 
 /**
  * Apply an approval decision from a channel to the pending question.
@@ -1317,23 +1344,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			const controller = todoContinuationController;
 			if (!controller) return { work: "unknown", scope: [] };
 			try {
-				const snapshot = await controller.getSnapshot();
+				// The scope of the request delimits the work that belongs to
+				// it: the todos of an earlier request are history, and their
+				// completion is not the completion of this one. The list and
+				// the scope are read together, so they belong to the same
+				// request.
+				const read = await requestScopeTracker.read();
+				if (!read.items) return { work: "unknown", scope: [] };
 				// A todo that is marked complete while its final tier has not
 				// passed is not done: the required validation is work that
 				// remains, so the request is not finished.
-				const validationPending = validationLedger
-					? snapshot.items.some((item) =>
-							validationLedger?.isFinalTierPending(item),
-						)
-					: false;
-				const work = workStateFromTodos(snapshot.items, {
-					available: true,
+				const validationPending = (item: TodoStateLike) =>
+					Boolean(
+						validationLedger?.isFinalTierPending(
+							item as unknown as import("./packages/jev-judge/dist/todo-provider.js").TodoItem,
+						),
+					);
+				return jevWorkContext(read.items, {
+					scope: read.scope,
 					validationPending,
 				});
-				const scope = snapshot.items
-					.map((item) => (item.subject ?? "").trim())
-					.filter((subject) => subject.length > 0);
-				return { work, scope };
 			} catch {
 				return { work: "unknown", scope: [] };
 			}
@@ -2762,6 +2792,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// The runtime of the provider recovery reads the pause state
 				// of the user through this handle.
 				todoContinuationHandle = todoContinuationController;
+				// The callbacks that answer a question in a channel, and the
+				// replies of the user, reach the controller through the
+				// shared state. Without it every pause and every resume of
+				// the work was a call on nothing, so a decline of the user
+				// never stopped the work.
+				sharedState.todoContinuationController = todoContinuationController;
 				logToFile("[auto-continue]", "Todo continuation controller initialized");
 			} catch (err) {
 				logToFile("[auto-continue]", "Failed to create todo continuation controller:", String(err));
@@ -2775,6 +2811,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			todoContinuationController?.dispose?.();
 			todoContinuationController = null;
 			todoContinuationHandle = null;
+			sharedState.todoContinuationController = null;
 			sharedState.validationLedger = null;
 		});
 
@@ -3703,6 +3740,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			// The user's own words stay out of the log files: only the length
 			// is recorded.
 			logToFile("[TelegramInbound]", `Forwarding message to Pi (${text.length} chars)`);
+			// A message of the human begins a new request: the work of the
+			// request that ran before it is history now. The message reaches
+			// Pi as a message of the harness, so the input event cannot
+			// tell that it is a request.
+			requestScopeTracker.begin();
 			// Forward the message to Pi as a user message
 			await pi.sendUserMessage(text, { deliverAs: "steer" });
 		});
@@ -6764,6 +6806,11 @@ Run \`bd ready\` to see current bd issues.
 	pi.on("input", (event) => {
 		if (event.source === "extension") return;
 		providerRecoveryRuntime?.cancelPending();
+		// A request of the human begins a new scope: the todos of the
+		// previous request are history, and the completion of that request
+		// is not the completion of this one. The message of the harness
+		// itself carries the source `extension` and begins nothing.
+		requestScopeTracker.begin();
 	});
 
 	// The run settled: the internal retries of Pi are over, so a failure

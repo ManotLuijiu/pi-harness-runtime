@@ -181,6 +181,44 @@ needs a human" - a claim about a human that is not needed. The branch releases
 the wait and clears the row instead. The result is discarded as stale, so no
 decision is applied, nothing is paused, and the question is not closed.
 
+## The scope of the request, and the todos of the requests before it
+
+The task list is the history of the session: the todos of a request that was
+finished stay in it. A new request therefore inherits a list that is already
+complete, and the completion of the old request says nothing about the new
+one.
+
+`harness/jev-request-scope.ts` keeps the two apart without deleting anything:
+it remembers the list as it was when the request started, and the rules in
+`harness/jev-wait-eligibility.ts` read the list with that scope.
+
+- A todo that the request created or changed belongs to the request.
+- A todo that was already finished when the request started belongs to the
+  request that finished it. Its completion is not the completion of the
+  request that is running, so there is no evidence about that request.
+- A todo that is still open is work that remains, whoever made it.
+
+The boundary of the request is the `input` event of Pi with a source that is
+not `extension`: a message of the harness itself continues the work, it does
+not ask for it. A message that reaches Pi through a channel (Telegram) begins
+the scope explicitly, because it arrives as a message of the harness.
+
+The consequence: a request that asks a necessary clarification before it
+created a todo of its own keeps the question open, notifies the human and
+holds the continuation. The todos of the request that ran before it do not
+make the new request complete.
+
+### `sharedState.todoContinuationController` was never assigned
+
+The pause of the work is a call on the controller of the continuation. The
+call sites reached it through the shared state, and the shared state was
+never given one: every `explicitPause()` and every `resume()` of that path
+was a call on nothing. A decline of the user therefore never stopped the
+work, although the rule above says that it does.
+
+The controller is assigned when the session starts and cleared when the
+session ends, so the rule of the decline is a rule of the runtime.
+
 ## The tests
 
 | Where | What it proves |
@@ -203,6 +241,10 @@ decision is applied, nothing is paused, and the question is not closed.
 | `test/pending-question-state.test.mjs` | A refusal during the countdown pauses the work. |
 | `test/pending-question-state.test.mjs` | A negative statement does not pause the work. |
 | `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed on its own text. |
+| `test/jev-request-scope.test.mjs` | The todos of a finished request do not complete the next request. |
+| `test/jev-request-scope.test.mjs` | A todo of the request is unfinished, and complete when it is done. |
+| `test/jev-request-scope.test.mjs` | The clarification of a new request stays registered and blocks the work. |
+| `test/jev-request-scope.test.mjs` | The extension begins a request only for a message of the human. |
 
 ## The rule that stays
 
