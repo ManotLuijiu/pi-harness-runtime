@@ -151,6 +151,40 @@ The lifecycle of the cycle:
 - A stated `Retry-After` of a usage limit survives the classification: the
   deadline of the attempt is the stated one, and the stated deadline is a
   lower bound of the next attempt.
+- An **aborted** turn is a decision of the user, not a failure of the
+  provider: the candidate dies with it and no recovery starts.
+- A **permanent** failure supersedes the retry of an earlier failure of the
+  same run. A rate limit that is followed by a credential error schedules no
+  resume when the run settles.
+
+## The cancellation of the user
+
+The installed core of Pi does not carry an abort flag on the settled event,
+so the harness reads the cancellation from the signals that the core does
+provide:
+
+| Signal | What it reports |
+| --- | --- |
+| `ctx.signal` | the abort signal of the run that is going; Escape aborts it |
+| `stopReason === "aborted"` | a turn that the user aborted |
+
+The delay of the internal retry of Pi produces neither of them: the core
+cancels the delay with its own controller and emits no message. The harness
+therefore infers that delay from facts it can observe
+(`harness/pi-retry-policy.ts`):
+
+- the settings of Pi decide whether the retry exists at all
+  (`settings.retry`, read from the agent and from the project),
+- the kind of the failure decides whether the retry applies to it: a rate
+  limit and an overload are retried by Pi, an exhausted plan and a rejected
+  credential are not,
+- a retry attempt produces another failed message in the same run, so the
+  harness counts the attempts of the run.
+
+When Pi would retry a failure and never made the attempt, the delay was
+cancelled by the user, and no recovery starts. The inference is an
+inference, and it is documented as one: the extension API of the core does
+not report the cancellation directly.
 
 ## The failures that own an executor
 
@@ -185,7 +219,9 @@ countdown leaves when the countdown ends: it never stays at `00:00`.
 
 - **The countdown of the internal retry of Pi.** The harness waits for the
   settled boundary, so it never competes with the internal retry, but it
-  does not observe its countdown either. See the point below.
+  does not observe its countdown either. It infers the *cancellation* of
+  that delay (see the section above), not its countdown. See the point
+  below.
 - **The retries of Pi and of the provider SDK.** The core of Pi declares
   `auto_retry_start` and `auto_retry_end` for its own session
   (`core/agent-session.d.ts`), and the interactive mode consumes them: it

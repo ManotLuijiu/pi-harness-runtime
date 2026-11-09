@@ -478,3 +478,158 @@ test("the session end cancels every pending resume", () => {
 	clock.runDue();
 	assert.equal(dispatched.length, 0);
 });
+
+test("a retry of Pi that the user cancelled leaves no recovery behind", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	// Pi would retry the failure, and it never made the attempt: the user
+	// cancelled the delay of the retry.
+	runtime.noteFailure(
+		classifyProviderFailure(RATE_LIMIT_WITH_DEADLINE),
+		"turn-1",
+		{
+			provider: "minimax",
+			boundedEligible: true,
+			piRetryExpected: true,
+			piRetryAttempted: false,
+		},
+	);
+	runtime.noteSettled();
+
+	assert.equal(
+		actions.get("provider-recovery"),
+		null,
+		"a cancelled retry schedules no attempt",
+	);
+	assert.equal(clock.pendingTimers, 0, "a cancelled retry starts no timer");
+
+	clock.advance(MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 0, "the user keeps the turn");
+});
+
+test("the recovery starts when Pi made the retry attempt", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(RATE_LIMIT_WITH_DEADLINE),
+		"turn-1",
+		{
+			provider: "minimax",
+			boundedEligible: true,
+			piRetryExpected: true,
+			piRetryAttempted: true,
+		},
+	);
+	runtime.noteSettled();
+
+	const row = actions.get("provider-recovery");
+	assert.ok(row, "the attempt of the cycle is scheduled");
+	// The rate limit states a deadline of two minutes: the deadline of the
+	// attempt is the later of the two.
+	assert.equal(row.dueAt, clock.now() + 120_000);
+
+	clock.advance(120_000);
+	clock.runDue();
+	assert.equal(dispatched.length, 1, "the exhausted retry of Pi hands over to the cycle");
+});
+
+test("a failure that Pi does not retry starts the recovery", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	// An exhausted plan has no retry delay of Pi, so there is nothing the
+	// user could have cancelled.
+	runtime.noteFailure(
+		classifyProviderFailure(USAGE_LIMIT),
+		"turn-1",
+		{
+			provider: "minimax",
+			boundedEligible: true,
+			piRetryExpected: false,
+			piRetryAttempted: false,
+		},
+	);
+	runtime.noteSettled();
+
+	assert.ok(actions.get("provider-recovery"), "the attempt of the cycle is scheduled");
+
+	clock.advance(MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 1, "the cycle resumes the turn");
+});
+
+test("a cancelled retry of Pi silences the overload executor too", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(OVERLOAD),
+		"turn-1",
+		{
+			provider: "minimax",
+			overloadEligible: true,
+			piRetryExpected: true,
+			piRetryAttempted: false,
+		},
+	);
+	runtime.noteSettled();
+
+	assert.equal(actions.get("provider-overload-resume"), null);
+	assert.equal(clock.pendingTimers, 0);
+	assert.equal(dispatched.length, 0);
+});
+
+test("an aborted run clears the candidate before the run settles", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(RATE_LIMIT_WITH_DEADLINE),
+		"turn-1",
+		{ provider: "minimax", boundedEligible: true },
+	);
+
+	// The user aborts the run before it settles.
+	runtime.cancel();
+
+	// The run settles after the abort.
+	runtime.noteSettled();
+
+	assert.equal(actions.get("provider-recovery"), null, "no attempt is scheduled");
+	assert.equal(clock.pendingTimers, 0, "no timer is started");
+
+	clock.advance(5 * MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 0, "the user keeps the turn");
+});
+
+test("a permanent failure clears the candidate of an earlier failure", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	// A rate limit arms the candidate.
+	runtime.noteFailure(
+		classifyProviderFailure(RATE_LIMIT_WITH_DEADLINE),
+		"turn-1",
+		{ provider: "minimax", boundedEligible: true },
+	);
+
+	// A credential error follows in the same run: no retry can fix it, and
+	// it supersedes the retry of the rate limit.
+	runtime.noteFailure(classifyProviderFailure(CREDENTIALS), "turn-2", {
+		provider: "minimax",
+	});
+	runtime.cancelPending();
+
+	runtime.noteSettled();
+
+	assert.equal(actions.get("provider-recovery"), null, "no attempt is scheduled");
+	assert.equal(clock.pendingTimers, 0, "no timer is started");
+
+	clock.advance(5 * MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 0, "a permanent failure schedules no resume");
+});
