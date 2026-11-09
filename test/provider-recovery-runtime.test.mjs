@@ -491,8 +491,7 @@ test("a retry of Pi that the user cancelled leaves no recovery behind", () => {
 		{
 			provider: "minimax",
 			boundedEligible: true,
-			piRetryExpected: true,
-			piRetryAttempted: false,
+			piRetryOutcome: "cancelled",
 		},
 	);
 	runtime.noteSettled();
@@ -519,8 +518,7 @@ test("the recovery starts when Pi made the retry attempt", () => {
 		{
 			provider: "minimax",
 			boundedEligible: true,
-			piRetryExpected: true,
-			piRetryAttempted: true,
+			piRetryOutcome: "budget-spent",
 		},
 	);
 	runtime.noteSettled();
@@ -548,8 +546,7 @@ test("a failure that Pi does not retry starts the recovery", () => {
 		{
 			provider: "minimax",
 			boundedEligible: true,
-			piRetryExpected: false,
-			piRetryAttempted: false,
+			piRetryOutcome: "not-retried",
 		},
 	);
 	runtime.noteSettled();
@@ -571,8 +568,7 @@ test("a cancelled retry of Pi silences the overload executor too", () => {
 		{
 			provider: "minimax",
 			overloadEligible: true,
-			piRetryExpected: true,
-			piRetryAttempted: false,
+			piRetryOutcome: "cancelled",
 		},
 	);
 	runtime.noteSettled();

@@ -62,7 +62,7 @@ import {
 import { classifyProviderFailure, usesBoundedRecovery } from "./harness/provider-failure.ts";
 import { watchHonchoMcpTools as watchHonchoMcpToolsModule } from "./harness/honcho-mcp-watcher.ts";
 import {
-	expectsPiRetry,
+	piRetryOutcome,
 	readPiRetrySettings,
 } from "./harness/pi-retry-policy.ts";
 import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
@@ -6537,12 +6537,24 @@ Run \`bd ready\` to see current bd issues.
 					return fromText && fromText.kind !== "unknown" ? fromText : null;
 				})();
 
+		// Every failed attempt of Pi is one attempt of the run. The count
+		// is what tells a cancelled retry from a spent budget: Pi stops
+		// early only when the user cancels the delay of the retry.
+		const failedAttempt = m.stopReason === "error";
+		if (failedAttempt) {
+			providerFailureAttemptsInRun += 1;
+		} else {
+			// A turn that did not fail ends the streak of the failures of
+			// the run: the next failure is the first attempt of its own
+			// retry.
+			providerFailureAttemptsInRun = 0;
+		}
+
 		if (providerFailure) {
 			// The failure is a candidate: the recovery starts when the run
 			// settles, because Pi retries a failed turn internally first.
 			// A recovery that starts at the message of the failed attempt is
 			// a competing continuation.
-			providerFailureAttemptsInRun += 1;
 			let failureKey =
 				typeof m.responseId === "string" && m.responseId.length > 0
 					? m.responseId
@@ -6570,14 +6582,14 @@ Run \`bd ready\` to see current bd issues.
 					// exhausted plan join the cycle, an overload keeps its own
 					// executor. One failure has one executor.
 					boundedEligible: usesBoundedRecovery(providerFailure),
-					// Whether Pi would retry this failure itself, and whether
-					// it made the attempt. A retry that Pi announces and never
-					// makes was cancelled by the user.
-					piRetryExpected: expectsPiRetry(
+					// What the attempts of the run say about the retry of
+					// Pi: a run with fewer attempts than the budget of Pi
+					// ends in a cancelled delay, and the user decided that.
+					piRetryOutcome: piRetryOutcome(
 						providerFailure,
 						readPiRetrySettings({ cwd: ctx.cwd }),
+						providerFailureAttemptsInRun,
 					),
-					piRetryAttempted: providerFailureAttemptsInRun > 1,
 				});
 			} else {
 				// No automatic retry can fix this failure: the row says that
@@ -6601,10 +6613,8 @@ Run \`bd ready\` to see current bd issues.
 				});
 			}
 		} else {
-			// A turn that is not a provider failure ends the streak of the
-			// failures of the run: the next failure is the first attempt of
-			// its own retry.
-			providerFailureAttemptsInRun = 0;
+			// A turn that is not a provider failure has no candidate: the
+			// streak of the failures of the run was already ended above.
 		}
 
 		if (

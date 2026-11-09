@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import {
 	DEFAULT_PI_RETRY_SETTINGS,
 	expectsPiRetry,
+	piAttemptBudget,
 	piRetriesFailure,
+	piRetryOutcome,
 	readPiRetrySettings,
 } from "../harness/pi-retry-policy.ts";
 
@@ -87,4 +89,44 @@ test("a missing or broken settings file leaves the defaults of the core", () => 
 		readFile: () => "{not json",
 	});
 	assert.deepEqual(broken, DEFAULT_PI_RETRY_SETTINGS);
+});
+
+test("the budget of Pi counts the first attempt", () => {
+	assert.equal(piAttemptBudget(DEFAULT_PI_RETRY_SETTINGS), 4);
+	assert.equal(piAttemptBudget({ ...DEFAULT_PI_RETRY_SETTINGS, maxRetries: 0 }), 1);
+	assert.equal(piAttemptBudget({ ...DEFAULT_PI_RETRY_SETTINGS, maxRetries: 5 }), 6);
+});
+
+test("a run that used the whole budget of Pi hands over to the recovery", () => {
+	// Pi makes the first attempt and then three retries: four failures.
+	const failure = { kind: "rate-limit" };
+	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 1), "cancelled");
+	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 2), "cancelled");
+	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 3), "cancelled");
+	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 4), "budget-spent");
+});
+
+test("a run that stopped before the budget of Pi was cancelled", () => {
+	// The user pressed Escape during the delay after the second failure:
+	// Pi made two attempts and its budget allows four.
+	const failure = { kind: "rate-limit" };
+	assert.equal(piRetryOutcome(failure, DEFAULT_PI_RETRY_SETTINGS, 2), "cancelled");
+});
+
+test("a budget of zero retries is a spent budget, not a cancellation", () => {
+	// Pi settles right after the first failure, so there was never a delay
+	// that the user could have cancelled.
+	const settings = { ...DEFAULT_PI_RETRY_SETTINGS, maxRetries: 0 };
+	assert.equal(piRetryOutcome({ kind: "rate-limit" }, settings, 1), "budget-spent");
+});
+
+test("a failure that Pi does not retry is never a cancellation", () => {
+	assert.equal(
+		piRetryOutcome({ kind: "usage-exhausted" }, DEFAULT_PI_RETRY_SETTINGS, 1),
+		"not-retried",
+	);
+	assert.equal(
+		piRetryOutcome({ kind: "rate-limit" }, { ...DEFAULT_PI_RETRY_SETTINGS, enabled: false }, 1),
+		"not-retried",
+	);
 });
