@@ -83,6 +83,13 @@ export interface PendingQuestion {
     external?: boolean;
     /** The signals the risk facts were derived from. */
     riskSignals?: string[];
+    /**
+     * What the question is about.
+     *
+     * The relevance decides whether the question may be decided automatically:
+     * an offer of work that was not asked for waits for an explicit request.
+     */
+    relevance?: string;
     /** Current state */
     state: QuestionState;
     /** When created */
@@ -269,6 +276,8 @@ export declare class PendingQuestionController {
             external?: boolean;
             signals?: string[];
         };
+        /** What the question is about. */
+        relevance?: string;
     }): PendingQuestion;
     /**
      * Get current pending question

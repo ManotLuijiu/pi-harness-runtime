@@ -39,6 +39,15 @@ import {
 	mayContinue,
 	userReplyEffect,
 } from "./harness/pending-question-state.ts";
+import {
+	clearObsoleteWait,
+	isObsoleteQuestion,
+	jevWaitEligibility,
+	questionRelevance,
+	workStateFromTodos,
+	type JevQuestionRelevance,
+	type JevWorkState,
+} from "./harness/jev-wait-eligibility.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
@@ -1245,6 +1254,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			},
 			currentSessionId: () => _sessionId,
 			evaluate: (request, waitedMs) => evaluatePendingQuestion(request, waitedMs),
+			eligibility: () => currentWaitEligibility(),
 			onState: (state, detail) => {
 				logToFile("[auto-continue]", `The wait is ${state}: ${detail.reason}`);
 			},
@@ -1275,6 +1285,98 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		 */
 		function hasOpenQuestion(): boolean {
 			return isQuestionOpen(sharedState.pqController?.getCurrentQuestion?.());
+		}
+
+		/**
+		 * The last state of the work that was read.
+		 *
+		 * The countdown asks synchronously, so it reads the state that is
+		 * known instead of waiting for a new one.
+		 */
+		let _lastWorkState: JevWorkState = "unknown";
+
+		/**
+		 * The state of the work of the current request.
+		 *
+		 * The task list is the only source. A list that could not be read
+		 * says nothing: an unreadable list is never an empty list, and an
+		 * empty list is never a finished request.
+		 */
+		async function currentWorkState(): Promise<JevWorkState> {
+			const controller = todoContinuationController;
+			if (!controller) return "unknown";
+			try {
+				const snapshot = await controller.getSnapshot();
+				return workStateFromTodos(snapshot.items, { available: true });
+			} catch {
+				return "unknown";
+			}
+		}
+
+		/**
+		 * May the current question be decided automatically?
+		 *
+		 * One decision, shared by the creation of the wait, the
+		 * reconciliation with the finished work, the evaluation at the
+		 * deadline and the application of the result.
+		 */
+		async function currentWaitEligibility(): Promise<{
+			eligible: boolean;
+			reason: string;
+		}> {
+			const question = sharedState.pqController?.getCurrentQuestion?.();
+			if (!question) {
+				return { eligible: false, reason: "there is no question" };
+			}
+			const relevance =
+				(question.relevance as JevQuestionRelevance | undefined) ??
+				"current-request";
+			const work = await currentWorkState();
+			_lastWorkState = work;
+			return jevWaitEligibility({ relevance, work });
+		}
+
+		/**
+		 * Cancel a question whose work is done.
+		 *
+		 * The question was asked while the work of the request remained.
+		 * That work is done now, so the question is obsolete: it blocks
+		 * nothing, and it keeps no countdown.
+		 *
+		 * Only the Jev owner is touched. A countdown of another owner keeps
+		 * its deadline and its state.
+		 */
+		async function reconcileObsoleteQuestion(): Promise<void> {
+			const question = sharedState.pqController?.getCurrentQuestion?.();
+			if (!question || !isQuestionOpen(question)) return;
+			const relevance =
+				(question.relevance as JevQuestionRelevance | undefined) ??
+				"current-request";
+			const work = await currentWorkState();
+			_lastWorkState = work;
+			const obsolete = isObsoleteQuestion({ relevance, work });
+			if (!obsolete.obsolete) return;
+			logToFile(
+				"[auto-continue]",
+				"The work of the question is done - the question is obsolete:",
+				question.requestId,
+			);
+			// The question is closed without an answer: nobody clicked
+			// anything, so no answer is injected. Only the Jev owner is
+			// touched: a countdown of another owner keeps its deadline.
+			clearObsoleteWait({
+				requestId: question.requestId,
+				cancelQuestion: (reason) => {
+					sharedState.pqController?.cancel(reason);
+				},
+				cancelWait: () => {
+					waitLifecycle.cancel();
+				},
+				removeRow: (requestId) => {
+					pendingActions.remove(jevDecisionActionId(requestId));
+				},
+			});
+			updateAutoContinueStatus("IDLE");
 		}
 
 		// A continuation was dispatched and its turn has not settled yet.
@@ -1466,6 +1568,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (_countdownSessionId !== _piSessionId) return false;
 				const current = sharedState.pqController?.getCurrentQuestion?.();
 				if (!current) return false;
+				// A wait that is no longer eligible draws no row: an
+				// obsolete question must not keep a countdown on the screen.
+				const relevance =
+					(current.relevance as JevQuestionRelevance | undefined) ??
+					"current-request";
+				if (!jevWaitEligibility({ relevance, work: _lastWorkState }).eligible) {
+					return false;
+				}
 				return (
 					current.requestId === requestId &&
 					(current.state === "pending" || current.state === "evaluating")
@@ -1767,6 +1877,31 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					proposedAction,
 					questionAction,
 				});
+				// The state of the work decides whether the question belongs
+				// to the request. It is read before the wait starts, because
+				// the wait is the thing that must not start for a question
+				// that nobody may answer by silence.
+				const workState = await currentWorkState();
+				_lastWorkState = workState;
+				const relevance = questionRelevance({
+					text: result.questionText,
+					work: workState,
+				});
+				const eligibility = jevWaitEligibility({
+					relevance,
+					work: workState,
+				});
+				if (!eligibility.eligible) {
+					// The question is not answered by silence: it waits for
+					// the user, and no countdown, no row and no notification
+					// claim that the agent is waiting.
+					logToFile(
+						"[auto-continue]",
+						"The question does not wait for an automatic decision:",
+						eligibility.reason,
+					);
+					return;
+				}
 				const question = pqController.createQuestion({
 					text: result.questionText,
 					sessionId: _sessionId,
@@ -1775,6 +1910,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					askType: result.askType,
 					alternatives: result.alternatives,
 					contextText: result.contextText,
+					relevance,
 					risk: {
 						requiresExplicitAuthorization: riskFacts.requiresExplicitAuthorization,
 						destructive: riskFacts.destructive,
@@ -1805,6 +1941,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						text: result.questionText,
 						contextText: result.contextText,
 						alternatives: result.alternatives,
+						relevance,
 					});
 
 				// Get task context for additional info
@@ -2267,6 +2404,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				);
 				return;
 			}
+			// The decision is checked once more: the work of the question can
+			// be done while the judge was thinking. A decision about an
+			// obsolete question steers nothing, pauses nothing and resolves
+			// nothing.
+			const eligibility = await currentWaitEligibility();
+			if (!eligibility.eligible) {
+				logToFile(
+					"[auto-continue]",
+					"The question is no longer eligible - discarding the decision:",
+					eligibility.reason,
+				);
+				return;
+			}
 			const outcome = evaluation.outcome;
 			const requestId = evaluation.requestId;
 			const waitMinutes = waitLifecycle.waitedMinutes();
@@ -2436,6 +2586,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// is closed with it.
 					sharedState.pqController?.cancel("Session switched");
 					waitLifecycle.cancel();
+					updateAutoContinueStatus("IDLE");
+				}
+				if (result.discardReason === "not-eligible") {
+					// The question became obsolete while it waited: it is
+					// closed without an answer and the work is idle.
+					sharedState.pqController?.cancel("the question is obsolete");
 					updateAutoContinueStatus("IDLE");
 				}
 				return;
@@ -2727,6 +2883,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (_continuation.settle()) {
 				updateAutoContinueStatus("IDLE");
 			}
+
+			// A question whose work is done is obsolete. It must not block
+			// the completion of the request, and the code that discovers it
+			// is stale must run before the open question stops the handler.
+			await reconcileObsoleteQuestion();
 
 			// Don't continue if user is waiting for response, and do not
 			// continue behind a question that is still open: the work waits
@@ -5971,6 +6132,93 @@ export default async function (pi: ExtensionAPI) {
 				}
 			}
 
+			/**
+			 * The settle timer of a plan message.
+			 *
+			 * A review has no file to watch, so only a plan starts the
+			 * timer. The candidate of the plan is remembered, so the settle
+			 * timer can find the message again.
+			 */
+			const startPlanSettleTimer = (msg: {
+				ordinal: number;
+				text: string;
+			}): void => {
+				if (!codexSessionState.currentProjectRoot) return;
+				const planPath = findPlanFile(codexSessionState.currentProjectRoot);
+				if (!planPath) {
+					// No wiki/plan.md found yet - wait for file to appear
+					logToFile(
+						"[codex-trigger]",
+						"Plan message but no wiki/plan.md yet, waiting...",
+					);
+					return;
+				}
+				// Track plan candidate
+				codexSessionState.currentPlanCandidate = {
+					ordinal: msg.ordinal,
+					text: msg.text,
+					timestamp: Date.now(),
+				};
+				logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
+				startSettleTimer(planPath, msg.ordinal);
+			};
+
+			/**
+			 * The alert of a plan or a review message.
+			 *
+			 * The buttons are the actions of the stage: a plan can be
+			 * coded, a review can be coded again. Both stages can be
+			 * closed.
+			 */
+			const notifyCodexStage = (
+				msg: { ordinal: number; text: string },
+				hasReviewMarker: boolean,
+				sessionId: string,
+				projectRoot: string,
+				planPath: string | undefined,
+			): void => {
+				// Create tokens for each action
+				const codeToken = _createPendingAction(sessionId, "code", projectRoot, "plan");
+				const doneToken = _createPendingAction(sessionId, "done", projectRoot, "plan");
+
+				// Use event type based on stage
+				if (hasReviewMarker) {
+					// Review stage: buttons are Code again and Done
+					const codeAgainToken = _createPendingAction(sessionId, "code_again", projectRoot, "review");
+					// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
+					void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexReviewDetected", {
+						requirement: msg.text,
+						taskTitle: sessionId,
+						details: {
+							ordinal: msg.ordinal,
+							stage: "review",
+							projectRoot,
+							messageLength: msg.text.length,
+						},
+					}, [
+						{ text: "Code again", action: PING_PONG_ACTIONS.CODE_AGAIN, targetId: codeAgainToken },
+						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
+					]);
+					return;
+				}
+				// Plan stage: buttons are Code and Done
+				// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
+				void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexPlanDetected", {
+					requirement: msg.text, // Full text, no truncation
+					taskTitle: sessionId,
+					details: {
+						ordinal: msg.ordinal,
+						stage: "plan",
+						projectRoot,
+						planPath: planPath || undefined,
+						messageLength: msg.text.length,
+					},
+				}, [
+					{ text: "Code", action: PING_PONG_ACTIONS.CODE, targetId: codeToken },
+					{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
+				]);
+			};
+
 			const codexHandle = startWatcher({
 				pollIntervalMs: 5000,
 				maxIdlePolls: Infinity,
@@ -6047,7 +6295,7 @@ export default async function (pi: ExtensionAPI) {
 			}
 		},
 			onMessages: (msgs) => {
-			if (!codexSessionState.currentCodexSessionId) return;
+				if (!codexSessionState.currentCodexSessionId) return;
 
 				for (const msg of msgs) {
 					lastActivityTime = Date.now();
@@ -6055,79 +6303,31 @@ export default async function (pi: ExtensionAPI) {
 					if (msg.role !== "assistant") continue;
 
 					const classification = classifyMessage(msg.text);
-				
+			
 					// Check for review markers in unknown messages
 					const hasReviewMarker = classification === "unknown" && detectReviewMarker(msg.text);
 					if (classification !== "plan" && classification !== "mixed" && !hasReviewMarker) continue;
-				
+			
 				// Determine stage (for future use in event metadata)
 				void classification; // used for classification only
 
 				// Only start settle timer for plans (not reviews)
 				// Reviews don't have a file to watch
-						if (!hasReviewMarker && codexSessionState.currentProjectRoot) {
-							const planPath = findPlanFile(codexSessionState.currentProjectRoot);
-							if (planPath) {
-								// Track plan candidate
-								codexSessionState.currentPlanCandidate = { ordinal: msg.ordinal, text: msg.text, timestamp: Date.now() };
-								logToFile("[codex-trigger]", "Plan message + wiki file detected:", planPath);
-								startSettleTimer(planPath, msg.ordinal);
-							} else {
-								// No wiki/plan.md found yet - wait for file to appear
-								logToFile("[codex-trigger]", "Plan message but no wiki/plan.md yet, waiting...");
-							}
-				}
+						if (!hasReviewMarker) {
+							startPlanSettleTimer(msg);
+						}
 
-				// Emit Telegram alert with full content (async, non-blocking)
-				const planPath = codexSessionState.currentProjectRoot ? findPlanFile(codexSessionState.currentProjectRoot) : undefined;
+					// Emit Telegram alert with full content (async, non-blocking)
+					const planPath = codexSessionState.currentProjectRoot ? findPlanFile(codexSessionState.currentProjectRoot) : undefined;
 
-				// Create pending actions for PING_PONG buttons
-				const sessionId = codexSessionState.currentCodexSessionId || "unknown";
-				const projectRoot = codexSessionState.currentProjectRoot || "";
+					// Create pending actions for PING_PONG buttons
+					const sessionId = codexSessionState.currentCodexSessionId || "unknown";
+					const projectRoot = codexSessionState.currentProjectRoot || "";
 				
-				// Create tokens for each action
-				const codeToken = _createPendingAction(sessionId, "code", projectRoot, "plan");
-				const doneToken = _createPendingAction(sessionId, "done", projectRoot, "plan");
-				
-				// Use event type based on stage
-if (hasReviewMarker) {
-					// Review stage: buttons are Code again and Done
-					const codeAgainToken = _createPendingAction(sessionId, "code_again", projectRoot, "review");
-					// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
-				void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexReviewDetected", {
-						requirement: msg.text,
-						taskTitle: sessionId,
-						details: {
-							ordinal: msg.ordinal,
-							stage: "review",
-							projectRoot,
-							messageLength: msg.text.length,
-					},
-					}, [
-						{ text: "Code again", action: PING_PONG_ACTIONS.CODE_AGAIN, targetId: codeAgainToken },
-						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
-					]);
-} else {
-					// Plan stage: buttons are Code and Done
-					// SAFETY: _nc.center is always an object with notifyWithButtons in our usage
-				void (_nc as unknown as { center: { notifyWithButtons: Function } }).center.notifyWithButtons("CodexPlanDetected", {
-						requirement: msg.text, // Full text, no truncation
-						taskTitle: sessionId,
-						details: {
-							ordinal: msg.ordinal,
-							stage: "plan",
-							projectRoot,
-							planPath: planPath || undefined,
-							messageLength: msg.text.length,
-					},
-					}, [
-						{ text: "Code", action: PING_PONG_ACTIONS.CODE, targetId: codeToken },
-						{ text: "Done", action: PING_PONG_ACTIONS.DONE, targetId: doneToken },
-					]);
-				}
-				}
-			},
-		});
+					notifyCodexStage(msg, hasReviewMarker, sessionId, projectRoot, planPath);
+					}
+				},
+			});
 
 		// Clean up when pi session ends
 		pi.on("session_shutdown", () => codexHandle.stop());

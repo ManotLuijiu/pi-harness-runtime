@@ -53,6 +53,13 @@ export interface WaitRequest {
     contextText?: string;
     /** The concrete alternatives of a choice question. */
     alternatives?: string[];
+    /**
+     * What the question is about.
+     *
+     * The relevance decides whether the wait may reach the judge at all: an
+     * offer of work that was not asked for is never decided by silence.
+     */
+    relevance?: string;
 }
 /** The result of one evaluation. */
 export interface WaitEvaluation {
@@ -136,11 +143,25 @@ export interface WaitLifecycleDeps {
     evaluate: (request: WaitRequest, waitedMs: number) => Promise<WaitEvaluation>;
     /** The state of the wait changed. */
     onState?: (state: WaitLifecycleState, detail: WaitStateDetail) => void;
+    /**
+     * Is the wait still eligible for an automatic decision?
+     *
+     * The owner of the wait answers: it knows the state of the work and the
+     * relevance of the question. The controller asks before it evaluates,
+     * so an obsolete wait never reaches the judge.
+     */
+    eligibility?: () => Promise<{
+        eligible: boolean;
+        reason: string;
+    }> | {
+        eligible: boolean;
+        reason: string;
+    };
     /** A failure of the controller itself. */
     onError?: (error: unknown) => void;
 }
 /** Why an evaluation was not applied. */
-export type WaitDiscardReason = "no-request" | "not-waiting" | "not-due" | "stale" | "other-session";
+export type WaitDiscardReason = "no-request" | "not-waiting" | "not-due" | "not-eligible" | "stale" | "other-session";
 /** What the controller did with an evaluation. */
 export interface WaitLifecycleResult {
     /** Did the evaluation change the state? */

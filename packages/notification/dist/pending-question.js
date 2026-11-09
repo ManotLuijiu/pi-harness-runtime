@@ -483,6 +483,7 @@ export class PendingQuestionController {
             reversible: params.risk?.reversible,
             external: params.risk?.external,
             riskSignals: params.risk?.signals,
+            relevance: params.relevance,
             state: "pending",
             createdAt: new Date(),
             dueAt: new Date(Date.now() + this.config.evaluationDelayMs),

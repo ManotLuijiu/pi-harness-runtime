@@ -306,6 +306,50 @@ describe("the wait for a human answer", () => {
 		expect(result.evaluation).toBeUndefined();
 	});
 
+	it("never asks the judge about a wait that is no longer eligible", async () => {
+		const clock = createClock();
+		const provider = createProvider();
+		let eligible = true;
+		const controller = new WaitLifecycleController({
+			now: clock.now,
+			waitMinutes: 5,
+			evaluate: (call, waitedMs) => provider.evaluate(call, waitedMs),
+			eligibility: () => ({
+				eligible,
+				reason: eligible ? "ok" : "the work of the question is done",
+			}),
+		});
+
+		controller.begin(request());
+		clock.advance(5 * 60_000);
+
+		// The work of the question is done while it waited.
+		eligible = false;
+		const result = await controller.evaluateDue();
+		expect(result.applied).toBe(false);
+		expect(result.discardReason).toBe("not-eligible");
+		expect(provider.calls).toHaveLength(0);
+		expect(controller.currentState).toBe("idle");
+	});
+
+	it("asks the judge while the wait is eligible", async () => {
+		const clock = createClock();
+		const provider = createProvider();
+		const controller = new WaitLifecycleController({
+			now: clock.now,
+			waitMinutes: 5,
+			evaluate: (call, waitedMs) => provider.evaluate(call, waitedMs),
+			eligibility: () => ({ eligible: true, reason: "the question belongs to work that remains" }),
+		});
+
+		controller.begin(request());
+		clock.advance(5 * 60_000);
+		const result = await controller.evaluateDue();
+		expect(result.applied).toBe(true);
+		expect(result.state).toBe("decided");
+		expect(provider.calls).toHaveLength(1);
+	});
+
 	it("reports a provider failure as an error, not as a decision", async () => {
 		const clock = createClock();
 		const controller = new WaitLifecycleController({
