@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.1.493](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.493) (2026-11-09)
+
+
+### Features
+
+* **actions:** register the job resume, the GLM countdown and the queued continuations ([177c964](https://github.com/ManotLuijiu/pi-harness-runtime/commit/177c964555b0057e6bc7d293dafab10c95eabbf9))
+* **delegation:** a child is only a child when it really ran ([ac4e678](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ac4e6782d7d4bc4941e458425c8a9f38a51fc9d4))
+* **delegation:** the scope of a request is measured before it is judged ([684b6a5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/684b6a55184f63d3be24c48dcecfb0b13410dc15))
+* **honcho:** the memory service speaks the native MCP of Pi ([f9f740c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f9f740c12869bae4c4380afbe8c76e12388bb744))
+* **jev:** one decision per question, bound to the question it was evaluated for ([03448aa](https://github.com/ManotLuijiu/pi-harness-runtime/commit/03448aaa17f2d0c3bcf644b0b1d5949727dfff8c))
+* **jev:** the evaluation of a choice sees what the options mean ([f0c207e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f0c207e074701e6b7dab0965170ec39453d9d502))
+* **jev:** the pending question carries the ask and the answer ([a792133](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a792133e517fb8c12d3363e98942f3af30270f27))
+* **jev:** the pending question counts down to the decision ([d0cc171](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d0cc171223986b2d32c670b6c1c74712fe0a4ad8))
+* **keys:** tell the user what to do about an exposed key file ([7031003](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7031003574307351b7a8f28ee14159b58e17b793))
+* **keys:** the key files are repaired when their permissions are unsafe ([e9c2c26](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e9c2c26b287665b56ed749de269737e8403bb8af))
+* **mcp:** the harness connects the registered servers when nobody else does ([7fef951](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7fef95137ad4664df57f045cd91b7d233315b0bc))
+* **merge:** a manual run can leave the merge to the pull request event ([b3d1950](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b3d1950b5941c78ccd56951acdafd1d4afbe1bff))
+* **phase:** the agent owns the todo list and the harness says so ([c489370](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c489370bd7926aece8cb1a77aa20ca2d2672f1fb))
+* **providers:** a shared registry of the pending automatic actions and a bounded recovery ([c5f955b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c5f955bc82adcb6999a89d5bc278fa87fccee022))
+* **providers:** one failure has one executor, and the retry bridge is checked ([e73c4c7](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e73c4c76ff20a9708083659bdcefe74870a84837))
+* **review:** the review starts on its own when the implementation is done ([04f51f5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/04f51f599cd3222b6c74dd8fadb1373bd72d9bd7))
+* **status:** the status line names the phase, the progress and the children ([0167bf3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0167bf396a0b987c1d44f3b869351976a951dd65))
+* **test:** the task waits for the final tier of the validation plan ([fa147db](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fa147dbf7d50d56e6ea48c6d8fbb4fcb190caf8a))
+* **validation:** a large job starts with a measured pilot ([425964b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/425964b04a3d4fa02adfabed47ff62c5ec2b9c28))
+* **validation:** the size of a job is a fact, not a phrase ([8aa6c11](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8aa6c119565d0f8412dc8aeafa6b295d47d3f093))
+* **workspace:** a Frappe bench names the mode of the workspace ([9d58517](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9d585172063a330992fee933316e268ae9985e3c))
+
+
+### Bug Fixes
+
+* **ci:** every run of a required check counts, and the worst one decides ([da9e0da](https://github.com/ManotLuijiu/pi-harness-runtime/commit/da9e0da6b0ca29cb320764fd5fc1b8a8dee8b1e0))
+* **ci:** the newest attempt of a run decides, not the attempt that failed ([9d7adcc](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9d7adcc31cbacc517c3c1a9bcd3956be94c908ef))
+* **honcho:** a handshake that never finishes is named instead of hanging the startup ([d66005f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d66005f928a4f8df5de5b8a0579cbd4f8df37ff9))
+* **honcho:** a probe that the end of the session cuts off is not a failure ([493fd93](https://github.com/ManotLuijiu/pi-harness-runtime/commit/493fd938ba09fdcf57bed4aaf259d81c4040909e))
+* **honcho:** a slow connector is not a failed one, the row is corrected when the tools appear ([b62ac5b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b62ac5b16ad93e2bfb10cbec589b80a09b7e20b3))
+* **honcho:** a tools listing that the end of the session cuts off is not a failure ([62cc8c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/62cc8c376aade01c953ce2a1c6501ed07b74a1e9))
+* **honcho:** the report names the state of the MCP server, not the registration ([762f4d5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/762f4d59e4eabcab9a1c21a61aa522c3267621b3))
+* **hooks:** a tag is checked through the commit behind it ([c823e8e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/c823e8e1f6973c62b5449a97c101759a4d5cbba5))
+* **jev:** a prohibition must not hide a destructive action ([78a6cc1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/78a6cc199e647f812e145483f7e94991358d8f34))
+* **jev:** a refusal without punctuation, and only a decline of an action ([ef3dbf8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ef3dbf87a2a1725373281613a0d48881ed5d2239))
+* **jev:** a rejection during the countdown pauses the work ([9b018ce](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9b018ce1152b6724dee73cdc901b8a360ecc91ab))
+* **jev:** a session switch ends the wait of the old session ([ca03d39](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ca03d399c0d4a1b2dd428ac39836ab53c0e51ab6))
+* **jev:** keep a comparative caveat with the option it constrains ([7be306b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7be306b0d0872713ebca9386d613ae5a8da9d5b6))
+* **jev:** the action of the question on its own text, and a reply is not an authorization ([7c3fdd6](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7c3fdd6822b58bd6ccfa3bcdf1c5282cb3db52dd))
+* **jev:** the action of the question, and an open question blocks the work ([1f9ff39](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1f9ff39efc4ee17464c54c2ca9b583245093dbac))
+* **jev:** the alternatives of a question are parsed without a quadratic pattern ([63016a3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/63016a3f0488acb801990dd46770c00d382b5858))
+* **jev:** the facts of an option survive the wording of the agent ([5a6250c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5a6250c07aa8d965bc6ae242cccbf519477598f8))
+* **keys:** the key directory is audited as a tree ([081cc75](https://github.com/ManotLuijiu/pi-harness-runtime/commit/081cc75ac8ceff36b0d619c3f76371dc08459d3c))
+* **mcp:** the connector and the watcher stop with the session ([4d1b87d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4d1b87d14d015749025b62bf54d6d0b6137295f7))
+* **mcp:** the connector survives a runtime that cannot list the servers ([d0f555f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d0f555fa14f51de33591e572a41ded5b59a3e4dd))
+* **merge:** the boolean input is read as a boolean ([971b716](https://github.com/ManotLuijiu/pi-harness-runtime/commit/971b7169a43db382dbdeb6bb9bab02ab56e0351c))
+* **merge:** the manual job needs the right of the merge ([7ba685e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ba685ec43d815f90aa35b742579e87e76c69209))
+* **merge:** the merge of the pull request is the GraphQL mutation ([972bab4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/972bab4b0f7faf1b0047f3bb767ef6db3de4b2fa))
+* **merge:** the workflow merges the pull request the gates cleared ([d7639ec](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7639ec9b83723510acb4a5c4e23d5d6167c3af6))
+* **providers:** the escape of the user stops the recovery, and a permanent failure clears it ([cfe5797](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cfe57976bf463c327e45b874fd297c3e942246b8))
+* **providers:** the pause wins over a retry, and the retry starts when the run settles ([e016dd2](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e016dd2a5add5b0f3c848a225a28a59e0f5fc7f3))
+* **recovery:** a cancelled countdown does not own the next attempt ([7b79f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7b79f301389fae48201e696d3086d257ed722fb9))
+* **recovery:** a cancelled retry of Pi is a cancelled decision, a spent budget is not ([7e13f15](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7e13f156a279cded2b2d4b0c99358100b3d5e038))
+* **recovery:** a manual request takes the work back from the countdown ([fa81d8f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fa81d8fd9d6160166a095e07bdf17049bbafa32d))
+* **recovery:** the predicate of Pi decides the retry, the provider identity is normalized ([6c8c17b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/6c8c17b53302cea1602d192251eacd0ebbd3e8c9))
+* **release:** a manual release keeps the version of its manifest ([122e661](https://github.com/ManotLuijiu/pi-harness-runtime/commit/122e661ea48cb8aff14c71dbd0221a4cf0ba4c8e))
+* **release:** the alignment names the reason of a failure ([5814dd0](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5814dd0b780f5839cf8011ed0cbbbb31e7eb0418))
+* **release:** the channels of the package name the release ([a7a273f](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a7a273ffe8398e2b5b07ef1c321777de41792c6e))
+* **release:** the release publishes and leaves the channels alone ([5871746](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5871746589c1281d855dbeb591b02419fa43f22e))
+* **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
+* **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
+* **workspace:** a strong bench signal decides, and the question is not a fact of an option ([303a828](https://github.com/ManotLuijiu/pi-harness-runtime/commit/303a828f55aa7c4e0a611231f482489b530ff5a3))
+* **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
+* **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
+
 ### [1.1.492](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.492) (2026-11-09)
 
 

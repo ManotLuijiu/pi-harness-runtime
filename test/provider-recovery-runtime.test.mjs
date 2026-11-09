@@ -225,6 +225,49 @@ test("a resume is skipped while a request of the user is running", () => {
 	);
 });
 
+test("a cancellation followed by another failure schedules a new attempt", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(USAGE_LIMIT),
+		"turn-1",
+		{ provider: "minimax", boundedEligible: true },
+	);
+	runtime.noteSettled();
+
+	const first = actions.get("provider-recovery");
+	assert.ok(first, "the first attempt is pending");
+	assert.equal(first.dueAt, clock.now() + MINUTE);
+
+	// The user resumes by hand after ten seconds: the countdown is
+	// cancelled.
+	clock.advance(10_000);
+	runtime.cancelPending();
+
+	// The request of the user fails before the old deadline.
+	clock.advance(20_000);
+	runtime.noteFailure(
+		classifyProviderFailure(USAGE_LIMIT),
+		"turn-2",
+		{ provider: "minimax", boundedEligible: true },
+	);
+	runtime.noteSettled();
+
+	const second = actions.get("provider-recovery");
+	assert.ok(second, "the new failure schedules its own attempt");
+	assert.notEqual(
+		second.dueAt,
+		first.dueAt,
+		"the cancelled deadline does not own the new attempt",
+	);
+	assert.equal(second.dueAt, clock.now() + MINUTE);
+
+	clock.advance(MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 1, "the recovery resumes the turn");
+});
+
 test("a manual request cancels the pending attempt of the cycle", () => {
 	const clock = createFakeClock();
 	const { runtime, actions, dispatched } = createRuntime(clock);

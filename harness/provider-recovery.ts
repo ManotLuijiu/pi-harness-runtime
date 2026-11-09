@@ -185,6 +185,18 @@ export interface ProviderRecoveryController {
 	noteSuccess(key: { sessionId: string; provider: string }): void;
 	/** A cancellation ends the cycle. */
 	cancel(key: { sessionId: string; provider: string }): void;
+	/**
+	 * Invalidate the pending attempt of the cycles of a session.
+	 *
+	 * A countdown that nobody waits for must not own the next deadline:
+	 * the next failure has to schedule its own attempt, or the recovery
+	 * would answer "already scheduled" to a failure that has no timer.
+	 *
+	 * The cancelled attempt never ran, so it is not an attempt of the
+	 * budget: the counter of the attempts goes back, and the cycle keeps
+	 * its identity and its failures.
+	 */
+	invalidatePending(key: { sessionId: string }): void;
 	/** The state of a cycle, for the status row and the tests. */
 	cycle(key: {
 		sessionId: string;
@@ -354,6 +366,28 @@ export function createProviderRecoveryController(
 				if (cycle.sessionId === key.sessionId && cycle.provider === key.provider) {
 					cycles.delete(id);
 				}
+			}
+		},
+
+		invalidatePending(key): void {
+			const observedAt = now();
+			for (const [id, cycle] of [...cycles.entries()]) {
+				if (cycle.sessionId !== key.sessionId) continue;
+				// Only a deadline that is still ahead is a pending attempt.
+				// A deadline in the past belongs to an attempt that ran.
+				if (cycle.dueAt === null || cycle.dueAt <= observedAt) continue;
+				cycles.set(id, {
+					...cycle,
+					// The attempt never ran, so it is not an attempt of the
+					// budget of the cycle.
+					attempt: Math.max(0, cycle.attempt - 1),
+					dueAt: null,
+					// The duplicate marker protects a pending deadline: a
+					// repeated copy of the same error must not create a
+					// second timer. There is no timer anymore, so the next
+					// failure may schedule its own attempt.
+					lastFailureKey: null,
+				});
 			}
 		},
 
