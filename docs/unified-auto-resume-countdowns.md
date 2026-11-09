@@ -119,11 +119,22 @@ The lifecycle of the cycle:
 
 - The cycle is keyed by the session, the provider, and the kind of the
   failure. A session change starts a new cycle.
+- The cycle starts at the **settled boundary**, not at the failed attempt.
+  Pi retries a failed turn internally first, so a cycle that starts at the
+  message of the failed attempt would compete with that retry. The runtime
+  of the recovery (`harness/provider-recovery-runtime.ts`) holds the failure
+  as a candidate and starts the cycle when the run settles.
 - A repeated copy of the same error neither reschedules the pending attempt
   nor resets the counter.
 - The attempt uses the **existing** auto-resume executor
   (`queueAutoResume` with the established `resume` message), so there is no
   second resume loop next to the established one.
+- The ownership of the resume is checked **at the moment of the dispatch**,
+  not at the moment of the scheduling. The user may pause the work, answer
+  a question, or change the session while the countdown runs. A resume that
+  ignores a pause overrides the decision of the user, so the pause stops
+  it. The three checks are: the session is the same, the work is not
+  explicitly paused, and no question waits for the user.
 - The pending action shows the exact deadline the timer uses, and the
   countdown leaves when the attempt runs.
 - A successful turn ends the cycle and resets the counter. Queuing a resume
@@ -134,6 +145,12 @@ The lifecycle of the cycle:
   the interface may not.
 - A credential failure is never retried by this policy. Buying credits or
   changing billing settings stays outside the automatic recovery.
+- A pause of the user cancels the pending resumes: the timer is cleared and
+  the row leaves. The budget of the cycle stays where it is, because a
+  cancelled attempt is not an attempt of the budget.
+- A stated `Retry-After` of a usage limit survives the classification: the
+  deadline of the attempt is the stated one, and the stated deadline is a
+  lower bound of the next attempt.
 
 ## The failures that own an executor
 
@@ -154,7 +171,7 @@ duplicates the executor that already exists.
 | Automatic action | Owner | What the row shows |
 | --- | --- | --- |
 | The decision of the judge | `harness/pending-countdown.ts` | the deadline of the decision, taken from the countdown itself |
-| The bounded recovery of a provider | `harness/provider-recovery.ts` | the exact deadline of the next attempt, with the attempt of the budget |
+| The bounded recovery of a provider | `harness/provider-recovery.ts` (the cycle) and `harness/provider-recovery-runtime.ts` (the sequence, the timers, the ownership of the dispatch) | the exact deadline of the next attempt, with the attempt of the budget |
 | The resume of a job after the quota | `harness/auto-quota-resume.ts` | the moment the resume really runs, not the reset of the quota |
 | The countdown of the GLM quota | `harness/glm-quota-countdown.ts` | the reset the countdown waits for |
 | The continuation of the output limit | `index.ts` | `queued` - it runs right away, so it has no countdown |
@@ -166,6 +183,9 @@ countdown leaves when the countdown ends: it never stays at `00:00`.
 
 ## What this does not cover
 
+- **The countdown of the internal retry of Pi.** The harness waits for the
+  settled boundary, so it never competes with the internal retry, but it
+  does not observe its countdown either. See the point below.
 - **The retries of Pi and of the provider SDK.** The core of Pi declares
   `auto_retry_start` and `auto_retry_end` for its own session
   (`core/agent-session.d.ts`), and the interactive mode consumes them: it

@@ -60,6 +60,7 @@ import {
 	createPendingActionTicker,
 } from "./harness/pending-actions.ts";
 import { classifyProviderFailure, usesBoundedRecovery } from "./harness/provider-failure.ts";
+import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -108,6 +109,7 @@ import { registerGithubLoginCommand } from "./packages/clipboard/dist/src/github
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
 	OUTPUT_LIMIT_RESUME_PROMPT,
+	PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
 	PROVIDER_OVERLOAD_RESUME_PROMPT,
 	getProviderOverloadResumeDelayMs,
 	PROACTIVE_COMPACT_COOLDOWN_MS,
@@ -381,6 +383,33 @@ const PROVIDER_RECOVERY_ACTION_ID = "provider-recovery";
 const PROVIDER_BLOCKED_ACTION_ID = "provider-blocked";
 
 /**
+ * The runtime of the automatic resumes after a provider failure.
+ *
+ * The runtime owns the sequence of a failure: it waits for the settled
+ * boundary, and it checks that a scheduled resume still owns the session
+ * before it dispatches. The Jev scope uses it to cancel the pending
+ * resumes when the user pauses the work.
+ */
+let providerRecoveryRuntime: ProviderRecoveryRuntime | null = null;
+
+/**
+ * The continuation controller of the todos.
+ *
+ * The runtime reads the pause state of the user through this handle: the
+ * injected resume is a resume, and a resume that ignores a pause overrides
+ * the decision of the user.
+ */
+let todoContinuationHandle: { isExplicitlyPaused(): boolean } | null = null;
+
+/**
+ * The context of the running extension.
+ *
+ * The context knows whether messages wait in the queue. A resume that
+ * injects itself while the user is typing competes with the user.
+ */
+let activeExtensionContext: ExtensionContext | null = null;
+
+/**
  * The controller of the bounded recovery cycles.
  *
  * The controller decides the deadlines of the attempts; the executor that
@@ -389,33 +418,12 @@ const PROVIDER_BLOCKED_ACTION_ID = "provider-blocked";
 const providerRecovery = createProviderRecoveryController();
 
 /**
- * The timer of the pending recovery attempt.
- *
- * It is the executor of the attempt, so it owns the deadline it shows.
- */
-let providerRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
-
-/**
  * The counter of the failures that carry no identity.
  *
  * A failure without a response id still needs its own identity, so a copy
  * of it cannot be mistaken for a later attempt.
  */
 let providerFailureCounter = 0;
-
-/**
- * Cancel a pending recovery attempt.
- *
- * The cycle ends with it: a cancelled attempt is not an attempt of the
- * budget.
- */
-function clearProviderRecoveryAttempt(): void {
-	if (providerRecoveryTimer) {
-		clearTimeout(providerRecoveryTimer);
-		providerRecoveryTimer = null;
-	}
-	pendingActions.remove(PROVIDER_RECOVERY_ACTION_ID);
-}
 
 /**
  * The identity of the pending action of the decision of the judge.
@@ -1570,6 +1578,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Capture UI context from session_start
 		pi.on("session_start", (_event, ctx) => {
+			// The context of the running extension: a resume checks it
+			// before it dispatches, so it does not compete with the user.
+			activeExtensionContext = ctx;
 			// The session of the runtime: the countdown of a question belongs
 			// to the session that asked it.
 			const sessionId = (
@@ -1632,7 +1643,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			pendingActionTicker.stop();
 			pendingActions.clear();
 			providerRecovery.clear();
-			clearProviderRecoveryAttempt();
+			// The pending resumes die with the session: a restart does not
+			// inherit a countdown, a blocked provider, or a resume that would
+			// inject itself into the new session.
+			providerRecoveryRuntime?.reset();
 			setPendingActionsStatus?.(undefined);
 			setPendingActionsStatus = null;
 			activeSessionId = "";
@@ -1946,6 +1960,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						// so nothing but an explicit resume directive clears
 						// it.
 						(sharedState.todoContinuationController as any)?.explicitPause?.();
+						// The user took over: a pending resume of the provider
+						// would inject itself against the decline.
+						providerRecoveryRuntime?.cancel();
 						logToFile(
 							"[auto-continue]",
 							"The reply declined the proposal; the work is paused",
@@ -2471,6 +2488,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						validationLedger,
 					}
 				);
+				// The runtime of the provider recovery reads the pause state
+				// of the user through this handle.
+				todoContinuationHandle = todoContinuationController;
 				logToFile("[auto-continue]", "Todo continuation controller initialized");
 			} catch (err) {
 				logToFile("[auto-continue]", "Failed to create todo continuation controller:", String(err));
@@ -2483,6 +2503,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// keep a timer alive nor block a later continuation.
 			todoContinuationController?.dispose?.();
 			todoContinuationController = null;
+			todoContinuationHandle = null;
 			sharedState.validationLedger = null;
 		});
 
@@ -2555,6 +2576,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						todoContinuationController.explicitPause();
 						logToFile("[auto-continue]", "Explicit pause/stop detected");
 					}
+					// The user took over: a pending resume would inject
+					// itself against the decision of the user.
+					providerRecoveryRuntime?.cancel();
 					// Invalidate any pending Jev evaluations to prevent late dispatch
 					if (taskIntakeController) {
 						taskIntakeController.invalidatePending();
@@ -6379,7 +6403,61 @@ Run \`bd ready\` to see current bd issues.
 	});
 
 	// --- Auto-track every assistant message ------------------------------
+	// The runtime of the automatic resumes after a provider failure.
+	//
+	// The runtime owns the sequence of a failure: the failure waits for the
+	// settled boundary, because Pi retries a failed turn internally first,
+	// and a scheduled resume checks that it still owns the session before it
+	// dispatches. The resume itself goes through the executor below, so
+	// there is no second resume loop.
+	providerRecoveryRuntime = new ProviderRecoveryRuntime({
+		controller: providerRecovery,
+		actions: pendingActions,
+		recoveryActionId: PROVIDER_RECOVERY_ACTION_ID,
+		blockedActionId: PROVIDER_BLOCKED_ACTION_ID,
+		overloadActionId: PROVIDER_OVERLOAD_ACTION_ID,
+		maxAttempts: MAX_RECOVERY_ATTEMPTS,
+		context: () => ({
+			sessionId: activeSessionId,
+			explicitlyPaused: todoContinuationHandle?.isExplicitlyPaused() ?? false,
+			questionPending:
+				sharedState.pqController?.hasPendingQuestion?.() ?? false,
+		}),
+		resetEvidence: (failure) => applicableResetEvidence(failure),
+		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
+		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
+		dispatch: async (reason) => {
+			// The user is typing: a resume that injects itself now competes
+			// with the user.
+			if (activeExtensionContext?.hasPendingMessages()) {
+				logToFile("[pi-harness]", "Resume skipped: hasPendingMessages=true");
+				return;
+			}
+			await queueAutoResume(reason, PROVIDER_OVERLOAD_RESUME_PROMPT, "followUp");
+		},
+		log: (message) => logToFile("[pi-harness]", message),
+	});
+
+	// The run settled: the internal retries of Pi are over, so a failure
+	// that waited for the boundary is final and the recovery starts now.
+	//
+	// An aborted run is a decision of the user, not a failure of the
+	// provider: an automatic resume would fight the user.
+	pi.on("agent_settled", (event) => {
+		// The flag of the abort is optional: the installed core of Pi does
+		// not carry it yet, a newer one does. The check reads it when it is
+		// there, and it never assumes that it is.
+		if ("aborted" in event && event.aborted === true) {
+			providerRecoveryRuntime?.cancel();
+			return;
+		}
+		providerRecoveryRuntime?.noteSettled();
+	});
+
 	pi.on("message_end", async (event, ctx) => {
+		// The context of the running extension: the resume checks it before
+		// it dispatches, so it does not compete with the user.
+		activeExtensionContext = ctx;
 		if (isOutputLimitResumePromptMessage(event.message)) {
 			pendingOutputLimitResumeAfterSettled = false;
 			return;
@@ -6424,23 +6502,39 @@ Run \`bd ready\` to see current bd issues.
 				})();
 
 		if (providerFailure) {
-			// The bounded recovery cycle owns the rate limit and the exhausted
-			// plan. An overload keeps its own executor, so one failure never
-			// ends up with two resume loops.
-			if (usesBoundedRecovery(providerFailure)) {
-				// The bounded recovery cycle decides the deadline of the next
-				// attempt. The identity of the failure keeps a repeated copy
-				// of the same error from starting a second cycle.
-				let failureKey =
-					typeof m.responseId === "string" && m.responseId.length > 0
-						? m.responseId
-						: "";
-				if (!failureKey) {
-					providerFailureCounter += 1;
-					failureKey = `${activeSessionId}:${providerFailureCounter}`;
-				}
-				scheduleProviderRecovery(providerFailure, failureKey);
-			} else if (!providerFailure.retryable) {
+			// The failure is a candidate: the recovery starts when the run
+			// settles, because Pi retries a failed turn internally first.
+			// A recovery that starts at the message of the failed attempt is
+			// a competing continuation.
+			let failureKey =
+				typeof m.responseId === "string" && m.responseId.length > 0
+					? m.responseId
+					: "";
+			if (!failureKey) {
+				providerFailureCounter += 1;
+				failureKey = `${activeSessionId}:${providerFailureCounter}`;
+			}
+			if (providerFailure.retryable) {
+				// The identity of the failure keeps a repeated copy of the
+				// same error from starting a second cycle.
+				const overloadEligible =
+					providerFailure.kind === "overload" &&
+					!isProviderRetryFailedReport(readMessageText(event.message)) &&
+					shouldQueueProviderOverloadResume(
+						m,
+						providerRecoveryRuntime?.overloadAttemptCount ?? 0,
+						ctx.hasPendingMessages(),
+						{ detected: true },
+					);
+				providerRecoveryRuntime?.noteFailure(providerFailure, failureKey, {
+					...(typeof m.provider === "string" ? { provider: m.provider } : {}),
+					overloadEligible,
+					// The classification owns the policy: a rate limit and an
+					// exhausted plan join the cycle, an overload keeps its own
+					// executor. One failure has one executor.
+					boundedEligible: usesBoundedRecovery(providerFailure),
+				});
+			} else {
 				// No automatic retry can fix this failure: the row says that
 				// nothing is scheduled.
 				pendingActions.register({
@@ -6476,46 +6570,16 @@ Run \`bd ready\` to see current bd issues.
 				requirement: "Session output",
 				error: `Attempt ${outputLimitResumeAttempts}`,
 			});
-		} else if (
-			shouldQueueProviderOverloadResume(
-				m,
-				providerOverloadResumeAttempts,
-				ctx.hasPendingMessages(),
-				{
-					// The classification may know an overload that the text
-					// of the answer does not repeat. A report of exhausted
-					// retries of the SDK is not a fresh failure.
-					detected:
-						providerFailure?.kind === "overload" &&
-						!isProviderRetryFailedReport(readMessageText(event.message)),
-				},
-			)
-		) {
-			providerOverloadResumeAttempts += 1;
-			logToFile("[pi-harness]", `Scheduling provider overload resume #${providerOverloadResumeAttempts}`);
-			scheduleProviderOverloadResume(() => ctx.hasPendingMessages());
 		} else if (m.stopReason === "stop") {
 			outputLimitResumeAttempts = 0;
 			pendingOutputLimitResumeAfterSettled = false;
-			if (providerOverloadResumeAttempts > 0) {
-				logToFile("[pi-harness]", `Counter reset (stopReason=stop), was=${providerOverloadResumeAttempts}`);
-			}
-			providerOverloadResumeAttempts = 0;
-			clearProviderOverloadResume();
 			// The turn completed: the provider works again. The recovery
 			// cycle ends with it, so the next failure starts at the first
-			// attempt, and a pending attempt of the cycle is cancelled.
-			if (typeof m.provider === "string" && m.provider.length > 0) {
-				providerRecovery.noteSuccess({
-					sessionId: activeSessionId,
-					provider: m.provider.toLowerCase(),
-				});
-			}
-			clearProviderRecoveryAttempt();
-			// The turn completed: a provider that was blocked is not blocked
-			// any more. The row of the blocked provider leaves with it.
-			pendingActions.removeWhere(
-				(action) => action.owner === "provider" && action.state === "blocked",
+			// attempt, and a pending attempt of the cycle is cancelled. A
+			// provider that was blocked is not blocked any more, and its row
+			// leaves with it.
+			providerRecoveryRuntime?.noteSuccess(
+				typeof m.provider === "string" ? m.provider : undefined,
 			);
 
 			// --- Auto-Continue: Check todos and keep going -------------------------------
@@ -6737,8 +6801,6 @@ Run \`bd ready\` to see current bd issues.
 	let outputLimitResumeAttempts = 0;
 	let pendingOutputLimitResumeAfterCompact = false;
 	let pendingOutputLimitResumeAfterSettled = false;
-	let providerOverloadResumeAttempts = 0;
-	let providerOverloadResumeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// --- Context-usage escalating warning tiers -----------------------------
 	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
@@ -7951,16 +8013,6 @@ Run \`bd ready\` to see current bd issues.
 		}
 	}, MINIMAX_REFRESH_MIN_INTERVAL_MS);
 
-	function clearProviderOverloadResume(): void {
-		if (providerOverloadResumeTimer) {
-			clearTimeout(providerOverloadResumeTimer);
-			providerOverloadResumeTimer = null;
-		}
-		// The pending action goes with the timer: a cancelled resume has no
-		// countdown any more.
-		pendingActions.remove(PROVIDER_OVERLOAD_ACTION_ID);
-	}
-
 	/**
 	 * The reset of the provider that applies to a failure.
 	 *
@@ -7993,151 +8045,6 @@ Run \`bd ready\` to see current bd issues.
 			observedAt,
 			source: mirror.source,
 		};
-	}
-
-	/**
-	 * React to a provider failure that the bounded recovery may retry.
-	 *
-	 * The cycle decides the deadline of the attempt; the existing
-	 * auto-resume executor sends the resume, so there is no second resume
-	 * loop. The pending action shows the exact deadline the executor uses.
-	 */
-	function scheduleProviderRecovery(
-		failure: ProviderFailure,
-		failureKey: string,
-	): void {
-		const provider = failure.provider ?? "provider";
-		const outcome = providerRecovery.noteFailure(
-			{
-				failureKey,
-				sessionId: activeSessionId,
-				// The cycle is keyed by the id of the provider, so a cycle of
-				// "MiniMax" and a successful turn of "minimax" are the same
-				// cycle.
-				provider: provider.toLowerCase(),
-				kind: failure.kind,
-				...(failure.window ? { window: failure.window } : {}),
-				...(failure.retryAfterMs !== undefined
-					? { retryAfterAt: Date.now() + failure.retryAfterMs }
-					: {}),
-			},
-			applicableResetEvidence(failure),
-		);
-
-		if (outcome.outcome === "scheduled") {
-			logToFile(
-				"[pi-harness]",
-				`Provider recovery attempt ${outcome.attempt}/${MAX_RECOVERY_ATTEMPTS} at ${new Date(outcome.dueAt).toISOString()} (bound=${outcome.boundBy})`,
-			);
-			startProviderRecoveryAttempt(outcome.dueAt, outcome.attempt, failure);
-			return;
-		}
-
-		if (outcome.outcome === "blocked") {
-			logToFile(
-				"[pi-harness]",
-				`Provider recovery exhausted after ${outcome.attempt} attempts`,
-			);
-			pendingActions.register({
-				id: PROVIDER_BLOCKED_ACTION_ID,
-				sessionId: activeSessionId,
-				owner: "provider",
-				kind: "retry",
-				state: "blocked",
-				...(failure.provider ? { provider: failure.provider } : {}),
-				...(failure.code ? { code: failure.code } : {}),
-				reason: `recovery attempts exhausted (${outcome.attempt}/${MAX_RECOVERY_ATTEMPTS})`,
-			});
-			return;
-		}
-
-		// "already-scheduled" and "duplicate": the cycle does not move. The
-		// row of the pending attempt is already there.
-		logToFile(
-			"[pi-harness]",
-			`Provider recovery unchanged (${outcome.outcome}), attempt ${outcome.attempt}`,
-		);
-	}
-
-	/**
-	 * Start the timer of a recovery attempt.
-	 *
-	 * The timer is the executor, so it owns the deadline: the row of the
-	 * pending action shows the deadline the timer really uses.
-	 */
-	function startProviderRecoveryAttempt(
-		dueAt: number,
-		attempt: number,
-		failure: ProviderFailure,
-	): void {
-		clearProviderRecoveryAttempt();
-		pendingActions.register({
-			id: PROVIDER_RECOVERY_ACTION_ID,
-			sessionId: activeSessionId,
-			owner: "provider-recovery",
-			kind: "retry",
-			state: "scheduled",
-			dueAt,
-			attempt,
-			maxAttempts: MAX_RECOVERY_ATTEMPTS,
-			...(failure.provider ? { provider: failure.provider } : {}),
-			...(failure.code ? { code: failure.code } : {}),
-			reason: failure.reason,
-		});
-		const delayMs = Math.max(0, dueAt - Date.now());
-		providerRecoveryTimer = setTimeout(() => {
-			providerRecoveryTimer = null;
-			// The row leaves when the attempt runs: a countdown must not stay
-			// at 00:00.
-			pendingActions.remove(PROVIDER_RECOVERY_ACTION_ID);
-			void queueAutoResume(
-				"provider-recovery",
-				PROVIDER_OVERLOAD_RESUME_PROMPT,
-				"followUp",
-			);
-		}, delayMs);
-	}
-
-	function scheduleProviderOverloadResume(
-		hasPendingMessages: () => boolean,
-	): void {
-		clearProviderOverloadResume();
-		const delayMs = getProviderOverloadResumeDelayMs();
-		const delayMinutes = Math.max(1, Math.round(delayMs / 60_000));
-		logToFile(
-			"[pi-harness]",
-			`Provider overloaded; scheduling resume in ${delayMinutes} min (${delayMs}ms) attempt=${providerOverloadResumeAttempts}`,
-		);
-		// The timer is the executor of the resume, so the timer owns the
-		// deadline: the row of the pending action shows the deadline the
-		// timer really uses, never another one.
-		const dueAt = Date.now() + delayMs;
-		pendingActions.register({
-			id: PROVIDER_OVERLOAD_ACTION_ID,
-			sessionId: activeSessionId,
-			owner: "provider-overload",
-			kind: "retry",
-			state: "scheduled",
-			dueAt,
-			attempt: providerOverloadResumeAttempts,
-			reason: "the provider is overloaded",
-		});
-		providerOverloadResumeTimer = setTimeout(() => {
-			providerOverloadResumeTimer = null;
-			// The action leaves the row when it fires: the countdown must
-			// not stay at 00:00.
-			pendingActions.remove(PROVIDER_OVERLOAD_ACTION_ID);
-			logToFile("[pi-harness]", 'Provider resume timer fired, sending "resume"');
-			if (hasPendingMessages()) {
-				logToFile("[pi-harness]", "Resume skipped: hasPendingMessages=true");
-				return;
-			}
-			void queueAutoResume(
-				"provider-overload",
-				PROVIDER_OVERLOAD_RESUME_PROMPT,
-				"followUp",
-			);
-		}, delayMs);
 	}
 
 	async function queueAutoResume(

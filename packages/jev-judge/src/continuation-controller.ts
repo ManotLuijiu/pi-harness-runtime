@@ -373,6 +373,17 @@ export class TodoContinuationController {
 	}
 
 	/**
+	 * Whether the user paused the work explicitly.
+	 *
+	 * Only an explicit resume clears the pause. The harness reads the state
+	 * before it injects a resume: the injected message is a resume, and a
+	 * resume that ignores a pause overrides the decision of the user.
+	 */
+	isExplicitlyPaused(): boolean {
+		return this.state.explicitPause;
+	}
+
+	/**
 	 * Resume from explicit pause
 	 */
 	resume(): void {

@@ -268,6 +268,9 @@ export function classifyProviderFailure(text: string | undefined): ProviderFailu
 			retryable: true,
 			recovery: "bounded-recovery",
 			...(window ? { window } : {}),
+			// A stated deadline is a lower bound of the next attempt. It is
+			// not the deadline of the attempt: the cycle may wait longer.
+			...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
 			...(code ? { code } : {}),
 			...(provider ? { provider } : {}),
 			reason: provider
