@@ -135,6 +135,21 @@ The lifecycle of the cycle:
 - A credential failure is never retried by this policy. Buying credits or
   changing billing settings stays outside the automatic recovery.
 
+## The owners that are registered today
+
+| Automatic action | Owner | What the row shows |
+| --- | --- | --- |
+| The decision of the judge | `harness/pending-countdown.ts` | the deadline of the decision, taken from the countdown itself |
+| The bounded recovery of a provider | `harness/provider-recovery.ts` | the exact deadline of the next attempt, with the attempt of the budget |
+| The resume of a job after the quota | `harness/auto-quota-resume.ts` | the moment the resume really runs, not the reset of the quota |
+| The countdown of the GLM quota | `harness/glm-quota-countdown.ts` | the reset the countdown waits for |
+| The continuation of the output limit | `index.ts` | `queued` - it runs right away, so it has no countdown |
+| The continuation of the compaction | `index.ts` | `queued` - it runs right away, so it has no countdown |
+
+The job resume and the GLM countdown report their deadline through an
+observer, so their modules stay independent of the display. The row of a
+countdown leaves when the countdown ends: it never stays at `00:00`.
+
 ## What this does not cover
 
 - **The retries of Pi and of the provider SDK.** The core of Pi declares
@@ -142,7 +157,10 @@ The lifecycle of the cycle:
   events do not expose them. Until a supported bridge exists, the harness
   does not claim to observe them, and it does not start a competing loop on
   top of them.
-- **The job quota resume and the GLM quota countdown.** They keep their own
-  executors. They are not registered in the registry yet.
-- **The output-limit and post-compaction continuations.** They have no
-  scheduled delay, so a numeric countdown would be wrong for them.
+- **The restored state after a restart.** The job resume persists its
+  `resumeAt` in the checkpoint, but a persisted timestamp does not recreate
+  an in-memory timer. A restart therefore shows no countdown until the job
+  schedules its resume again.
+- **The quota as a proof.** A reset of the console is an observation. It
+  only becomes the floor of a retry when it is fresh, names the same
+  provider, and belongs to the same window as the failure.
