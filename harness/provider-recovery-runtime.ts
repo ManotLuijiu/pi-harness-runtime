@@ -45,6 +45,15 @@ export interface ProviderRecoverySessionState {
 	explicitlyPaused: boolean;
 	/** A question waits for the answer of the user. */
 	questionPending: boolean;
+	/**
+	 * The session is busy: a request of the user is running.
+	 *
+	 * A resume that queues itself while a request runs lands on top of
+	 * that request, and the work continues twice. The queued messages do
+	 * not show this: a message that Pi already picked up is not queued
+	 * anymore, so the fact that the session is busy is its own fact.
+	 */
+	sessionBusy: boolean;
 }
 
 /**
@@ -76,6 +85,9 @@ export function mayDispatchResume(state: {
 	}
 	if (state.current.questionPending) {
 		return { allowed: false, reason: "a question waits for the user" };
+	}
+	if (state.current.sessionBusy) {
+		return { allowed: false, reason: "the session is busy" };
 	}
 	return { allowed: true };
 }
