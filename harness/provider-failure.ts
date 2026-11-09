@@ -329,6 +329,29 @@ export function classifyProviderFailure(text: string | undefined): ProviderFailu
 }
 
 /**
+ * Whether the bounded recovery cycle of the harness owns the failure.
+ *
+ * The cycle is the backoff of the harness: a rate limit and an exhausted
+ * plan are retried by it, whether the evidence names a deadline or not.
+ * A rate limit without a `Retry-After` therefore still gets a finite
+ * number of attempts, instead of nothing at all.
+ *
+ * An overload does not belong to the cycle: the provider says to come
+ * back shortly, and the existing overload executor already retries with a
+ * short delay and has its own limit. Two executors for one failure would
+ * be two resume loops.
+ */
+export function usesBoundedRecovery(failure: ProviderFailure): boolean {
+	if (failure.kind === "overload") return false;
+	if (failure.kind === "credentials" || failure.kind === "unknown") return false;
+	return (
+		failure.recovery === "bounded-recovery" ||
+		failure.recovery === "retry-after" ||
+		failure.recovery === "backoff"
+	);
+}
+
+/**
  * Does the text look like a failure at all?
  */
 function looksLikeFailure(text: string): boolean {

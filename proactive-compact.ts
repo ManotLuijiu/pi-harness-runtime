@@ -123,7 +123,7 @@ export function isFreshProviderOverloadError(
 		text.includes("server is temporarily busy") ||
 		text.includes("try again shortly") || /timed.s*out/i.test(text); // timeout errors are retryable
 	// But NOT if it's a "Retry failed" report (that means our retry already failed)
-	const isRetryFailedReport = /Retry failed after \d+ attempts:/i.test(text);
+	const isRetryFailedReport = isProviderRetryFailedReport(text);
 	// request_id extracted for future logging use
 	// const requestIdMatch = text.match(/request_id[^"]*"([^"]+)"/i) || text.match(/request_id[^"]*([a-f0-9]+)/i);
 	if (isFreshOverload) {
@@ -132,6 +132,17 @@ export function isFreshProviderOverloadError(
 		// Debug only - log to file, not TUI
 	}
 	return isFreshOverload && !isRetryFailedReport;
+}
+
+/**
+ * Whether the text is the report of an exhausted retry of the provider SDK.
+ *
+ * The SDK already made its own attempts. The harness does not start
+ * another attempt on top of them, and it does not report a fresh failure
+ * for them either.
+ */
+export function isProviderRetryFailedReport(text: string): boolean {
+	return /Retry failed after \d+ attempts:/i.test(text);
 }
 
 /**
@@ -154,11 +165,14 @@ export function shouldQueueProviderOverloadResume(
 	message: AssistantStopLike,
 	resumeAttempts: number,
 	hasPendingMessages: boolean,
-	options?: { maxAttempts?: number },
+	options?: { maxAttempts?: number; detected?: boolean },
 ): boolean {
 	const maxAttempts =
 		options?.maxAttempts ?? PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT;
-	const isFresh = isFreshProviderOverloadError(message);
+	// The classification of the failure may know an overload that the text
+	// of the answer does not mention: the error of the turn is not always
+	// repeated in the answer.
+	const isFresh = options?.detected ?? isFreshProviderOverloadError(message);
 	const underLimit = resumeAttempts < maxAttempts;
 	const noPending = !hasPendingMessages;
 	const shouldQueue = isFresh && underLimit && noPending;

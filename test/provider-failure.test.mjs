@@ -13,6 +13,7 @@ import {
 	parseFailureCode,
 	parseRetryAfterMs,
 	unwrapRetryWrapper,
+	usesBoundedRecovery,
 } from "../harness/provider-failure.ts";
 
 /** The payload of the incident: the plan of the account is exhausted. */
@@ -187,4 +188,43 @@ test("the code of the evidence is read, and only a code that is one", () => {
 	assert.equal(parseFailureCode("the request failed with (2067)"), "2067");
 	assert.equal(parseFailureCode("status code 429"), "429");
 	assert.equal(parseFailureCode("nothing here"), undefined);
+});
+
+test("one failure has one executor", () => {
+	// A rate limit belongs to the bounded recovery cycle, with or without a
+	// stated deadline: the cycle is the backoff of the harness.
+	const rateLimit = classifyProviderFailure("429 Too Many Requests");
+	assert.equal(rateLimit.kind, "rate-limit");
+	assert.equal(usesBoundedRecovery(rateLimit), true);
+
+	const rateLimitWithDeadline = classifyProviderFailure(
+		"HTTP 429 Too Many Requests. Retry-After: 120",
+	);
+	assert.equal(usesBoundedRecovery(rateLimitWithDeadline), true);
+
+	// The exhaustion of the plan belongs to the cycle as well.
+	const exhausted = classifyProviderFailure(
+		"MiniMax Token Plan usage limit reached (2067)",
+	);
+	assert.equal(exhausted.kind, "usage-exhausted");
+	assert.equal(usesBoundedRecovery(exhausted), true);
+
+	// An overload keeps its own executor, so it does not enter the cycle.
+	// Two executors for one failure would be two resume loops.
+	const overload = classifyProviderFailure("Error: overloaded_error (529)");
+	assert.equal(overload.kind, "overload");
+	assert.equal(usesBoundedRecovery(overload), false);
+
+	const peakHour = classifyProviderFailure("Error: peak-hour surge (2064)");
+	assert.equal(peakHour.kind, "overload");
+	assert.equal(usesBoundedRecovery(peakHour), false);
+
+	// A rejected credential never recovers by waiting.
+	const credentials = classifyProviderFailure("Error: 401 Unauthorized");
+	assert.equal(credentials.kind, "credentials");
+	assert.equal(usesBoundedRecovery(credentials), false);
+
+	// An unknown failure is not turned into a retry.
+	const unknown = classifyProviderFailure("Error: something failed");
+	assert.equal(usesBoundedRecovery(unknown), false);
 });

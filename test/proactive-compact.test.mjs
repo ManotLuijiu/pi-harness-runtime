@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 const {
 	getProviderOverloadResumeDelayMs,
 	isProviderOverloadAssistantMessage,
+	isProviderRetryFailedReport,
 	isOutputLimitAssistantMessage,
 	shouldQueueOutputLimitResume,
 	shouldQueueProviderOverloadResume,
@@ -142,6 +143,36 @@ test("shouldQueueProviderOverloadResume honors pending messages and attempt limi
 		shouldQueueProviderOverloadResume(message, 3, false, { maxAttempts: 3 }),
 		false,
 	);
+});
+
+test("an overload that the classification found is an overload", () => {
+	// The error of the turn is not always repeated in the answer, so the
+	// classification may know an overload that the text does not mention.
+	const message = { role: "assistant", content: "I am sorry." };
+	assert.equal(shouldQueueProviderOverloadResume(message, 0, false), false);
+	assert.equal(
+		shouldQueueProviderOverloadResume(message, 0, false, { detected: true }),
+		true,
+	);
+	assert.equal(
+		shouldQueueProviderOverloadResume(message, 0, false, { detected: false }),
+		false,
+		"a classification that found no overload does not schedule one",
+	);
+});
+
+test("the report of exhausted retries of the SDK is not a fresh failure", () => {
+	assert.equal(
+		isProviderRetryFailedReport("Retry failed after 3 attempts: overloaded_error"),
+		true,
+	);
+	assert.equal(isProviderRetryFailedReport("overloaded_error"), false);
+
+	const message = {
+		role: "assistant",
+		content: "Retry failed after 3 attempts: overloaded_error",
+	};
+	assert.equal(shouldQueueProviderOverloadResume(message, 0, false), false);
 });
 
 test("getProviderOverloadResumeDelayMs returns bounded jitter", () => {
