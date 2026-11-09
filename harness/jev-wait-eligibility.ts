@@ -114,7 +114,18 @@ export function classifyQuestionRelevance(text: string | undefined): {
  */
 export function workStateFromTodos(
 	items: readonly TodoStateLike[] | null | undefined,
-	options: { available?: boolean; error?: string } = {},
+	options: {
+		available?: boolean;
+		error?: string;
+		/**
+		 * Is a required validation still pending?
+		 *
+		 * A todo that is marked complete while its final tier has not passed
+		 * is not done: the required validation is work that remains, so the
+		 * request is not finished.
+		 */
+		validationPending?: boolean;
+	} = {},
 ): JevWorkState {
 	if (options.available === false) {
 		return "unknown";
@@ -131,7 +142,13 @@ export function workStateFromTodos(
 	const unfinished = relevant.some(
 		(item) => item.status === "pending" || item.status === "in_progress",
 	);
-	return unfinished ? "unfinished" : "complete";
+	if (unfinished) return "unfinished";
+	if (options.validationPending === true) {
+		// The todos are done, but the required validation has not passed.
+		// The request is not finished.
+		return "unfinished";
+	}
+	return "complete";
 }
 
 /**
@@ -212,6 +229,9 @@ export function clearObsoleteWait(options: {
  *
  *  - An offer is never eligible: the silence of the human must not start
  *    work that nobody asked for.
+ *  - A question that was asked after the work of the request was done is
+ *    never eligible: the request is finished, so the question asks for
+ *    something beyond it and waits for an explicit new request.
  *  - A question about work that has been done is obsolete: the work it
  *    belongs to is finished, so it blocks nothing.
  *  - Everything else is eligible, including an unknown state of the work:
@@ -230,7 +250,14 @@ export function jevWaitEligibility(input: {
 				"the question offers work that was not asked for; the silence of the user must not authorize it",
 		};
 	}
-	if (input.relevance === "current-request" && input.work === "complete") {
+	if (input.relevance === "final-request") {
+		return {
+			eligible: false,
+			reason:
+				"the work of the request is done; the question asks for something beyond it and waits for an explicit request",
+		};
+	}
+	if (input.work === "complete") {
 		return {
 			eligible: false,
 			reason: "the work of the question is done; the question is obsolete",

@@ -383,27 +383,31 @@ export class WaitLifecycleController {
 
 		// The wait is checked once more before the judge is asked: the work
 		// of the question can be done while it waited, and an obsolete wait
-		// must not decide anything. The wait ends here, so the timer, the
-		// state and the in-flight evaluation of that request end with it.
+		// must not decide anything.
 		const eligibility = await this.deps.eligibility?.();
-		if (eligibility && !eligibility.eligible) {
-			this.end("idle", eligibility.reason);
-			return {
-				applied: false,
-				state: "idle",
-				reason: eligibility.reason,
-				discardReason: "not-eligible",
-			};
-		}
 
-		// The question may have been answered or replaced while the
-		// eligibility was read.
+		// The identity of the request is checked before anything is ended:
+		// the question may have been answered or replaced while the
+		// eligibility was read, and a stale check must never clear the wait
+		// of a newer question.
 		if (generation !== this.generation || this.request?.requestId !== request.requestId) {
 			return {
 				applied: false,
 				state: this.state,
 				reason: "the evaluation is stale",
 				discardReason: "stale",
+			};
+		}
+
+		if (eligibility && !eligibility.eligible) {
+			// The wait ends here, so the timer, the state and the in-flight
+			// evaluation of that request end with it.
+			this.end("idle", eligibility.reason);
+			return {
+				applied: false,
+				state: "idle",
+				reason: eligibility.reason,
+				discardReason: "not-eligible",
 			};
 		}
 

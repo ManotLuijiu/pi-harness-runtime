@@ -68,6 +68,42 @@ test("an offer never reaches the judge", () => {
 	assert.match(decision.reason, /not asked for/);
 });
 
+test("a question after the completion is not decided by silence", () => {
+	// The wording of an offer is not the only way to offer work: "May I add
+	// an export feature?" asks a question and still proposes something that
+	// was not asked for.
+	const work = workStateFromTodos([{ status: "completed" }]);
+	assert.equal(work, "complete");
+
+	const relevance = questionRelevance({
+		text: "May I add an export feature?",
+		work,
+	});
+	assert.equal(relevance, "final-request");
+
+	const decision = jevWaitEligibility({ relevance, work });
+	assert.equal(
+		decision.eligible,
+		false,
+		"the request is done, so the question waits for an explicit request",
+	);
+	assert.match(decision.reason, /explicit request/);
+});
+
+test("a pending validation is work that remains", () => {
+	const items = [{ status: "completed" }, { status: "completed" }];
+	assert.equal(workStateFromTodos(items), "complete");
+	assert.equal(
+		workStateFromTodos(items, { validationPending: true }),
+		"unfinished",
+		"a todo whose final tier has not passed is not done",
+	);
+	assert.equal(
+		workStateFromTodos(items, { validationPending: false }),
+		"complete",
+	);
+});
+
 test("a question about work that is done is obsolete", () => {
 	const decision = jevWaitEligibility({
 		relevance: "current-request",
@@ -96,9 +132,14 @@ test("an unknown state of the work is never a completion", () => {
 
 test("a final question of a finished request is not obsolete", () => {
 	// The work was already done when the question was asked: there is no
-	// work that could finish later, so the question is not obsolete.
+	// work that could finish later, so the question is not obsolete. It is
+	// still not eligible: the request is done, so it waits for the user.
 	assert.equal(
 		isObsoleteQuestion({ relevance: "final-request", work: "complete" }).obsolete,
+		false,
+	);
+	assert.equal(
+		jevWaitEligibility({ relevance: "final-request", work: "complete" }).eligible,
 		false,
 	);
 	assert.equal(
