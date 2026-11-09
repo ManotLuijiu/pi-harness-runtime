@@ -193,6 +193,29 @@ test("an applicable reset is the floor of the deadline", () => {
 	assert.equal(outcome.boundBy, "reset");
 });
 
+test("the identity of the provider is normalized, so a reset still applies", () => {
+	const now = 1_000_000;
+	const controller = createProviderRecoveryController({ now: () => now });
+
+	// The cycle keys its provider in lower case, and the provider writes
+	// its own name. The comparison has to normalize the two spellings, or
+	// the evidence of a reset is discarded for a difference of case alone.
+	const outcome = controller.noteFailure(
+		failure({ provider: "minimax", window: "h5" }),
+		{
+			provider: "MiniMax",
+			window: "h5",
+			resetAt: now + 5 * MINUTE,
+			observedAt: now - 60_000,
+			source: "scrape",
+		},
+	);
+
+	assert.equal(outcome.outcome, "scheduled");
+	assert.equal(outcome.dueAt, now + 5 * MINUTE + RESET_BUFFER_MS);
+	assert.equal(outcome.boundBy, "reset");
+});
+
 test("a reset of another window is not a floor", () => {
 	const now = 1_000_000;
 	const controller = createProviderRecoveryController({ now: () => now });

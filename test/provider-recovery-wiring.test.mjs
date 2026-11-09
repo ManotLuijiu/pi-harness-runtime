@@ -31,6 +31,10 @@ const policySource = readFileSync(
 	new URL("../harness/pi-retry-policy.ts", import.meta.url),
 	"utf8",
 );
+const controllerSource = readFileSync(
+	new URL("../harness/provider-recovery.ts", import.meta.url),
+	"utf8",
+);
 
 test("the runtime classifies the failure of a turn", () => {
 	assert.match(
@@ -318,6 +322,42 @@ test("a cancelled retry of Pi leaves no recovery behind", () => {
 		policySource,
 		/export function piAttemptBudget[\s\S]{0,200}?settings\.maxRetries \+ 1/,
 		"the budget counts the first attempt",
+	);
+});
+
+test("the predicate of Pi decides whether a retry delay exists", () => {
+	assert.match(
+		policySource,
+		/import \{ isRetryableAssistantError \} from "@earendil-works\/pi-ai\/compat"/,
+		"the policy asks the predicate of Pi itself",
+	);
+	assert.match(
+		policySource,
+		/isRetryableAssistantError\(\{[\s\S]{0,120}?errorMessage: text/,
+		"the predicate of Pi reads the error text",
+	);
+	assert.match(
+		indexSource,
+		/piRetryOutcome: piRetryOutcome\([\s\S]{0,240}?m\.errorMessage/,
+		"the harness hands the error text of the turn to the policy",
+	);
+	assert.match(
+		indexSource,
+		/const failedAttempt = m\.stopReason === "error";/,
+		"the harness counts the failed attempts of the run",
+	);
+});
+
+test("the identity of the provider is normalized on both sides", () => {
+	assert.match(
+		indexSource,
+		/provider: failure\.provider\.toLowerCase\(\)/,
+		"the evidence of a reset carries the normalized provider",
+	);
+	assert.match(
+		controllerSource,
+		/normalizeProviderIdentity\(evidence\.provider\)[\s\S]{0,120}?normalizeProviderIdentity\(input\.provider\)/,
+		"the controller compares the normalized identities",
 	);
 });
 

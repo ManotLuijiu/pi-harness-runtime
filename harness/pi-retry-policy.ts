@@ -11,7 +11,8 @@
  *
  * - the settings of Pi decide whether the retry exists at all, and how
  *   many attempts it may make,
- * - the kind of the failure decides whether the retry applies to it,
+ * - the error text decides whether the retry applies to it, because Pi
+ *   itself decides it that way,
  * - every failed attempt of Pi produces another failed message in the
  *   same run, so the harness counts the attempts.
  *
@@ -27,10 +28,21 @@
  * a cancellation, and a run with the whole budget ends in an exhausted
  * budget - and a budget of zero retries is no cancellation at all, it is
  * a run that settles right after the first failure.
+ *
+ * The retryability of an error is not a property of the category of the
+ * harness. The category is a policy decision of the harness; the retry of
+ * Pi is a fact about the error, and only the fact decides whether a delay
+ * exists that the user can cancel. The two disagree: a MiniMax 2067
+ * ("the Token Plan usage limit has been reached") carries the type
+ * `rate_limit_error`, so Pi retries it and the user can cancel that
+ * delay, while the category of the harness calls it an exhausted plan.
+ * The harness therefore asks the predicate of Pi itself.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { isRetryableAssistantError } from "@earendil-works/pi-ai/compat";
 
 /**
  * The retry settings of Pi.
@@ -64,22 +76,52 @@ export const DEFAULT_PI_RETRY_SETTINGS: PiRetrySettings = {
  * server error, and a transport failure. An exhausted plan and a
  * credential failure are not among them: the core gives up on them at
  * once, so there is no retry delay that a user could cancel.
+ *
+ * The list documents the categories that *usually* match the predicate of
+ * Pi. It does not decide: the predicate of Pi decides, because only it
+ * knows the error text that Pi will see.
  */
 export function piRetriesFailure(kind: string): boolean {
 	return kind === "rate-limit" || kind === "overload";
 }
 
 /**
- * Whether Pi would retry this failure.
+ * Whether Pi retries this error.
+ *
+ * The truth is the predicate of Pi itself
+ * (`isRetryableAssistantError` of `@earendil-works/pi-ai`), because that
+ * predicate decides whether a retry delay exists at all - and the delay is
+ * what the user can cancel.
+ *
+ * The predicate reads the stop reason and the error text only, so the
+ * message it gets is built from those two facts.
+ */
+export function piRetriesErrorText(errorText: string | undefined): boolean {
+	const text = errorText?.trim() ?? "";
+	if (text.length === 0) return false;
+	try {
+		return isRetryableAssistantError({
+			stopReason: "error",
+			errorMessage: text,
+		} as AssistantMessage);
+	} catch {
+		// A predicate that cannot be reached is no evidence of a retry.
+		// The harness recovers rather than assumes a cancellation.
+		return false;
+	}
+}
+
+/**
+ * Whether Pi would retry this error.
  *
  * A failure that Pi does not retry has no retry delay, so a cancellation
  * of that delay is impossible and the harness must not read one into it.
  */
 export function expectsPiRetry(
-	failure: { kind: string },
 	settings: PiRetrySettings,
+	errorText: string | undefined,
 ): boolean {
-	return settings.enabled && piRetriesFailure(failure.kind);
+	return settings.enabled && piRetriesErrorText(errorText);
 }
 
 /**
@@ -109,16 +151,16 @@ export type PiRetryOutcome = "not-retried" | "budget-spent" | "cancelled";
 /**
  * The verdict about the retry of Pi, from the attempts of the run.
  *
- * @param failure The failure that Pi saw
  * @param settings The retry settings of Pi
  * @param attempts The failed attempts of the run
+ * @param errorText The error text that Pi saw
  */
 export function piRetryOutcome(
-	failure: { kind: string },
 	settings: PiRetrySettings,
 	attempts: number,
+	errorText: string | undefined,
 ): PiRetryOutcome {
-	if (!expectsPiRetry(failure, settings)) {
+	if (!expectsPiRetry(settings, errorText)) {
 		return "not-retried";
 	}
 	if (attempts >= piAttemptBudget(settings)) {

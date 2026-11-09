@@ -6585,10 +6585,16 @@ Run \`bd ready\` to see current bd issues.
 					// What the attempts of the run say about the retry of
 					// Pi: a run with fewer attempts than the budget of Pi
 					// ends in a cancelled delay, and the user decided that.
+					//
+					// The predicate of Pi decides whether a retry delay
+					// exists at all, so the error text is the fact. The
+					// category of the harness is a policy decision and can
+					// disagree: a MiniMax 2067 carries the type
+					// `rate_limit_error`, so Pi retries it.
 					piRetryOutcome: piRetryOutcome(
-						providerFailure,
 						readPiRetrySettings({ cwd: ctx.cwd }),
 						providerFailureAttemptsInRun,
+						typeof m.errorMessage === "string" ? m.errorMessage : undefined,
 					),
 				});
 			} else {
@@ -8106,7 +8112,11 @@ Run \`bd ready\` to see current bd issues.
 		const observedAt = Date.parse(mirror.synced_at);
 		if (!Number.isFinite(observedAt)) return undefined;
 		return {
-			provider: failure.provider,
+			// The identity of the provider is normalized: the cycle keys its
+			// provider in lower case, so an evidence that carries the name
+			// as the provider writes it ("MiniMax") must not be discarded by
+			// the comparison.
+			provider: failure.provider.toLowerCase(),
 			window: failure.window,
 			resetAt,
 			observedAt,
