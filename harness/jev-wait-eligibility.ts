@@ -63,8 +63,10 @@ export interface JevWaitEligibility {
  * was never asked for. Silence must not authorize it, so an offer never
  * reaches the judge.
  *
- * The list is deliberately narrow. A wording that is not in the list is
- * treated as a question about the request, which keeps the judge useful.
+ * The list is a fallback only. It is consulted when the requested scope is
+ * unknown, because the scope decides when it is known: the wording of a
+ * question is not a fact about what was asked for. "Want me to implement A,
+ * or A+B?" is phrased like an offer and asks about the request itself.
  */
 const OFFER_WORDINGS: readonly RegExp[] = [
 	/\bwould you like me to\b/i,
@@ -80,19 +82,127 @@ const OFFER_WORDINGS: readonly RegExp[] = [
 ];
 
 /**
+ * The words that carry no scope.
+ *
+ * They are the same in a request and in a question about it, so they never
+ * show that a question is about the requested work.
+ */
+const SCOPE_STOP_WORDS: ReadonlySet<string> = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"as",
+	"at",
+	"be",
+	"but",
+	"by",
+	"can",
+	"do",
+	"does",
+	"for",
+	"from",
+	"has",
+	"have",
+	"i",
+	"if",
+	"in",
+	"is",
+	"it",
+	"its",
+	"me",
+	"my",
+	"of",
+	"on",
+	"or",
+	"our",
+	"should",
+	"shall",
+	"so",
+	"that",
+	"the",
+	"their",
+	"them",
+	"then",
+	"there",
+	"these",
+	"they",
+	"this",
+	"to",
+	"us",
+	"want",
+	"was",
+	"we",
+	"were",
+	"what",
+	"when",
+	"which",
+	"will",
+	"with",
+	"would",
+	"you",
+	"your",
+]);
+
+/**
+ * The words of a text that name something.
+ *
+ * The comparison of the scope uses these words: a question is about the
+ * requested work when it names the same things.
+ */
+function scopeTerms(text: string | undefined): string[] {
+	const words = (text ?? "")
+		.toLowerCase()
+		.split(/[^a-z0-9+#]+/)
+		.map((word) => word.trim())
+		.filter((word) => word.length >= 3 && !SCOPE_STOP_WORDS.has(word));
+	return Array.from(new Set(words));
+}
+
+/**
  * Is the question an offer of work that was not asked for?
  *
- * The wording of the question decides, not the wording of the message around
- * it: a long message that talks about many things must not turn a question
- * about the request into an offer.
+ * The requested scope decides when it is known: a question that names the
+ * work of the request is a question about the request, and a question that
+ * names something else proposes work that was never asked for. The wording
+ * of the question is the fallback, for the case that the scope is unknown.
  */
-export function classifyQuestionRelevance(text: string | undefined): {
+export function classifyQuestionRelevance(
+	text: string | undefined,
+	options: {
+		/** The work that was requested: the subjects of the todos. */
+		scope?: readonly string[] | undefined;
+		/** The action that the question proposes, when it was extracted. */
+		action?: string | undefined;
+	} = {},
+): {
 	offer: boolean;
 	reason: string;
 } {
 	const value = (text ?? "").trim();
 	if (!value) {
 		return { offer: false, reason: "the question has no text" };
+	}
+	const scope = options.scope;
+	if (scope && scope.length > 0) {
+		const wanted = new Set(scopeTerms(scope.join(" ")));
+		if (wanted.size > 0) {
+			// The action of the question is compared with the scope, not the
+			// whole message: a message around the question talks about many
+			// things and must not decide the question.
+			const action = options.action?.trim() || value;
+			const shared = scopeTerms(action).filter((term) => wanted.has(term));
+			if (shared.length > 0) {
+				return {
+					offer: false,
+					reason: `the question asks about the requested scope (${shared.join(", ")})`,
+				};
+			}
+			return {
+				offer: true,
+				reason: "the question proposes work that the request does not name",
+			};
+		}
 	}
 	for (const wording of OFFER_WORDINGS) {
 		if (wording.test(value)) {
@@ -103,6 +213,20 @@ export function classifyQuestionRelevance(text: string | undefined): {
 		}
 	}
 	return { offer: false, reason: "the question asks about the request" };
+}
+
+/**
+ * Is the question that waits now the question that was checked?
+ *
+ * A check that captured a question may only act on that question: a
+ * question that was answered, replaced or cancelled in the meantime owns
+ * its own wait.
+ */
+export function ownsQuestion(
+	current: { requestId?: string } | null | undefined,
+	requestId: string,
+): boolean {
+	return current != null && current.requestId === requestId;
 }
 
 /**
@@ -159,8 +283,15 @@ export function questionRelevance(input: {
 	text: string | undefined;
 	/** The state of the work when the question was asked. */
 	work: JevWorkState;
+	/** The work that was requested: the subjects of the todos. */
+	scope?: readonly string[] | undefined;
+	/** The action that the question proposes, when it was extracted. */
+	action?: string | undefined;
 }): JevQuestionRelevance {
-	const offer = classifyQuestionRelevance(input.text);
+	const offer = classifyQuestionRelevance(input.text, {
+		scope: input.scope,
+		action: input.action,
+	});
 	if (offer.offer) return "optional-offer";
 	if (input.work === "complete") return "final-request";
 	return "current-request";

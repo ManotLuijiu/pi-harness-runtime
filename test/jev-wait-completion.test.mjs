@@ -122,6 +122,40 @@ test("an offer after the completion starts no countdown and no question", () => 
 	assert.equal(harness.actions.list().length, 0);
 });
 
+test("a question about the requested scope is registered", () => {
+	// The wording of the question is phrased like an offer. The scope of
+	// the request decides: the question names the work that was asked for.
+	const scope = ["Implement A"];
+	const relevance = questionRelevance({
+		text: "Want me to implement A, or A+B?",
+		work: "unfinished",
+		scope,
+	});
+	assert.equal(relevance, "current-request");
+
+	const harness = createHarness();
+	const question = harness.questions.createQuestion({
+		text: "Want me to implement A, or A+B?",
+		sessionId: "s-1",
+		workspacePath: "/tmp",
+		kind: "approval",
+		relevance,
+	});
+	assert.ok(question, "the question is registered");
+	assert.equal(harness.questions.hasPendingQuestion(), true);
+});
+
+test("a question outside the requested scope is not registered", () => {
+	const scope = ["Implement A"];
+	const relevance = questionRelevance({
+		text: "May I add an export feature?",
+		work: "unfinished",
+		scope,
+	});
+	assert.equal(relevance, "optional-offer");
+	assert.equal(jevWaitEligibility({ relevance, work: "unfinished" }).eligible, false);
+});
+
 test("an offer in the form of a question after the completion starts no countdown", () => {
 	// The wording list does not have to know every offer: the request is
 	// done, so a question that follows it waits for an explicit request.

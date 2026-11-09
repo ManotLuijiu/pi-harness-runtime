@@ -68,6 +68,50 @@ test("an offer never reaches the judge", () => {
 	assert.match(decision.reason, /not asked for/);
 });
 
+test("the requested scope decides, not the wording", () => {
+	// "Want me to implement A, or A+B?" is phrased like an offer and asks
+	// about the request itself. The scope of the request is what decides.
+	const scope = ["Implement A"];
+	const genuine = questionRelevance({
+		text: "Want me to implement A, or A+B?",
+		work: "unfinished",
+		scope,
+	});
+	assert.equal(genuine, "current-request", "the question asks about the requested scope");
+
+	const offer = questionRelevance({
+		text: "May I add an export feature?",
+		work: "unfinished",
+		scope,
+	});
+	assert.equal(offer, "optional-offer", "the question proposes work the request does not name");
+});
+
+test("the scope comparison uses the action of the question", () => {
+	// The message around the question talks about many things. Only the
+	// action of the question is compared with the scope.
+	const scope = ["Implement A"];
+	const question = questionRelevance({
+		text: "The repository has an export feature. May I add an export feature?",
+		work: "unfinished",
+		scope,
+		action: "May I add an export feature?",
+	});
+	assert.equal(question, "optional-offer");
+});
+
+test("without a scope the wording is the fallback", () => {
+	// The scope is unknown: the wording is the only evidence there is.
+	assert.equal(
+		questionRelevance({ text: "Would you like me to add a feature?", work: "unfinished" }),
+		"optional-offer",
+	);
+	assert.equal(
+		questionRelevance({ text: "May I apply the migration?", work: "unfinished" }),
+		"current-request",
+	);
+});
+
 test("a question after the completion is not decided by silence", () => {
 	// The wording of an offer is not the only way to offer work: "May I add
 	// an export feature?" asks a question and still proposes something that

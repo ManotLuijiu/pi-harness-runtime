@@ -43,6 +43,7 @@ import {
 	clearObsoleteWait,
 	isObsoleteQuestion,
 	jevWaitEligibility,
+	ownsQuestion,
 	questionRelevance,
 	workStateFromTodos,
 	type JevQuestionRelevance,
@@ -1296,15 +1297,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let _lastWorkState: JevWorkState = "unknown";
 
 		/**
-		 * The state of the work of the current request.
+		 * The state of the work of the current request and the scope that
+		 * was requested.
 		 *
 		 * The task list is the only source. A list that could not be read
 		 * says nothing: an unreadable list is never an empty list, and an
 		 * empty list is never a finished request.
+		 *
+		 * The scope is the work that was asked for: the subjects of the
+		 * todos. A question that names the same work is a question about
+		 * the request, and a question that names something else proposes
+		 * work that was never asked for.
 		 */
-		async function currentWorkState(): Promise<JevWorkState> {
+		async function currentWorkContext(): Promise<{
+			work: JevWorkState;
+			scope: string[];
+		}> {
 			const controller = todoContinuationController;
-			if (!controller) return "unknown";
+			if (!controller) return { work: "unknown", scope: [] };
 			try {
 				const snapshot = await controller.getSnapshot();
 				// A todo that is marked complete while its final tier has not
@@ -1315,13 +1325,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							validationLedger?.isFinalTierPending(item),
 						)
 					: false;
-				return workStateFromTodos(snapshot.items, {
+				const work = workStateFromTodos(snapshot.items, {
 					available: true,
 					validationPending,
 				});
+				const scope = snapshot.items
+					.map((item) => (item.subject ?? "").trim())
+					.filter((subject) => subject.length > 0);
+				return { work, scope };
 			} catch {
-				return "unknown";
+				return { work: "unknown", scope: [] };
 			}
+		}
+
+		/**
+		 * The state of the work of the current request.
+		 */
+		async function currentWorkState(): Promise<JevWorkState> {
+			return (await currentWorkContext()).work;
 		}
 
 		/**
@@ -1360,31 +1381,51 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		async function reconcileObsoleteQuestion(): Promise<void> {
 			const question = sharedState.pqController?.getCurrentQuestion?.();
 			if (!question || !isQuestionOpen(question)) return;
+			// The identity of the question is kept: the state of the work is
+			// read with an await, and a question that replaces this one in
+			// the meantime must not be closed by the check of the old one.
+			const requestId = question.requestId;
 			const relevance =
 				(question.relevance as JevQuestionRelevance | undefined) ??
 				"current-request";
 			const work = await currentWorkState();
 			_lastWorkState = work;
+			// The question that waits now must be the question that was
+			// checked: a replaced question is not closed by the check of the
+			// one it replaced.
+			const current = sharedState.pqController?.getCurrentQuestion?.();
+			if (!ownsQuestion(current, requestId) || !isQuestionOpen(current)) {
+				logToFile(
+					"[auto-continue]",
+					"The question was replaced while the work was read - the check is stale",
+				);
+				return;
+			}
 			const obsolete = isObsoleteQuestion({ relevance, work });
 			if (!obsolete.obsolete) return;
 			logToFile(
 				"[auto-continue]",
 				"The work of the question is done - the question is obsolete:",
-				question.requestId,
+				requestId,
 			);
 			// The question is closed without an answer: nobody clicked
 			// anything, so no answer is injected. Only the Jev owner is
 			// touched: a countdown of another owner keeps its deadline.
 			clearObsoleteWait({
-				requestId: question.requestId,
+				requestId,
 				cancelQuestion: (reason) => {
+					// The question that is closed is the one that was checked:
+					// the cancel of the controller acts on the current
+					// question, so it runs only while that is the same one.
+					const still = sharedState.pqController?.getCurrentQuestion?.();
+					if (!ownsQuestion(still, requestId)) return;
 					sharedState.pqController?.cancel(reason);
 				},
 				cancelWait: () => {
 					waitLifecycle.cancel();
 				},
-				removeRow: (requestId) => {
-					pendingActions.remove(jevDecisionActionId(requestId));
+				removeRow: (id) => {
+					pendingActions.remove(jevDecisionActionId(id));
 				},
 			});
 			updateAutoContinueStatus("IDLE");
@@ -1892,11 +1933,18 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// to the request. It is read before the wait starts, because
 				// the wait is the thing that must not start for a question
 				// that nobody may answer by silence.
-				const workState = await currentWorkState();
+				//
+				// The scope that was requested decides whether the question
+				// is about that work: the wording of a question is not a
+				// fact about what was asked for.
+				const workContext = await currentWorkContext();
+				const workState = workContext.work;
 				_lastWorkState = workState;
 				const relevance = questionRelevance({
 					text: result.questionText,
 					work: workState,
+					scope: workContext.scope,
+					action: questionAction,
 				});
 				const eligibility = jevWaitEligibility({
 					relevance,
@@ -2420,6 +2468,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// obsolete question steers nothing, pauses nothing and resolves
 			// nothing.
 			const eligibility = await currentWaitEligibility();
+			// The ownership is checked again after the await: the question
+			// may have been answered, replaced or cancelled while the work
+			// was read, and then the decision belongs to a question that is
+			// gone. It must not pause the work of a newer question.
+			if (!waitLifecycle.ownsEvaluation(evaluation)) {
+				logToFile(
+					"[auto-continue]",
+					"The question was replaced while the decision was checked - discarding the decision",
+				);
+				return;
+			}
 			if (!eligibility.eligible) {
 				logToFile(
 					"[auto-continue]",
