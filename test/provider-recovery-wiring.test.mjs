@@ -97,3 +97,52 @@ test("the countdown of the recovery is removed when the attempt runs", () => {
 		"a fired attempt leaves the countdown",
 	);
 });
+
+test("the resume of a job registers the deadline it schedules", () => {
+	assert.match(
+		indexSource,
+		/scheduleAutoResume\(\s*"minimax",[\s\S]{0,200}?quotaResumeObserver/,
+		"the job resume reports the deadline it scheduled",
+	);
+	assert.match(
+		indexSource,
+		/id: jobQuotaResumeActionId\(jobId\),[\s\S]{0,200}?dueAt: resumeAt,/,
+		"the pending action carries the deadline of the resume",
+	);
+});
+
+test("the countdown of the GLM quota registers the reset it waits for", () => {
+	assert.match(
+		indexSource,
+		/getGLMQuotaCountdown\(\)\.onTick\(/,
+		"the countdown reports its own deadline",
+	);
+	assert.match(
+		indexSource,
+		/id: glmQuotaActionId\(event\.jobId\),[\s\S]{0,300}?dueAt: resetAtEpoch,/,
+		"the pending action carries the reset of the countdown",
+	);
+	assert.match(
+		indexSource,
+		/getGLMQuotaCountdown\(\)\.onEnd\(/,
+		"the row leaves when the countdown ends",
+	);
+});
+
+test("a continuation without a deadline shows that it is queued", () => {
+	assert.match(
+		indexSource,
+		/function registerQueuedContinuation[\s\S]{0,400}?state: "queued"/,
+		"a continuation that runs right away is queued, never counted down",
+	);
+	assert.match(
+		indexSource,
+		/registerQueuedContinuation\(\s*OUTPUT_LIMIT_CONTINUATION_ID/,
+		"the continuation of the output limit is registered",
+	);
+	assert.match(
+		indexSource,
+		/registerQueuedContinuation\(\s*POST_COMPACTION_CONTINUATION_ID/,
+		"the continuation of the compaction is registered",
+	);
+});

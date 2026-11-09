@@ -25,8 +25,31 @@ const MIN_RESUME_DELAY_MS = 5_000; // 5 seconds
 /** Map of jobId → active auto-resume timer handle. */
 const activeTimers = new Map<
 	string,
-	{ timeout: ReturnType<typeof setTimeout>; resumeAt: number }
+	{
+		timeout: ReturnType<typeof setTimeout>;
+		resumeAt: number;
+		provider: string;
+		observer?: AutoQuotaResumeObserver;
+	}
 >();
+
+/**
+ * The observer of the scheduled resumes.
+ *
+ * The module stays independent of the status display: it reports the
+ * deadline it scheduled and the moment the pending resume ended, and the
+ * caller decides how to show it.
+ */
+export interface AutoQuotaResumeObserver {
+	/** A resume was scheduled for that deadline. */
+	scheduled(jobId: string, provider: string, resumeAt: number): void;
+	/**
+	 * The pending resume of that job ended.
+	 *
+	 * It ran, or it was cancelled. Either way there is no countdown left.
+	 */
+	ended(jobId: string, provider: string): void;
+}
 
 /**
  * Schedule an auto-resume for a job that was paused due to quota exhaustion.
@@ -42,6 +65,7 @@ export function scheduleAutoResume(
 	provider: string,
 	machine: JobStateMachine,
 	mirrorStore: MirrorStore,
+	observer?: AutoQuotaResumeObserver,
 ): string | null {
 	const jobId = machine.getCheckpoint()?.jobId;
 	if (!jobId) return null;
@@ -75,6 +99,9 @@ export function scheduleAutoResume(
 
 	const timeout = setTimeout(async () => {
 		activeTimers.delete(jobId);
+		// The pending resume is over: there is no countdown left, not even
+		// when the quota is still exhausted and the resume moves.
+		observer?.ended(jobId, provider);
 
 		const checkpoint = machine.getCheckpoint();
 		if (!checkpoint || checkpoint.status !== "paused_quota") {
@@ -91,7 +118,7 @@ export function scheduleAutoResume(
 				// 	`[auto-quota-resume] ${provider} still exhausted at scheduled time.` +
 				// 			` Re-scheduling...`,
 				// );
-				scheduleAutoResume(provider, machine, mirrorStore);
+				scheduleAutoResume(provider, machine, mirrorStore, observer);
 				return;
 			}
 		}
@@ -108,7 +135,8 @@ export function scheduleAutoResume(
 		}
 	}, delayMs);
 
-	activeTimers.set(jobId, { timeout, resumeAt });
+	activeTimers.set(jobId, { timeout, resumeAt, provider, observer });
+	observer?.scheduled(jobId, provider, resumeAt);
 	return resumeAtIso;
 }
 
@@ -121,6 +149,8 @@ export function cancelAutoResume(jobId: string): void {
 	if (existing) {
 		clearTimeout(existing.timeout);
 		activeTimers.delete(jobId);
+		// The pending resume is cancelled: the countdown leaves with it.
+		existing.observer?.ended(jobId, existing.provider);
 	}
 }
 

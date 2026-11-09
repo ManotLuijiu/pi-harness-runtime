@@ -427,6 +427,95 @@ function jevDecisionActionId(requestId: string): string {
 	return `jev-decision:${requestId}`;
 }
 
+/**
+ * The identity of the pending action of the resume of a job.
+ *
+ * The job is part of the identity: two jobs have two resumes.
+ */
+function jobQuotaResumeActionId(jobId: string): string {
+	return `job-quota-resume:${jobId}`;
+}
+
+/**
+ * The identity of the pending action of the countdown of the GLM quota.
+ */
+function glmQuotaActionId(jobId: string): string {
+	return `glm-quota:${jobId}`;
+}
+
+/**
+ * The identities of the continuations that have no scheduled deadline.
+ *
+ * The output limit and the compaction continue the work right away, so
+ * there is no countdown to show for them.
+ */
+const OUTPUT_LIMIT_CONTINUATION_ID = "continuation:output-limit";
+const POST_COMPACTION_CONTINUATION_ID = "continuation:post-compaction";
+
+/**
+ * Register a continuation that runs right away.
+ *
+ * The row says that the continuation is queued. It never shows a
+ * countdown, because there is no deadline: a continuation that runs
+ * immediately has no deadline to wait for.
+ */
+function registerQueuedContinuation(id: string, reason: string): void {
+	pendingActions.register({
+		id,
+		sessionId: activeSessionId,
+		owner: "continuation",
+		kind: "resume",
+		state: "queued",
+		reason,
+	});
+}
+
+// The countdown of the GLM quota owns the deadline of the reset, so the
+// row shows the reset it really waits for. The row leaves when the
+// countdown ends, so it never stays at 00:00.
+getGLMQuotaCountdown().onTick((event) => {
+	const countdown = getGLMQuotaCountdown().getCountdown(event.jobId);
+	const resetAtEpoch =
+		countdown?.resetAtEpoch ?? Date.now() + event.remainingSeconds * 1000;
+	pendingActions.register({
+		id: glmQuotaActionId(event.jobId),
+		sessionId: activeSessionId,
+		owner: "glm-quota",
+		kind: "quota-check",
+		state: "scheduled",
+		dueAt: resetAtEpoch,
+		provider: "GLM",
+		reason: "the quota of GLM is exhausted",
+	});
+});
+getGLMQuotaCountdown().onEnd((jobId) => {
+	pendingActions.remove(glmQuotaActionId(jobId));
+});
+
+/**
+ * The observer of the scheduled job resumes.
+ *
+ * The job resume registers the deadline it really schedules, so the row
+ * shows the moment the resume runs and not the reset of the quota.
+ */
+const quotaResumeObserver = {
+	scheduled(jobId: string, provider: string, resumeAt: number): void {
+		pendingActions.register({
+			id: jobQuotaResumeActionId(jobId),
+			sessionId: activeSessionId,
+			owner: "job-quota",
+			kind: "resume",
+			state: "scheduled",
+			dueAt: resumeAt,
+			provider,
+			reason: "the quota of the job is exhausted",
+		});
+	},
+	ended(jobId: string, _provider: string): void {
+		pendingActions.remove(jobQuotaResumeActionId(jobId));
+	},
+};
+
 // Shared state for callback handlers (accessible across init functions)
 const sharedState = {
 	/**
@@ -6296,6 +6385,12 @@ Run \`bd ready\` to see current bd issues.
 		}
 		if (event.message.role !== "assistant") return;
 
+		// A turn ran: a continuation that was queued is no longer queued.
+		// The row leaves with it, so it never stays behind as a promise.
+		pendingActions.removeWhere(
+			(action) => action.owner === "continuation" && action.state === "queued",
+		);
+
 		// DEBUG: Log model ID
 
 		const m = event.message as {
@@ -6370,6 +6465,10 @@ Run \`bd ready\` to see current bd issues.
 			outputLimitResumeAttempts += 1;
 			pendingOutputLimitResumeAfterCompact = true;
 			pendingOutputLimitResumeAfterSettled = true;
+			registerQueuedContinuation(
+				OUTPUT_LIMIT_CONTINUATION_ID,
+				"the output limit continues the turn",
+			);
 			await queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
 			// Emit OutputLimitContinued to Telegram
 			await nc("OutputLimitContinued", {
@@ -7417,6 +7516,7 @@ Run \`bd ready\` to see current bd issues.
 					"minimax",
 					currentSession.machine,
 					mirrorStore,
+					quotaResumeObserver,
 				);
 				ctx.ui.notify(
 					`Job paused.\n` +
@@ -7804,6 +7904,10 @@ Run \`bd ready\` to see current bd issues.
 		}
 
 		if (forceOutputLimitResume) {
+			registerQueuedContinuation(
+				POST_COMPACTION_CONTINUATION_ID,
+				"the compaction continues the turn",
+			);
 			await queueAutoResume(
 				"post-compact-output-limit",
 				OUTPUT_LIMIT_RESUME_PROMPT,
@@ -7813,6 +7917,10 @@ Run \`bd ready\` to see current bd issues.
 		}
 
 		outputLimitResumeAttempts = 0;
+		registerQueuedContinuation(
+			POST_COMPACTION_CONTINUATION_ID,
+			"the compaction continues the turn",
+		);
 		// pi.dev expects the literal "resume" command to continue after compaction.
 		await queueAutoResume("post-compact", "resume", "followUp");
 	});

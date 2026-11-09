@@ -171,6 +171,7 @@ export class GLMQuotaCountdown {
 	private activeCountdowns: Map<string, GLMQuotaCountdownState> = new Map();
 	private timers: Map<string, NodeJS.Timeout> = new Map();
 	private tickCallbacks: Set<CountdownCallback> = new Set();
+	private endCallbacks: Set<(jobId: string) => void> = new Set();
 	private notificationCenter: NotificationCenter | null = null;
 	private jobContext: { jobId: string; requirement: string } | null = null;
 
@@ -194,6 +195,18 @@ export class GLMQuotaCountdown {
 	onTick(callback: CountdownCallback): () => void {
 		this.tickCallbacks.add(callback);
 		return () => this.tickCallbacks.delete(callback);
+	}
+
+	/**
+	 * Register a callback that runs when a countdown ends.
+	 *
+	 * A countdown ends when it reaches the reset, and when it is
+	 * cancelled. The caller uses it to drop the row of the countdown: a
+	 * countdown that is over must not stay at 00:00.
+	 */
+	onEnd(callback: (jobId: string) => void): () => void {
+		this.endCallbacks.add(callback);
+		return () => this.endCallbacks.delete(callback);
 	}
 
 	/**
@@ -295,8 +308,17 @@ export class GLMQuotaCountdown {
 			clearTimeout(existingTimer);
 			this.timers.delete(jobId);
 		}
-		this.activeCountdowns.delete(jobId);
+		const resumeTimer = this.timers.get(`${jobId}:resume`);
+		if (resumeTimer) {
+			clearTimeout(resumeTimer);
+			this.timers.delete(`${jobId}:resume`);
+		}
+		const had = this.activeCountdowns.delete(jobId);
 		logCountdownCancelled(jobId);
+		// The countdown is over: the row of the countdown leaves with it.
+		if (had) {
+			for (const callback of [...this.endCallbacks]) callback(jobId);
+		}
 	}
 
 	/**
