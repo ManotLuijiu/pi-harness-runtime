@@ -348,6 +348,32 @@ test("the predicate of Pi decides whether a retry delay exists", () => {
 	);
 });
 
+test("a manual request cancels the pending attempt of the recovery", () => {
+	assert.match(
+		indexSource,
+		/pi\.on\("input", \(event\) => \{[\s\S]{0,200}?event\.source === "extension"[\s\S]{0,200}?providerRecoveryRuntime\?\.cancelPending\(\)/,
+		"a request of the user cancels the pending attempt, the message of the harness does not",
+	);
+});
+
+test("the dispatch checks that the session is idle", () => {
+	assert.match(
+		indexSource,
+		/sessionBusy: activeExtensionContext\?\.isIdle\?\.\(\) === false/,
+		"the runtime knows that a request of the user is running",
+	);
+	assert.match(
+		runtimeSource,
+		/if \(state\.current\.sessionBusy\)[\s\S]{0,120}?"the session is busy"/,
+		"a busy session stops the dispatch",
+	);
+	assert.match(
+		indexSource,
+		/if \(activeExtensionContext\?\.isIdle\?\.\(\) === false\)[\s\S]{0,200}?return;/,
+		"the dispatch of the executor asks the same question",
+	);
+});
+
 test("the identity of the provider is normalized on both sides", () => {
 	assert.match(
 		indexSource,

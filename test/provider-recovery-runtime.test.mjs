@@ -92,6 +92,7 @@ function createRuntime(clock, overrides = {}) {
 		id: "s-1",
 		explicitlyPaused: false,
 		questionPending: false,
+		sessionBusy: false,
 	};
 
 	const runtime = new ProviderRecoveryRuntime({
@@ -108,6 +109,7 @@ function createRuntime(clock, overrides = {}) {
 			sessionId: session.id,
 			explicitlyPaused: session.explicitlyPaused,
 			questionPending: session.questionPending,
+			sessionBusy: session.sessionBusy,
 		}),
 		dispatch: (reason) => {
 			dispatched.push(reason);
@@ -197,6 +199,58 @@ test("a resume of another session is skipped", () => {
 	clock.runDue();
 
 	assert.equal(dispatched.length, 0, "a resume of another session is skipped");
+});
+
+test("a resume is skipped while a request of the user is running", () => {
+	const clock = createFakeClock();
+	const { runtime, dispatched, session } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(USAGE_LIMIT),
+		"turn-1",
+		{ provider: "minimax", boundedEligible: true },
+	);
+	runtime.noteSettled();
+
+	// The user resumed by hand and the request is still running: the
+	// queued messages are empty, because Pi already picked the message up.
+	session.sessionBusy = true;
+	clock.advance(MINUTE);
+	clock.runDue();
+
+	assert.equal(
+		dispatched.length,
+		0,
+		"a running request of the user is not resumed on top of it",
+	);
+});
+
+test("a manual request cancels the pending attempt of the cycle", () => {
+	const clock = createFakeClock();
+	const { runtime, actions, dispatched } = createRuntime(clock);
+
+	runtime.noteFailure(
+		classifyProviderFailure(USAGE_LIMIT),
+		"turn-1",
+		{ provider: "minimax", boundedEligible: true },
+	);
+	runtime.noteSettled();
+
+	assert.ok(actions.get("provider-recovery"), "the attempt is pending");
+
+	// The user types a message: the pending attempt is cancelled.
+	runtime.cancelPending();
+
+	assert.equal(
+		actions.get("provider-recovery"),
+		null,
+		"the row of the cancelled attempt leaves",
+	);
+	assert.equal(clock.pendingTimers, 0, "the countdown stops");
+
+	clock.advance(MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 0, "the cancelled attempt never runs");
 });
 
 test("a resume runs when nothing took over", () => {
@@ -320,6 +374,7 @@ test("the decision about a dispatch names the reason", () => {
 			sessionId: "s-1",
 			explicitlyPaused: false,
 			questionPending: false,
+			sessionBusy: false,
 		},
 	};
 
@@ -345,6 +400,13 @@ test("the decision about a dispatch names the reason", () => {
 	});
 	assert.equal(other.allowed, false);
 	assert.match(other.reason, /session/);
+
+	const busy = mayDispatchResume({
+		...base,
+		current: { ...base.current, sessionBusy: true },
+	});
+	assert.equal(busy.allowed, false);
+	assert.match(busy.reason, /busy/);
 });
 
 test("an overload keeps its own executor and never joins the cycle", () => {

@@ -6436,6 +6436,9 @@ Run \`bd ready\` to see current bd issues.
 			explicitlyPaused: todoContinuationHandle?.isExplicitlyPaused() ?? false,
 			questionPending:
 				sharedState.pqController?.hasPendingQuestion?.() ?? false,
+			// A request of the user that is running right now. A resume that
+			// queues itself on top of it continues the work twice.
+			sessionBusy: activeExtensionContext?.isIdle?.() === false,
 		}),
 		resetEvidence: (failure) => applicableResetEvidence(failure),
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
@@ -6447,9 +6450,29 @@ Run \`bd ready\` to see current bd issues.
 				logToFile("[pi-harness]", "Resume skipped: hasPendingMessages=true");
 				return;
 			}
+			// The session is busy: a request of the user is running. The
+			// queued messages do not show it, because a message that Pi
+			// picked up is not queued anymore.
+			if (activeExtensionContext?.isIdle?.() === false) {
+				logToFile("[pi-harness]", "Resume skipped: the session is busy");
+				return;
+			}
 			await queueAutoResume(reason, PROVIDER_OVERLOAD_RESUME_PROMPT, "followUp");
 		},
 		log: (message) => logToFile("[pi-harness]", message),
+	});
+
+	// A request of the user takes the work back from the automatic recovery.
+	//
+	// A countdown that runs while the user works queues a second
+	// continuation on top of the request of the user, and the work happens
+	// twice. The manual request therefore cancels the pending attempt.
+	//
+	// The message of the harness itself carries the source `extension` and
+	// is left alone: a recovery must not cancel its own attempt.
+	pi.on("input", (event) => {
+		if (event.source === "extension") return;
+		providerRecoveryRuntime?.cancelPending();
 	});
 
 	// The run settled: the internal retries of Pi are over, so a failure
