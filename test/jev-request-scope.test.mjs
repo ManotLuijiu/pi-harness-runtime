@@ -259,6 +259,51 @@ test("a history that cannot be read is not used", async () => {
 	assert.deepEqual([...(scope?.touched ?? [])], []);
 });
 
+test("a deleted todo is not work of the request", () => {
+	// A deleted todo is not work: it cannot make the request unfinished,
+	// and it is not work that the request owns.
+	const items = [
+		{ id: 1, subject: "Implement login", status: "completed" },
+		{ id: 2, subject: "Write the tests of the login", status: "deleted" },
+	];
+	const scope = captureRequestScope(items, 1);
+	const work = jevWorkContext(items, { scope });
+	// The request owns nothing: the todo it could own was deleted, and a
+	// deleted todo is not work. The state of the work is unknown, so the
+	// request is not declared finished.
+	assert.equal(work.work, "unknown");
+	assert.deepEqual(work.scope, []);
+});
+
+test("a todo without an id belongs to the request that is running", () => {
+	// Without an id the todo cannot be told apart from another one, so it
+	// belongs to the request that is running.
+	const items = [
+		{ id: 1, subject: "Implement login", status: "completed" },
+		{ subject: "Write the tests of the login", status: "pending" },
+	];
+	const scope = captureRequestScope(items, 1);
+	const work = jevWorkContext(items, { scope });
+	assert.equal(work.work, "unfinished");
+	assert.deepEqual(work.scope, ["Write the tests of the login"]);
+});
+
+test("a pending validation of one of the todos of the request keeps the work unfinished", () => {
+	// The request owns two todos and one of them waits for its final tier:
+	// the work of the request is not done.
+	const items = [
+		{ id: 1, subject: "Implement login", status: "completed" },
+		{ id: 2, subject: "Write the tests of the login", status: "completed" },
+	];
+	const scope = captureRequestScope([], 1);
+	const work = jevWorkContext(items, {
+		scope,
+		validationPending: (item) => item.id === 2,
+	});
+	assert.equal(work.work, "unfinished");
+	assert.deepEqual(work.scope, ["Implement login", "Write the tests of the login"]);
+});
+
 test("the scope of a previous session is dropped", async () => {
 	const { tracker } = createTracker(finishedTodos);
 	tracker.begin();
