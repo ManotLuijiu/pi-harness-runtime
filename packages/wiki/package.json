@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/wiki",
-  "version": "1.1.501",
+  "version": "1.1.502",
   "description": "LLM Wiki integration for pi-harness-runtime",
   "type": "module",
   "main": "./dist/index.js",
