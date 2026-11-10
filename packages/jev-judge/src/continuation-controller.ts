@@ -1,4 +1,4 @@
-import type { TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
+import type { TodoHistoryEntry, TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
 import { createTodoProvider } from "./todo-provider.js";
 import {
 	buildValidationSteerSuffix,
@@ -404,6 +404,18 @@ export class TodoContinuationController {
 	 */
 	async getSnapshot() {
 		return this.todoProvider.getSnapshot();
+	}
+
+	/**
+	 * The history of the todo list: the state after every change.
+	 *
+	 * The list says what the work is now. The history says what a request
+	 * touched, also when the item is back in the state it had before: a
+	 * todo that was reopened and finished again is work of the request
+	 * that did it.
+	 */
+	async getHistory(): Promise<TodoHistoryEntry[]> {
+		return this.todoProvider.getHistory();
 	}
 
 	/**

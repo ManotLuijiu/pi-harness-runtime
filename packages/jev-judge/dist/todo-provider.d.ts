@@ -47,6 +47,18 @@ export interface TodoSnapshot {
     createdAt: Date;
 }
 /**
+ * The state of the list after one change.
+ *
+ * The history of the list is the sequence of these states. It says what a
+ * change touched, also when the item is back in the state it had before: a
+ * todo that was reopened and finished again is work of the request that
+ * did it.
+ */
+export interface TodoHistoryEntry {
+    /** The list as it was after the change. */
+    items: TodoItem[];
+}
+/**
  * Availability result for todo provider
  */
 export interface TodoAvailability {
@@ -90,6 +102,14 @@ export interface TodoProvider {
      * Get blocked items (pending with unsatisfied dependencies)
      */
     getBlocked(): Promise<TodoItem[]>;
+    /**
+     * The history of the list: the state after every change.
+     *
+     * The list alone says what the work is now. The history says what a
+     * request touched, also when the item is back in the state it had
+     * before.
+     */
+    getHistory(): Promise<TodoHistoryEntry[]>;
 }
 /**
  * Mock Todo Provider for testing
@@ -98,10 +118,13 @@ export declare class MockTodoProvider implements TodoProvider {
     private items;
     private _sessionId;
     private _revision;
+    /** The state of the list after every change. */
+    private history;
     constructor(sessionId?: string);
     availability(): Promise<TodoAvailability>;
     getSnapshot(): Promise<TodoSnapshot>;
     getByStatus(status: TodoStatus): Promise<TodoItem[]>;
+    getHistory(): Promise<TodoHistoryEntry[]>;
     getInProgress(): Promise<TodoItem[]>;
     getPending(): Promise<TodoItem[]>;
     getCompleted(): Promise<TodoItem[]>;
@@ -110,6 +133,8 @@ export declare class MockTodoProvider implements TodoProvider {
     addItem(item: Omit<TodoItem, "id">): TodoItem;
     setStatus(id: number, status: TodoStatus): void;
     clear(): void;
+    /** Remember the state of the list after a change. */
+    private record;
 }
 /**
  * Create a todo provider that reads from rpiv-todo state via session branch

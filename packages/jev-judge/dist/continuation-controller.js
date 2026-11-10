@@ -251,6 +251,17 @@ export class TodoContinuationController {
         return this.todoProvider.getSnapshot();
     }
     /**
+     * The history of the todo list: the state after every change.
+     *
+     * The list says what the work is now. The history says what a request
+     * touched, also when the item is back in the state it had before: a
+     * todo that was reopened and finished again is work of the request
+     * that did it.
+     */
+    async getHistory() {
+        return this.todoProvider.getHistory();
+    }
+    /**
      * Temporary pause for user input processing
      * Does not require explicit resume
      */
