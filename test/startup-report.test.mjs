@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+	beadsReport,
 	exposedKeyFilesReport,
 	jevMissingKeyReport,
 	lineConfigurationReport,
@@ -661,4 +662,46 @@ test("the line never asks for a password", () => {
 	const text = [report.text, ...report.details].join("\n").toLowerCase();
 	assert.equal(text.includes("give me the password"), false);
 	assert.equal(text.includes("enter your password"), false);
+});
+
+// --- the issue tracker of the session -------------------------------------
+
+test("the notice names the tracker that the harness uses", () => {
+	const report = beadsReport({ available: true, version: "1.1.2" });
+	assert.equal(report.label, "Beads");
+	assert.equal(report.status, "info");
+	assert.match(report.text, /bd \(beads\)/, "the notice names bd");
+	assert.match(report.text, /1\.1\.2/, "the notice names the version");
+});
+
+test("the notice is shown when the tracker is there as well", () => {
+	// A dependency the user cannot see is a dependency the user cannot
+	// install.
+	const report = beadsReport({ available: true });
+	assert.equal(report.status, "info");
+	assert.ok(report.details.length >= 1);
+});
+
+test("a missing tracker is a warning with the way to install it", () => {
+	const report = beadsReport({ available: false });
+	assert.equal(report.label, "Beads");
+	assert.equal(report.status, "warn");
+	assert.match(report.text, /not installed/, "the notice says what is missing");
+	const commands = report.details.join("\n");
+	assert.match(commands, /npm install -g @beads\/bd/, "npm is one way to install it");
+	assert.match(commands, /brew install beads/, "brew is one way to install it");
+	assert.match(
+		commands,
+		/curl -fsSL https:\/\/raw\.githubusercontent\.com\/gastownhall\/beads\/main\/scripts\/install\.sh \| bash/,
+		"the install script of the project is one way to install it",
+	);
+});
+
+test("the missing tracker is named as a dependency of the harness", () => {
+	const report = beadsReport({ available: false });
+	assert.match(
+		report.details.join("\n"),
+		/keeps its issues with bd/,
+		"the notice says why the tracker matters",
+	);
 });
