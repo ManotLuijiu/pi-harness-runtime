@@ -121,6 +121,18 @@ describe("the incident extraction", () => {
 		expect(incidents[0].lastSeen).toBe("2026-10-24T09:05:00.000Z");
 	});
 
+	test("replaces the control characters of a message", () => {
+		// The sanitizer is what keeps a control character out of the
+		// archive. The character class is written with escape sequences,
+		// and the behavior is the one of the class.
+		const incidents = extractIncidents(
+			[record({ error: { name: "TypeError", message: "boom\u0000\u001f\u007fagain" } })],
+			"tenant-a",
+		);
+		expect(incidents[0].message).toBe("boom again");
+		expect(incidents[0].title).toBe("boom again");
+	});
+
 	test("ignores records that are not a problem", () => {
 		expect(extractIncidents([record({ level: "info" })], "tenant-a")).toHaveLength(0);
 		expect(extractIncidents([record({ level: "debug" })], "tenant-a")).toHaveLength(0);
