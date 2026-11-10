@@ -1,6 +1,6 @@
 {
   "name": "@pi/clipboard-plugin",
-  "version": "1.1.504",
+  "version": "1.1.505",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
