@@ -51,6 +51,19 @@ export interface TodoSnapshot {
 }
 
 /**
+ * The state of the list after one change.
+ *
+ * The history of the list is the sequence of these states. It says what a
+ * change touched, also when the item is back in the state it had before: a
+ * todo that was reopened and finished again is work of the request that
+ * did it.
+ */
+export interface TodoHistoryEntry {
+	/** The list as it was after the change. */
+	items: TodoItem[];
+}
+
+/**
  * Availability result for todo provider
  */
 export interface TodoAvailability {
@@ -102,6 +115,15 @@ export interface TodoProvider {
 	 * Get blocked items (pending with unsatisfied dependencies)
 	 */
 	getBlocked(): Promise<TodoItem[]>;
+
+	/**
+	 * The history of the list: the state after every change.
+	 *
+	 * The list alone says what the work is now. The history says what a
+	 * request touched, also when the item is back in the state it had
+	 * before.
+	 */
+	getHistory(): Promise<TodoHistoryEntry[]>;
 }
 
 /**
@@ -111,6 +133,8 @@ export class MockTodoProvider implements TodoProvider {
 	private items: TodoItem[] = [];
 	private _sessionId: string;
 	private _revision = 0;
+	/** The state of the list after every change. */
+	private history: TodoHistoryEntry[] = [];
 
 	constructor(sessionId?: string) {
 		this._sessionId = sessionId ?? `mock-${Date.now()}`;
@@ -132,6 +156,10 @@ export class MockTodoProvider implements TodoProvider {
 
 	async getByStatus(status: TodoStatus): Promise<TodoItem[]> {
 		return this.items.filter((item) => item.status === status);
+	}
+
+	async getHistory(): Promise<TodoHistoryEntry[]> {
+		return this.history.map((entry) => ({ items: entry.items.map((item) => ({ ...item })) }));
 	}
 
 	async getInProgress(): Promise<TodoItem[]> {
@@ -173,6 +201,7 @@ export class MockTodoProvider implements TodoProvider {
 		const id = this.items.length + 1;
 		const newItem: TodoItem = { ...item, id };
 		this.items.push(newItem);
+		this.record();
 		return newItem;
 	}
 
@@ -180,12 +209,19 @@ export class MockTodoProvider implements TodoProvider {
 		const item = this.items.find((i) => i.id === id);
 		if (item) {
 			item.status = status;
+			this.record();
 		}
 	}
 
 	clear(): void {
 		this.items = [];
 		this._revision++;
+		this.record();
+	}
+
+	/** Remember the state of the list after a change. */
+	private record(): void {
+		this.history.push({ items: this.items.map((item) => ({ ...item })) });
 	}
 }
 
@@ -279,6 +315,49 @@ class PiTodoProvider implements TodoProvider {
 		return fromEntries ?? fromToolResults ?? null;
 	}
 
+	/**
+	 * The history of the list: the state after every change.
+	 *
+	 * The branch holds the result of every call of the todo tool, so the
+	 * history is the list of those states in the order of the calls. A
+	 * branch that was compacted lost the early states, and the history is
+	 * then shorter: the reader falls back to the list alone.
+	 */
+	async getHistory(): Promise<TodoHistoryEntry[]> {
+		const entries: TodoHistoryEntry[] = [];
+		try {
+			const branch = this.ctx.sessionManager.getBranch();
+			for (const entry of branch) {
+				const e = entry as {
+					type?: string;
+					customType?: string;
+					data?: unknown;
+					message?: { role?: string; toolName?: string; details?: unknown };
+				};
+				// The state of the todo extension is a state of the list.
+				if (e.type === "custom") {
+					if (e.customType === "rpiv-todo-state" && this.isTaskDetails(e.data)) {
+						entries.push({
+							items: (e.data as { tasks: TodoItem[] }).tasks.map((task) => ({ ...task })),
+						});
+					}
+					continue;
+				}
+				if (e.type !== "message") continue;
+				const msg = e.message;
+				if (msg?.role !== "toolResult" || msg.toolName !== "todo") continue;
+				if (!this.isTaskDetails(msg.details)) continue;
+				entries.push({
+					items: (msg.details as { tasks: TodoItem[] }).tasks.map((task) => ({ ...task })),
+				});
+			}
+		} catch (err) {
+			this._lastError = err instanceof Error ? err.message : String(err);
+			return entries;
+		}
+		return entries;
+	}
+
 	async getSnapshot(): Promise<TodoSnapshot> {
 		this._revision++;
 		const state = this.getTodoState();
@@ -356,6 +435,10 @@ class PiUnavailableTodoProvider implements TodoProvider {
 	}
 
 	async getByStatus(_status: TodoStatus): Promise<TodoItem[]> {
+		return [];
+	}
+
+	async getHistory(): Promise<TodoHistoryEntry[]> {
 		return [];
 	}
 

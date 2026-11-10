@@ -11,6 +11,8 @@ export class MockTodoProvider {
     items = [];
     _sessionId;
     _revision = 0;
+    /** The state of the list after every change. */
+    history = [];
     constructor(sessionId) {
         this._sessionId = sessionId ?? `mock-${Date.now()}`;
     }
@@ -28,6 +30,9 @@ export class MockTodoProvider {
     }
     async getByStatus(status) {
         return this.items.filter((item) => item.status === status);
+    }
+    async getHistory() {
+        return this.history.map((entry) => ({ items: entry.items.map((item) => ({ ...item })) }));
     }
     async getInProgress() {
         return this.getByStatus("in_progress");
@@ -61,17 +66,24 @@ export class MockTodoProvider {
         const id = this.items.length + 1;
         const newItem = { ...item, id };
         this.items.push(newItem);
+        this.record();
         return newItem;
     }
     setStatus(id, status) {
         const item = this.items.find((i) => i.id === id);
         if (item) {
             item.status = status;
+            this.record();
         }
     }
     clear() {
         this.items = [];
         this._revision++;
+        this.record();
+    }
+    /** Remember the state of the list after a change. */
+    record() {
+        this.history.push({ items: this.items.map((item) => ({ ...item })) });
     }
 }
 /**
@@ -152,6 +164,47 @@ class PiTodoProvider {
         this._lastError = null;
         return fromEntries ?? fromToolResults ?? null;
     }
+    /**
+     * The history of the list: the state after every change.
+     *
+     * The branch holds the result of every call of the todo tool, so the
+     * history is the list of those states in the order of the calls. A
+     * branch that was compacted lost the early states, and the history is
+     * then shorter: the reader falls back to the list alone.
+     */
+    async getHistory() {
+        const entries = [];
+        try {
+            const branch = this.ctx.sessionManager.getBranch();
+            for (const entry of branch) {
+                const e = entry;
+                // The state of the todo extension is a state of the list.
+                if (e.type === "custom") {
+                    if (e.customType === "rpiv-todo-state" && this.isTaskDetails(e.data)) {
+                        entries.push({
+                            items: e.data.tasks.map((task) => ({ ...task })),
+                        });
+                    }
+                    continue;
+                }
+                if (e.type !== "message")
+                    continue;
+                const msg = e.message;
+                if (msg?.role !== "toolResult" || msg.toolName !== "todo")
+                    continue;
+                if (!this.isTaskDetails(msg.details))
+                    continue;
+                entries.push({
+                    items: msg.details.tasks.map((task) => ({ ...task })),
+                });
+            }
+        }
+        catch (err) {
+            this._lastError = err instanceof Error ? err.message : String(err);
+            return entries;
+        }
+        return entries;
+    }
     async getSnapshot() {
         this._revision++;
         const state = this.getTodoState();
@@ -220,6 +273,9 @@ class PiUnavailableTodoProvider {
         throw new Error("Pi todo extension is not available");
     }
     async getByStatus(_status) {
+        return [];
+    }
+    async getHistory() {
         return [];
     }
     async getInProgress() {

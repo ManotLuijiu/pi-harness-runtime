@@ -612,7 +612,43 @@ const requestScopeTracker = new RequestScopeTracker({
 		const snapshot = await controller.getSnapshot();
 		return snapshot?.items ?? null;
 	},
+	readHistory: async () => {
+		// The history says what a change touched, also when the todo is
+		// back in the state it had before: a todo that the request
+		// reopened and finished again is work of the request that did it.
+		const controller = sharedState.todoContinuationController as {
+			getHistory?: () => Promise<
+				{ items: TodoStateLike[] }[]
+			>;
+		} | null;
+		if (!controller || typeof controller.getHistory !== "function") {
+			return null;
+		}
+		const history = await controller.getHistory();
+		return Array.isArray(history) ? history : null;
+	},
 });
+
+/**
+ * A request of the human begins.
+ *
+ * Every path that carries the words or the decision of the human into Pi
+ * is a boundary of a request. The interactive input event is one. A
+ * message of a channel is another, because it reaches Pi as a message of
+ * the harness and the input event cannot tell it apart from the traffic
+ * of the harness itself.
+ *
+ * A path that forwards the human without this boundary leaves the scope of
+ * the previous request in place, and the new request inherits the
+ * completion of the old one: a question of the new request is then a
+ * question about work that was already done, and it is dropped.
+ *
+ * The messages of the harness itself begin nothing. They continue the work
+ * of the request that is running.
+ */
+function beginHumanRequest(): void {
+	requestScopeTracker.begin();
+}
 
 /**
  * Apply an approval decision from a channel to the pending question.
@@ -1108,6 +1144,10 @@ async function startBiomeImplementation(
 	try {
 		const mod = await import("./packages/tooling-preference/dist/index.js");
 		const context = mod.detectToolingContext(workspaceRoot);
+		// The decision of the human starts new work: it begins a request.
+		// The prompt reaches Pi as a message of the harness, so the input
+		// event cannot begin the scope of the request.
+		beginHumanRequest();
 		await pi.sendUserMessage(
 			mod.buildToolingImplementationPrompt(context, workspaceRoot),
 			{ deliverAs: "steer" },
@@ -2792,6 +2832,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// The runtime of the provider recovery reads the pause state
 				// of the user through this handle.
 				todoContinuationHandle = todoContinuationController;
+				// The scope of the previous session says nothing about this
+				// one: the todos of that session are its history.
+				requestScopeTracker.reset();
 				// The callbacks that answer a question in a channel, and the
 				// replies of the user, reach the controller through the
 				// shared state. Without it every pause and every resume of
@@ -2813,6 +2856,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			todoContinuationHandle = null;
 			sharedState.todoContinuationController = null;
 			sharedState.validationLedger = null;
+			// The scope belongs to the session that is ending.
+			requestScopeTracker.reset();
 		});
 
 		// --- task-intake: Automatic todo capture from user requests -----------
@@ -3410,6 +3455,10 @@ async function advanceCodexTask(
 	
 	// Execute action
 	if (action === "code" || action === "code_again") {
+		// The decision of the human starts new work: it begins a request.
+		// The message reaches Pi as a message of the harness, so the input
+		// event cannot begin the scope of the request.
+		beginHumanRequest();
 		await pi.sendUserMessage(
 			`Human approved. Proceed to implement: ${event.planPath}`,
 			{ deliverAs: "steer" }
@@ -3417,6 +3466,8 @@ async function advanceCodexTask(
 		event.status = "triggered";
 		logToFile("[codex-trigger]", `Advanced to code: ${event.planPath}`);
 	} else if (action === "review") {
+		// The decision of the human starts new work: it begins a request.
+		beginHumanRequest();
 		await pi.sendUserMessage(
 			"Human requests a review of the implementation.",
 			{ deliverAs: "steer" }
@@ -3744,7 +3795,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 			// request that ran before it is history now. The message reaches
 			// Pi as a message of the harness, so the input event cannot
 			// tell that it is a request.
-			requestScopeTracker.begin();
+			beginHumanRequest();
 			// Forward the message to Pi as a user message
 			await pi.sendUserMessage(text, { deliverAs: "steer" });
 		});
@@ -5957,6 +6008,10 @@ function initLineVoiceQueue(pi: ExtensionAPI): void {
 
 					if (cmd.type === "voice-prompt" && cmd.text) {
 						logToFile("[LineVoice]", `Injecting voice prompt: "${cmd.text}"`);
+						// The voice of the human is a request: it reaches Pi as a
+						// message of the harness, so the input event cannot begin
+						// the scope of the request.
+						beginHumanRequest();
 						pi.sendUserMessage(cmd.text, { deliverAs: "steer" });
 						logToFile("[LineVoice]", "Voice prompt injected via steer");
 					}
@@ -6810,7 +6865,7 @@ Run \`bd ready\` to see current bd issues.
 		// previous request are history, and the completion of that request
 		// is not the completion of this one. The message of the harness
 		// itself carries the source `extension` and begins nothing.
-		requestScopeTracker.begin();
+		beginHumanRequest();
 	});
 
 	// The run settled: the internal retries of Pi are over, so a failure

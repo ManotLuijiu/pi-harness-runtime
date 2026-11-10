@@ -1,4 +1,4 @@
-import type { TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
+import type { TodoHistoryEntry, TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
 import { type ValidationBudgetStatus } from "./validation-plan.js";
 import type { ValidationLedger } from "./validation-ledger.js";
 export interface ContinuationConfig {
@@ -226,6 +226,15 @@ export declare class TodoContinuationController {
      * Get current todo snapshot (exposed for task intake)
      */
     getSnapshot(): Promise<import("./todo-provider.js").TodoSnapshot>;
+    /**
+     * The history of the todo list: the state after every change.
+     *
+     * The list says what the work is now. The history says what a request
+     * touched, also when the item is back in the state it had before: a
+     * todo that was reopened and finished again is work of the request
+     * that did it.
+     */
+    getHistory(): Promise<TodoHistoryEntry[]>;
     /**
      * Temporary pause for user input processing
      * Does not require explicit resume

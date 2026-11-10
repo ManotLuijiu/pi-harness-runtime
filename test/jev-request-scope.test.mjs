@@ -18,6 +18,7 @@ import {
 	captureRequestScope,
 	itemsOfRequest,
 	RequestScopeTracker,
+	touchedKeys,
 } from "../harness/jev-request-scope.ts";
 import {
 	jevWaitEligibility,
@@ -46,6 +47,30 @@ function createTracker(initial) {
 		}),
 		set(next) {
 			items = next;
+		},
+	};
+}
+
+/**
+ * A tracker over a list and a history that the test controls.
+ *
+ * The history is the state of the list after every change, the way the
+ * branch of the session holds it.
+ */
+function createTrackerWithHistory(initial) {
+	let items = initial;
+	let history = [];
+	return {
+		tracker: new RequestScopeTracker({
+			readTodos: async () => items.map((item) => ({ ...item })),
+			readHistory: async () => history.map((entry) => ({
+				items: entry.map((item) => ({ ...item })),
+			})),
+		}),
+		/** A change of the list: the state after it is remembered. */
+		change(next) {
+			items = next;
+			history.push(next.map((item) => ({ ...item })));
 		},
 	};
 }
@@ -84,6 +109,50 @@ test("a todo that the request reopened belongs to the request", () => {
 	const work = jevWorkContext(reopened, { scope });
 	assert.equal(work.work, "unfinished");
 	assert.deepEqual(work.scope, ["Implement login"]);
+});
+
+test("a todo that the request reopened and finished again belongs to the request", async () => {
+	// The todo starts completed, the request reopens it and finishes it
+	// again. The final state is the state it had before, so the list
+	// alone cannot tell that the request worked on it. The history can:
+	// the request did the work, and the work is complete.
+	const { tracker, change } = createTrackerWithHistory(finishedTodos);
+	tracker.begin();
+	// The capture of the baseline is asynchronous: the request changes the
+	// list after the list was read, the way the agent works after the
+	// message of the human.
+	await tracker.read();
+
+	change([
+		{ id: 1, subject: "Implement login", status: "in_progress" },
+		{ id: 2, subject: "Write the tests of the login", status: "completed" },
+	]);
+	change(finishedTodos);
+
+	const { scope, items } = await tracker.read();
+	const work = jevWorkContext(items, { scope });
+	assert.equal(work.work, "complete");
+});
+
+test("the history says what a change touched", () => {
+	const history = [
+		{ items: [{ id: 1, subject: "Implement login", status: "completed" }] },
+		{ items: [{ id: 1, subject: "Implement login", status: "in_progress" }] },
+		{ items: [{ id: 1, subject: "Implement login", status: "completed" }] },
+	];
+	const touched = touchedKeys(history, 0);
+	assert.deepEqual([...touched], ["id:1"]);
+});
+
+test("the history of an earlier request does not touch the todos of this one", () => {
+	const history = [
+		{ items: [{ id: 1, subject: "Implement login", status: "pending" }] },
+		{ items: [{ id: 1, subject: "Implement login", status: "completed" }] },
+	];
+	// The request began after the second state: nothing of the history is
+	// a change of this request.
+	const touched = touchedKeys(history, 2);
+	assert.deepEqual([...touched], []);
 });
 
 test("an open todo of an earlier request is work that remains", () => {
@@ -155,6 +224,50 @@ test("a new request starts a new scope", async () => {
 		"unknown",
 		"the completion of the earlier request is not the completion of this one",
 	);
+});
+
+test("a history that cannot be read is not used", async () => {
+	// The history could not be read when the request started, so the
+	// changes of the request cannot be told from the changes of the
+	// earlier requests. The history is not used at all: the list alone
+	// decides, and a todo that the request reopened and finished again
+	// stays a todo of the earlier request.
+	let items = finishedTodos;
+	let history = [];
+	let historyFails = true;
+	const tracker = new RequestScopeTracker({
+		readTodos: async () => items.map((item) => ({ ...item })),
+		readHistory: async () => {
+			if (historyFails) throw new Error("the history is gone");
+			return history.map((entry) => ({
+				items: entry.map((item) => ({ ...item })),
+			}));
+		},
+	});
+	tracker.begin();
+	await tracker.read();
+	historyFails = false;
+	items = [
+		{ id: 1, subject: "Implement login", status: "in_progress" },
+		{ id: 2, subject: "Write the tests of the login", status: "completed" },
+	];
+	history.push(items.map((item) => ({ ...item })));
+	items = finishedTodos;
+	history.push(items.map((item) => ({ ...item })));
+
+	const { scope } = await tracker.read();
+	assert.deepEqual([...(scope?.touched ?? [])], []);
+});
+
+test("the scope of a previous session is dropped", async () => {
+	const { tracker } = createTracker(finishedTodos);
+	tracker.begin();
+	await tracker.read();
+	// The session ended: the todos of that session are its history.
+	tracker.reset();
+	const read = await tracker.read();
+	assert.equal(read.scope, null);
+	assert.deepEqual(read.items, finishedTodos);
 });
 
 test("a list that cannot be read is no evidence", async () => {
