@@ -7,23 +7,59 @@
  * separator of the baseline of a request), and the review pass did not see
  * the file at all - the byte hid it.
  *
- * The rule: a source file carries no raw control byte. The escape sequence
- * of the character is the way to write it.
+ * The rule: a source of the repository carries no raw control byte. The
+ * escape sequence of the character is the way to write it.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 
 const root = new URL("..", import.meta.url).pathname;
 
-/** The sources this rule covers. */
+/** The directories whose sources are covered. */
+const SOURCE_DIRS = ["harness", "scripts", "test"];
+
+/** The extensions of a source file. */
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs"];
+
+/** Every file of a directory, recursively. */
+function filesOf(directory) {
+	if (!existsSync(directory)) return [];
+	const found = [];
+	for (const entry of readdirSync(directory)) {
+		const path = join(directory, entry);
+		if (statSync(path).isDirectory()) {
+			found.push(...filesOf(path));
+			continue;
+		}
+		if (SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) {
+			found.push(path);
+		}
+	}
+	return found;
+}
+
+/**
+ * Every source of the repository.
+ *
+ * The sources of the packages and the built output that ships with them
+ * are included: the tarball carries the compiled files, so a raw byte
+ * there is a byte in the hands of a consumer.
+ */
 function sourceFiles() {
 	const files = [join(root, "index.ts")];
-	const harnessDir = join(root, "harness");
-	for (const entry of readdirSync(harnessDir)) {
-		if (entry.endsWith(".ts")) files.push(join(harnessDir, entry));
+	for (const directory of SOURCE_DIRS) {
+		files.push(...filesOf(join(root, directory)));
+	}
+	const packages = join(root, "packages");
+	if (existsSync(packages)) {
+		for (const entry of readdirSync(packages)) {
+			for (const directory of ["src", "dist"]) {
+				files.push(...filesOf(join(packages, entry, directory)));
+			}
+		}
 	}
 	return files;
 }
@@ -39,7 +75,7 @@ function controlBytes(content) {
 	return found;
 }
 
-test("a source file of the harness carries no raw control byte", () => {
+test("a source of the repository carries no raw control byte", () => {
 	const offenders = [];
 	for (const file of sourceFiles()) {
 		const content = readFileSync(file);
@@ -60,8 +96,12 @@ test("a source file of the harness carries no raw control byte", () => {
 test("the file command reads the sources of the harness as text", () => {
 	// The rule above is about the bytes; this one is about the effect: a
 	// reader that classifies the file by its content has to see text.
+	const files = [join(root, "index.ts")];
+	for (const entry of readdirSync(join(root, "harness"))) {
+		if (entry.endsWith(".ts")) files.push(join(root, "harness", entry));
+	}
 	const offenders = [];
-	for (const file of sourceFiles()) {
+	for (const file of files) {
 		let kind = "";
 		try {
 			kind = execFileSync("file", ["-b", file], { encoding: "utf8" }).trim();
@@ -78,5 +118,16 @@ test("the separator of the baseline of a request is written as an escape", () =>
 	assert.ok(
 		source.includes("\\0"),
 		"the separator is written as the escape sequence and not as a raw byte",
+	);
+});
+
+test("the sanitizer of a message writes its control characters as escapes", () => {
+	const source = readFileSync(
+		join(root, "packages", "logging", "src", "incidents", "schema.ts"),
+		"utf8",
+	);
+	assert.ok(
+		source.includes("\\u0000"),
+		"the character class is written with escape sequences and not with raw bytes",
 	);
 });
