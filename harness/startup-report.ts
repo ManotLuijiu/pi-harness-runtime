@@ -91,6 +91,48 @@ export function jevMissingKeyReport(fixes: string[]): StartupReport {
 }
 
 /**
+ * The Beads line for the issue tracker of the session.
+ *
+ * The harness keeps its issues with bd (beads): the loop of the session
+ * closes an issue with it, and the checklist before a commit asks for the
+ * open ones. A user without bd gets a session where a part of the harness
+ * is silently missing, so the notice names the dependency and the way to
+ * install it.
+ *
+ * The notice is shown when the tracker is there as well: a dependency the
+ * user cannot see is a dependency the user cannot install.
+ */
+export function beadsReport(options: {
+	/** Is bd installed? */
+	available: boolean;
+	/** The version of bd, when it was read. */
+	version?: string | undefined;
+}): StartupReport {
+	if (options.available) {
+		const version = options.version ? ` ${options.version}` : "";
+		return {
+			label: "Beads",
+			text: `bd (beads) is the issue tracker of this session${version}`,
+			status: "info",
+			details: [
+				"The harness keeps its issues with bd: `bd ready` lists the open ones.",
+			],
+		};
+	}
+	return {
+		label: "Beads",
+		text: "bd (beads) not installed; the issue tracker of the session is unavailable",
+		status: "warn",
+		details: [
+			"Install beads: npm install -g @beads/bd",
+			"or: brew install beads",
+			"or: curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash",
+			"The harness keeps its issues with bd: the loop of the session and the checklist before a commit need it.",
+		],
+	};
+}
+
+/**
  * Should the relay be reported at all?
  *
  * The relay is an optional feature: a user who never set it up must not see

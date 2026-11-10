@@ -56,6 +56,7 @@ import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-aut
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
 import {
+	beadsReport,
 	exposedKeyFilesReport,
 	jevMissingKeyReport,
 	lineConfigurationReport,
@@ -63,6 +64,11 @@ import {
 	relayEndpointReport,
 	relayShouldBeReported,
 } from "./harness/startup-report.ts";
+import {
+	findOnPath,
+	readToolVersion,
+	versionNumber,
+} from "./harness/tool-availability.ts";
 import { localSkillsReport, skillsReport } from "./harness/skills-startup.ts";
 import {
 	PendingQuestionCountdown,
@@ -324,6 +330,28 @@ function reportExposedKeyFiles(): void {
 		unrepairable,
 	});
 	if (!report) return;
+	addHarnessMessage(report.label, report.text, report.status, report.details);
+}
+
+/**
+ * Report the issue tracker of the session.
+ *
+ * The harness keeps its issues with bd (beads): the loop of the session
+ * closes an issue with it, and the checklist before a commit asks for the
+ * open ones. A user without bd gets a session where a part of the harness
+ * is silently missing, so the notice names the dependency and the way to
+ * install it.
+ *
+ * The notice is shown when the tracker is there as well: a dependency the
+ * user cannot see is a dependency the user cannot install.
+ */
+async function reportBeadsTracker(): Promise<void> {
+	const path = findOnPath("bd", {
+		path: process.env.PATH ?? process.env.Path ?? "",
+		pathext: process.env.PATHEXT,
+	});
+	const version = path ? versionNumber(await readToolVersion("bd")) : undefined;
+	const report = beadsReport({ available: Boolean(path), version });
 	addHarnessMessage(report.label, report.text, report.status, report.details);
 }
 
@@ -6128,6 +6156,10 @@ export default async function (pi: ExtensionAPI) {
 	// every other line, so this is the only place where a published
 	// secret can surface.
 	reportExposedKeyFiles();
+
+	// The issue tracker of the session. The harness leans on bd (beads),
+	// so the user is told that it is there - or how to install it.
+	void reportBeadsTracker();
 
 	// --- console-guard: keep the TUI prompt input field clean ----
 	// A library that writes to the console would put its text into the
