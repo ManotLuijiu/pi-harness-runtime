@@ -18,6 +18,14 @@
  *    preserved.
  */
 
+import {
+	itemsOfRequest,
+	isOpenTodo,
+	scopeSubjects,
+	type JevRequestScope,
+	type RequestTodoLike,
+} from "./jev-request-scope.ts";
+
 /**
  * The state of the work of the current request.
  *
@@ -43,7 +51,7 @@ export type JevQuestionRelevance =
 	| "final-request";
 
 /** The part of a todo item the rules need. */
-export interface TodoStateLike {
+export interface TodoStateLike extends RequestTodoLike {
 	/** The status of the item ("pending", "in_progress", "completed", ...). */
 	status: string;
 }
@@ -338,6 +346,91 @@ export function ownsQuestion(
 }
 
 /**
+ * The state of the work and the scope that was requested.
+ *
+ * The two belong together: the scope is the work that was asked for, and
+ * the state says whether that work remains. A reading that returns one
+ * without the other can disagree with itself.
+ */
+export interface JevWorkContext {
+	/** The state of the work of the request. */
+	work: JevWorkState;
+	/** The work that was requested: the subjects of the todos of the request. */
+	scope: string[];
+}
+
+/**
+ * The state of the work of the request, and the scope it asked for.
+ *
+ * The list is the history of the session, so the scope of the request
+ * delimits what belongs to it:
+ *
+ *  - A todo that the request created or changed belongs to the request.
+ *  - A todo that was already finished when the request started belongs to
+ *    the request that finished it. Its completion says nothing about the
+ *    request that is running, so the request is not complete because of it:
+ *    there is no evidence, and no evidence is never a completion.
+ *  - A todo that is still open is work that remains, whoever made it.
+ *
+ * Without a scope the whole list is the work of the request: the harness
+ * reads the list this way when it cannot tell the requests apart.
+ */
+export function jevWorkContext(
+	items: readonly TodoStateLike[] | null | undefined,
+	options: {
+		/**
+		 * The scope of the request that is running.
+		 *
+		 * Without it the whole list belongs to the request.
+		 */
+		scope?: JevRequestScope | null | undefined;
+		/**
+		 * Is a required validation still pending for this item?
+		 *
+		 * A todo that is marked complete while its final tier has not passed
+		 * is not done: the required validation is work that remains, so the
+		 * request is not finished.
+		 */
+		validationPending?: (item: TodoStateLike) => boolean;
+	} = {},
+): JevWorkContext {
+	if (!items) return { work: "unknown", scope: [] };
+	const relevant = items.filter((item) => item.status !== "deleted");
+	if (relevant.length === 0) {
+		// There was no work to do. That is not a proof that the request is
+		// finished: a question can be the reason no task was ever created.
+		return { work: "unknown", scope: [] };
+	}
+	const open = relevant.filter((item) => isOpenTodo(item));
+	// The todos of the request: what it created or changed.
+	const own = options.scope
+		? itemsOfRequest(relevant, options.scope)
+		: [...relevant];
+	// The work that the request is responsible for: what it created or
+	// changed, and what is still open.
+	const responsible = options.scope
+		? [...new Set([...own, ...open])]
+		: [...relevant];
+	const scope = scopeSubjects(responsible);
+	if (open.length > 0) return { work: "unfinished", scope };
+	const validationPending = responsible.some((item) =>
+		Boolean(options.validationPending?.(item)),
+	);
+	if (validationPending) {
+		// The todos are done, but the required validation has not passed.
+		// The request is not finished.
+		return { work: "unfinished", scope };
+	}
+	if (options.scope && own.length === 0) {
+		// Nothing of the request is in the list: the finished todos belong
+		// to an earlier request. Their completion is not the completion of
+		// this one, and there is no evidence about this one.
+		return { work: "unknown", scope };
+	}
+	return { work: "complete", scope };
+}
+
+/**
  * The state of the work, from the task list.
  *
  * The list must not be read as "the work is done" when it says nothing: an
@@ -365,22 +458,10 @@ export function workStateFromTodos(
 	if (!items) {
 		return "unknown";
 	}
-	const relevant = items.filter((item) => item.status !== "deleted");
-	if (relevant.length === 0) {
-		// There was no work to do. That is not a proof that the request is
-		// finished: a question can be the reason no task was ever created.
-		return "unknown";
-	}
-	const unfinished = relevant.some(
-		(item) => item.status === "pending" || item.status === "in_progress",
-	);
-	if (unfinished) return "unfinished";
-	if (options.validationPending === true) {
-		// The todos are done, but the required validation has not passed.
-		// The request is not finished.
-		return "unfinished";
-	}
-	return "complete";
+	return jevWorkContext(items, {
+		validationPending:
+			options.validationPending === true ? () => true : undefined,
+	}).work;
 }
 
 /**
