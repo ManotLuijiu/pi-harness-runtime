@@ -82,6 +82,8 @@ export function telegramStatusLabel(event: NotificationPayload["event"]): string
 		CodexPlanDetected: "[PLAN]",
 		AssistantResponse: "[TODO]",
 		ToolSummary: "[TOOL]",
+		ScopeProposal: "[SCOPE]",
+		ScopeDecision: "[SCOPE]",
 	};
 	return labels[event] ?? "[MSG]";
 }
@@ -1118,9 +1120,5 @@ return this._botUsername;
 		}
 
 		return chunks;
-	}
-
-	private getStatusLabel(event: NotificationPayload["event"]): string {
-		return telegramStatusLabel(event);
 	}
 }

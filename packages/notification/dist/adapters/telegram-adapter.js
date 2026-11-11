@@ -52,6 +52,8 @@ export function telegramStatusLabel(event) {
         CodexPlanDetected: "[PLAN]",
         AssistantResponse: "[TODO]",
         ToolSummary: "[TOOL]",
+        ScopeProposal: "[SCOPE]",
+        ScopeDecision: "[SCOPE]",
     };
     return labels[event] ?? "[MSG]";
 }
@@ -984,9 +986,6 @@ export class TelegramAdapter extends BaseChannelAdapter {
             remaining = remaining.slice(splitIndex).trimStart();
         }
         return chunks;
-    }
-    getStatusLabel(event) {
-        return telegramStatusLabel(event);
     }
 }
 //# sourceMappingURL=telegram-adapter.js.map

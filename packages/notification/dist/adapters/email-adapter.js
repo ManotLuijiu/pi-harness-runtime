@@ -85,6 +85,8 @@ export class EmailAdapter extends BaseChannelAdapter {
             ReadyForClient: "[🎉]",
             JobCancelled: "[🚫]",
             Error: "[⚠]",
+            ScopeProposal: "[🔭]",
+            ScopeDecision: "[🔭]",
         };
         return map[event] ?? "[📢]";
     }

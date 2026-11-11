@@ -28,6 +28,9 @@ const APPROVAL_REQUIRED_EVENTS = new Set([
     "ConfirmDeploy",
     "ConfirmDelete",
     "ConfirmCriticalAction",
+    // A proposal of a new scope needs an answer: the backlog is not work of
+    // the request that finished, and it does not become work by silence.
+    "ScopeProposal",
 ]);
 /**
  * High-priority events (always notify)

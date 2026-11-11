@@ -79,6 +79,8 @@ export class NtfyAdapter extends BaseChannelAdapter {
             ReadyForClient: "tada",
             JobCancelled: "no_entry",
             Error: "warning",
+            ScopeProposal: "dart",
+            ScopeDecision: "dart",
         };
         return map[event] ?? "bell";
     }

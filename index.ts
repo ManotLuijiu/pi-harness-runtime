@@ -95,6 +95,25 @@ import {
 	RESUME_SCOPE_RULE,
 	type ResumeWorkState,
 } from "./harness/resume-scope.ts";
+import {
+	buildAutoResumeMessage,
+	autoResumeDetails,
+	findAutoResumeIndex,
+	isAutoResumeMessage,
+	neutralizeAutoResume,
+} from "./harness/auto-resume-marker.ts";
+import {
+	ScopeExpansionRuntime,
+	type HumanScopeOutcome,
+} from "./harness/scope-expansion-runtime.ts";
+import {
+	MAX_SCOPE_CANDIDATES,
+	SCOPE_EXPANSION_WINDOW_MS,
+	scopeProposalMessage,
+	type ScopeCandidate,
+	type ScopeDecision,
+	type ScopeProposal,
+} from "./harness/scope-expansion.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -193,10 +212,23 @@ import { centralInfo, initCentralLogging, redactText } from "./packages/logging/
  * Get tasks from bd (beads) for Jev decision context.
  * Returns { completed, remaining } arrays of task descriptions.
  */
+/**
+ * One issue of the backlog, with the exact id.
+ *
+ * The exact id is what a proposal names. A title is not an identity: two
+ * issues can carry the same title, and only the id tells them apart.
+ */
+interface BacklogIssue {
+	id: string;
+	title: string;
+	status?: string;
+}
+
 async function getTaskContext(): Promise<{
 	completed: string[];
 	remaining: string[];
 	total: number;
+	issues: BacklogIssue[];
 }> {
 	try {
 		const { execSync } = await import("node:child_process");
@@ -205,10 +237,15 @@ async function getTaskContext(): Promise<{
 			encoding: "utf8",
 			timeout: 5000,
 		});
-		const tasks = JSON.parse(output) as Array<{ title?: string; status?: string }>;
+		const tasks = JSON.parse(output) as Array<{
+			id?: string;
+			title?: string;
+			status?: string;
+		}>;
 
 		const completed: string[] = [];
 		const remaining: string[] = [];
+		const issues: BacklogIssue[] = [];
 
 		for (const task of tasks ?? []) {
 			if (!task.title) continue;
@@ -216,6 +253,11 @@ async function getTaskContext(): Promise<{
 				completed.push(task.title);
 			} else {
 				remaining.push(task.title);
+				// An issue without an id cannot be proposed: a proposal
+				// names exact ids.
+				if (typeof task.id === "string" && task.id) {
+					issues.push({ id: task.id, title: task.title, status: task.status });
+				}
 			}
 		}
 
@@ -223,10 +265,11 @@ async function getTaskContext(): Promise<{
 			completed,
 			remaining,
 			total: completed.length + remaining.length,
+			issues,
 		};
 	} catch {
 		// bd not available or error - return empty context
-		return { completed: [], remaining: [], total: 0 };
+		return { completed: [], remaining: [], total: 0, issues: [] };
 	}
 }
 
@@ -629,6 +672,9 @@ const sharedState = {
 	// The state of the work of the request that is running. The automatic
 	// resume reads it to know whether the work of the request remains.
 	workContext: null as unknown,
+	// The runtime of the scope expansion: the backlog that could follow a
+	// finished request is proposed, and only the approved issues start.
+	scopeRuntime: null as ScopeExpansionRuntime | null,
 };
 
 /**
@@ -638,6 +684,20 @@ const sharedState = {
  * the user has to read again and again.
  */
 let suppressedResumeReported = false;
+
+/** The number of the resumes that the harness queued in this session. */
+let resumeNonceCounter = 0;
+
+/**
+ * A nonce that tells one resume from another.
+ *
+ * The nonce is part of the marker of the resume, so a log line names the
+ * exact resume that was queued.
+ */
+function nextResumeNonce(): string {
+	resumeNonceCounter += 1;
+	return `${Date.now().toString(36)}-${resumeNonceCounter}`;
+}
 
 /**
  * Report that an automatic resume was suppressed.
@@ -661,8 +721,7 @@ function reportSuppressedResume(report: string | undefined): void {
  * An automatic resume continues the request that is running, so it has to
  * know whether that request still has work. An unknown state is not a
  * completion: the uncertainty is preserved and the resume goes on.
- */
-async function currentRequestWorkState(): Promise<ResumeWorkState> {
+ */async function currentRequestWorkState(): Promise<ResumeWorkState> {
 	const accessor = sharedState.workContext as
 		| null
 		| (() => Promise<{ work: ResumeWorkState; scope: string[] }>);
@@ -740,6 +799,60 @@ function beginHumanRequest(): void {
 }
 
 /**
+ * Did a notification reach a channel?
+ *
+ * A skipped channel - a disabled one - is not a delivery: the human was not
+ * told, and work that the human was not told about must not start.
+ */
+function deliveryOf(results: unknown): { delivered: boolean; failures: string[] } {
+	if (!Array.isArray(results)) {
+		return { delivered: false, failures: ["the notification returned no result"] };
+	}
+	const rows = results as Array<{
+		success?: boolean;
+		channel?: string;
+		error?: string;
+		skipped?: boolean;
+	}>;
+	const reached = rows.filter((row) => row.success && !row.skipped);
+	const failures = rows
+		.filter((row) => !row.success || row.skipped)
+		.map((row) => `${row.channel ?? "channel"}: ${row.error ?? "not delivered"}`);
+	return { delivered: reached.length > 0, failures };
+}
+
+/**
+ * Propose the backlog that could follow a finished request.
+ *
+ * The proposal names exact ids, and the decision of the human - or of Jev,
+ * when the five minutes are over without an answer - decides what starts.
+ * Nothing of the backlog starts without that decision.
+ */
+async function proposeScopeExpansion(): Promise<void> {
+	const runtime = sharedState.scopeRuntime;
+	if (!runtime) return;
+	// One proposal waits for an answer: a second one would ask the same
+	// human twice about the same backlog.
+	if (runtime.open.length > 0) return;
+	const context = await getTaskContext().catch(() => null);
+	if (!context || context.issues.length === 0) return;
+	const candidates: ScopeCandidate[] = context.issues
+		.slice(0, MAX_SCOPE_CANDIDATES)
+		.map((issue) => ({ id: issue.id, title: issue.title }));
+	const generation = requestScopeTracker.generation;
+	await runtime.propose({
+		requestId: `request-${generation}`,
+		workspace: _piSessionCwd || process.cwd(),
+		generation,
+		candidates,
+		scope: `work on ${candidates.length} issue(s) of the backlog of the session`,
+		validation: "the tests of the repository and the closing of every named issue",
+		risks: ["the work was not asked for"],
+		choices: ["run the named issues", "keep the backlog closed"],
+	});
+}
+
+/**
  * Apply an approval decision from a channel to the pending question.
  *
  * Telegram and LINE share this one resolver: the canonical request ID
@@ -769,6 +882,26 @@ function applyChannelApproval(
 
 	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
 	logQuestionTransition(requestId, "answered", `${channel}:${action}`);
+
+	// A question of a scope proposal is not a question of the work of the
+	// request: it asks whether the backlog may follow. The answer decides
+	// the proposal, and the work of the request stays what it was.
+	const scopeProposal = sharedState.scopeRuntime?.proposalForQuestion(requestId);
+	if (scopeProposal) {
+		const outcome: HumanScopeOutcome = result.resolution === "yes" ? "approve" : "reject";
+		void sharedState.scopeRuntime
+			?.answerByQuestion(requestId, outcome, `${channel}:${action}`)
+			.then((executed) => {
+				logToFile(
+					"[scope-expansion]",
+					`The proposal ${scopeProposal.id} was answered (${outcome}): started=${executed.started}`,
+				);
+			})
+			.catch((error) => {
+				logToFile("[scope-expansion]", "The answer of the proposal failed:", String(error));
+			});
+		return true;
+	}
 
 	// The question is answered, so the wait is over. The wait state is only
 	// cleared after a successful resolution.
@@ -2884,8 +3017,179 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		let validationLedger: import("./packages/jev-judge/dist/validation-ledger.js").ValidationLedger | null = null;
 
 		// Create controller on session_start with proper dispatch callback
+		/**
+		 * The runtime of the scope expansion.
+		 *
+		 * The backlog of the session is not work of the request that just
+		 * finished. When the request is done, the runtime proposes the exact
+		 * issues that could follow, the human decides - or Jev decides when
+		 * the five minutes are over - and only the approved ids start. The
+		 * decision is delivered before the work starts, and a decision that
+		 * reaches nobody leaves the work stopped.
+		 */
+		function createScopeExpansionRuntime(): ScopeExpansionRuntime {
+			return new ScopeExpansionRuntime({
+				now: () => Date.now(),
+				deliver: async (text, meta) => {
+					const center = _nc?.center as NcCenter | undefined;
+					if (!center) {
+						return { delivered: false, failures: ["no notification center"] };
+					}
+					const proposal = sharedState.scopeRuntime?.get(meta.id);
+					try {
+						if (meta.kind === "proposal") {
+							const results = await center.notifyWithApproval(
+								"ScopeProposal" as never,
+								{
+									jobId: meta.id,
+									requirement: text,
+									questionId: meta.questionId,
+									questionKind: "approval",
+									scopeIds: proposal?.proposedIds,
+									scopeDeadline: proposal
+										? new Date(proposal.deadlineAt).toISOString()
+										: undefined,
+								} as never,
+								{ approveLabel: "Run these", rejectLabel: "Keep it closed" },
+							);
+							return deliveryOf(results);
+						}
+						const results = await center.notify("ScopeDecision" as never, {
+							jobId: meta.id,
+							requirement: text,
+							scopeIds: proposal?.proposedIds,
+						} as never);
+						return deliveryOf(results);
+					} catch (error) {
+						return { delivered: false, failures: [String(error)] };
+					}
+				},
+				judge: async (proposal) => {
+					const judge = new mod.AutoContinueJudge({
+						providers: jevProviders,
+						proceedThreshold: 0.7,
+						maxWaitMinutes: 30,
+					});
+					const waitedMinutes = Math.max(
+						0,
+						Math.round((Date.now() - proposal.createdAt) / 60_000),
+					);
+					const question = scopeProposalMessage(proposal);
+					const decision = await judge.decide({
+						completedTasks: [],
+						remainingTasks: proposal.proposedIds,
+						totalTasks: proposal.proposedIds.length,
+						waitTimeMinutes: waitedMinutes,
+						userResponded: false,
+						sessionStartTime: new Date(proposal.createdAt),
+						questionAskedAt: new Date(proposal.createdAt),
+						context: {
+							question: {
+								requestId: `scope-question-${proposal.id}`,
+								text: question,
+								kind: "approval",
+								askType: "approval",
+								alternatives: proposal.choices,
+								contextText: question,
+								proposedAction: proposal.scope,
+								consequence: "the named issues become work of this session",
+								requiresExplicitAuthorization: false,
+								destructive: false,
+								external: false,
+								reversible: true,
+							},
+							currentTask: proposal.scope,
+							totalTasks: proposal.proposedIds.length,
+							nextTasks: proposal.proposedIds,
+							waitedMinutes,
+							deadlineMinutes: Math.round(SCOPE_EXPANSION_WINDOW_MS / 60_000),
+						},
+					});
+					const outcome: ScopeDecision["outcome"] =
+						decision.outcome === "approve" || decision.outcome === "proceed_with_caution"
+							? "approve"
+							: decision.outcome === "reject"
+								? "reject"
+								: "wait";
+					return {
+						outcome,
+						selectedIds: outcome === "approve" ? [...proposal.proposedIds] : [],
+						reasoning: decision.reasoning,
+						source: "jev",
+						failed: decision.evaluationError !== undefined,
+					};
+				},
+				dispatch: (proposal, ids) => {
+					// The approval starts new work: it begins a new scope, so
+					// the todos of the finished request stay its history.
+					beginHumanRequest();
+					const lines = ids.map((id) => `- ${id}`).join("\n");
+					const message = [
+						"The human approved the following issues of the backlog.",
+						"Work on exactly these ids and stop when they are done:",
+						lines,
+					].join("\n");
+					void (async () => {
+						try {
+							await pi.sendUserMessage(message, { deliverAs: "steer" });
+						} catch (error) {
+							logToFile(
+								"[scope-expansion]",
+								`The dispatch of the proposal ${proposal.id} failed:`,
+								String(error),
+							);
+						}
+					})();
+				},
+				registerQuestion: (proposal) => {
+					const question = pqController.createQuestion({
+						text: scopeProposalMessage(proposal),
+						sessionId: _sessionId,
+						workspacePath: _piSessionCwd || "/",
+						jobId: proposal.id,
+						kind: "approval",
+						askType: "approval",
+						alternatives: proposal.choices,
+						contextText: scopeProposalMessage(proposal),
+						risk: {
+							requiresExplicitAuthorization: false,
+							destructive: false,
+							reversible: true,
+							external: false,
+						},
+						relevance:
+							"the proposal of a new scope after the request of the human finished",
+					});
+					return question.requestId;
+				},
+				cancelQuestion: (questionId) => {
+					pqController.expireByTimeout?.(questionId, "the proposal was not delivered");
+				},
+				latestHumanDecision: (proposal) => {
+					const questionId = sharedState.scopeRuntime?.questionIdFor(proposal.id);
+					if (!questionId) return undefined;
+					const resolution = pqController.getQuestion(questionId)?.resolution;
+					if (resolution === "yes") return "approve";
+					if (resolution === "no") return "reject";
+					return undefined;
+				},
+				groupFinished: async (_proposal: ScopeProposal, ids) => {
+					const context = await getTaskContext().catch(() => null);
+					if (!context) return false;
+					const open = new Set(context.issues.map((issue) => issue.id));
+					return ids.every((id) => !open.has(id));
+				},
+				log: (message) => logToFile("[scope-expansion]", message),
+			});
+		}
+
 		pi.on("session_start", async (_event, ctx) => {
 			try {
+				// The runtime of the scope expansion belongs to the session:
+				// a session that starts has no open proposal, and a session
+				// that ends leaves none behind.
+				sharedState.scopeRuntime?.dispose();
+				sharedState.scopeRuntime = createScopeExpansionRuntime();
 				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
 				const { ValidationLedger } = await import("./packages/jev-judge/dist/validation-ledger.js");
 				// The ledger records which validation tier ran. The controller
@@ -3155,6 +3459,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// is stale must run before the open question stops the handler.
 			await reconcileObsoleteQuestion();
 
+			// The work of an authorized group may have finished: the group
+			// is done when every issue of it is closed. The session stops
+			// again with it: the approval of that group does not authorize
+			// the next one.
+			await sharedState.scopeRuntime?.checkGroupFinished();
+
 			// Don't continue if user is waiting for response, and do not
 			// continue behind a question that is still open: the work waits
 			// for the answer, also when the wait itself is over.
@@ -3264,6 +3574,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								jobId: `done-${reason.replace(/\s+/g, "-")}`,
 								requirement: message,
 							}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
+
+							// The request of the human is done. The backlog of the
+							// session is not work of it: the exact issues that
+							// could follow are proposed, and only the approved
+							// ids start.
+							await proposeScopeExpansion();
 						}
 					}
 					}
@@ -5909,17 +6225,29 @@ function isOutputLimitResumePromptMessage(message: {
 	role?: string;
 	content?: unknown;
 }): boolean {
+	// A resume of the harness carries the marker, and the prompt is its
+	// content: it is the same message as before.
+	if (isAutoResumeMessage(message)) {
+		return isOutputLimitResumePromptText(message.content);
+	}
 	if (message.role !== "user") {
 		return false;
 	}
-	if (typeof message.content === "string") {
-		return message.content === OUTPUT_LIMIT_RESUME_PROMPT;
+	return isOutputLimitResumePromptText(message.content);
+}
+
+/**
+ * Does this content carry the prompt of the output limit?
+ */
+function isOutputLimitResumePromptText(content: unknown): boolean {
+	if (typeof content === "string") {
+		return content === OUTPUT_LIMIT_RESUME_PROMPT;
 	}
-	if (!Array.isArray(message.content)) {
+	if (!Array.isArray(content)) {
 		return false;
 	}
 	return (
-		message.content
+		content
 			.filter(
 				(part): part is { type: "text"; text: string } =>
 					part &&
@@ -7013,6 +7341,44 @@ issue is not authorized work of the current request).
 		// The run is over: the streak of its failures ends with it, so the
 		// next run starts its own count.
 		providerFailureAttemptsInRun = 0;
+	});
+
+	/**
+	 * The guard of a resume that is consumed too late.
+	 *
+	 * A resume is queued while the request runs. Pi drains the queue one
+	 * message at a time, so a resume can be consumed after the request
+	 * finished - and a resume of a request that is complete would send the
+	 * agent to the backlog, which is not work of that request.
+	 *
+	 * The public boundary of Pi is the "context" event: it runs before the
+	 * provider is called, and the handler may replace the messages. The
+	 * marker of the resume is still there at that point - Pi removes it
+	 * later, when it converts the messages for the provider.
+	 *
+	 * The run is not aborted: other work of the session must go on. Only
+	 * the resume itself is neutralized.
+	 */
+	pi.on("context", async (event) => {
+		const index = findAutoResumeIndex(event.messages);
+		const details =
+			index === -1 ? undefined : autoResumeDetails(event.messages[index]);
+		// A resume of a cut turn continues a turn that was cut off: it is
+		// unfinished by definition and the guard does not apply.
+		if (index === -1 || details?.scope === "turn") {
+			return { messages: event.messages };
+		}
+		const decision = decideResumeScope({
+			work: await currentRequestWorkState(),
+			reason: details?.reason ?? "auto-resume",
+		});
+		if (decision.action !== "suppress") {
+			return { messages: event.messages };
+		}
+		logToFile("[resume-scope]", `Resume neutralized: ${decision.reason}`);
+		return {
+			messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
+		};
 	});
 
 	pi.on("message_end", async (event, ctx) => {
@@ -8686,6 +9052,10 @@ issue is not authorized work of the current request).
 				"post-compact-output-limit",
 				OUTPUT_LIMIT_RESUME_PROMPT,
 				event.willRetry ? "steer" : "followUp",
+				// The output limit cut the turn off, so the turn is
+				// unfinished: the guard of a completed request does not
+				// apply to it.
+				{ scope: "turn" },
 			);
 			return;
 		}
@@ -8787,7 +9157,18 @@ issue is not authorized work of the current request).
 					return;
 				}
 			}
-			pi.sendUserMessage(content, { deliverAs });
+			// The resume is a message of the harness, not a message of the
+			// human: it carries a marker, so the guard can recognize it when
+			// it is consumed after the request finished.
+			pi.sendMessage(
+				buildAutoResumeMessage({
+					content,
+					reason,
+					scope: options.scope ?? "request",
+					nonce: nextResumeNonce(),
+				}),
+				{ deliverAs },
+			);
 			await nc("ResumeScheduled", {
 				requirement: "Session auto-resume",
 				// A resume trigger is not a failure. It renders as

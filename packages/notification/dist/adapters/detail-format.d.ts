@@ -17,7 +17,7 @@ export interface DetailLine {
      * "Error" for a real failure, "Trigger" for a resume trigger, "Reason"
      * for a detail, and the quota labels for the allowance of a window.
      */
-    label: "Error" | "Reason" | "Trigger" | "Provider" | "Window" | "Remaining" | "Resets";
+    label: "Error" | "Reason" | "Trigger" | "Provider" | "Window" | "Remaining" | "Resets" | "Issues" | "Deadline";
     value: string;
 }
 /**
