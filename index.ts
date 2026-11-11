@@ -85,6 +85,7 @@ import {
 	readPiRetrySettings,
 } from "./harness/pi-retry-policy.ts";
 import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
+import { confirmedQuotaReset } from "./harness/provider-quota-reset.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -6861,6 +6862,9 @@ Run \`bd ready\` to see current bd issues.
 			sessionBusy: activeExtensionContext?.isIdle?.() === false,
 		}),
 		resetEvidence: (failure) => applicableResetEvidence(failure),
+		quotaResetEvidence: (failure, provider) => confirmedQuotaReset(
+			failure, provider, mirrorStore.readProvider(provider.toLowerCase()), Date.now(),
+		),
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
 		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
 		dispatch: async (reason) => {

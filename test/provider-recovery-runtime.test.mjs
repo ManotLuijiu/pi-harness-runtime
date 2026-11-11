@@ -132,6 +132,70 @@ const OVERLOAD = "529 overloaded";
 /** The failure of a rejected credential. */
 const CREDENTIALS = "401 unauthorized";
 
+test("confirmed quota waits 1h52 rather than consuming the short retry budget", () => {
+	const clock = createFakeClock();
+	const resetAt = clock.now() + 102 * MINUTE;
+	const { runtime, actions, dispatched } = createRuntime(clock, {
+		quotaResetEvidence: () => ({ provider: "minimax", window: "h5", resetAt, observedAt: clock.now() }),
+	});
+	runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "quota", { provider: "minimax", boundedEligible: true });
+	runtime.noteSettled();
+	const row = actions.get("provider-recovery");
+	assert.equal(row.dueAt, clock.now() + 112 * MINUTE);
+	assert.equal(row.attempt, undefined, "quota waits are not short retry attempts");
+	assert.match(row.reason, /quota exhausted/);
+	clock.advance(111 * MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 0);
+	clock.advance(MINUTE);
+	clock.runDue();
+	assert.deepEqual(dispatched, ["provider-recovery"]);
+	// If reset service still rejects, bounded recovery starts afresh.
+	runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "after-reset", { provider: "minimax", boundedEligible: true });
+	runtime.noteSettled();
+	assert.equal(actions.get("provider-recovery").attempt, 1);
+});
+
+test("quota exhaustion learned at attempt four diverts the pending retry to reset", () => {
+	const clock = createFakeClock();
+	let quota;
+	const { runtime, actions, dispatched } = createRuntime(clock, { quotaResetEvidence: () => quota });
+	for (let i = 1; i <= 4; i++) {
+		runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), `failure-${i}`, { provider: "minimax", boundedEligible: true });
+		runtime.noteSettled();
+		if (i < 4) clock.runNext();
+	}
+	assert.equal(dispatched.length, 3);
+	const resetAt = clock.now() + 102 * MINUTE;
+	quota = { provider: "minimax", window: "h5", resetAt, observedAt: clock.now() };
+	clock.runNext();
+	assert.equal(dispatched.length, 3, "no request is wasted before reset");
+	assert.equal(actions.get("provider-recovery").dueAt, resetAt + 10 * MINUTE);
+	clock.runNext();
+	assert.equal(dispatched.length, 4);
+});
+
+test("an already exhausted retry budget still permits a confirmed quota reset wait", () => {
+	const clock = createFakeClock();
+	let quota;
+	const { runtime, actions, dispatched } = createRuntime(clock, { quotaResetEvidence: () => quota });
+	for (let i = 1; i <= 5; i++) {
+		runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), `exhaust-${i}`, { provider: "minimax", boundedEligible: true });
+		runtime.noteSettled();
+		if (i <= 4) clock.runNext();
+	}
+	assert.equal(actions.get("provider-blocked").state, "blocked");
+	quota = { provider: "minimax", window: "h5", resetAt: clock.now() + 102 * MINUTE, observedAt: clock.now() };
+	runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "confirmed", { provider: "minimax", boundedEligible: true });
+	runtime.noteSettled();
+	assert.equal(actions.get("provider-blocked"), null);
+	assert.equal(actions.get("provider-recovery").dueAt, quota.resetAt + 10 * MINUTE);
+	runtime.cancelPending();
+	clock.advance(200 * MINUTE);
+	clock.runDue();
+	assert.equal(dispatched.length, 4, "manual cancellation still wins");
+});
+
 test("the pause of the user wins over a scheduled retry", () => {
 	const clock = createFakeClock();
 	const { runtime, actions, dispatched, session } = createRuntime(clock);
