@@ -802,6 +802,8 @@ export class NotificationCenter {
 				}),
 				...(context.resetAt && { resetAt: context.resetAt }),
 				...(context.quotaWindow && { quotaWindow: context.quotaWindow }),
+				...(context.scopeIds && { scopeIds: context.scopeIds }),
+				...(context.scopeDeadline && { scopeDeadline: context.scopeDeadline }),
 				// Pass inline keyboard options to Telegram adapter
 				...(options?.enableInlineKeyboard && { _enableInlineKeyboard: true }),
 				...(options?.actionButtons && { _actionButtons: options.actionButtons }),
@@ -904,6 +906,18 @@ export class NotificationCenter {
 				title: "Tooling Proposal",
 				// The full proposal travels: a truncated proposal is not a
 				// proposal the user can answer.
+				message: fullRequirement,
+			},
+			ScopeProposal: {
+				title: "Scope Proposal",
+				// The full proposal travels: the exact ids, the scope and
+				// the deadline are what the human answers about.
+				message: fullRequirement,
+			},
+			ScopeDecision: {
+				title: "Scope Decision",
+				// The decision and its reasoning travel: the human has to
+				// know what was decided before the work starts.
 				message: fullRequirement,
 			},
 			Error: {

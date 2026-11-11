@@ -34,7 +34,9 @@ export interface DetailLine {
 		| "Provider"
 		| "Window"
 		| "Remaining"
-		| "Resets";
+		| "Resets"
+		| "Issues"
+		| "Deadline";
 	value: string;
 }
 
@@ -122,6 +124,20 @@ export function formatDetailLines(
 	}
 	if (resetAt) {
 		lines.push({ label: "Resets", value: resetAt });
+	}
+	// The ids of a scope proposal are the work that a decision would
+	// authorize, and the deadline is the moment the decision has to be made.
+	const scopeIds = Array.isArray(details?.scopeIds)
+		? details.scopeIds.filter(
+				(id): id is string => typeof id === "string" && id.length > 0,
+			)
+		: [];
+	if (scopeIds.length > 0) {
+		lines.push({ label: "Issues", value: scopeIds.join(", ") });
+	}
+	const scopeDeadline = readString(details?.scopeDeadline);
+	if (scopeDeadline) {
+		lines.push({ label: "Deadline", value: scopeDeadline });
 	}
 
 	return lines;

@@ -344,6 +344,8 @@ export class LineAdapter extends BaseChannelAdapter {
 			ReadyForClient: "🎉",
 			JobCancelled: "🚫",
 			Error: "⚠️",
+			ScopeProposal: "🔭",
+			ScopeDecision: "🔭",
 		};
 		return map[event] ?? "📢";
 	}

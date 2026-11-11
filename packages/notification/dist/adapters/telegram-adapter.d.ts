@@ -226,7 +226,6 @@ export declare class TelegramAdapter extends BaseChannelAdapter {
      * Telegram message limit is ~4096 characters.
      */
     private chunkMessage;
-    private getStatusLabel;
 }
 export {};
 //# sourceMappingURL=telegram-adapter.d.ts.map

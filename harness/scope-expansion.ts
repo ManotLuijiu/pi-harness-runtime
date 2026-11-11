@@ -184,6 +184,7 @@ export function scopeDecisionMessage(
 		`Scope: ${decision.selectedIds.length > 0 ? decision.selectedIds.join(", ") : "none"}.`,
 		`Reason: ${decision.reasoning}`,
 		`Action: ${action}.`,
+		`Proposed: ${proposal.scope}`,
 	].join("\n");
 }
 
@@ -219,7 +220,10 @@ export interface ScopeExpansionDeps {
 	 * The result says whether at least one route accepted the message. An
 	 * acknowledgement is a submission, not a reading.
 	 */
-	deliver(text: string, meta: { id: string; kind: "proposal" | "decision" }): Promise<{
+	deliver(
+		text: string,
+		meta: { id: string; kind: "proposal" | "decision"; questionId?: string },
+	): Promise<{
 		delivered: boolean;
 		failures: string[];
 	}>;
@@ -227,6 +231,14 @@ export interface ScopeExpansionDeps {
 	judge(proposal: ScopeProposal): Promise<ScopeDecision>;
 	/** Start the authorized work. */
 	dispatch(proposal: ScopeProposal, ids: string[]): void;
+	/**
+	 * The latest human decision of a proposal.
+	 *
+	 * It is read after the delivery of the decision and before the
+	 * dispatch: a rejection that arrived while the decision was on its way
+	 * still prevents the work.
+	 */
+	latestHumanDecision?(proposal: ScopeProposal): "approve" | "reject" | undefined;
 	/** The log of the controller. */
 	log?(message: string): void;
 }
@@ -376,10 +388,31 @@ export class ScopeExpansionController {
 		if (proposal.state === "dispatched" || proposal.state === "finished") {
 			return { started: false, reason: "the proposal was already executed" };
 		}
-		const scope = authorizedScope(proposal, decision);
+		// The human decides. The answer is read before the delivery, so the
+		// delivered message and the executed work agree.
+		let effective = decision;
+		const latestBefore = this.deps.latestHumanDecision?.(proposal);
+		if (latestBefore === "reject") {
+			effective = {
+				outcome: "reject",
+				selectedIds: [],
+				reasoning: "the human rejected the proposal",
+				source: "human",
+			};
+			proposal.decision = effective;
+		} else if (latestBefore === "approve" && decision.source !== "human") {
+			effective = {
+				...decision,
+				outcome: "approve",
+				selectedIds: [...proposal.proposedIds],
+				source: "human",
+			};
+			proposal.decision = effective;
+		}
+		const scope = authorizedScope(proposal, effective);
 		const action: "starting the selected work" | "remaining stopped" =
 			scope.ids.length > 0 ? "starting the selected work" : "remaining stopped";
-		const delivery = await this.deps.deliver(scopeDecisionMessage(proposal, decision, action), {
+		const delivery = await this.deps.deliver(scopeDecisionMessage(proposal, effective, action), {
 			id: proposal.id,
 			kind: "decision",
 		});
@@ -390,12 +423,53 @@ export class ScopeExpansionController {
 			return { started: false, reason: proposal.stopReason };
 		}
 		proposal.state = "decided";
-		if (scope.ids.length === 0) {
+		// The answer is read again after the delivery: a rejection that
+		// arrived while the decision was on its way still prevents the work.
+		const latestAfter = this.deps.latestHumanDecision?.(proposal);
+		if (latestAfter === "reject" && effective.outcome !== "reject") {
 			proposal.state = "stopped";
-			proposal.stopReason = scope.reason ?? "the decision authorizes no work";
+			proposal.stopReason =
+				"the human rejected the proposal after the decision was delivered";
+			this.deps.log?.(
+				`The scope proposal ${proposal.id} stays unexecuted: ${proposal.stopReason}`,
+			);
 			return { started: false, reason: proposal.stopReason };
 		}
-		this.deps.dispatch(proposal, scope.ids);
+		let finalScope = scope;
+		if (latestAfter === "approve" && effective.source !== "human") {
+			const approved: ScopeDecision = {
+				...effective,
+				outcome: "approve",
+				selectedIds: [...proposal.proposedIds],
+				source: "human",
+			};
+			proposal.decision = approved;
+			finalScope = authorizedScope(proposal, approved);
+			// The delivered message said something else: the human has to
+			// know what started. A correction that reaches nobody leaves
+			// the work stopped.
+			const correction = await this.deps.deliver(
+				scopeDecisionMessage(proposal, approved, "starting the selected work"),
+				{ id: proposal.id, kind: "decision" },
+			);
+			if (!correction.delivered) {
+				proposal.state = "stopped";
+				proposal.stopReason = `the correction was not delivered: ${correction.failures.join(", ")}`;
+				this.deps.log?.(
+					`The scope proposal ${proposal.id} stays unexecuted: ${proposal.stopReason}`,
+				);
+				return { started: false, reason: proposal.stopReason };
+			}
+		}
+		if (finalScope.ids.length === 0) {
+			proposal.state = "stopped";
+			proposal.stopReason =
+				effective.outcome === "reject"
+					? effective.reasoning
+					: (finalScope.reason ?? "the decision authorizes no work");
+			return { started: false, reason: proposal.stopReason };
+		}
+		this.deps.dispatch(proposal, finalScope.ids);
 		proposal.state = "dispatched";
 		return { started: true };
 	}

@@ -3,7 +3,7 @@
  *
  * Type definitions for notification events, channels, and payloads.
  */
-export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "QuotaLowRemaining" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
+export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "QuotaLowRemaining" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;
@@ -143,5 +143,14 @@ export interface NotificationContext {
     resetAt?: string;
     /** The quota window the event is about ("5h", "weekly"). */
     quotaWindow?: string;
+    /**
+     * The exact ids of the issues that a scope proposal names.
+     *
+     * A proposal names ids, not titles: the ids are what the decision
+     * authorizes.
+     */
+    scopeIds?: string[];
+    /** The absolute moment the decision of a scope proposal has to be made. */
+    scopeDeadline?: string;
 }
 //# sourceMappingURL=types.d.ts.map

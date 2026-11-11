@@ -22,6 +22,8 @@ export type NotificationEvent =
 	| "CodexPlanDetected"
 	| "CodexReviewDetected"
 	| "ToolingPreferenceProposal"
+	| "ScopeProposal"
+	| "ScopeDecision"
 	| "AssistantResponse"
 	| "ToolSummary"
 	| "Error"
@@ -185,4 +187,13 @@ export interface NotificationContext {
 	resetAt?: string;
 	/** The quota window the event is about ("5h", "weekly"). */
 	quotaWindow?: string;
+	/**
+	 * The exact ids of the issues that a scope proposal names.
+	 *
+	 * A proposal names ids, not titles: the ids are what the decision
+	 * authorizes.
+	 */
+	scopeIds?: string[];
+	/** The absolute moment the decision of a scope proposal has to be made. */
+	scopeDeadline?: string;
 }
