@@ -721,7 +721,8 @@ function reportSuppressedResume(report: string | undefined): void {
  * An automatic resume continues the request that is running, so it has to
  * know whether that request still has work. An unknown state is not a
  * completion: the uncertainty is preserved and the resume goes on.
- */async function currentRequestWorkState(): Promise<ResumeWorkState> {
+ */
+async function currentRequestWorkState(): Promise<ResumeWorkState> {
 	const accessor = sharedState.workContext as
 		| null
 		| (() => Promise<{ work: ResumeWorkState; scope: string[] }>);
