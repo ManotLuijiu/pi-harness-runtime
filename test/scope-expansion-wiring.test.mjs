@@ -114,6 +114,12 @@ test("the runtime belongs to the session", () => {
 	assert.match(region, /sharedState\.scopeRuntime\?\.dispose\(\);/);
 });
 
+test("a session that ends leaves no proposal behind", () => {
+	const region = around("sharedState.scopeRuntime?.dispose();\n\t\t\tsharedState.scopeRuntime = null;", 400, 200);
+	assert.ok(region, "the runtime is disposed");
+	assert.match(region, /todoContinuationController\?\.dispose\?\.\(\);/, "the session ends its timers");
+});
+
 test("the question of a proposal is not obsolete", () => {
 	const region = around("function createScopeExpansionRuntime(", 0, 9000);
 	assert.ok(region, "the runtime is created");

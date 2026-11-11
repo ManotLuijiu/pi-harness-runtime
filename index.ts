@@ -3256,6 +3256,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			todoContinuationHandle = null;
 			sharedState.todoContinuationController = null;
 			sharedState.validationLedger = null;
+			// The proposal of a scope belongs to the session that is ending:
+			// its countdown does not survive it.
+			sharedState.scopeRuntime?.dispose();
+			sharedState.scopeRuntime = null;
 			// The scope belongs to the session that is ending.
 			requestScopeTracker.reset();
 		});
