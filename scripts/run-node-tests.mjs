@@ -62,6 +62,10 @@ const NOT_NODE_COMPATIBLE = new Map([
 		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
 	],
 	[
+		"test/quota-capture-integration.test.mjs",
+		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
+	],
+	[
 		"test/renderer.test.mjs",
 		"reaches a root-level module that imports siblings with the compiled '.js' convention, and the published package ships the root sources as TypeScript",
 	],
