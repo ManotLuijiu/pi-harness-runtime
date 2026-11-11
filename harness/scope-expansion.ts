@@ -105,6 +105,8 @@ export interface CreateScopeProposalInput {
 	scope: string;
 	validation: string;
 	risks?: string[];
+	/** The choices the human has. */
+	choices?: string[];
 	now: number;
 }
 
@@ -113,16 +115,22 @@ export interface CreateScopeProposalInput {
  *
  * The proposal names a bounded subset of the candidates: a candidate that
  * is not named is not proposed, and an id that is not a candidate is
- * refused. The deadline is absolute, so every reader measures the same
- * moment.
+ * refused. The bound applies to the proposed ids, and an id is checked
+ * against the whole list of the candidates: a bound that drops a known id
+ * would refuse a proposal of ids that the caller knew.
+ *
+ * The deadline is absolute, so every reader measures the same moment.
  */
 export function createScopeProposal(input: CreateScopeProposalInput): ScopeProposal {
-	const candidates = input.candidates.slice(0, MAX_SCOPE_CANDIDATES);
-	const known = new Set(candidates.map((candidate) => candidate.id));
-	const proposedIds = input.proposedIds.filter((id) => known.has(id));
+	const known = new Set(input.candidates.map((candidate) => candidate.id));
+	const proposedIds = input.proposedIds
+		.filter((id) => known.has(id))
+		.slice(0, MAX_SCOPE_CANDIDATES);
 	if (proposedIds.length === 0) {
 		throw new Error("a scope proposal needs at least one candidate id");
 	}
+	const proposed = new Set(proposedIds);
+	const candidates = input.candidates.filter((candidate) => proposed.has(candidate.id));
 	return {
 		id: input.id,
 		sessionId: input.sessionId,
@@ -134,7 +142,10 @@ export function createScopeProposal(input: CreateScopeProposalInput): ScopePropo
 		scope: input.scope,
 		validation: input.validation,
 		risks: input.risks ?? [],
-		choices: ["approve the proposed subset", "decline", "revise the proposal"],
+		choices:
+			input.choices && input.choices.length > 0
+				? input.choices
+				: ["approve the proposed subset", "decline", "revise the proposal"],
 		createdAt: input.now,
 		deadlineAt: input.now + SCOPE_EXPANSION_WINDOW_MS,
 		state: "proposed",
@@ -162,7 +173,7 @@ export function scopeProposalMessage(proposal: ScopeProposal): string {
 	lines.push(
 		`Choices: ${proposal.choices.join(" / ")}.`,
 		`Deadline: ${new Date(proposal.deadlineAt).toISOString()}.`,
-		`If unanswered for 5 minutes, Jev may decide this proposal under your policy.`,
+		`If unanswered for ${Math.round(SCOPE_EXPANSION_WINDOW_MS / 60_000)} minutes, Jev may decide this proposal under your policy.`,
 	);
 	return lines.join("\n");
 }
@@ -170,18 +181,22 @@ export function scopeProposalMessage(proposal: ScopeProposal): string {
 /**
  * The message of the decision.
  *
- * The decision names what was decided, what it means, and whether the work
- * starts or the session stays stopped.
+ * The decision names the proposal, what was decided, the scope that is
+ * really authorized, and whether the work starts or the session stays
+ * stopped.
  */
 export function scopeDecisionMessage(
 	proposal: ScopeProposal,
 	decision: ScopeDecision,
 	action: "starting the selected work" | "remaining stopped",
+	authorizedIds?: readonly string[],
 ): string {
-	const who = decision.source === "jev" ? "Jev decision after 5 minutes" : "Your decision";
+	const who = decision.source === "jev" ? "Jev decision after the window" : "Your decision";
+	const ids = authorizedIds ?? decision.selectedIds;
 	return [
 		`${who}: ${decision.outcome}.`,
-		`Scope: ${decision.selectedIds.length > 0 ? decision.selectedIds.join(", ") : "none"}.`,
+		`Proposal: ${proposal.id}.`,
+		`Scope: ${ids.length > 0 ? ids.join(", ") : "none"}.`,
 		`Reason: ${decision.reasoning}`,
 		`Action: ${action}.`,
 		`Proposed: ${proposal.scope}`,
@@ -256,7 +271,16 @@ export class ScopeExpansionController {
 	private generationCounter = 0;
 	private answered = new Set<string>();
 	private evaluated = new Set<string>();
-	private closedGeneration: number | null = null;
+	/** The proposals whose decision is being applied right now. */
+	private applying = new Set<string>();
+	/**
+	 * The generations that are closed.
+	 *
+	 * Every closed generation is remembered: the approval of one group is
+	 * not the approval of the next one, and that holds for every group
+	 * that finished, not only for the last one.
+	 */
+	private closedGenerations = new Set<number>();
 
 	constructor(deps: ScopeExpansionDeps) {
 		this.deps = deps;
@@ -287,7 +311,7 @@ export class ScopeExpansionController {
 	 * approval of one group is not the approval of the next one.
 	 */
 	register(proposal: ScopeProposal): boolean {
-		if (this.closedGeneration === proposal.generation) {
+		if (this.closedGenerations.has(proposal.generation)) {
 			this.deps.log?.(
 				`The scope proposal ${proposal.id} is refused: the generation ${proposal.generation} is closed.`,
 			);
@@ -361,6 +385,20 @@ export class ScopeExpansionController {
 				failed: true,
 			};
 		}
+		// A failed evaluation is not a decision: it authorizes nothing, and
+		// it is a wait that ends the attempts for this proposal.
+		if (decision.failed === true) {
+			decision = {
+				outcome: "wait",
+				selectedIds: [],
+				reasoning:
+					decision.reasoning.length > 0
+						? decision.reasoning
+						: "the evaluation failed",
+				source: "jev",
+				failed: true,
+			};
+		}
 		// The human answered while the evaluation was running: the answer
 		// wins.
 		if (this.answered.has(id)) {
@@ -381,6 +419,32 @@ export class ScopeExpansionController {
 	 * that the human was informed and start anyway.
 	 */
 	async applyDecision(id: string): Promise<{ started: boolean; reason?: string }> {
+		// The decision of a proposal is applied once. The answer of the
+		// human that arrives while the decision is on its way starts a
+		// second application of the same proposal, and the group must not
+		// start twice.
+		if (this.applying.has(id)) {
+			return {
+				started: false,
+				reason: "the decision of the proposal is being applied",
+			};
+		}
+		this.applying.add(id);
+		try {
+			return await this.applyDecisionOnce(id);
+		} finally {
+			this.applying.delete(id);
+		}
+	}
+
+	/**
+	 * Apply the decision of a proposal.
+	 *
+	 * The decision is applied once: the caller holds the lock.
+	 */
+	private async applyDecisionOnce(
+		id: string,
+	): Promise<{ started: boolean; reason?: string }> {
 		const proposal = this.proposals.get(id);
 		if (!proposal) return { started: false, reason: "unknown proposal" };
 		const decision = proposal.decision;
@@ -391,8 +455,14 @@ export class ScopeExpansionController {
 		// The human decides. The answer is read before the delivery, so the
 		// delivered message and the executed work agree.
 		let effective = decision;
+		const recorded = this.humanDecision(proposal);
 		const latestBefore = this.deps.latestHumanDecision?.(proposal);
-		if (latestBefore === "reject") {
+		if (recorded) {
+			// The first answer of the human wins: the answer that the
+			// controller recorded is stronger than a store that reports the
+			// last click.
+			effective = recorded;
+		} else if (latestBefore === "reject") {
 			effective = {
 				outcome: "reject",
 				selectedIds: [],
@@ -412,10 +482,13 @@ export class ScopeExpansionController {
 		const scope = authorizedScope(proposal, effective);
 		const action: "starting the selected work" | "remaining stopped" =
 			scope.ids.length > 0 ? "starting the selected work" : "remaining stopped";
-		const delivery = await this.deps.deliver(scopeDecisionMessage(proposal, effective, action), {
-			id: proposal.id,
-			kind: "decision",
-		});
+		const delivery = await this.deps.deliver(
+			scopeDecisionMessage(proposal, effective, action, scope.ids),
+			{
+				id: proposal.id,
+				kind: "decision",
+			},
+		);
 		if (!delivery.delivered) {
 			proposal.state = "stopped";
 			proposal.stopReason = `the decision was not delivered: ${delivery.failures.join(", ")}`;
@@ -424,32 +497,61 @@ export class ScopeExpansionController {
 		}
 		proposal.state = "decided";
 		// The answer is read again after the delivery: a rejection that
-		// arrived while the decision was on its way still prevents the work.
+		// arrived while the decision was on its way still prevents the work,
+		// and the answer of the controller is stronger than the store.
+		const after = this.humanDecision(proposal);
 		const latestAfter = this.deps.latestHumanDecision?.(proposal);
-		if (latestAfter === "reject" && effective.outcome !== "reject") {
-			proposal.state = "stopped";
-			proposal.stopReason =
-				"the human rejected the proposal after the decision was delivered";
-			this.deps.log?.(
-				`The scope proposal ${proposal.id} stays unexecuted: ${proposal.stopReason}`,
-			);
-			return { started: false, reason: proposal.stopReason };
-		}
-		let finalScope = scope;
-		if (latestAfter === "approve" && effective.source !== "human") {
-			const approved: ScopeDecision = {
+		let finalDecision = effective;
+		if (after) {
+			finalDecision = after;
+		} else if (latestAfter === "reject") {
+			finalDecision = {
+				outcome: "reject",
+				selectedIds: [],
+				reasoning: "the human rejected the proposal",
+				source: "human",
+			};
+		} else if (latestAfter === "approve" && effective.source !== "human") {
+			finalDecision = {
 				...effective,
 				outcome: "approve",
 				selectedIds: [...proposal.proposedIds],
 				source: "human",
 			};
-			proposal.decision = approved;
-			finalScope = authorizedScope(proposal, approved);
+		}
+		if (finalDecision.outcome === "reject" && effective.outcome !== "reject") {
+			proposal.state = "stopped";
+			proposal.stopReason =
+				"the human rejected the proposal after the decision was delivered";
 			// The delivered message said something else: the human has to
-			// know what started. A correction that reaches nobody leaves
+			// know that the work stays stopped. A correction that reaches
+			// nobody does not change the outcome: the work stays stopped
+			// either way.
+			const correction = await this.deps.deliver(
+				scopeDecisionMessage(proposal, finalDecision, "remaining stopped", []),
+				{ id: proposal.id, kind: "decision" },
+			);
+			if (!correction.delivered) {
+				proposal.stopReason = `${proposal.stopReason}; the correction was not delivered: ${correction.failures.join(", ")}`;
+			}
+			this.deps.log?.(
+				`The scope proposal ${proposal.id} stays unexecuted: ${proposal.stopReason}`,
+			);
+			return { started: false, reason: proposal.stopReason };
+		}
+		let finalScope = authorizedScope(proposal, finalDecision);
+		if (finalDecision !== effective) {
+			proposal.decision = finalDecision;
+			// The delivered message said something else: the human has to
+			// know what starts. A correction that reaches nobody leaves
 			// the work stopped.
 			const correction = await this.deps.deliver(
-				scopeDecisionMessage(proposal, approved, "starting the selected work"),
+				scopeDecisionMessage(
+					proposal,
+					finalDecision,
+					finalScope.ids.length > 0 ? "starting the selected work" : "remaining stopped",
+					finalScope.ids,
+				),
 				{ id: proposal.id, kind: "decision" },
 			);
 			if (!correction.delivered) {
@@ -464,14 +566,27 @@ export class ScopeExpansionController {
 		if (finalScope.ids.length === 0) {
 			proposal.state = "stopped";
 			proposal.stopReason =
-				effective.outcome === "reject"
-					? effective.reasoning
+				finalDecision.outcome === "reject"
+					? finalDecision.reasoning
 					: (finalScope.reason ?? "the decision authorizes no work");
 			return { started: false, reason: proposal.stopReason };
 		}
 		this.deps.dispatch(proposal, finalScope.ids);
 		proposal.state = "dispatched";
 		return { started: true };
+	}
+
+	/**
+	 * The answer of the human, when the controller recorded one.
+	 *
+	 * The first answer wins: a second answer - a stale button of a
+	 * notification that was already delivered - does not replace it.
+	 */
+	private humanDecision(proposal: ScopeProposal): ScopeDecision | undefined {
+		if (!this.answered.has(proposal.id)) return undefined;
+		const decision = proposal.decision;
+		if (!decision || decision.source !== "human") return undefined;
+		return decision;
 	}
 
 	/**
@@ -484,7 +599,7 @@ export class ScopeExpansionController {
 		const proposal = this.proposals.get(id);
 		if (!proposal) return;
 		proposal.state = "finished";
-		this.closedGeneration = proposal.generation;
+		this.closedGenerations.add(proposal.generation);
 		this.deps.log?.(
 			`The scope proposal ${proposal.id} is finished: the session stops again.`,
 		);

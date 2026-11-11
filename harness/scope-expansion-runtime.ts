@@ -18,6 +18,7 @@
  */
 
 import {
+	MAX_SCOPE_CANDIDATES,
 	SCOPE_EXPANSION_WINDOW_MS,
 	ScopeExpansionController,
 	createScopeProposal,
@@ -112,11 +113,22 @@ export class ScopeExpansionRuntime {
 	private readonly controller: ScopeExpansionController;
 	private timers = new Map<string, ScopeTimerHandle>();
 	/** The proposal of every generation, for the group check. */
-	private dispatched = new Map<string, ScopeProposal>();
+	private dispatched = new Map<string, { proposal: ScopeProposal; ids: string[] }>();
+	/**
+	 * The runtime was disposed.
+	 *
+	 * A disposed runtime belongs to a session that ended: it decides
+	 * nothing, it dispatches nothing and it keeps no timer. Without this
+	 * flag a timer of the default clock - the one the wiring uses - would
+	 * fire after the session and start work in a session that is gone.
+	 */
+	private disposed = false;
 	/** The proposal of every registered question. */
 	private questions = new Map<string, string>();
 	/** The question of every proposal. */
 	private questionIds = new Map<string, string>();
+	/** The number of the proposals of this runtime. */
+	private proposalCounter = 0;
 
 	constructor(deps: ScopeExpansionRuntimeDeps) {
 		this.deps = deps;
@@ -129,7 +141,21 @@ export class ScopeExpansionRuntime {
 				}),
 			judge: (proposal) => deps.judge(proposal),
 			dispatch: (proposal, ids) => {
-				this.dispatched.set(proposal.id, proposal);
+				// A disposed runtime belongs to a session that ended: it
+				// dispatches nothing.
+				if (this.disposed) {
+					this.deps.log?.(
+						`The scope proposal ${proposal.id} is not dispatched: the runtime is disposed.`,
+					);
+					return;
+				}
+				// The ids that were dispatched are the ids of the group: the
+				// check of the group asks about the work that started, not
+				// about the ids a decision named.
+				this.dispatched.set(proposal.id, {
+					proposal,
+					ids: [...ids],
+				});
 				deps.dispatch(proposal, ids);
 			},
 			log: (message) => deps.log?.(message),
@@ -156,7 +182,11 @@ export class ScopeExpansionRuntime {
 	 * can stop.
 	 */
 	async propose(request: ScopeProposalRequest): Promise<ScopeProposal | null> {
-		const candidates = request.candidates.slice();
+		if (this.disposed) return null;
+		// The candidates are bounded here as well: a proposal that names an
+		// id beyond the bound would find no known candidate and would
+		// throw where the caller expects nothing to happen.
+		const candidates = request.candidates.slice(0, MAX_SCOPE_CANDIDATES);
 		if (candidates.length === 0) {
 			this.deps.log?.("No scope proposal: the backlog has no candidate.");
 			return null;
@@ -168,7 +198,15 @@ export class ScopeExpansionRuntime {
 			this.deps.log?.("No scope proposal: no candidate is known.");
 			return null;
 		}
-		const id = `scope-${request.generation}-${proposedIds[0]}`;
+		// The identity of a proposal is unique: two proposals of the same
+		// generation with the same first id would answer each other, and the
+		// second answer of the human would be dropped.
+		const base = `scope-${request.generation}-${proposedIds[0]}`;
+		let id = base;
+		if (this.controller.get(base)) {
+			this.proposalCounter += 1;
+			id = `scope-${request.generation}-${this.proposalCounter}-${proposedIds[0]}`;
+		}
 		const proposal = createScopeProposal({
 			id,
 			sessionId: "",
@@ -193,7 +231,17 @@ export class ScopeExpansionRuntime {
 			this.questions.set(questionId, proposal.id);
 			this.questionIds.set(proposal.id, questionId);
 		}
-		const delivered = await this.controller.deliverProposal(proposal);
+		let delivered = false;
+		try {
+			delivered = await this.controller.deliverProposal(proposal);
+		} catch (error) {
+			// A delivery that throws is a delivery that happened nowhere: the
+			// proposal must not stay registered with an open question.
+			this.deps.log?.(
+				`The delivery of the scope proposal ${proposal.id} failed: ${String(error)}`,
+			);
+			delivered = false;
+		}
 		if (!delivered) {
 			// A proposal that reached nobody leaves no open question behind:
 			// an open question blocks the work of the session.
@@ -219,11 +267,18 @@ export class ScopeExpansionRuntime {
 		outcome: HumanScopeOutcome,
 		reasoning: string,
 	): Promise<{ started: boolean; reason?: string }> {
+		if (this.disposed) {
+			return { started: false, reason: "the runtime is disposed" };
+		}
 		const decision = this.controller.answer(proposalId, outcome, reasoning);
 		if (!decision) {
 			return { started: false, reason: "the proposal has no open answer" };
 		}
-		return this.controller.applyDecision(proposalId);
+		const result = await this.controller.applyDecision(proposalId);
+		// The question of a decided proposal is closed: an open question
+		// blocks the work of the session.
+		this.closeQuestion(proposalId);
+		return result;
 	}
 
 	/**
@@ -237,6 +292,9 @@ export class ScopeExpansionRuntime {
 		outcome: HumanScopeOutcome,
 		reasoning: string,
 	): Promise<{ started: boolean; reason?: string }> {
+		if (this.disposed) {
+			return { started: false, reason: "the runtime is disposed" };
+		}
 		const proposalId = this.questions.get(questionId);
 		if (!proposalId) {
 			return { started: false, reason: "the question belongs to no proposal" };
@@ -263,10 +321,19 @@ export class ScopeExpansionRuntime {
 	 * work starts.
 	 */
 	async evaluateDue(proposalId: string): Promise<ScopeDecision | null> {
+		if (this.disposed) return null;
 		const decision = await this.controller.evaluateDue(proposalId);
 		if (!decision) return null;
+		// The controller turns a failed evaluation into a wait: it
+		// authorizes nothing, and the decision is still delivered, so the
+		// human learns that the window ended without an answer.
 		await this.controller.applyDecision(proposalId);
-		return decision;
+		// The decision that was applied is the decision that counts: the
+		// controller may have replaced the decision of the evaluation.
+		// The question of a decided proposal is closed: an open question
+		// blocks the work of the session.
+		this.closeQuestion(proposalId);
+		return this.controller.get(proposalId)?.decision ?? decision;
 	}
 
 	/**
@@ -276,33 +343,59 @@ export class ScopeExpansionRuntime {
 	 * the next group of the backlog.
 	 */
 	async checkGroupFinished(): Promise<void> {
-		for (const proposal of this.dispatched.values()) {
-			const ids = proposal.decision?.selectedIds ?? [];
+		for (const entry of this.dispatched.values()) {
+			const { proposal, ids } = entry;
 			if (ids.length === 0) continue;
 			if (!(await this.deps.groupFinished?.(proposal, ids))) continue;
 			this.controller.finishGroup(proposal.id);
 			this.clearTimer(proposal.id);
+			this.closeQuestion(proposal.id);
 			this.dispatched.delete(proposal.id);
 		}
 	}
 
-	/** Stop the runtime: no timer survives the session. */
+	/**
+	 * Stop the runtime: no timer survives the session.
+	 *
+	 * The timer of the default clock is cancelled with the same clock that
+	 * armed it: a runtime that keeps its timer would decide the backlog of
+	 * a session that ended, and the decision would start work in a session
+	 * that does not exist any more.
+	 */
 	dispose(): void {
+		this.disposed = true;
 		for (const handle of this.timers.values()) {
-			this.deps.clearTimeout?.(handle);
+			this.cancelTimer(handle);
 		}
 		this.timers.clear();
+		// A question of a proposal that nobody answered must not stay open:
+		// the controller of the questions lives in the process, and an open
+		// question of a dead session blocks the next one.
+		for (const questionId of this.questions.keys()) {
+			this.deps.cancelQuestion?.(questionId);
+		}
+		this.questions.clear();
+		this.questionIds.clear();
 		this.dispatched.clear();
 	}
 
 	private scheduleEvaluation(proposal: ScopeProposal): void {
 		const delay = Math.max(0, proposal.deadlineAt - this.deps.now());
-		const setTimer = this.deps.setTimeout ?? ((cb: () => void, ms: number) => setTimeout(cb, ms));
-		const handle = setTimer(() => {
+		const handle = this.armTimer(() => {
 			this.timers.delete(proposal.id);
 			return (async () => {
+				if (this.disposed) return;
 				try {
-					await this.evaluateDue(proposal.id);
+					const decision = await this.evaluateDue(proposal.id);
+					// A timer that fired before the deadline leaves the window
+					// open: the timer is armed again for the rest of it, so
+					// the proposal always ends in a decision.
+					if (decision === null && !this.disposed) {
+						const current = this.controller.get(proposal.id);
+						if (current?.state === "proposed") {
+							this.scheduleEvaluation(proposal);
+						}
+					}
 				} catch (error) {
 					this.deps.log?.(
 						`The evaluation of the scope proposal ${proposal.id} failed: ${String(error)}`,
@@ -313,11 +406,45 @@ export class ScopeExpansionRuntime {
 		this.timers.set(proposal.id, handle);
 	}
 
+	/** Arm a timer on the clock of the runtime, or on the default clock. */
+	private armTimer(
+		callback: () => void | Promise<void>,
+		ms: number,
+	): ScopeTimerHandle {
+		const setTimer =
+			this.deps.setTimeout ??
+			((cb: () => void, delay: number) => setTimeout(cb, delay));
+		return setTimer(callback, ms);
+	}
+
+	/** Cancel a timer on the clock that armed it. */
+	private cancelTimer(handle: ScopeTimerHandle): void {
+		const clearTimer =
+			this.deps.clearTimeout ??
+			((h: ScopeTimerHandle) =>
+				clearTimeout(h as ReturnType<typeof setTimeout>));
+		clearTimer(handle);
+	}
+
 	private clearTimer(id: string): void {
 		const handle = this.timers.get(id);
 		if (handle === undefined) return;
-		this.deps.clearTimeout?.(handle);
+		this.cancelTimer(handle);
 		this.timers.delete(id);
+	}
+
+	/**
+	 * Close the question of a proposal.
+	 *
+	 * A proposal that reached its end does not keep a question open: an
+	 * open question blocks the work of the session.
+	 */
+	private closeQuestion(proposalId: string): void {
+		const questionId = this.questionIds.get(proposalId);
+		if (!questionId) return;
+		this.deps.cancelQuestion?.(questionId);
+		this.questions.delete(questionId);
+		this.questionIds.delete(proposalId);
 	}
 
 	/**

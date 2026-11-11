@@ -92,7 +92,34 @@ test("a proposal keeps at most ten candidates", () => {
 		candidates: many,
 		proposedIds: ["bd-0"],
 	});
+	assert.equal(created.candidates.length, 1);
+	assert.equal(created.proposedIds.length, 1);
+});
+
+test("a proposal of many known ids keeps at most ten of them", () => {
+	const many = Array.from({ length: 20 }, (_, index) => ({
+		id: `bd-${index}`,
+		title: `Issue ${index}`,
+	}));
+	const created = proposal({
+		candidates: many,
+		proposedIds: many.map((candidate) => candidate.id),
+	});
+	// The bound is applied to the proposed ids, and every id of the caller
+	// is checked against the whole list of the candidates: a bound that
+	// dropped a known id would refuse a proposal of ids that it knew.
+	assert.equal(created.proposedIds.length, MAX_SCOPE_CANDIDATES);
 	assert.equal(created.candidates.length, MAX_SCOPE_CANDIDATES);
+	assert.deepEqual(
+		created.proposedIds,
+		many.slice(0, MAX_SCOPE_CANDIDATES).map((candidate) => candidate.id),
+	);
+});
+
+test("the choices of the caller are the choices of the proposal", () => {
+	const created = proposal({ choices: ["run the named issues", "keep it closed"] });
+	assert.deepEqual(created.choices, ["run the named issues", "keep it closed"]);
+	assert.match(scopeProposalMessage(created), /run the named issues/);
 });
 
 test("the message of the proposal names the exact ids and the deadline", () => {
@@ -118,6 +145,24 @@ test("the message of the decision names the outcome and the action", () => {
 	assert.match(message, /approve/);
 	assert.match(message, /bd-1/);
 	assert.match(message, /starting the selected work/);
+});
+
+test("the message of the decision names the proposal and the authorized scope", () => {
+	const created = proposal();
+	const message = scopeDecisionMessage(
+		created,
+		{
+			outcome: "approve",
+			selectedIds: ["bd-1", "bd-9"],
+			reasoning: "",
+			source: "jev",
+		},
+		"starting the selected work",
+		["bd-1"],
+	);
+	assert.match(message, /Proposal: p1\./);
+	assert.match(message, /Scope: bd-1\./);
+	assert.doesNotMatch(message, /bd-9/, "an id that is not authorized is not named");
 });
 
 test("a decision may only name the ids of the proposal", () => {
@@ -284,4 +329,125 @@ test("the finished group closes the generation", () => {
 	assert.equal(instance.get("p1").state, "finished");
 	assert.equal(record.dispatched.length, 0);
 	assert.ok(record.logs.length > 0);
+});
+
+test("a decision that failed is a wait, not a decision", async () => {
+	const { instance, record } = controller({
+		judge: async (candidate) => ({
+			outcome: "approve",
+			selectedIds: candidate.proposedIds,
+			reasoning: "the model is down",
+			source: "jev",
+			failed: true,
+		}),
+	});
+	instance.register(proposal());
+	record.clock = now + SCOPE_EXPANSION_WINDOW_MS;
+	const decision = await instance.evaluateDue("p1");
+	assert.equal(decision.outcome, "wait");
+	assert.deepEqual(decision.selectedIds, []);
+	const outcome = await instance.applyDecision("p1");
+	assert.equal(outcome.started, false);
+	assert.equal(record.dispatched.length, 0);
+});
+
+test("the group of a proposal starts once", async () => {
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const record = { dispatched: [], delivered: [] };
+	let clock = now;
+	const instance = new ScopeExpansionController({
+		now: () => clock,
+		deliver: async (text, meta) => {
+			record.delivered.push({ text, meta });
+			// The human answers while the decision is on its way.
+			if (record.delivered.length === 1) {
+				instance.answer("p1", "approve", "the human approved it");
+			}
+			await gate;
+			return { delivered: true, failures: [] };
+		},
+		judge: async (candidate) => ({
+			outcome: "approve",
+			selectedIds: candidate.proposedIds,
+			reasoning: "",
+			source: "jev",
+		}),
+		dispatch: (candidate, ids) => {
+			record.dispatched.push({ id: candidate.id, ids });
+		},
+	});
+	instance.register(proposal());
+	clock = now + SCOPE_EXPANSION_WINDOW_MS;
+	await instance.evaluateDue("p1");
+	const first = instance.applyDecision("p1");
+	// The answer of the human starts a second application of the same
+	// proposal.
+	const second = instance.applyDecision("p1");
+	release();
+	await first;
+	await second;
+	assert.equal(record.dispatched.length, 1, "the group starts once");
+});
+
+test("the first answer of the human wins over the store", async () => {
+	const { instance, record } = controller({
+		latestHumanDecision: () => "reject",
+	});
+	instance.register(proposal());
+	instance.answer("p1", "approve", "the human approved it");
+	await instance.applyDecision("p1");
+	assert.equal(record.dispatched.length, 1, "the work starts");
+	assert.deepEqual(record.dispatched[0].ids, ["bd-1", "bd-2"]);
+});
+
+test("a rejection of the human that arrives during the delivery prevents the work", async () => {
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const record = { dispatched: [], delivered: [] };
+	let clock = now;
+	const instance = new ScopeExpansionController({
+		now: () => clock,
+		deliver: async (text, meta) => {
+			record.delivered.push({ text, meta });
+			if (record.delivered.length === 1) {
+				// The human rejects while the decision is on its way.
+				instance.answer("p1", "reject", "no");
+			}
+			await gate;
+			return { delivered: true, failures: [] };
+		},
+		judge: async (candidate) => ({
+			outcome: "approve",
+			selectedIds: candidate.proposedIds,
+			reasoning: "",
+			source: "jev",
+		}),
+		dispatch: (candidate, ids) => {
+			record.dispatched.push({ id: candidate.id, ids });
+		},
+	});
+	instance.register(proposal());
+	clock = now + SCOPE_EXPANSION_WINDOW_MS;
+	await instance.evaluateDue("p1");
+	const applied = instance.applyDecision("p1");
+	release();
+	const outcome = await applied;
+	assert.equal(outcome.started, false);
+	assert.equal(record.dispatched.length, 0);
+});
+
+test("every closed generation is remembered", () => {
+	const { instance } = controller();
+	instance.register(proposal({ id: "p1", generation: 1 }));
+	instance.finishGroup("p1");
+	instance.register(proposal({ id: "p2", generation: 2 }));
+	instance.finishGroup("p2");
+	// The first generation is closed as well: the approval of one group is
+	// not the approval of the next one.
+	assert.equal(instance.register(proposal({ id: "p3", generation: 1 })), false);
 });

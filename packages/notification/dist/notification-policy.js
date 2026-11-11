@@ -42,6 +42,9 @@ const HIGH_PRIORITY_EVENTS = new Set([
     "WaitingForUserInput",
     "JobFailed",
     "SystemAlert",
+    // A proposal of a new scope is a question that waits for an answer: the
+    // policy of the package may not drop it.
+    "ScopeProposal",
 ]);
 /**
  * Notification policy engine

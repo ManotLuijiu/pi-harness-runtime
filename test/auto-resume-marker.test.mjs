@@ -15,6 +15,7 @@ import {
 	findAutoResumeIndex,
 	isAutoResumeMessage,
 	NEUTRALIZED_RESUME_TEXT,
+	NEUTRALIZED_STALE_RESUME_TEXT,
 	neutralizeAutoResume,
 } from "../harness/auto-resume-marker.ts";
 
@@ -73,7 +74,19 @@ test("the details of a resume say why it was queued", () => {
 		reason: "output-limit",
 		scope: "turn",
 		nonce: "n-2",
+		requestGeneration: undefined,
 	});
+});
+
+test("a resume names the request it belongs to", () => {
+	const message = buildAutoResumeMessage({
+		content: "resume",
+		reason: "post-compact",
+		scope: "request",
+		nonce: "n-3",
+		requestGeneration: 7,
+	});
+	assert.equal(autoResumeDetails(message)?.requestGeneration, 7);
 });
 
 test("a resume without usable details is still a resume", () => {
@@ -82,13 +95,52 @@ test("a resume without usable details is still a resume", () => {
 	assert.equal(autoResumeDetails(message), undefined);
 });
 
-test("the scope of a resume without a scope is the request", () => {
+test("the scope of a resume without a scope is unknown", () => {
 	const message = {
 		role: "custom",
 		customType: HARNESS_AUTO_RESUME_TYPE,
 		details: { reason: "post-compact" },
 	};
-	assert.equal(autoResumeDetails(message)?.scope, "request");
+	// A scope that cannot be read is not a scope of the request: the guard
+	// of a late resume may not act on it.
+	assert.equal(autoResumeDetails(message)?.scope, "unknown");
+});
+
+test("the reason and the scope are read apart from each other", () => {
+	const withoutReason = {
+		role: "custom",
+		customType: HARNESS_AUTO_RESUME_TYPE,
+		details: { scope: "request", nonce: "n-4" },
+	};
+	const details = autoResumeDetails(withoutReason);
+	assert.equal(details?.scope, "request");
+	assert.equal(details?.reason, "auto-resume");
+});
+
+test("a resume of a replaced request is neutralized with its own text", () => {
+	const message = buildAutoResumeMessage({
+		content: "resume",
+		reason: "post-compact",
+		scope: "request",
+		nonce: "n-5",
+		requestGeneration: 3,
+	});
+	const replaced = neutralizeAutoResume(
+		[userMessage, message, assistantMessage],
+		1,
+		NEUTRALIZED_STALE_RESUME_TEXT,
+	);
+	assert.equal(replaced.length, 3);
+	assert.equal(replaced[0], userMessage);
+	assert.equal(replaced[2], assistantMessage);
+	const replacement = replaced[1];
+	assert.equal(replacement.role, "user");
+	assert.match(replacement.content[0].text, /replaced by a newer request/);
+	assert.doesNotMatch(
+		replacement.content[0].text,
+		/already complete/,
+		"the text of a stale resume is not the text of a completed request",
+	);
 });
 
 test("the last resume is the one that is consumed", () => {

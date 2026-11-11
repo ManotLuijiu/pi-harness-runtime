@@ -9,7 +9,10 @@
 import { describe, it, expect } from "bun:test";
 import { formatDetailLines, isErrorEvent } from "../src/adapters/detail-format.js";
 import { telegramStatusLabel } from "../src/adapters/telegram-adapter.js";
-import { requiresApproval } from "../src/notification-policy.js";
+import {
+	NotificationPolicyEngine,
+	requiresApproval,
+} from "../src/notification-policy.js";
 import type { NotificationEvent } from "../src/types.js";
 
 const proposalEvent: NotificationEvent = "ScopeProposal";
@@ -19,6 +22,13 @@ describe("the scope proposal event", () => {
 	it("needs an approval and is not an error", () => {
 		expect(requiresApproval(proposalEvent)).toBe(true);
 		expect(isErrorEvent(proposalEvent)).toBe(false);
+	});
+
+	it("is never dropped by the policy of the package", () => {
+		const engine = new NotificationPolicyEngine();
+		const decision = engine.evaluate({ event: proposalEvent });
+		expect(decision.shouldNotify).toBe(true);
+		expect(decision.includeButtons).toBe(true);
 	});
 
 	it("has a status label of its own", () => {

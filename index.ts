@@ -101,6 +101,7 @@ import {
 	findAutoResumeIndex,
 	isAutoResumeMessage,
 	neutralizeAutoResume,
+	NEUTRALIZED_STALE_RESUME_TEXT,
 } from "./harness/auto-resume-marker.ts";
 import {
 	ScopeExpansionRuntime,
@@ -675,6 +676,14 @@ const sharedState = {
 	// The runtime of the scope expansion: the backlog that could follow a
 	// finished request is proposed, and only the approved issues start.
 	scopeRuntime: null as ScopeExpansionRuntime | null,
+	/**
+	 * The request the backlog was proposed for.
+	 *
+	 * The proposal of a request happens once: the generation of the request
+	 * is its identity, and a second proposal of the same request would ask
+	 * the human twice about the same backlog.
+	 */
+	scopeProposedFor: null as number | null,
 };
 
 /**
@@ -818,7 +827,16 @@ function deliveryOf(results: unknown): { delivered: boolean; failures: string[] 
 	const reached = rows.filter((row) => row.success && !row.skipped);
 	const failures = rows
 		.filter((row) => !row.success || row.skipped)
-		.map((row) => `${row.channel ?? "channel"}: ${row.error ?? "not delivered"}`);
+		.map((row) =>
+			row.skipped
+				? `${row.channel ?? "channel"}: skipped`
+				: `${row.channel ?? "channel"}: ${row.error ?? "not delivered"}`,
+		);
+	if (reached.length === 0 && failures.length === 0) {
+		// No channel was reached and no channel reported why: the result
+		// names no channel, and the log has to say so.
+		failures.push("no channel was reached");
+	}
 	return { delivered: reached.length > 0, failures };
 }
 
@@ -835,13 +853,16 @@ async function proposeScopeExpansion(): Promise<void> {
 	// One proposal waits for an answer: a second one would ask the same
 	// human twice about the same backlog.
 	if (runtime.open.length > 0) return;
+	const generation = requestScopeTracker.generation;
+	// The proposal of a request happens once. The generation of the request
+	// is its identity: a request that finished twice does not ask twice.
+	if (sharedState.scopeProposedFor === generation) return;
 	const context = await getTaskContext().catch(() => null);
 	if (!context || context.issues.length === 0) return;
 	const candidates: ScopeCandidate[] = context.issues
 		.slice(0, MAX_SCOPE_CANDIDATES)
 		.map((issue) => ({ id: issue.id, title: issue.title }));
-	const generation = requestScopeTracker.generation;
-	await runtime.propose({
+	const proposal = await runtime.propose({
 		requestId: `request-${generation}`,
 		workspace: _piSessionCwd || process.cwd(),
 		generation,
@@ -851,6 +872,9 @@ async function proposeScopeExpansion(): Promise<void> {
 		risks: ["the work was not asked for"],
 		choices: ["run the named issues", "keep the backlog closed"],
 	});
+	if (proposal) {
+		sharedState.scopeProposedFor = generation;
+	}
 }
 
 /**
@@ -872,24 +896,28 @@ function applyChannelApproval(
 		return false;
 	}
 
-	const result = controller.applyApproval(action, requestId, channel);
-	if (!result?.applied) {
-		logToFile(
-			"[Approval]",
-			`Stale or duplicate ${channel} click for ${requestId}: ${result?.reason ?? "ignored"}`,
-		);
-		return false;
-	}
-
-	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
-	logQuestionTransition(requestId, "answered", `${channel}:${action}`);
-
 	// A question of a scope proposal is not a question of the work of the
 	// request: it asks whether the backlog may follow. The answer decides
 	// the proposal, and the work of the request stays what it was.
+	//
+	// The proposal is recognized before the shared question is resolved: an
+	// answer of a proposal must not clear the wait of the request and must
+	// not steer an answer into the conversation.
 	const scopeProposal = sharedState.scopeRuntime?.proposalForQuestion(requestId);
 	if (scopeProposal) {
-		const outcome: HumanScopeOutcome = result.resolution === "yes" ? "approve" : "reject";
+		const outcome: HumanScopeOutcome = action === "approve" ? "approve" : "reject";
+		const scopeResult = controller.applyApproval(action, requestId, channel, {
+			notifyUser: false,
+		});
+		if (!scopeResult?.applied) {
+			logToFile(
+				"[Approval]",
+				`Stale or duplicate ${channel} click for ${requestId}: ${scopeResult?.reason ?? "ignored"}`,
+			);
+			return false;
+		}
+		logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
+		logQuestionTransition(requestId, "answered", `${channel}:${action}`);
 		void sharedState.scopeRuntime
 			?.answerByQuestion(requestId, outcome, `${channel}:${action}`)
 			.then((executed) => {
@@ -903,6 +931,18 @@ function applyChannelApproval(
 			});
 		return true;
 	}
+
+	const result = controller.applyApproval(action, requestId, channel);
+	if (!result?.applied) {
+		logToFile(
+			"[Approval]",
+			`Stale or duplicate ${channel} click for ${requestId}: ${result?.reason ?? "ignored"}`,
+		);
+		return false;
+	}
+
+	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
+	logQuestionTransition(requestId, "answered", `${channel}:${action}`);
 
 	// The question is answered, so the wait is over. The wait state is only
 	// cleared after a successful resolution.
@@ -3029,14 +3069,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		 * reaches nobody leaves the work stopped.
 		 */
 		function createScopeExpansionRuntime(): ScopeExpansionRuntime {
-			return new ScopeExpansionRuntime({
+			// The runtime owns its proposals: a decision that is in flight
+			// when the session ends must not start work in another session.
+			let runtime: ScopeExpansionRuntime | undefined;
+			runtime = new ScopeExpansionRuntime({
 				now: () => Date.now(),
 				deliver: async (text, meta) => {
 					const center = _nc?.center as NcCenter | undefined;
 					if (!center) {
 						return { delivered: false, failures: ["no notification center"] };
 					}
-					const proposal = sharedState.scopeRuntime?.get(meta.id);
+					const proposal = runtime?.get(meta.id);
 					try {
 						if (meta.kind === "proposal") {
 							const results = await center.notifyWithApproval(
@@ -3121,6 +3164,16 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					};
 				},
 				dispatch: (proposal, ids) => {
+					// The session owns the decision: a decision that is still
+					// in flight when the session ends must not start the
+					// work of the backlog in another session.
+					if (sharedState.scopeRuntime !== runtime) {
+						logToFile(
+							"[scope-expansion]",
+							`The proposal ${proposal.id} is not dispatched: the session changed.`,
+						);
+						return;
+					}
 					// The approval starts new work: it begins a new scope, so
 					// the todos of the finished request stay its history.
 					beginHumanRequest();
@@ -3185,6 +3238,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				},
 				log: (message) => logToFile("[scope-expansion]", message),
 			});
+			return runtime;
 		}
 
 		pi.on("session_start", async (_event, ctx) => {
@@ -3562,31 +3616,35 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							// Deduplication: only notify once per work generation
 							// Use a static flag for this session's settled cycle
 							const completionKey = `done-${reason}`;
-							if (_completedNotifiedFor === completionKey) {
+							const alreadyNotified = _completedNotifiedFor === completionKey;
+							if (alreadyNotified) {
 								logToFile("[auto-continue]", "Completion already notified for:", reason);
-								return;
-							}
-							_completedNotifiedFor = completionKey;
+							} else {
+								_completedNotifiedFor = completionKey;
 
-							// Get full todo list for notification
-							const todoList = snapshot.items
-								.map((item) => {
-									const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
-									const subject = item.subject.length > 50 ? item.subject.slice(0, 47) + "..." : item.subject;
-									return `${status} ${subject}`;
-								})
-								.join("\n");
-							const message = todoList || "All tasks completed";
-							// Notify user that all work is complete with todo list
-							_nc?.notify("ReadyForClient", {
-								jobId: `done-${reason.replace(/\s+/g, "-")}`,
-								requirement: message,
-							}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
+								// Get full todo list for notification
+								const todoList = snapshot.items
+									.map((item) => {
+										const status = item.status === "completed" ? "[DONE]" : "[PENDING]";
+										const subject = item.subject.length > 50 ? item.subject.slice(0, 47) + "..." : item.subject;
+										return `${status} ${subject}`;
+									})
+									.join("\n");
+								const message = todoList || "All tasks completed";
+								// Notify user that all work is complete with todo list
+								_nc?.notify("ReadyForClient", {
+									jobId: `done-${reason.replace(/\s+/g, "-")}`,
+									requirement: message,
+								}).catch((e) => logToFile("[Notification]", "ReadyForClient failed:", String(e)));
+							}
 
 							// The request of the human is done. The backlog of the
 							// session is not work of it: the exact issues that
 							// could follow are proposed, and only the approved
-							// ids start.
+							// ids start. The proposal does not ride on the
+							// notification of the completion: a request that
+							// finished again is a new request, and it proposes
+							// its own backlog.
 							await proposeScopeExpansion();
 						}
 					}
@@ -7372,9 +7430,30 @@ issue is not authorized work of the current request).
 		const details =
 			index === -1 ? undefined : autoResumeDetails(event.messages[index]);
 		// A resume of a cut turn continues a turn that was cut off: it is
-		// unfinished by definition and the guard does not apply.
-		if (index === -1 || details?.scope === "turn") {
+		// unfinished by definition and the guard does not apply. A resume
+		// whose scope cannot be read is not known to be a resume of the
+		// request, and the guard does not apply either.
+		if (index === -1 || details?.scope !== "request") {
 			return { messages: event.messages };
+		}
+		// The resume belongs to a request. When the human replaced that
+		// request, the resume is stale: it must not continue the old work
+		// inside the new request.
+		const generation = requestScopeTracker.generation;
+		if (
+			details?.requestGeneration !== undefined &&
+			details.requestGeneration !== generation
+		) {
+			const report = `The automatic resume of the request ${details.requestGeneration} was replaced by a newer request.`;
+			logToFile("[resume-scope]", report);
+			reportSuppressedResume(report);
+			return {
+				messages: neutralizeAutoResume(
+					event.messages,
+					index,
+					NEUTRALIZED_STALE_RESUME_TEXT,
+				) as typeof event.messages,
+			};
 		}
 		const decision = decideResumeScope({
 			work: await currentRequestWorkState(),
@@ -7383,7 +7462,11 @@ issue is not authorized work of the current request).
 		if (decision.action !== "suppress") {
 			return { messages: event.messages };
 		}
-		logToFile("[resume-scope]", `Resume neutralized: ${decision.reason}`);
+		logToFile(
+			"[resume-scope]",
+			`Resume neutralized: ${decision.reason} (${details?.nonce || "no nonce"})`,
+		);
+		reportSuppressedResume(decision.report);
 		return {
 			messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
 		};
@@ -9167,15 +9250,20 @@ issue is not authorized work of the current request).
 			}
 			// The resume is a message of the harness, not a message of the
 			// human: it carries a marker, so the guard can recognize it when
-			// it is consumed after the request finished.
+			// it is consumed after the request finished. The marker names the
+			// request the resume belongs to.
 			pi.sendMessage(
 				buildAutoResumeMessage({
 					content,
 					reason,
 					scope: options.scope ?? "request",
 					nonce: nextResumeNonce(),
+					requestGeneration: requestScopeTracker.generation,
 				}),
-				{ deliverAs },
+				// The resume continues the work on its own: without a turn of
+				// its own the message would wait for the next prompt of the
+				// human, and the recovery would never happen.
+				{ deliverAs, triggerTurn: true },
 			);
 			await nc("ResumeScheduled", {
 				requirement: "Session auto-resume",

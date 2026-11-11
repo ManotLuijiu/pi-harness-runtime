@@ -353,3 +353,48 @@ describe("Question detection edge cases", () => {
     expect(result.kind).toBe("approval");
   });
 });
+
+describe("an approval that is not a question of the request", () => {
+  it("does not notify the callback of a user answer", () => {
+    const controller = createPendingQuestionController({ jevEnabled: false });
+    const answers: string[] = [];
+    controller.onUserAnswer((_question, answer) => {
+      answers.push(answer);
+    });
+    const question = controller.createQuestion({
+      text: "work on bd-1?",
+      sessionId: "s1",
+      workspacePath: "/workspace",
+      kind: "approval",
+      askType: "approval",
+    });
+
+    const applied = controller.applyApproval("approve", question.requestId, "telegram", {
+      notifyUser: false,
+    });
+
+    expect(applied.applied).toBe(true);
+    expect(answers).toEqual([]);
+    expect(controller.getQuestion(question.requestId)?.state).toBe("resolved");
+  });
+
+  it("notifies the callback of a user answer by default", () => {
+    const controller = createPendingQuestionController({ jevEnabled: false });
+    const answers: string[] = [];
+    controller.onUserAnswer((_question, answer) => {
+      answers.push(answer);
+    });
+    const question = controller.createQuestion({
+      text: "work on bd-1?",
+      sessionId: "s1",
+      workspacePath: "/workspace",
+      kind: "approval",
+      askType: "approval",
+    });
+
+    const applied = controller.applyApproval("approve", question.requestId, "telegram");
+
+    expect(applied.applied).toBe(true);
+    expect(answers).toEqual(["yes"]);
+  });
+});

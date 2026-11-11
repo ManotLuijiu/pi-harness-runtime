@@ -844,6 +844,15 @@ export class PendingQuestionController {
     requestId?: string;
     /** The channel a human answer came from. */
     channel?: ResolutionChannel;
+    /**
+     * Notify the callback of the user answer.
+     *
+     * A question that is not a question of the work - a proposal of the
+     * backlog, for example - is answered by the human without becoming an
+     * answer of the request: the callback would clear the wait of the
+     * request and steer an answer into the conversation.
+     */
+    notifyUser?: boolean;
   }): boolean {
     if (!this.currentQuestion) {
       logWarn("[PendingQuestion]", "No question to resolve - no pending question");
@@ -896,7 +905,7 @@ export class PendingQuestionController {
           eligible: true,
         });
       }
-    } else if (this.userAnswerCallback) {
+    } else if (this.userAnswerCallback && params.notifyUser !== false) {
       this.userAnswerCallback(this.currentQuestion, params.resolution);
     }
 
@@ -1049,13 +1058,30 @@ export class PendingQuestionController {
     action: string,
     requestId: string,
     channel: ResolutionChannel,
+    options?: {
+      /**
+       * Notify the callback of the user answer.
+       *
+       * A question that is not a question of the work of the request - a
+       * proposal of the backlog - is answered without an answer of the
+       * request: the callback would clear the wait of the request and steer
+       * an answer into the conversation.
+       */
+      notifyUser?: boolean;
+    },
   ): { applied: boolean; resolution?: "yes" | "no"; reason?: string } {
     if (action !== "approve" && action !== "reject") {
       return { applied: false, reason: `unknown action '${action}'` };
     }
 
     const resolution = action === "approve" ? "yes" : "no";
-    const applied = this.resolve({ resolution, by: "user", requestId, channel });
+    const applied = this.resolve({
+      resolution,
+      by: "user",
+      requestId,
+      channel,
+      ...(options?.notifyUser === false && { notifyUser: false }),
+    });
 
     return applied
       ? { applied: true, resolution }
