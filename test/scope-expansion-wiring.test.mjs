@@ -114,6 +114,16 @@ test("the runtime belongs to the session", () => {
 	assert.match(region, /sharedState\.scopeRuntime\?\.dispose\(\);/);
 });
 
+test("the question of a proposal is not obsolete", () => {
+	const region = around("function createScopeExpansionRuntime(", 0, 9000);
+	assert.ok(region, "the runtime is created");
+	assert.match(
+		region,
+		/relevance:\s*\n\s*\/\/ The question is asked after the work of the request[\s\S]*?"final-request",/,
+		"the question of a proposal belongs to the request that is done, so it is not closed as obsolete",
+	);
+});
+
 test("the group of the approved work is checked when the session settles", () => {
 	const region = around("await sharedState.scopeRuntime?.checkGroupFinished();", 400, 200);
 	assert.ok(region, "the group is checked");

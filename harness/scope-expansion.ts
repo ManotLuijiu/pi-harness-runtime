@@ -184,6 +184,7 @@ export function scopeDecisionMessage(
 		`Scope: ${decision.selectedIds.length > 0 ? decision.selectedIds.join(", ") : "none"}.`,
 		`Reason: ${decision.reasoning}`,
 		`Action: ${action}.`,
+		`Proposed: ${proposal.scope}`,
 	].join("\n");
 }
 
@@ -425,7 +426,7 @@ export class ScopeExpansionController {
 		// The answer is read again after the delivery: a rejection that
 		// arrived while the decision was on its way still prevents the work.
 		const latestAfter = this.deps.latestHumanDecision?.(proposal);
-		if (latestAfter === "reject") {
+		if (latestAfter === "reject" && effective.outcome !== "reject") {
 			proposal.state = "stopped";
 			proposal.stopReason =
 				"the human rejected the proposal after the decision was delivered";
@@ -462,7 +463,10 @@ export class ScopeExpansionController {
 		}
 		if (finalScope.ids.length === 0) {
 			proposal.state = "stopped";
-			proposal.stopReason = finalScope.reason ?? "the decision authorizes no work";
+			proposal.stopReason =
+				effective.outcome === "reject"
+					? effective.reasoning
+					: (finalScope.reason ?? "the decision authorizes no work");
 			return { started: false, reason: proposal.stopReason };
 		}
 		this.deps.dispatch(proposal, finalScope.ids);

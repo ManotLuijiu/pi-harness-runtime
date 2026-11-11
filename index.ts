@@ -3158,7 +3158,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							external: false,
 						},
 						relevance:
-							"the proposal of a new scope after the request of the human finished",
+							// The question is asked after the work of the request
+							// is done: it is not obsolete, and it does not wait
+							// for an automatic decision of the request.
+							"final-request",
 					});
 					return question.requestId;
 				},
