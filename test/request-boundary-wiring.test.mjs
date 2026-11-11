@@ -38,7 +38,7 @@ test("the scope of a request is begun in one place only", () => {
 	);
 	assert.match(
 		indexSource,
-		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);\n\}/,
+		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);[\s\S]{0,200}?\n\}/,
 		"the helper begins the scope of the request",
 	);
 });

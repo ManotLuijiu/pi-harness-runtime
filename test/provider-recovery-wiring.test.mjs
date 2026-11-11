@@ -200,13 +200,18 @@ test("an overload keeps its own executor", () => {
 test("the recovery starts at the settled boundary, not at the failed attempt", () => {
 	assert.match(
 		indexSource,
-		/pi\.on\("agent_settled",[\s\S]{0,900}?providerRecoveryRuntime\?\.noteSettled\(\)/,
+		/pi\.on\("agent_settled",[\s\S]{0,1600}?providerRecoveryRuntime\?\.noteSettled\(\)/,
 		"the recovery starts when the run settles",
 	);
 	assert.match(
 		indexSource,
-		/pi\.on\("agent_settled",[\s\S]{0,900}?activeRunAbortSignal\?\.aborted === true[\s\S]{0,400}?providerRecoveryRuntime\?\.cancel\(\)[\s\S]{0,400}?providerRecoveryRuntime\?\.noteSettled\(\)/,
+		/pi\.on\("agent_settled",[\s\S]{0,1600}?activeRunAbortSignal\?\.aborted === true[\s\S]{0,900}?providerRecoveryRuntime\?\.cancel\(\)[\s\S]{0,900}?providerRecoveryRuntime\?\.noteSettled\(\)/,
 		"an aborted run is read before the recovery starts",
+	);
+	assert.match(
+		indexSource,
+		/await quotaCaptureController\.wait\(\);[\s\S]{0,200}?providerRecoveryRuntime\?\.noteSettled\(\)/,
+		"the fresh capture of the quota happens before the recovery starts",
 	);
 	assert.doesNotMatch(
 		indexSource,

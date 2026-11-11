@@ -106,8 +106,12 @@ export interface MirrorRecord {
 	model?: string;
 	h5_used_pct?: number;
 	h5_resets_at?: string;
+	/** The absolute epoch of the reset of the five-hour window. */
+	h5_resets_at_epoch?: number;
 	weekly_used_pct?: number;
 	weekly_resets_at?: string;
+	/** The absolute epoch of the reset of the weekly window. */
+	weekly_resets_at_epoch?: number;
 }
 
 

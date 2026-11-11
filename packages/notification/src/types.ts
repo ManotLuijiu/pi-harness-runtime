@@ -9,6 +9,7 @@ export type NotificationEvent =
 	| "TaskCompleted"
 	| "TaskFailed"
 	| "QuotaPaused"
+	| "QuotaLowRemaining"
 	| "ResumeScheduled"
 	| "ContextCompacted"
 	| "OutputLimitContinued"
@@ -171,4 +172,17 @@ export interface NotificationContext {
 	questionId?: string;
 	/** The kind of the pending question (approval, clarification, ...). */
 	questionKind?: string;
+	/**
+	 * The provider of a quota event.
+	 *
+	 * The canonical label of the provider ("MiniMax"), not the id of the
+	 * mirror ("minimax"): the label is what the human reads.
+	 */
+	provider?: string;
+	/** The remaining percentage of the quota window. */
+	remainingPct?: number;
+	/** The absolute moment the quota window resets. */
+	resetAt?: string;
+	/** The quota window the event is about ("5h", "weekly"). */
+	quotaWindow?: string;
 }

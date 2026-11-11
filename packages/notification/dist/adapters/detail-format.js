@@ -71,6 +71,10 @@ export function formatDetailLines(details, event) {
     const trigger = readString(details?.trigger);
     const reason = readString(details?.reason);
     const error = readString(details?.error);
+    const provider = readString(details?.provider);
+    const quotaWindow = readString(details?.quotaWindow);
+    const resetAt = readString(details?.resetAt);
+    const remainingPct = details?.remainingPct;
     if (trigger) {
         lines.push({ label: "Trigger", value: formatTriggerValue(trigger) });
     }
@@ -79,6 +83,19 @@ export function formatDetailLines(details, event) {
     }
     if (error) {
         lines.push({ label: isErrorEvent(event) ? "Error" : "Reason", value: error });
+    }
+    // The quota of a window is a fact about the allowance, never a failure.
+    if (provider) {
+        lines.push({ label: "Provider", value: provider });
+    }
+    if (quotaWindow) {
+        lines.push({ label: "Window", value: quotaWindow });
+    }
+    if (typeof remainingPct === "number" && Number.isFinite(remainingPct)) {
+        lines.push({ label: "Remaining", value: `${remainingPct}%` });
+    }
+    if (resetAt) {
+        lines.push({ label: "Resets", value: resetAt });
     }
     return lines;
 }

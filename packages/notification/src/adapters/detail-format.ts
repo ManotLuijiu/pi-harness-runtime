@@ -23,8 +23,18 @@ export function isErrorEvent(event: NotificationEvent): boolean {
 }
 
 export interface DetailLine {
-	/** "Error" for a real failure, "Trigger" for a resume trigger, "Reason" for a detail. */
-	label: "Error" | "Reason" | "Trigger";
+	/**
+	 * "Error" for a real failure, "Trigger" for a resume trigger, "Reason"
+	 * for a detail, and the quota labels for the allowance of a window.
+	 */
+	label:
+		| "Error"
+		| "Reason"
+		| "Trigger"
+		| "Provider"
+		| "Window"
+		| "Remaining"
+		| "Resets";
 	value: string;
 }
 
@@ -86,6 +96,10 @@ export function formatDetailLines(
 	const trigger = readString(details?.trigger);
 	const reason = readString(details?.reason);
 	const error = readString(details?.error);
+	const provider = readString(details?.provider);
+	const quotaWindow = readString(details?.quotaWindow);
+	const resetAt = readString(details?.resetAt);
+	const remainingPct = details?.remainingPct;
 
 	if (trigger) {
 		lines.push({ label: "Trigger", value: formatTriggerValue(trigger) });
@@ -95,6 +109,19 @@ export function formatDetailLines(
 	}
 	if (error) {
 		lines.push({ label: isErrorEvent(event) ? "Error" : "Reason", value: error });
+	}
+	// The quota of a window is a fact about the allowance, never a failure.
+	if (provider) {
+		lines.push({ label: "Provider", value: provider });
+	}
+	if (quotaWindow) {
+		lines.push({ label: "Window", value: quotaWindow });
+	}
+	if (typeof remainingPct === "number" && Number.isFinite(remainingPct)) {
+		lines.push({ label: "Remaining", value: `${remainingPct}%` });
+	}
+	if (resetAt) {
+		lines.push({ label: "Resets", value: resetAt });
 	}
 
 	return lines;
