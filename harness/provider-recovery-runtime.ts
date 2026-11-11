@@ -34,6 +34,8 @@ import type {
 	ProviderRecoveryController,
 	RecoveryResetEvidence,
 } from "./provider-recovery.ts";
+import { MAX_RESET_EVIDENCE_AGE_MS, normalizeProviderIdentity } from "./provider-recovery.ts";
+import { QUOTA_RESET_BUFFER_MS } from "./provider-quota-reset.ts";
 
 /**
  * The state of the session, read when a resume would run.
@@ -158,6 +160,8 @@ export interface ProviderRecoveryRuntimeOptions {
 	clearTimeout?: (handle: unknown) => void;
 	/** The reset evidence of the provider, when the harness observed one. */
 	resetEvidence?: (failure: ProviderFailure) => RecoveryResetEvidence | undefined;
+	/** Fresh evidence that quota is fully consumed, including for generic 2067 errors. */
+	quotaResetEvidence?: (failure: ProviderFailure, provider: string) => RecoveryResetEvidence | undefined;
 	/** The number of attempts the cycle allows. */
 	maxAttempts: number;
 	/** The wait of the overload executor, in milliseconds. */
@@ -354,6 +358,9 @@ export class ProviderRecoveryRuntime {
 	private startRecovery(candidate: ProviderFailureCandidate): void {
 		const { failure, failureKey, provider } = candidate;
 		const sessionId = this.options.context().sessionId;
+		// A real quota reset is a different wait from a transient retry.
+		// It remains available even after the four short retries were used.
+		if (this.scheduleQuotaReset(candidate, sessionId)) return;
 		const outcome = this.options.controller.noteFailure(
 			{
 				failureKey,
@@ -372,7 +379,7 @@ export class ProviderRecoveryRuntime {
 			this.log(
 				`Provider recovery attempt ${outcome.attempt}/${this.maxAttempts} at ${new Date(outcome.dueAt).toISOString()} (bound=${outcome.boundBy})`,
 			);
-			this.scheduleAttempt(outcome.dueAt, outcome.attempt, failure, sessionId);
+			this.scheduleAttempt(outcome.dueAt, outcome.attempt, candidate, sessionId);
 			return;
 		}
 
@@ -387,6 +394,50 @@ export class ProviderRecoveryRuntime {
 		this.log(
 			`Provider recovery unchanged (${outcome.outcome}), attempt ${outcome.attempt}`,
 		);
+	}
+
+	private scheduleQuotaReset(candidate: ProviderFailureCandidate, sessionId: string): boolean {
+		const { failure, provider } = candidate;
+		if (failure.kind !== "usage-exhausted" && failure.kind !== "rate-limit") return false;
+		const evidence = this.options.quotaResetEvidence?.(failure, provider);
+		const now = this.now();
+		if (!evidence || normalizeProviderIdentity(evidence.provider) !== normalizeProviderIdentity(provider) ||
+			!Number.isFinite(evidence.resetAt) || evidence.resetAt <= now ||
+			!Number.isFinite(evidence.observedAt) || evidence.observedAt > now ||
+			now - evidence.observedAt > MAX_RESET_EVIDENCE_AGE_MS) return false;
+		const dueAt = Math.max(evidence.resetAt + QUOTA_RESET_BUFFER_MS, now + (failure.retryAfterMs ?? 0));
+		this.cancelRecoveryAttempt();
+		this.options.controller.invalidatePending({ sessionId });
+		this.options.actions.remove(this.options.blockedActionId);
+		this.options.actions.register({
+			id: this.options.recoveryActionId,
+			sessionId,
+			owner: "provider-recovery",
+			kind: "retry",
+			state: "scheduled",
+			dueAt,
+			provider,
+			...(failure.code ? { code: failure.code } : {}),
+			reason: `${evidence.window} quota exhausted; waiting for reset + 10m`,
+		});
+		this.log(`Provider quota reset wait until ${new Date(dueAt).toISOString()} (${evidence.window})`);
+		const arm = () => {
+			// Node timers longer than roughly 24 days otherwise fire immediately.
+			this.recoveryTimer = this.setTimer(() => {
+				if (this.now() < dueAt) { arm(); return; }
+				this.recoveryTimer = null;
+				this.options.actions.remove(this.options.recoveryActionId);
+				if (!mayDispatchResume({ scheduledSessionId: sessionId, current: this.options.context() }).allowed) return;
+				// A newly observed exhausted window may have a later reset.
+				if (this.scheduleQuotaReset(candidate, sessionId)) return;
+				// The reset itself does not prove success. Give the request a
+				// fresh bounded budget if it still fails after this one probe.
+				this.options.controller.cancel({ sessionId, provider });
+				this.dispatchIfOwned(sessionId, "provider-recovery");
+			}, Math.min(2_147_483_647, Math.max(0, dueAt - this.now())));
+		};
+		arm();
+		return true;
 	}
 
 	/**
@@ -419,9 +470,10 @@ export class ProviderRecoveryRuntime {
 	private scheduleAttempt(
 		dueAt: number,
 		attempt: number,
-		failure: ProviderFailure,
+		candidate: ProviderFailureCandidate,
 		sessionId: string,
 	): void {
+		const { failure } = candidate;
 		this.cancelRecoveryAttempt();
 		this.options.actions.register({
 			id: this.options.recoveryActionId,
@@ -442,6 +494,9 @@ export class ProviderRecoveryRuntime {
 			// The row leaves when the attempt runs: a countdown must not stay
 			// at 00:00.
 			this.options.actions.remove(this.options.recoveryActionId);
+			if (!mayDispatchResume({ scheduledSessionId: sessionId, current: this.options.context() }).allowed) return;
+			// Quota may have become exhausted while a short retry counted down.
+			if (this.scheduleQuotaReset(candidate, sessionId)) return;
 			this.dispatchIfOwned(sessionId, "provider-recovery");
 		}, delayMs);
 	}
