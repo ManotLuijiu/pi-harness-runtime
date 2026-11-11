@@ -636,6 +636,12 @@ export class NotificationCenter {
                 ...(context.trigger && { trigger: context.trigger }),
                 ...(context.questionId && { questionId: context.questionId }),
                 ...(context.questionKind && { questionKind: context.questionKind }),
+                ...(context.provider && { provider: context.provider }),
+                ...(context.remainingPct !== undefined && {
+                    remainingPct: context.remainingPct,
+                }),
+                ...(context.resetAt && { resetAt: context.resetAt }),
+                ...(context.quotaWindow && { quotaWindow: context.quotaWindow }),
                 // Pass inline keyboard options to Telegram adapter
                 ...(options?.enableInlineKeyboard && { _enableInlineKeyboard: true }),
                 ...(options?.actionButtons && { _actionButtons: options.actionButtons }),
@@ -667,6 +673,10 @@ export class NotificationCenter {
             QuotaPaused: {
                 title: "Quota Paused",
                 message: `Job paused due to quota limit. Will auto-resume when quota resets.`,
+            },
+            QuotaLowRemaining: {
+                title: "Quota Low",
+                message: `${context.provider ?? "The provider"}: the ${context.quotaWindow ?? "quota"} window has ${context.remainingPct ?? 0}% left${context.resetAt ? `, it resets at ${context.resetAt}` : ""}.`,
             },
             ResumeScheduled: {
                 title: "Resume Scheduled",

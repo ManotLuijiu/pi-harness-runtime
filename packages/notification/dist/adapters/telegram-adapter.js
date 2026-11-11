@@ -37,6 +37,7 @@ export function telegramStatusLabel(event) {
         TaskCompleted: "[OK]",
         TaskFailed: "[FAIL]",
         QuotaPaused: "[PAUSE]",
+        QuotaLowRemaining: "[QUOTA]",
         ResumeScheduled: "[RESUME]",
         ContextCompacted: "[COMPACT]",
         OutputLimitContinued: "[CONTINUE]",

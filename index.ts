@@ -86,6 +86,15 @@ import {
 } from "./harness/pi-retry-policy.ts";
 import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
 import { confirmedQuotaReset } from "./harness/provider-quota-reset.ts";
+import { resetEpochFromDuration } from "./harness/quota-reset-duration.ts";
+import { QuotaCaptureController } from "./harness/quota-capture.ts";
+import { QuotaLowRemainingTracker } from "./harness/quota-low-remaining.ts";
+import { remainingPctFromUsedPct } from "./harness/quota-threshold.ts";
+import {
+	decideResumeScope,
+	RESUME_SCOPE_RULE,
+	type ResumeWorkState,
+} from "./harness/resume-scope.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -130,6 +139,7 @@ import {
 } from "./packages/quota-manager/src/tui-usage-monitor.ts";
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
+import { getProviderLabel } from "./packages/types/src/ai-providers.ts";
 import { registerGithubLoginCommand } from "./packages/clipboard/dist/src/github-login.js";
 import {
 	MAX_PROACTIVE_COMPACT_FAILURES,
@@ -616,7 +626,54 @@ const sharedState = {
 	delegationHarness: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	workspaceEnvMessage: null as string | null,
+	// The state of the work of the request that is running. The automatic
+	// resume reads it to know whether the work of the request remains.
+	workContext: null as unknown,
 };
+
+/**
+ * Was the suppressed resume of this request already reported?
+ *
+ * The report happens once per request: a suppressed resume is not an event
+ * the user has to read again and again.
+ */
+let suppressedResumeReported = false;
+
+/**
+ * Report that an automatic resume was suppressed.
+ *
+ * The work of the request is complete, so the resume is not sent and the
+ * agent is not told to look for other work. The user learns about it once.
+ */
+function reportSuppressedResume(report: string | undefined): void {
+	if (!report || suppressedResumeReported) return;
+	suppressedResumeReported = true;
+	logToFile("[resume-scope]", report);
+	void nc("Info", {
+		jobId: "resume-scope-complete",
+		requirement: report,
+	});
+}
+
+/**
+ * The state of the work of the request that is running.
+ *
+ * An automatic resume continues the request that is running, so it has to
+ * know whether that request still has work. An unknown state is not a
+ * completion: the uncertainty is preserved and the resume goes on.
+ */
+async function currentRequestWorkState(): Promise<ResumeWorkState> {
+	const accessor = sharedState.workContext as
+		| null
+		| (() => Promise<{ work: ResumeWorkState; scope: string[] }>);
+	if (typeof accessor !== "function") return "unknown";
+	try {
+		const context = await accessor();
+		return context.work;
+	} catch {
+		return "unknown";
+	}
+}
 
 /**
  * The scope of the request that is running.
@@ -677,6 +734,9 @@ const requestScopeTracker = new RequestScopeTracker({
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// A new request of the human has its own report: the completion of the
+	// previous one was already reported.
+	suppressedResumeReported = false;
 }
 
 /**
@@ -1437,6 +1497,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				return { work: "unknown", scope: [] };
 			}
 		}
+
+		// The automatic resume reads the state of the work from here: the
+		// guard belongs to the code, not to the judge.
+		sharedState.workContext = currentWorkContext;
 
 		/**
 		 * The state of the work of the current request.
@@ -6684,6 +6748,9 @@ After completing ANY task or unit of work:
 3. Only stop and report progress when ALL tasks are completed (or genuinely blocked)
 4. If blocked (waiting on user input, CI, external dependency), THEN ask
 
+**The scope of the work:** the next task is the next task **of this request**.
+Pending issues in bd or another backlog are not pending work of this request.
+
 **Anti-pattern (WRONG):**
 > [Task 1 done] → stops → "Done! What would you like me to do next?"
 
@@ -6691,12 +6758,15 @@ After completing ANY task or unit of work:
 > [Task 1 done] → picks Task 2 → works → Task 3 → ... → all done → report
 
 This applies to EVERY turn. Every time you finish something, check todos first.
+
+${RESUME_SCOPE_RULE}
 `;
 
 	const COMMIT_BUILD_CHECKLIST = `
 
 BEFORE committing code or triggering builds, ALWAYS check:
-1. Run \`bd ready\` to see pending **bd issues**
+1. Run \`bd ready\` to see pending **bd issues** (bookkeeping only — a pending
+   bd issue is not authorized work of the current request)
 2. Mark completed issues with \`bd close <id> --reason "Done"\`
 3. Acknowledge pending issues before proceeding
 4. Never commit/build without acknowledging pending bd issues
@@ -6795,7 +6865,8 @@ Before running a build, ensure you update the current task status:
 2. If tracking in **bd issues**: use \`bd update <id> --status in_progress\`
 3. After build succeeds: mark completed in the appropriate tracker
 
-Run \`bd ready\` to see current bd issues.
+Run \`bd ready\` to see current bd issues (bookkeeping only — a pending bd
+issue is not authorized work of the current request).
 `;
 
 	// Detect build commands and log reminder (don't modify result.content)
@@ -6862,9 +6933,17 @@ Run \`bd ready\` to see current bd issues.
 			sessionBusy: activeExtensionContext?.isIdle?.() === false,
 		}),
 		resetEvidence: (failure) => applicableResetEvidence(failure),
-		quotaResetEvidence: (failure, provider) => confirmedQuotaReset(
-			failure, provider, mirrorStore.readProvider(provider.toLowerCase()), Date.now(),
-		),
+		quotaResetEvidence: (failure, provider) => {
+			// A capture that failed means that the row of the mirror is the
+			// old one, and an old row cannot prove a deadline.
+			if (quotaCaptureController.failed(provider)) return undefined;
+			return confirmedQuotaReset(
+				failure,
+				provider,
+				mirrorStore.readProvider(provider.toLowerCase()),
+				Date.now(),
+			);
+		},
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
 		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
 		dispatch: async (reason) => {
@@ -6906,7 +6985,7 @@ Run \`bd ready\` to see current bd issues.
 
 	// The run settled: the internal retries of Pi are over, so a failure
 	// that waited for the boundary is final and the recovery starts now.
-	pi.on("agent_settled", (event) => {
+	pi.on("agent_settled", async (event) => {
 		// An aborted run is a decision of the user, not a failure of the
 		// provider: an automatic resume would fight the user.
 		//
@@ -6924,6 +7003,12 @@ Run \`bd ready\` to see current bd issues.
 			providerFailureAttemptsInRun = 0;
 			return;
 		}
+		// A quota failure needs a fresh capture before the recovery picks a
+		// deadline. The capture that the harness has can be hours old, and
+		// a stale capture proves nothing about the reset that is coming.
+		// The capture is not a scheduler: it only refreshes what the
+		// recovery reads.
+		await quotaCaptureController.wait();
 		providerRecoveryRuntime?.noteSettled();
 		// The run is over: the streak of its failures ends with it, so the
 		// next run starts its own count.
@@ -7049,6 +7134,14 @@ Run \`bd ready\` to see current bd issues.
 						typeof m.errorMessage === "string" ? m.errorMessage : undefined,
 					),
 				});
+				// A quota failure needs a fresh capture before the recovery
+				// picks a deadline. The capture runs while Pi retries the
+				// failed turn internally.
+				const quotaCandidate =
+					providerRecoveryRuntime?.pendingQuotaFailure();
+				if (quotaCandidate) {
+					quotaCaptureController.begin(quotaCandidate.provider);
+				}
 			} else {
 				// No automatic retry can fix this failure: the row says that
 				// nothing is scheduled.
@@ -7089,7 +7182,9 @@ Run \`bd ready\` to see current bd issues.
 				OUTPUT_LIMIT_CONTINUATION_ID,
 				"the output limit continues the turn",
 			);
-			await queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer");
+			await queueAutoResume("output-limit", OUTPUT_LIMIT_RESUME_PROMPT, "steer", {
+				scope: "turn",
+			});
 			// Emit OutputLimitContinued to Telegram
 			await nc("OutputLimitContinued", {
 				requirement: "Session output",
@@ -7380,6 +7475,7 @@ Run \`bd ready\` to see current bd issues.
 		// 	JSON.stringify(record),
 		// );
 		mirrorStore.writeProvider(provider, { ...record, provider });
+		notifyQuotaLowRemaining(provider, record);
 		if (footerSetStatus) {
 			refreshFooterStatus(
 				footerSetStatus,
@@ -7389,6 +7485,43 @@ Run \`bd ready\` to see current bd issues.
 				() => lastActiveProvider,
 			);
 		}
+	}
+
+	/**
+	 * The alert of a low allowance.
+	 *
+	 * The alert is sent once per crossing: a capture of the same state
+	 * again does not send it again, and an allowance that recovers arms it
+	 * again. It needs no approval and it costs no attempt of the recovery.
+	 */
+	const quotaLowRemainingTracker = new QuotaLowRemainingTracker();
+
+	function notifyQuotaLowRemaining(
+		provider: ProviderId,
+		record: Omit<import("./mirror.js").ProviderMirrorRecord, "provider">,
+	): void {
+		// No channel, no message: an alert that cannot be sent is not an
+		// alert that was sent.
+		if (!_nc) return;
+		const decision = quotaLowRemainingTracker.observe(
+			provider,
+			record.h5_used_pct,
+		);
+		if (decision !== "notify") return;
+		const remainingPct = remainingPctFromUsedPct(record.h5_used_pct as number);
+		const label = getProviderLabel(provider);
+		const resetAt = record.h5_resets_at_epoch
+			? new Date(record.h5_resets_at_epoch).toISOString()
+			: record.h5_resets_at;
+		void nc("QuotaLowRemaining", {
+			jobId: `quota-low-${provider}`,
+			requirement: `The 5h quota of ${label} is low`,
+			provider: label,
+			quotaWindow: "5h",
+			remainingPct: Math.round(remainingPct * 10) / 10,
+			...(resetAt ? { resetAt } : {}),
+			reason: `The 5h window has ${Math.round(remainingPct * 10) / 10}% left`,
+		});
 	}
 
 	async function hasBrowserProfileAutoFetchSource(): Promise<boolean> {
@@ -7478,13 +7611,26 @@ Run \`bd ready\` to see current bd issues.
 				return null;
 			}
 
+			// The console writes the remaining time of a window as text. The
+			// mirror needs an absolute moment, and the capture is the anchor
+			// of the text.
+			const observedAt = Date.parse(status.checked_at);
+
 			return {
 				synced_at: status.checked_at,
 				provider: "minimax",
 				h5_used_pct: parsed.h5UsedPct,
 				h5_resets_at: parsed.h5ResetsAt,
+				h5_resets_at_epoch: resetEpochFromDuration(
+					parsed.h5ResetsAt,
+					observedAt,
+				),
 				weekly_used_pct: parsed.weeklyUsedPct,
 				weekly_resets_at: parsed.weeklyResetsAt,
+				weekly_resets_at_epoch: resetEpochFromDuration(
+					parsed.weeklyResetsAt,
+					observedAt,
+				),
 			};
 		} catch (error) {
 			if (!suppressErrors) {
@@ -7510,8 +7656,10 @@ Run \`bd ready\` to see current bd issues.
 				model: profileRecord.model,
 				h5_used_pct: profileRecord.h5_used_pct,
 				h5_resets_at: profileRecord.h5_resets_at,
+				h5_resets_at_epoch: profileRecord.h5_resets_at_epoch,
 				weekly_used_pct: profileRecord.weekly_used_pct,
 				weekly_resets_at: profileRecord.weekly_resets_at,
+				weekly_resets_at_epoch: profileRecord.weekly_resets_at_epoch,
 			});
 			return true;
 		}
@@ -7674,6 +7822,35 @@ Run \`bd ready\` to see current bd issues.
 			}
 			return false;
 		}
+	}
+
+	/**
+	 * The quota capture of a provider failure.
+	 *
+	 * The recovery decides when to continue from a capture of the quota,
+	 * and the row of the mirror can be hours old. The capture is the one of
+	 * the harness: it refreshes the mirror and nothing else, it never
+	 * charges an attempt of the recovery and it never schedules anything.
+	 */
+	const quotaCaptureController = new QuotaCaptureController({
+		capture: (provider) => captureQuotaOf(provider),
+		log: (message) => logToFile("[pi-harness]", message),
+	});
+
+	/**
+	 * Capture the quota of a provider.
+	 */
+	async function captureQuotaOf(provider: string): Promise<boolean> {
+		if (provider === "minimax") {
+			return autoFetchQuota({ suppressErrors: true });
+		}
+		if (provider === "openai" || provider === "openai-codex") {
+			return autoFetchOpenAIQuota({ suppressErrors: true });
+		}
+		if (provider === "glm") {
+			return autoFetchGLMQuota({ suppressErrors: true });
+		}
+		return false;
 	}
 
 	async function maybeAutoFetchQuota(
@@ -8468,6 +8645,7 @@ Run \`bd ready\` to see current bd issues.
 				"output-limit-settled",
 				OUTPUT_LIMIT_RESUME_PROMPT,
 				"followUp",
+				{ scope: "turn" },
 			);
 		}, 0);
 	});
@@ -8580,8 +8758,35 @@ Run \`bd ready\` to see current bd issues.
 		reason: string,
 		content: string,
 		deliverAs: "steer" | "followUp",
+		options: {
+			/**
+			 * What the resume continues: the request that is running, or a
+			 * turn that was cut off.
+			 *
+			 * A cut turn is unfinished by definition, so it is resumed
+			 * without the guard. A resume of the request is gated: it goes
+			 * on only while that request has work.
+			 */
+			scope?: "request" | "turn";
+		} = {},
 	): Promise<void> {
 		try {
+			if (options.scope !== "turn") {
+				// An automatic resume continues the request that is running.
+				// It is not an instruction to find more work: a resume that
+				// was queued while the request ran and that is consumed
+				// after it finished would send the agent to the backlog,
+				// and the backlog is not work of this request.
+				const decision = decideResumeScope({
+					work: await currentRequestWorkState(),
+					reason,
+				});
+				if (decision.action === "suppress") {
+					logToFile("[resume-scope]", `Resume suppressed: ${decision.reason}`);
+					reportSuppressedResume(decision.report);
+					return;
+				}
+			}
 			pi.sendUserMessage(content, { deliverAs });
 			await nc("ResumeScheduled", {
 				requirement: "Session auto-resume",

@@ -3,7 +3,7 @@
  *
  * Type definitions for notification events, channels, and payloads.
  */
-export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
+export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "QuotaLowRemaining" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;
@@ -130,5 +130,18 @@ export interface NotificationContext {
     questionId?: string;
     /** The kind of the pending question (approval, clarification, ...). */
     questionKind?: string;
+    /**
+     * The provider of a quota event.
+     *
+     * The canonical label of the provider ("MiniMax"), not the id of the
+     * mirror ("minimax"): the label is what the human reads.
+     */
+    provider?: string;
+    /** The remaining percentage of the quota window. */
+    remainingPct?: number;
+    /** The absolute moment the quota window resets. */
+    resetAt?: string;
+    /** The quota window the event is about ("5h", "weekly"). */
+    quotaWindow?: string;
 }
 //# sourceMappingURL=types.d.ts.map

@@ -227,6 +227,26 @@ export class ProviderRecoveryRuntime {
 	}
 
 	/**
+	 * The failure that waits for the settled boundary.
+	 *
+	 * The caller reads it to prepare what the recovery needs before it
+	 * picks a deadline - a fresh quota capture, for example. Reading it
+	 * changes nothing: the candidate stays where it is until the run
+	 * settles.
+	 */
+	pendingQuotaFailure(): { provider: string; kind: string } | null {
+		const candidate = this.candidate;
+		if (!candidate) return null;
+		if (
+			candidate.failure.kind !== "usage-exhausted" &&
+			candidate.failure.kind !== "rate-limit"
+		) {
+			return null;
+		}
+		return { provider: candidate.provider, kind: candidate.failure.kind };
+	}
+
+	/**
 	 * The run settled.
 	 *
 	 * The internal retries of Pi are over, so the failure is final. The

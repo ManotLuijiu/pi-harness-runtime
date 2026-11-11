@@ -67,6 +67,7 @@ export function telegramStatusLabel(event: NotificationPayload["event"]): string
 		TaskCompleted: "[OK]",
 		TaskFailed: "[FAIL]",
 		QuotaPaused: "[PAUSE]",
+		QuotaLowRemaining: "[QUOTA]",
 		ResumeScheduled: "[RESUME]",
 		ContextCompacted: "[COMPACT]",
 		OutputLimitContinued: "[CONTINUE]",
