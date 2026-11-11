@@ -228,3 +228,91 @@ test("the runtime disposes its timers", async () => {
 	assert.equal(rt.record.timers.length, 1);
 	rt.controller.dispose();
 });
+
+test("the question of a decided proposal is closed", async () => {
+	const cancelled = [];
+	const rt = runtime({
+		cancelQuestion: (questionId) => cancelled.push(questionId),
+	});
+	await rt.controller.propose(request());
+	await rt.fire();
+	assert.equal(rt.record.dispatches.length, 1);
+	assert.deepEqual(cancelled, ["q-scope-1-bd-1"], "the question of a decided proposal is closed");
+	assert.equal(rt.controller.questionIdFor("scope-1-bd-1"), undefined);
+});
+
+test("the question of a proposal that reached nobody is closed", async () => {
+	const cancelled = [];
+	const rt = runtime({
+		deliver: async () => ({ delivered: false, failures: ["telegram"] }),
+		cancelQuestion: (questionId) => cancelled.push(questionId),
+	});
+	const proposal = await rt.controller.propose(request());
+	assert.equal(proposal, null);
+	assert.deepEqual(cancelled, ["q-scope-1-bd-1"]);
+});
+
+test("a disposed runtime dispatches nothing and keeps no timer", async () => {
+	const rt = runtime();
+	await rt.controller.propose(request());
+	const timers = rt.record.timers.length;
+	assert.ok(timers > 0, "the runtime armed the timer of the deadline");
+	rt.controller.dispose();
+	rt.clock.value = start + SCOPE_EXPANSION_WINDOW_MS;
+	await rt.record.timers[0].callback();
+	assert.equal(rt.record.dispatches.length, 0, "a disposed runtime dispatches nothing");
+	assert.equal(rt.record.judgeCalls, 0, "a disposed runtime decides nothing");
+});
+
+test("a disposed runtime closes its question", async () => {
+	const cancelled = [];
+	const rt = runtime({ cancelQuestion: (questionId) => cancelled.push(questionId) });
+	await rt.controller.propose(request());
+	rt.controller.dispose();
+	assert.deepEqual(cancelled, ["q-scope-1-bd-1"]);
+	assert.equal(rt.controller.questionIdFor("scope-1-bd-1"), undefined);
+});
+
+test("two proposals of the same generation have different identities", async () => {
+	const rt = runtime();
+	const first = await rt.controller.propose(request());
+	assert.ok(first, "the first proposal is created");
+	// The proposal is answered, so it is no longer open.
+	await rt.controller.answer(first.id, "reject", "no");
+	const second = await rt.controller.propose(request());
+	assert.ok(second, "the second proposal is created");
+	assert.notEqual(first.id, second.id, "the identity of a proposal is unique");
+});
+
+test("the default timer of the runtime is armed and cancelled with the default clock", async () => {
+	const armed = [];
+	const cleared = [];
+	const realSetTimeout = globalThis.setTimeout;
+	const realClearTimeout = globalThis.clearTimeout;
+	globalThis.setTimeout = (callback, ms, ...rest) => {
+		armed.push(ms);
+		return realSetTimeout(callback, ms, ...rest);
+	};
+	globalThis.clearTimeout = (handle) => {
+		cleared.push(handle);
+		return realClearTimeout(handle);
+	};
+	try {
+		const record = { dispatches: [] };
+		const instance = new ScopeExpansionRuntime({
+			now: () => start,
+			deliver: async () => ({ delivered: true, failures: [] }),
+			judge: async () => ({ outcome: "wait", selectedIds: [], reasoning: "", source: "jev" }),
+			dispatch: (_proposal, ids) => record.dispatches.push(ids),
+			registerQuestion: () => "q-default",
+		});
+		await instance.propose(request());
+		assert.deepEqual(armed, [SCOPE_EXPANSION_WINDOW_MS], "the window is armed on the default clock");
+		instance.dispose();
+		assert.equal(cleared.length, 1, "the timer of the default clock is cancelled");
+		assert.equal(record.dispatches.length, 0);
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+		globalThis.clearTimeout = realClearTimeout;
+	}
+});

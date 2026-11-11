@@ -42,21 +42,25 @@ export declare class NotificationCenter {
     private saveChannelSettings;
     /**
      * Track a new pending approval request
+     *
+     * The key is the canonical question id: the buttons of the notification
+     * carry it, and it is what a callback looks the approval up with. A
+     * notification without a question id is keyed by its job id.
      */
-    trackPendingApproval(jobId: string, event: NotificationEvent, context: NotificationContext): void;
+    trackPendingApproval(questionId: string, event: NotificationEvent, context: NotificationContext): void;
     /**
      * Resolve a pending approval request
      * @returns true if the request was found and resolved, false otherwise
      */
-    resolvePendingApproval(jobId: string, result: "approved" | "rejected"): boolean;
+    resolvePendingApproval(questionId: string, result: "approved" | "rejected"): boolean;
     /**
      * Get a pending approval request
      */
-    getPendingApproval(jobId: string): PendingApproval | undefined;
+    getPendingApproval(questionId: string): PendingApproval | undefined;
     /**
      * Check if a pending approval exists and is unresolved
      */
-    isPendingApproval(jobId: string): boolean;
+    isPendingApproval(questionId: string): boolean;
     /**
      * Clear resolved pending approvals older than maxAgeMs
      */

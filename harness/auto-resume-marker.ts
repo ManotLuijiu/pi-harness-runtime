@@ -20,20 +20,32 @@
  */
 export const HARNESS_AUTO_RESUME_TYPE = "harness:auto-resume";
 
+/**
+ * What a resume continues.
+ *
+ * A resume of the request continues the request that is running. A resume
+ * of a turn continues a turn that was cut off, which is unfinished by
+ * definition. A scope that cannot be read is unknown: the harness does not
+ * know what the resume continues, and it does not act on it.
+ */
+export type AutoResumeScope = "request" | "turn" | "unknown";
+
 /** What the marker of a resume carries. */
 export interface AutoResumeDetails {
 	/** Why the resume was queued. */
 	reason: string;
-	/**
-	 * What the resume continues.
-	 *
-	 * A resume of the request continues the request that is running. A
-	 * resume of a turn continues a turn that was cut off, which is
-	 * unfinished by definition.
-	 */
-	scope: "request" | "turn";
+	/** What the resume continues. */
+	scope: AutoResumeScope;
 	/** A nonce that tells this resume from another one. */
 	nonce: string;
+	/**
+	 * The request the resume belongs to.
+	 *
+	 * The generation of the request is its identity. A resume of a request
+	 * that the human replaced must not continue the old work inside the
+	 * new request, and only the identity tells the two apart.
+	 */
+	requestGeneration?: number;
 }
 
 /** The shape of a message of Pi that the harness can recognize. */
@@ -88,8 +100,9 @@ export function isAutoResumeMessage(
 /**
  * The details of a resume, when the message carries them.
  *
- * A message with the marker but without usable details is still a resume:
- * the details only tell why it was queued.
+ * The reason and the scope are read apart from each other: a marker
+ * without a usable reason still says what the resume continues, and a
+ * marker without a usable scope is not a resume of the request.
  */
 export function autoResumeDetails(
 	message: unknown,
@@ -98,11 +111,24 @@ export function autoResumeDetails(
 	const details = message.details;
 	if (details === null || typeof details !== "object") return undefined;
 	const candidate = details as Partial<AutoResumeDetails>;
-	if (typeof candidate.reason !== "string") return undefined;
+	const scope: AutoResumeScope =
+		candidate.scope === "request" ||
+		candidate.scope === "turn" ||
+		candidate.scope === "unknown"
+			? candidate.scope
+			: "unknown";
+	const reason =
+		typeof candidate.reason === "string" ? candidate.reason : undefined;
+	if (reason === undefined && scope === "unknown") return undefined;
 	return {
-		reason: candidate.reason,
-		scope: candidate.scope === "turn" ? "turn" : "request",
+		reason: reason ?? "auto-resume",
+		scope,
 		nonce: typeof candidate.nonce === "string" ? candidate.nonce : "",
+		requestGeneration:
+			typeof candidate.requestGeneration === "number" &&
+			Number.isFinite(candidate.requestGeneration)
+				? candidate.requestGeneration
+				: undefined,
 	};
 }
 
@@ -127,6 +153,8 @@ export function buildAutoResumeMessage(input: {
 	reason: string;
 	scope: "request" | "turn";
 	nonce: string;
+	/** The request the resume belongs to. */
+	requestGeneration?: number;
 }): AutoResumeMessage {
 	return {
 		role: "custom",
@@ -137,6 +165,7 @@ export function buildAutoResumeMessage(input: {
 			reason: input.reason,
 			scope: input.scope,
 			nonce: input.nonce,
+			requestGeneration: input.requestGeneration,
 		},
 	};
 }
@@ -155,6 +184,18 @@ export const NEUTRALIZED_RESUME_TEXT = [
 ].join(" ");
 
 /**
+ * The text that replaces a resume of a request that the human replaced.
+ *
+ * The request of the resume is not the request that is running: the human
+ * has moved on, and the resume must not continue the old work.
+ */
+export const NEUTRALIZED_STALE_RESUME_TEXT = [
+	"The request that this automatic resume belongs to was replaced by a newer request.",
+	"Do not continue, resume or expand that older work, and do not look for other tasks.",
+	"Answer with one short sentence that says the newer request is the one that counts.",
+].join(" ");
+
+/**
  * Replace a resume of a completed request with a message that stops the turn.
  *
  * The array keeps a valid ending: the message that replaces the resume is
@@ -164,13 +205,14 @@ export const NEUTRALIZED_RESUME_TEXT = [
 export function neutralizeAutoResume(
 	messages: readonly unknown[] | null | undefined,
 	index: number,
+	text: string = NEUTRALIZED_RESUME_TEXT,
 ): unknown[] {
 	if (!Array.isArray(messages)) return [];
 	if (index < 0 || index >= messages.length) return [...messages];
 	const replaced = [...messages];
 	replaced[index] = {
 		role: "user",
-		content: [{ type: "text", text: NEUTRALIZED_RESUME_TEXT }],
+		content: [{ type: "text", text }],
 		timestamp: Date.now(),
 	};
 	return replaced;

@@ -571,7 +571,7 @@ export class PendingQuestionController {
                 });
             }
         }
-        else if (this.userAnswerCallback) {
+        else if (this.userAnswerCallback && params.notifyUser !== false) {
             this.userAnswerCallback(this.currentQuestion, params.resolution);
         }
         return true;
@@ -688,12 +688,18 @@ export class PendingQuestionController {
      * use the same values and the same resolver. A stale request ID, a
      * duplicate click or a wrong session leaves the running wait untouched.
      */
-    applyApproval(action, requestId, channel) {
+    applyApproval(action, requestId, channel, options) {
         if (action !== "approve" && action !== "reject") {
             return { applied: false, reason: `unknown action '${action}'` };
         }
         const resolution = action === "approve" ? "yes" : "no";
-        const applied = this.resolve({ resolution, by: "user", requestId, channel });
+        const applied = this.resolve({
+            resolution,
+            by: "user",
+            requestId,
+            channel,
+            ...(options?.notifyUser === false && { notifyUser: false }),
+        });
         return applied
             ? { applied: true, resolution }
             : { applied: false, resolution, reason: "stale or duplicate request ID" };

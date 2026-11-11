@@ -140,14 +140,18 @@ export class NotificationCenter {
 
 	/**
 	 * Track a new pending approval request
+	 *
+	 * The key is the canonical question id: the buttons of the notification
+	 * carry it, and it is what a callback looks the approval up with. A
+	 * notification without a question id is keyed by its job id.
 	 */
 	trackPendingApproval(
-		jobId: string,
+		questionId: string,
 		event: NotificationEvent,
 		context: NotificationContext,
 	): void {
-		this.pendingApprovals.set(jobId, {
-			jobId,
+		this.pendingApprovals.set(questionId, {
+			jobId: context.jobId,
 			event,
 			context,
 			createdAt: new Date(),
@@ -160,10 +164,10 @@ export class NotificationCenter {
 	 * @returns true if the request was found and resolved, false otherwise
 	 */
 	resolvePendingApproval(
-		jobId: string,
+		questionId: string,
 		result: "approved" | "rejected",
 	): boolean {
-		const pending = this.pendingApprovals.get(jobId);
+		const pending = this.pendingApprovals.get(questionId);
 		if (!pending || pending.resolved) {
 			return false;
 		}
@@ -175,15 +179,15 @@ export class NotificationCenter {
 	/**
 	 * Get a pending approval request
 	 */
-	getPendingApproval(jobId: string): PendingApproval | undefined {
-		return this.pendingApprovals.get(jobId);
+	getPendingApproval(questionId: string): PendingApproval | undefined {
+		return this.pendingApprovals.get(questionId);
 	}
 
 	/**
 	 * Check if a pending approval exists and is unresolved
 	 */
-	isPendingApproval(jobId: string): boolean {
-		const pending = this.pendingApprovals.get(jobId);
+	isPendingApproval(questionId: string): boolean {
+		const pending = this.pendingApprovals.get(questionId);
 		return !!pending && !pending.resolved;
 	}
 
@@ -605,6 +609,11 @@ export class NotificationCenter {
 						jobId: context.jobId,
 						...(context.questionId && { questionId: context.questionId }),
 						...(context.questionKind && { questionKind: context.questionKind }),
+						// The shared detail format renders the named issues
+						// and the deadline of a scope proposal: LINE shows the
+						// same facts as every other channel.
+						...(context.scopeIds && { scopeIds: context.scopeIds }),
+						...(context.scopeDeadline && { scopeDeadline: context.scopeDeadline }),
 						_actionButtons: buttons,
 						...options?.additionalDetails,
 					},

@@ -55,13 +55,18 @@ test("the completion of a request proposes the backlog", () => {
 });
 
 test("the completion of the request triggers the proposal", () => {
-	const region = around('await proposeScopeExpansion();', 900, 200);
+	const region = around('await proposeScopeExpansion();', 2400, 200);
 	assert.ok(region, "the completion triggers the proposal");
 	assert.match(region, /ReadyForClient/, "the completion is reported first");
+	assert.match(
+		region,
+		/const alreadyNotified = _completedNotifiedFor === completionKey;/,
+		"the proposal does not ride on the notification of the completion",
+	);
 });
 
 test("the answer of a channel reaches the proposal", () => {
-	const region = around("function applyChannelApproval(", 0, 3200);
+	const region = around("function applyChannelApproval(", 0, 4200);
 	assert.ok(region, "the channel approval is applied");
 	assert.match(
 		region,
@@ -72,6 +77,21 @@ test("the answer of a channel reaches the proposal", () => {
 		region,
 		/answerByQuestion\(requestId, outcome,/,
 		"the answer reaches the proposal",
+	);
+	assert.match(
+		region,
+		/notifyUser: false/,
+		"the answer of a proposal never becomes an answer of the request",
+	);
+	const proposalAt = region.indexOf("proposalForQuestion(requestId)");
+	const approvalAt = region.indexOf("controller.applyApproval(action, requestId, channel");
+	assert.ok(
+		proposalAt !== -1 && approvalAt !== -1,
+		"the proposal is recognized and the question is resolved",
+	);
+	assert.ok(
+		proposalAt < approvalAt,
+		"the proposal is recognized before the shared question is resolved",
 	);
 });
 

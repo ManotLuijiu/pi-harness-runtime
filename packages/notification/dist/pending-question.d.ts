@@ -303,6 +303,15 @@ export declare class PendingQuestionController {
         requestId?: string;
         /** The channel a human answer came from. */
         channel?: ResolutionChannel;
+        /**
+         * Notify the callback of the user answer.
+         *
+         * A question that is not a question of the work - a proposal of the
+         * backlog, for example - is answered by the human without becoming an
+         * answer of the request: the callback would clear the wait of the
+         * request and steer an answer into the conversation.
+         */
+        notifyUser?: boolean;
     }): boolean;
     /**
      * Resolve a question with an autonomous Jev decision.
@@ -338,7 +347,17 @@ export declare class PendingQuestionController {
      * use the same values and the same resolver. A stale request ID, a
      * duplicate click or a wrong session leaves the running wait untouched.
      */
-    applyApproval(action: string, requestId: string, channel: ResolutionChannel): {
+    applyApproval(action: string, requestId: string, channel: ResolutionChannel, options?: {
+        /**
+         * Notify the callback of the user answer.
+         *
+         * A question that is not a question of the work of the request - a
+         * proposal of the backlog - is answered without an answer of the
+         * request: the callback would clear the wait of the request and steer
+         * an answer into the conversation.
+         */
+        notifyUser?: boolean;
+    }): {
         applied: boolean;
         resolution?: "yes" | "no";
         reason?: string;
