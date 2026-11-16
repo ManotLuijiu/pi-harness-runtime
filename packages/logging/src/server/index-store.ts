@@ -61,7 +61,14 @@ export interface LogQueryResult {
 	hasMore: boolean;
 	/** Number of day files that were read. */
 	scannedFiles: number;
-	/** True when the scan hit its day budget. */
+	/**
+	 * True when the scan hit its day budget.
+	 *
+	 * The budget is hit when the range of the query is longer than the
+	 * window, and when the caller asked for everything the store has while
+	 * the store holds days that the window does not reach. A truncated
+	 * result is complete for the window and incomplete for the store.
+	 */
 	truncated: boolean;
 }
 
@@ -73,6 +80,14 @@ export interface LogIndexStoreOptions {
 	defaultLimit?: number;
 	/** Hard maximum of entries per page. */
 	maxLimit?: number;
+	/**
+	 * The clock of the scan window.
+	 *
+	 * The window of a query ends at "now", so the clock decides which days
+	 * a query can reach. It is injected, so a test pins the window instead
+	 * of waiting for the wall clock to drift away from the fixtures.
+	 */
+	now?: () => number;
 }
 
 function toIsoDay(value: Date): string {
@@ -96,12 +111,14 @@ export class LogIndexStore {
 	private readonly maxScanDays: number;
 	private readonly defaultLimit: number;
 	private readonly maxLimit: number;
+	private readonly now: () => number;
 
 	constructor(options: LogIndexStoreOptions) {
 		this.dir = options.dir;
 		this.maxScanDays = Math.min(options.maxScanDays ?? 7, 31);
 		this.defaultLimit = options.defaultLimit ?? 100;
 		this.maxLimit = options.maxLimit ?? 500;
+		this.now = options.now ?? Date.now;
 	}
 
 	/**
@@ -157,6 +174,13 @@ export class LogIndexStore {
 		const matches: LogIndexEntry[] = [];
 		let scannedFiles = 0;
 		let truncated = days.truncated;
+		if (!truncated && !params.since && !params.until && days.days.length > 0) {
+			// The caller asked for everything the store has, and the store
+			// holds days that the window of the query does not reach. The
+			// result is complete for the window and incomplete for the
+			// store, and the caller has to know that.
+			truncated = this.holdsOlderDays(dir, days.days[0]);
+		}
 
 		for (const day of days.days) {
 			const path = join(dir, `${day}.ndjson`);
@@ -219,8 +243,22 @@ export class LogIndexStore {
 		return true;
 	}
 
+	/** Does the tenant hold a day that is older than the scanned window? */
+	private holdsOlderDays(dir: string, oldestScannedDay: string): boolean {
+		let names: string[];
+		try {
+			names = readdirSync(dir);
+		} catch {
+			return false;
+		}
+		return names.some((name) => {
+			const day = name.replace(/\.ndjson$/, "");
+			return /^\d{4}-\d{2}-\d{2}$/.test(day) && day < oldestScannedDay;
+		});
+	}
+
 	private dayRange(params: LogQueryParams): { days: string[]; truncated: boolean } {
-		const now = new Date();
+		const now = new Date(this.now());
 		const until = params.until ? new Date(params.until) : now;
 		// The budget counts the scanned days, so the default window covers
 		// exactly `maxScanDays` days including the day of `until`.

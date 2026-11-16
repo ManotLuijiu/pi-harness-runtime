@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/codex-watcher",
-  "version": "1.1.511",
+  "version": "1.1.512",
   "description": "Watches Codex CLI sessions and emits visible messages for PING-PONG monitoring",
   "type": "module",
   "main": "./dist/src/index.js",

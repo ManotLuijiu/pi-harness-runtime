@@ -35,6 +35,16 @@ afterEach(() => {
 
 const TOKEN = "install-token-1";
 
+/**
+ * The clock of the query window.
+ *
+ * The window of a query ends at "now", so a test that does not pin the
+ * clock rots: the fixture of the day 2026-10-24 leaves the window of seven
+ * days as soon as the wall clock moves on. The clock is pinned to the day
+ * of the fixtures, so the window and the fixtures always agree.
+ */
+const NOW = Date.parse("2026-10-24T09:00:00.000Z");
+
 function writeCredentials(dir: string, entries: unknown[]): string {
 	const path = join(dir, "log-ingest-credentials.json");
 	writeFileSync(path, JSON.stringify({ credentials: entries }));
@@ -53,14 +63,19 @@ function credentialEntry(overrides: Record<string, unknown> = {}): Record<string
 	};
 }
 
-function buildService(options: { credentials?: LogCredentialStore } = {}): {
+function buildService(
+	options: { credentials?: LogCredentialStore; now?: () => number } = {},
+): {
 	service: LogIngestService;
 	outbox: LogOutbox;
 	index: LogIndexStore;
 } {
 	const dir = tempDir();
 	const outbox = new LogOutbox({ dir: join(dir, "outbox") });
-	const index = new LogIndexStore({ dir: join(dir, "index") });
+	const index = new LogIndexStore({
+		dir: join(dir, "index"),
+		now: options.now ?? (() => NOW),
+	});
 	const credentials =
 		options.credentials ??
 		LogCredentialStore.load({
@@ -396,6 +411,49 @@ describe("query service", () => {
 
 		const second = service.query({ limit: 1, cursor: firstBody.nextCursor }, TOKEN);
 		expect((second.body as { entries: unknown[] }).entries).toHaveLength(1);
+	});
+
+	test("a record outside the window of the query is not returned", () => {
+		const { service } = buildService({ now: () => NOW + 30 * 86_400_000 });
+		service.ingest(batch(), TOKEN);
+
+		const result = service.query({}, TOKEN);
+
+		expect((result.body as { entries: unknown[] }).entries).toHaveLength(0);
+	});
+
+	test("an explicit range reaches a record outside the default window", () => {
+		const { service } = buildService({ now: () => NOW + 30 * 86_400_000 });
+		service.ingest(batch(), TOKEN);
+
+		const result = service.query(
+			{ since: "2026-10-22T00:00:00.000Z", until: "2026-10-25T00:00:00.000Z" },
+			TOKEN,
+		);
+
+		expect((result.body as { entries: unknown[] }).entries).toHaveLength(1);
+	});
+
+	test("reports the days that the store holds outside the window", () => {
+		const { service } = buildService();
+		service.ingest(batch(), TOKEN);
+		service.ingest(
+			batch({ batchId: "batch-old", sentAt: "2026-10-10T09:00:00.000Z" }),
+			TOKEN,
+		);
+
+		const result = service.query({}, TOKEN);
+
+		expect((result.body as { truncated: boolean }).truncated).toBe(true);
+	});
+
+	test("does not report a truncation when the store holds nothing older", () => {
+		const { service } = buildService();
+		service.ingest(batch(), TOKEN);
+
+		const result = service.query({}, TOKEN);
+
+		expect((result.body as { truncated: boolean }).truncated).toBe(false);
 	});
 
 	test("refuses a query without the read scope", () => {

@@ -17,7 +17,7 @@
  * tenant of the authenticated caller, and the tenant of the request body is
  * never used.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeSegment } from "./outbox.js";
 function toIsoDay(value) {
@@ -39,11 +39,13 @@ export class LogIndexStore {
     maxScanDays;
     defaultLimit;
     maxLimit;
+    now;
     constructor(options) {
         this.dir = options.dir;
         this.maxScanDays = Math.min(options.maxScanDays ?? 7, 31);
         this.defaultLimit = options.defaultLimit ?? 100;
         this.maxLimit = options.maxLimit ?? 500;
+        this.now = options.now ?? Date.now;
     }
     /**
      * Index the metadata of a batch.
@@ -99,6 +101,13 @@ export class LogIndexStore {
         const matches = [];
         let scannedFiles = 0;
         let truncated = days.truncated;
+        if (!truncated && !params.since && !params.until && days.days.length > 0) {
+            // The caller asked for everything the store has, and the store
+            // holds days that the window of the query does not reach. The
+            // result is complete for the window and incomplete for the
+            // store, and the caller has to know that.
+            truncated = this.holdsOlderDays(dir, days.days[0]);
+        }
         for (const day of days.days) {
             const path = join(dir, `${day}.ndjson`);
             if (!existsSync(path))
@@ -167,8 +176,22 @@ export class LogIndexStore {
             return false;
         return true;
     }
+    /** Does the tenant hold a day that is older than the scanned window? */
+    holdsOlderDays(dir, oldestScannedDay) {
+        let names;
+        try {
+            names = readdirSync(dir);
+        }
+        catch {
+            return false;
+        }
+        return names.some((name) => {
+            const day = name.replace(/\.ndjson$/, "");
+            return /^\d{4}-\d{2}-\d{2}$/.test(day) && day < oldestScannedDay;
+        });
+    }
     dayRange(params) {
-        const now = new Date();
+        const now = new Date(this.now());
         const until = params.until ? new Date(params.until) : now;
         // The budget counts the scanned days, so the default window covers
         // exactly `maxScanDays` days including the day of `until`.
