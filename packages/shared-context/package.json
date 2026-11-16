@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/shared-context",
-  "version": "1.1.511",
+  "version": "1.1.512",
   "description": "pi-harness-runtime — shared-context",
   "type": "module",
   "main": "./dist/index.js",
