@@ -28,6 +28,164 @@ export function hasExplicitAuthorizationWording(text) {
     return EXPLICIT_AUTHORIZATION_PATTERNS.some((pattern) => pattern.test(text));
 }
 /**
+ * The stem of a permission request.
+ *
+ * "May I …?" asks the human for a permission. The question is an approval
+ * question: the agent proposes an action and waits for a yes or a no.
+ */
+const PERMISSION_REQUEST = /^may\s+i\b/i;
+/**
+ * The verbs that name a deletion.
+ */
+const DELETION_VERBS = new Set(["delete", "remove", "rm", "unlink"]);
+/**
+ * The words a narrowly scoped deletion of a temporary path may carry.
+ *
+ * Every other word is a reason to ask the human: the harness refuses only a
+ * deletion that it can read without doubt.
+ */
+const TEMPORARY_DELETION_FILLERS = new Set([
+    "a",
+    "all",
+    "an",
+    "and",
+    "any",
+    "cache",
+    "dir",
+    "directory",
+    "file",
+    "files",
+    "folder",
+    "for",
+    "free",
+    "from",
+    "in",
+    "into",
+    "it",
+    "its",
+    "leftover",
+    "leftovers",
+    "log",
+    "logs",
+    "me",
+    "my",
+    "of",
+    "old",
+    "or",
+    "our",
+    "please",
+    "space",
+    "stale",
+    "temp",
+    "temporary",
+    "the",
+    "these",
+    "this",
+    "those",
+    "tmp",
+    "under",
+    "us",
+    "we",
+    "you",
+    "your",
+]);
+/**
+ * The words that name a serious operation.
+ *
+ * A question that names one of them waits for the human: the harness
+ * refuses the deletion of a temporary file, and a credential, a production
+ * path or a payment is never a temporary file.
+ */
+const SERIOUS_OPERATION = /\b(?:credential|credentials|secret|secrets|token|tokens|password|passwd|api[- _]?key|private[- _]?key|id_rsa|\.pem|\.env|\.ssh|production|prod|staging|database|postgres|mysql|sqlite|customer|customers|payment|payments|invoice|invoices|billing|refund|charge|money|deploy|deployment|publish|release|merge|push|install|upgrade|migrat\w*|rollback|curl|wget|https?|email|slack|webhook|systemctl|docker|kubectl|sudo|ssh)\b/i;
+/**
+ * The reason codes of the classifier of a temporary deletion.
+ */
+export const TEMPORARY_DELETION_REASONS = {
+    /** The question does not ask for a permission. */
+    notAPermissionRequest: "not-a-permission-request",
+    /** The question does not ask for a deletion. */
+    notADeletion: "not-a-deletion",
+    /** The question reserves the decision for the human. */
+    explicitAuthorization: "explicit-authorization",
+    /** The question names a serious operation. */
+    seriousOperation: "serious-operation",
+    /** The question names no path under the temporary directory. */
+    noTemporaryPath: "no-temporary-path",
+    /** The question names a path outside the temporary directory. */
+    pathOutsideTemporary: "path-outside-temporary-directory",
+    /** The question names an operation the harness does not read. */
+    unknownOperation: "unknown-operation",
+};
+/**
+ * Does the token look like a path?
+ *
+ * A relative path without a root ("tmp/build") is not a path of the
+ * temporary directory of the machine, so it does not count.
+ */
+function isPathLike(token) {
+    return /^[~$./]/.test(token);
+}
+/**
+ * Classify a narrowly scoped deletion of a temporary path.
+ *
+ * The harness refuses the deletion of a temporary path on its own: the
+ * answer is always "No", so neither the judge nor the human is asked. The
+ * classifier is deliberately narrow:
+ *
+ * - the question asks for a permission ("May I …?") and for a deletion,
+ * - it names at least one path under the temporary directory,
+ * - it names no other path, and
+ * - every other word is a filler word.
+ *
+ * A cleanup that is ambiguous ("clean up /tmp"), a path outside the
+ * temporary directory, a mixed operation and an explicit request for an
+ * authorization all wait for the human.
+ */
+export function classifyTemporaryDeletionRequest(questionText) {
+    const text = (questionText ?? "").trim();
+    if (!PERMISSION_REQUEST.test(text)) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.notAPermissionRequest };
+    }
+    // An explicit authorization is reserved for the human: the harness does
+    // not answer in the place of the human.
+    if (hasExplicitAuthorizationWording(text)) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.explicitAuthorization };
+    }
+    // A serious operation waits for the human, even when it happens to
+    // name a temporary path.
+    if (SERIOUS_OPERATION.test(text)) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.seriousOperation };
+    }
+    const tokens = text
+        .replace(PERMISSION_REQUEST, "")
+        .trim()
+        .split(/\s+/)
+        .map((token) => token.replace(/^[('"`]+/, "").replace(/[.,;:!?)"'`]+$/, ""))
+        .filter((token) => token.length > 0);
+    if (tokens.length === 0 || !DELETION_VERBS.has(tokens[0].toLowerCase())) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.notADeletion };
+    }
+    const paths = tokens.filter((token) => isPathLike(token));
+    const temporary = paths.filter((token) => token.startsWith("/tmp/") && token.length > "/tmp/".length);
+    if (temporary.length === 0) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.noTemporaryPath };
+    }
+    if (paths.some((token) => !token.startsWith("/tmp/"))) {
+        return { applies: false, reason: TEMPORARY_DELETION_REASONS.pathOutsideTemporary };
+    }
+    // Every other word must be a filler: a word that names another
+    // operation is a reason to ask the human.
+    for (const token of tokens.slice(1)) {
+        if (isPathLike(token))
+            continue;
+        const word = token.toLowerCase();
+        if (!TEMPORARY_DELETION_FILLERS.has(word)) {
+            return { applies: false, reason: TEMPORARY_DELETION_REASONS.unknownOperation };
+        }
+    }
+    return { applies: true, reason: "temporary-path-deletion" };
+}
+/**
  * The typed ask of a question kind.
  */
 export function askTypeForKind(kind) {
@@ -79,6 +237,9 @@ const APPROVAL_STEMS = [
     /\bshould we\b/i,
     /\bdo you want me to\b/i,
     /\bcan i (?:start|proceed|add|implement)\b/i,
+    // "May I …?" asks for a permission. It is an approval question: the
+    // agent proposes an action and waits for a yes or a no.
+    /\bmay i\b/i,
 ];
 /**
  * The stem of a question: the part that carries no alternative.
@@ -245,7 +406,15 @@ export class PendingQuestionController {
             // Look backwards for sentence start
             for (let i = questionIndex - 1; i >= searchFrom; i--) {
                 const char = text[i];
-                if (char === '.' || char === '!' || char === '\n') {
+                if (char === '!' || char === '\n') {
+                    sentenceStart = i + 1;
+                    break;
+                }
+                // A dot ends a sentence only when a space follows it: the
+                // dot of a file name ("/tmp/pi-harness.log") belongs to the
+                // name and not to the end of a sentence.
+                if (char === '.' &&
+                    (i + 1 >= text.length || isSpace(text[i + 1]))) {
                     sentenceStart = i + 1;
                     break;
                 }
@@ -703,6 +872,47 @@ export class PendingQuestionController {
         return applied
             ? { applied: true, resolution }
             : { applied: false, resolution, reason: "stale or duplicate request ID" };
+    }
+    /**
+     * Close the question with a local decision of the harness.
+     *
+     * A local decision is not an answer of the human and not a decision of
+     * the judge: nobody was asked and nobody answered. The question is closed
+     * with the resolution and with the reason code of the local rule, and
+     * neither callback is notified - the caller decides what the agent is
+     * told.
+     *
+     * The guards of the other resolutions hold: a stale request ID, a
+     * question that was answered already and a question that was closed are
+     * refused.
+     *
+     * @returns true when the question was closed, false when it was stale.
+     */
+    resolveLocally(requestId, resolution, reason) {
+        if (!this.currentQuestion) {
+            logWarn("[PendingQuestion]", "No question to close - no pending question");
+            return false;
+        }
+        if (this.currentQuestion.requestId !== requestId) {
+            logWarn("[PendingQuestion]", `Local decision for an unknown request: ${requestId} (current=${this.currentQuestion.requestId})`);
+            return false;
+        }
+        if (this.currentQuestion.state === "resolved") {
+            logWarn("[PendingQuestion]", `Question already resolved as ${this.currentQuestion.resolution} - local decision ignored`);
+            return false;
+        }
+        if (this.currentQuestion.state === "expired" ||
+            this.currentQuestion.state === "cancelled") {
+            logWarn("[PendingQuestion]", `Question is ${this.currentQuestion.state} - local decision ignored`);
+            return false;
+        }
+        this.currentQuestion.state = "resolved";
+        this.currentQuestion.resolution = resolution;
+        this.currentQuestion.localDecision = resolution;
+        this.currentQuestion.closedReason = reason;
+        this.currentQuestion.resolvedAt = new Date();
+        logWarn("[PendingQuestion]", `Closed question ${this.currentQuestion.requestId} with the local decision ${resolution} (${reason})`);
+        return true;
     }
     /**
      * Is the request ID still actionable?

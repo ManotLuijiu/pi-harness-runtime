@@ -10,7 +10,7 @@
 import { JevJudge } from "./index.js";
 import { logError } from "./file-logger.js";
 import { buildChoiceDecisionContext, describeChoiceOption, renderChoiceExcerpt, MAX_CHOICE_OPTIONS, } from "./decision-context.js";
-import { classifyQuestionRisk } from "./question-risk.js";
+import { classifyQuestionRisk, isPermissionRequest } from "./question-risk.js";
 /** How many task titles reach the evaluation. */
 export const MAX_LISTED_TASKS = 10;
 /** How much of the question text reaches the evaluation. */
@@ -95,6 +95,16 @@ export function applyDecisionPolicy(proposed, context, options) {
                 outcome: "wait",
                 appliedRule: "clarification-never-approved",
                 reason: "A clarification asks which option is meant. Guessing it would decide for the user.",
+            };
+        }
+        // A permission request ("May I …?") asks the human for a permission.
+        // The harness never grants a permission on its own: the decision waits
+        // for the human, exactly like a clarification.
+        if (question && isPermissionRequest(question.text)) {
+            return {
+                outcome: "wait",
+                appliedRule: "permission-request-never-approved",
+                reason: "A permission request waits for the human: the harness never grants a permission on its own.",
             };
         }
         // A choice is decidable, but only with a concrete answer: the decision

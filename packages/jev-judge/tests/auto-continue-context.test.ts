@@ -140,6 +140,28 @@ describe("decision policy", () => {
 		expect(result.appliedRule).toBe("clarification-never-approved");
 	});
 
+	it("never approves a permission request", () => {
+		// "May I …?" asks the human for a permission. The harness never
+		// grants a permission on its own.
+		const result = applyDecisionPolicy(
+			"approve",
+			context({
+				question: {
+					requestId: "q-1",
+					text: "May I apply the migration?",
+					kind: "approval",
+					requiresExplicitAuthorization: false,
+					destructive: false,
+					reversible: true,
+				},
+			}),
+			{ confidence: 0.99 },
+		);
+
+		expect(result.outcome).toBe("wait");
+		expect(result.appliedRule).toBe("permission-request-never-approved");
+	});
+
 	it("approves a benign approval question so the timeout can work", () => {
 		// The timeout exists for routine, reversible work: an agent that
 		// proposes work is not a hard authorization block.
