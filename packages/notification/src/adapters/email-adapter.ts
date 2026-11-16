@@ -115,6 +115,7 @@ export class EmailAdapter extends BaseChannelAdapter {
 			TaskFailed: "[❌]",
 			QuotaPaused: "[⏸]",
 			QuotaLowRemaining: "[⏳]",
+			QuotaWeeklyExhausted: "[📅]",
 			ResumeScheduled: "[▶]",
 			ContextCompacted: "[📦]",
 			OutputLimitContinued: "[🔄]",

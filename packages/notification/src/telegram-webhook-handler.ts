@@ -30,6 +30,20 @@ export const CallbackActions = {
 	 * splitting on "_", so an action with an underscore would be cut in two.
 	 */
 	TOOLING_PREFERENCE: "biome",
+	/**
+	 * The count down to the reset of an empty weekly allowance.
+	 *
+	 * The action must be a single token: the callback data is parsed by
+	 * splitting on "_", so an action with an underscore would be cut in
+	 * two.
+	 */
+	WEEK_COUNTDOWN: "weekcountdown",
+	/**
+	 * The human deals with the account itself.
+	 *
+	 * The action must be a single token, like every other action here.
+	 */
+	WEEK_MANUAL: "weekmanual",
 	/** Custom action prefix */
 	CUSTOM: "custom",
 } as const;

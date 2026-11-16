@@ -241,6 +241,10 @@ session ends, so the rule of the decline is a rule of the runtime.
 | `test/pending-question-state.test.mjs` | A refusal during the countdown pauses the work. |
 | `test/pending-question-state.test.mjs` | A negative statement does not pause the work. |
 | `packages/jev-judge/tests/question-risk.test.ts` | The action of the question is assessed on its own text. |
+| `packages/notification/test/temporary-deletion.test.ts` | The deletion of a temporary path is refused; every other question waits for the human. |
+| `packages/notification/test/temporary-deletion.test.ts` | The refusal closes the question with "No" and nobody is notified. |
+| `packages/jev-judge/tests/auto-continue-context.test.ts` | A permission request is never approved by the judge. |
+| `test/local-refusal.test.mjs` | The refusal asks neither the judge nor the human, and it pauses the unfinished work. |
 | `test/jev-request-scope.test.mjs` | The todos of a finished request do not complete the next request. |
 | `test/jev-request-scope.test.mjs` | A todo of the request is unfinished, and complete when it is done. |
 | `test/jev-request-scope.test.mjs` | The clarification of a new request stays registered and blocks the work. |
@@ -252,3 +256,38 @@ A decision belongs to the question it was evaluated for.
 
 The identity travels with the result, the controller checks it, and the
 runtime applies nothing without it.
+
+## The refusal of a temporary path: a local decision, not a wait
+
+Not every question of the agent needs a decision of the judge or of the
+human. The deletion of a file under `/tmp` is a chore of the human, and the
+harness refuses it on its own.
+
+`packages/notification/src/pending-question.ts` holds the classifier
+(`classifyTemporaryDeletionRequest`). It is narrow on purpose:
+
+- the question asks for a permission ("May I ...?") and for a deletion,
+- it names at least one path under the temporary directory,
+- it names no other path, and
+- every other word is a filler word.
+
+An ambiguous cleanup ("clean up /tmp"), a path outside the temporary
+directory, the temporary directory itself, a mixed operation, a serious
+operation (a credential, a production path, a payment) and an explicit
+request for an authorization all wait for the human.
+
+The refusal closes the question with the answer "No"
+(`PendingQuestionController.resolveLocally`). It is a decision of the
+harness: nobody was asked and nobody answered, so `resolvedBy` stays unset
+and `localDecision` names the decision. The judge is never asked, no human
+is notified, and the unfinished work pauses - a refusal never continues the
+work on its own.
+
+The agent is told the answer with a marked message of the harness
+(`harness/local-refusal-marker.ts`), so the transcript shows a decision of
+the harness and not an answer of the human.
+
+"May I ...?" is an approval question now
+(`APPROVAL_STEMS`), and the decision policy never grants a permission on
+its own: `applyDecisionPolicy` returns `wait` with the rule
+`permission-request-never-approved`, exactly like a clarification.

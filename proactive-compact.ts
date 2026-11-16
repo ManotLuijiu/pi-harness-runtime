@@ -146,6 +146,27 @@ export function isProviderRetryFailedReport(text: string): boolean {
 }
 
 /**
+ * Whether the text is the report of an overload of the provider.
+ *
+ * The compaction is a request of its own, and it fails with the same
+ * overload as a turn. The text of such a failure names the number of the
+ * status (529) or one of the words that name an overload.
+ *
+ * The predicate reads the text only: the report of a failed compaction has
+ * no role and no stop reason, so the predicates of the assistant messages
+ * cannot read it.
+ */
+export function isProviderOverloadText(text: string | undefined | null): boolean {
+	if (typeof text !== "string" || text.trim().length === 0) {
+		return false;
+	}
+	if (/\b529\b/.test(text)) return true;
+	return /overloaded_error|peak-hour surge|temporarily busy|server is temporarily busy|try again shortly/i.test(
+		text,
+	);
+}
+
+/**
  * Legacy check - returns true for BOTH fresh overloads AND "Retry failed" reports
  * @deprecated Use isFreshProviderOverloadError for retry logic
  */

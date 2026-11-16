@@ -3,7 +3,15 @@
  *
  * Type definitions for notification events, channels, and payloads.
  */
-export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "QuotaLowRemaining" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
+export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | "QuotaPaused" | "QuotaLowRemaining"
+/**
+ * The weekly allowance of a provider is empty.
+ *
+ * It is its own event: the work stays paused until the human decides
+ * whether the harness counts down to the reset of the week or the human
+ * deals with the account itself.
+ */
+ | "QuotaWeeklyExhausted" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;
