@@ -104,6 +104,10 @@ import {
 	NEUTRALIZED_STALE_RESUME_TEXT,
 } from "./harness/auto-resume-marker.ts";
 import {
+	buildLocalRefusalMessage,
+	LOCAL_REFUSAL_ANSWER,
+} from "./harness/local-refusal-marker.ts";
+import {
 	ScopeExpansionRuntime,
 	type HumanScopeOutcome,
 } from "./harness/scope-expansion-runtime.ts";
@@ -1508,7 +1512,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		const jevProviders = resolveJevProviders({ keysDir });
 
 		// Create pending question controller - works independently of Jev
-		const { createPendingQuestionController } = await import("./packages/notification/dist/index.js");
+		const { createPendingQuestionController, classifyTemporaryDeletionRequest } = await import("./packages/notification/dist/index.js");
 		const pqController = createPendingQuestionController();
 		sharedState.pqController = pqController;
 
@@ -2211,6 +2215,84 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			pi.sendUserMessage(message, { deliverAs: "steer" });
 		});
 
+		/**
+		 * Refuse a narrowly scoped deletion of a temporary path.
+		 *
+		 * The refusal is a local decision of the harness: the question is
+		 * closed with the answer "No", the judge is never asked, and no
+		 * human is interrupted. The agent is told the answer with a marked
+		 * message of the harness, so the transcript shows a decision of the
+		 * harness and not an answer of the human.
+		 *
+		 * A refusal is not a continuation: the unfinished work waits for an
+		 * explicit resume of the human, exactly like the refusal of a
+		 * human that answered "not yet".
+		 */
+		function refuseTemporaryDeletion(
+			result: {
+				questionText?: string;
+				askType?:
+					| "approval"
+					| "choice"
+					| "clarification"
+					| "explicit_authorization"
+					| "routine";
+				alternatives?: string[];
+				contextText?: string;
+			},
+			questionKind:
+				| "routine"
+				| "approval"
+				| "choice"
+				| "clarification"
+				| "explicit",
+		): void {
+			const controller = sharedState.pqController;
+			const question = controller?.createQuestion?.({
+				text: result.questionText ?? "",
+				sessionId: _sessionId,
+				workspacePath: _piSessionCwd || "/",
+				kind: questionKind,
+				askType: result.askType,
+				alternatives: result.alternatives,
+				contextText: result.contextText,
+				relevance: "temporary-path-deletion",
+			});
+			if (!question) {
+				logToFile("[PendingQuestion]", "The local refusal has no question to close");
+				return;
+			}
+			const closed = controller?.resolveLocally?.(
+				question.requestId,
+				"no",
+				"temporary-path-deletion-refusal",
+			);
+			if (!closed) {
+				logToFile(
+					"[PendingQuestion]",
+					"The local refusal did not close the question",
+				);
+				return;
+			}
+			// The question is answered, so the wait is over before it began.
+			_lastNotifiedQuestion = result.questionText ?? "";
+			logQuestionTransition(question.requestId, "refused", "temporary-path-deletion");
+			clearWait();
+			updateAutoContinueStatus("IDLE");
+			sharedState.pendingCountdown?.stop();
+			// A refusal never continues the work on its own.
+			(sharedState.todoContinuationController as any)?.explicitPause?.();
+			// The agent is told the answer: it must not delete anything.
+			pi.sendMessage(
+				buildLocalRefusalMessage({
+					content: LOCAL_REFUSAL_ANSWER,
+					reason: "temporary-path-deletion",
+					rule: "temporary-path-deletion-refusal",
+				}),
+				{ deliverAs: "steer", triggerTurn: true },
+			);
+		}
+
 		// Detect when agent asks for continuation
 		pi.on("message_end", async (event) => {
 			const msg = event.message as { role?: string; content?: string | Array<{ type?: string; text?: string }> } | undefined;
@@ -2245,6 +2327,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				
 				// Create question in controller
 				const questionKind = result.kind || "approval";
+				// A narrowly scoped deletion of a temporary path is refused
+				// by the harness itself: the answer is always "No", so
+				// neither the judge nor the human is asked. The deletion of
+				// a temporary file is a chore of the human, not a decision
+				// of the session.
+				const temporaryDeletion = classifyTemporaryDeletionRequest(
+					result.questionText,
+				);
+				if (temporaryDeletion.applies) {
+					logToFile(
+						"[PendingQuestion]",
+						"The question asks for the deletion of a temporary path: it is refused locally",
+					);
+					refuseTemporaryDeletion(result, questionKind);
+					return;
+				}
 				// The risk is about the action that is proposed, not about the
 				// whole message: a message that talks about many things
 				// carries words that have nothing to do with the action that

@@ -102,6 +102,14 @@ export interface PendingQuestion {
     resolution?: "yes" | "no" | "clarification";
     /** Who resolved it */
     resolvedBy?: ResolutionSource;
+    /**
+     * The local decision of the harness.
+     *
+     * A local decision is neither an answer of the human nor a decision of
+     * the judge: nobody was asked and nobody answered. The question is closed
+     * with the resolution, and this field names the decision as a local one.
+     */
+    localDecision?: "no";
     /** The channel a human answer came from. Unset for a Jev resolution. */
     resolvedChannel?: ResolutionChannel;
     /** The Jev outcome, when the decision was autonomous. */
@@ -163,6 +171,51 @@ export interface JevResolution {
  * authorize it.
  */
 export declare function hasExplicitAuthorizationWording(text: string): boolean;
+/**
+ * The reason codes of the classifier of a temporary deletion.
+ */
+export declare const TEMPORARY_DELETION_REASONS: {
+    /** The question does not ask for a permission. */
+    readonly notAPermissionRequest: "not-a-permission-request";
+    /** The question does not ask for a deletion. */
+    readonly notADeletion: "not-a-deletion";
+    /** The question reserves the decision for the human. */
+    readonly explicitAuthorization: "explicit-authorization";
+    /** The question names a serious operation. */
+    readonly seriousOperation: "serious-operation";
+    /** The question names no path under the temporary directory. */
+    readonly noTemporaryPath: "no-temporary-path";
+    /** The question names a path outside the temporary directory. */
+    readonly pathOutsideTemporary: "path-outside-temporary-directory";
+    /** The question names an operation the harness does not read. */
+    readonly unknownOperation: "unknown-operation";
+};
+/**
+ * The verdict of the classifier of a temporary deletion.
+ */
+export interface TemporaryDeletionRequest {
+    /** Does the question ask for the deletion of a path under /tmp? */
+    applies: boolean;
+    /** Why the request does not qualify, when it does not. */
+    reason: string;
+}
+/**
+ * Classify a narrowly scoped deletion of a temporary path.
+ *
+ * The harness refuses the deletion of a temporary path on its own: the
+ * answer is always "No", so neither the judge nor the human is asked. The
+ * classifier is deliberately narrow:
+ *
+ * - the question asks for a permission ("May I …?") and for a deletion,
+ * - it names at least one path under the temporary directory,
+ * - it names no other path, and
+ * - every other word is a filler word.
+ *
+ * A cleanup that is ambiguous ("clean up /tmp"), a path outside the
+ * temporary directory, a mixed operation and an explicit request for an
+ * authorization all wait for the human.
+ */
+export declare function classifyTemporaryDeletionRequest(questionText: string): TemporaryDeletionRequest;
 /**
  * The typed ask of a question kind.
  */
@@ -362,6 +415,22 @@ export declare class PendingQuestionController {
         resolution?: "yes" | "no";
         reason?: string;
     };
+    /**
+     * Close the question with a local decision of the harness.
+     *
+     * A local decision is not an answer of the human and not a decision of
+     * the judge: nobody was asked and nobody answered. The question is closed
+     * with the resolution and with the reason code of the local rule, and
+     * neither callback is notified - the caller decides what the agent is
+     * told.
+     *
+     * The guards of the other resolutions hold: a stale request ID, a
+     * question that was answered already and a question that was closed are
+     * refused.
+     *
+     * @returns true when the question was closed, false when it was stale.
+     */
+    resolveLocally(requestId: string, resolution: "no", reason: string): boolean;
     /**
      * Is the request ID still actionable?
      *

@@ -246,6 +246,23 @@ function classifyActionText(text, signals) {
     };
 }
 /**
+ * The stem of a permission request.
+ *
+ * "May I …?" asks the human for a permission. The stem is anchored: a
+ * question that only mentions the words is not a permission request.
+ */
+const PERMISSION_REQUEST = /^may\s+i\b/i;
+/**
+ * Is the question a request for a permission?
+ *
+ * A permission request is answered by the human and never by the harness:
+ * the decision policy waits for the human when the judge proposes an
+ * approval.
+ */
+export function isPermissionRequest(text) {
+    return PERMISSION_REQUEST.test((text ?? "").trim());
+}
+/**
  * Derive the risk facts of a pending question.
  *
  * The rules:

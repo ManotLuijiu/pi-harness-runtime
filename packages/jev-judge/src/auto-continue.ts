@@ -18,7 +18,7 @@ import {
   MAX_CHOICE_OPTIONS,
   type ChoiceDecisionContext,
 } from "./decision-context.js";
-import { classifyQuestionRisk } from "./question-risk.js";
+import { classifyQuestionRisk, isPermissionRequest } from "./question-risk.js";
 
 /**
  * Task tracking state
@@ -250,6 +250,18 @@ export function applyDecisionPolicy(
         appliedRule: "clarification-never-approved",
         reason:
           "A clarification asks which option is meant. Guessing it would decide for the user.",
+      };
+    }
+
+    // A permission request ("May I …?") asks the human for a permission.
+    // The harness never grants a permission on its own: the decision waits
+    // for the human, exactly like a clarification.
+    if (question && isPermissionRequest(question.text)) {
+      return {
+        outcome: "wait",
+        appliedRule: "permission-request-never-approved",
+        reason:
+          "A permission request waits for the human: the harness never grants a permission on its own.",
       };
     }
 

@@ -95,6 +95,14 @@ export declare function extractProposedAction(contextText: string | undefined, q
  */
 export declare function extractQuestionAction(questionText: string | undefined): string | undefined;
 /**
+ * Is the question a request for a permission?
+ *
+ * A permission request is answered by the human and never by the harness:
+ * the decision policy waits for the human when the judge proposes an
+ * approval.
+ */
+export declare function isPermissionRequest(text: string | undefined): boolean;
+/**
  * Derive the risk facts of a pending question.
  *
  * The rules:
