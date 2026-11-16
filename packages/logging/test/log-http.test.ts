@@ -21,6 +21,15 @@ import {
 import { LOG_SCHEMA_VERSION } from "../src/types.js";
 
 const TOKEN = "install-token-1";
+
+/**
+ * The clock of the query window.
+ *
+ * The window ends at "now", so the clock is pinned to the day of the
+ * fixtures: otherwise the fixture of the day 2026-10-24 leaves the window
+ * of seven days as soon as the wall clock moves on.
+ */
+const NOW = Date.parse("2026-10-24T09:00:00.000Z");
 const created: string[] = [];
 const servers: Server[] = [];
 
@@ -81,7 +90,7 @@ async function startServer(options: { configured?: boolean } = {}): Promise<{
 	}
 
 	const outbox = new LogOutbox({ dir: join(dir, "outbox") });
-	const index = new LogIndexStore({ dir: join(dir, "index") });
+	const index = new LogIndexStore({ dir: join(dir, "index"), now: () => NOW });
 	const service = new LogIngestService({
 		credentials: LogCredentialStore.load({
 			path: credentialsPath,

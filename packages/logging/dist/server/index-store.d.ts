@@ -55,7 +55,14 @@ export interface LogQueryResult {
     hasMore: boolean;
     /** Number of day files that were read. */
     scannedFiles: number;
-    /** True when the scan hit its day budget. */
+    /**
+     * True when the scan hit its day budget.
+     *
+     * The budget is hit when the range of the query is longer than the
+     * window, and when the caller asked for everything the store has while
+     * the store holds days that the window does not reach. A truncated
+     * result is complete for the window and incomplete for the store.
+     */
     truncated: boolean;
 }
 export interface LogIndexStoreOptions {
@@ -66,12 +73,21 @@ export interface LogIndexStoreOptions {
     defaultLimit?: number;
     /** Hard maximum of entries per page. */
     maxLimit?: number;
+    /**
+     * The clock of the scan window.
+     *
+     * The window of a query ends at "now", so the clock decides which days
+     * a query can reach. It is injected, so a test pins the window instead
+     * of waiting for the wall clock to drift away from the fixtures.
+     */
+    now?: () => number;
 }
 export declare class LogIndexStore {
     private readonly dir;
     private readonly maxScanDays;
     private readonly defaultLimit;
     private readonly maxLimit;
+    private readonly now;
     constructor(options: LogIndexStoreOptions);
     /**
      * Index the metadata of a batch.
@@ -90,6 +106,8 @@ export declare class LogIndexStore {
      */
     query(params: LogQueryParams): LogQueryResult;
     private matches;
+    /** Does the tenant hold a day that is older than the scanned window? */
+    private holdsOlderDays;
     private dayRange;
 }
 //# sourceMappingURL=index-store.d.ts.map
