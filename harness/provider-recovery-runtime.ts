@@ -36,6 +36,7 @@ import type {
 } from "./provider-recovery.ts";
 import { MAX_RESET_EVIDENCE_AGE_MS, normalizeProviderIdentity } from "./provider-recovery.ts";
 import { QUOTA_RESET_BUFFER_MS } from "./provider-quota-reset.ts";
+import type { WeeklyQuotaExhaustion } from "./weekly-quota-exhaustion.ts";
 
 /**
  * The state of the session, read when a resume would run.
@@ -162,6 +163,24 @@ export interface ProviderRecoveryRuntimeOptions {
 	resetEvidence?: (failure: ProviderFailure) => RecoveryResetEvidence | undefined;
 	/** Fresh evidence that quota is fully consumed, including for generic 2067 errors. */
 	quotaResetEvidence?: (failure: ProviderFailure, provider: string) => RecoveryResetEvidence | undefined;
+	/**
+	 * The evidence of an empty weekly allowance.
+	 *
+	 * The weekly window lasts days: no bounded cycle of retries reaches its
+	 * end, and the work stays paused until the human decides what happens.
+	 * The runtime asks for the evidence before it schedules anything.
+	 */
+	weeklyExhaustionEvidence?: (
+		failure: ProviderFailure,
+		provider: string,
+	) => WeeklyQuotaExhaustion | undefined;
+	/**
+	 * The notification of an empty weekly allowance.
+	 *
+	 * The runtime owns no channel: it hands the evidence to the caller,
+	 * which owns the messages to the user.
+	 */
+	onWeeklyExhaustion?: (exhaustion: WeeklyQuotaExhaustion) => void;
 	/** The number of attempts the cycle allows. */
 	maxAttempts: number;
 	/** The wait of the overload executor, in milliseconds. */
@@ -269,7 +288,7 @@ export class ProviderRecoveryRuntime {
 		}
 
 		if (candidate.overloadEligible) {
-			this.startOverloadResume();
+			this.scheduleOverloadResume();
 			return;
 		}
 		if (!candidate.boundedEligible) {
@@ -378,6 +397,11 @@ export class ProviderRecoveryRuntime {
 	private startRecovery(candidate: ProviderFailureCandidate): void {
 		const { failure, failureKey, provider } = candidate;
 		const sessionId = this.options.context().sessionId;
+		// An empty weekly allowance is not a wait of the cycle: it lasts
+		// days, and the human decides what happens. The check comes before
+		// the ordinary reset, because the ordinary reset would schedule the
+		// work to continue on its own.
+		if (this.blockOnWeeklyExhaustion(candidate, sessionId)) return;
 		// A real quota reset is a different wait from a transient retry.
 		// It remains available even after the four short retries were used.
 		if (this.scheduleQuotaReset(candidate, sessionId)) return;
@@ -414,6 +438,110 @@ export class ProviderRecoveryRuntime {
 		this.log(
 			`Provider recovery unchanged (${outcome.outcome}), attempt ${outcome.attempt}`,
 		);
+	}
+
+	/**
+	 * Block the work because the weekly allowance of the provider is empty.
+	 *
+	 * The weekly window lasts days, so no attempt of the cycle reaches its
+	 * end. The runtime therefore registers the blocked row and hands the
+	 * evidence to the caller, which asks the user what happens. Nothing is
+	 * scheduled: the work continues when the user says so, not before.
+	 *
+	 * The evidence decides, and the evidence has to be fresh. A row of the
+	 * mirror that is hours old describes a week that may already have been
+	 * paid for.
+	 */
+	private blockOnWeeklyExhaustion(
+		candidate: ProviderFailureCandidate,
+		sessionId: string,
+	): boolean {
+		const { failure, provider } = candidate;
+		if (failure.kind !== "usage-exhausted" && failure.kind !== "rate-limit") {
+			return false;
+		}
+		const exhaustion = this.options.weeklyExhaustionEvidence?.(
+			failure,
+			provider,
+		);
+		if (!exhaustion) return false;
+		// Every pending resume of the provider dies: a resume that runs
+		// while the weekly allowance is empty continues work that the
+		// account cannot pay for.
+		this.cancelRecoveryAttempt();
+		this.cancelOverloadResume();
+		this.options.actions.remove(this.options.blockedActionId);
+		this.options.actions.register({
+			id: this.options.blockedActionId,
+			sessionId,
+			owner: "provider",
+			kind: "retry",
+			state: "blocked",
+			provider,
+			...(failure.code ? { code: failure.code } : {}),
+			reason: "weekly quota exhausted; waiting for the user",
+		});
+		this.log(
+			`Provider weekly quota exhausted (${provider}): the work waits for the user`,
+		);
+		this.options.onWeeklyExhaustion?.(exhaustion);
+		return true;
+	}
+
+	/**
+	 * Count down to the reset of an empty weekly allowance.
+	 *
+	 * The human asked for it: the harness waits for the reset of the week
+	 * plus the buffer of the quota service, and continues then. This is the
+	 * only way the work continues after a weekly exhaustion, and the
+	 * silence of the human keeps the work paused.
+	 */
+	scheduleWeeklyReset(resetAt: number, provider?: string): boolean {
+		const sessionId = this.options.context().sessionId;
+		const now = this.now();
+		if (!Number.isFinite(resetAt) || resetAt <= now) return false;
+		const dueAt = resetAt + QUOTA_RESET_BUFFER_MS;
+		this.cancelRecoveryAttempt();
+		this.options.actions.remove(this.options.blockedActionId);
+		this.options.actions.register({
+			id: this.options.recoveryActionId,
+			sessionId,
+			owner: "provider-recovery",
+			kind: "retry",
+			state: "scheduled",
+			dueAt,
+			...(provider ? { provider } : {}),
+			reason: "weekly quota exhausted; waiting for the reset + 10m",
+		});
+		this.log(
+			`Provider weekly quota reset wait until ${new Date(dueAt).toISOString()}`,
+		);
+		const arm = () => {
+			// Node timers longer than roughly 24 days otherwise fire
+			// immediately.
+			this.recoveryTimer = this.setTimer(() => {
+				if (this.now() < dueAt) {
+					arm();
+					return;
+				}
+				this.recoveryTimer = null;
+				this.options.actions.remove(this.options.recoveryActionId);
+				if (
+					!mayDispatchResume({
+						scheduledSessionId: sessionId,
+						current: this.options.context(),
+					}).allowed
+				) {
+					return;
+				}
+				if (provider) {
+					this.options.controller.cancel({ sessionId, provider });
+				}
+				this.dispatchIfOwned(sessionId, "provider-recovery");
+			}, Math.min(2_147_483_647, Math.max(0, dueAt - this.now())));
+		};
+		arm();
+		return true;
 	}
 
 	private scheduleQuotaReset(candidate: ProviderFailureCandidate, sessionId: string): boolean {
@@ -522,15 +650,25 @@ export class ProviderRecoveryRuntime {
 	}
 
 	/**
-	 * Start the timer of the overload resume.
+	 * Schedule the overload resume.
+	 *
+	 * The executor of the overload owns the timer and the budget, so
+	 * every overload shares them: one countdown, one resume, and the same
+	 * limit of attempts. A compaction that fails with the same overload is
+	 * such an overload - it is a request of its own, and it fails with the
+	 * same number - so it comes here too.
+	 *
+	 * The method returns whether a countdown was armed. A refusal - the
+	 * budget is spent, or the user cancelled the delay - is not a silent
+	 * one: the caller reports it.
 	 */
-	private startOverloadResume(): void {
+	scheduleOverloadResume(): boolean {
 		const limit = this.options.overloadMaxAttempts ?? 3;
 		if (this.overloadAttempts >= limit) {
 			this.log(
 				`Provider overload resume not scheduled: ${this.overloadAttempts}/${limit} attempts used`,
 			);
-			return;
+			return false;
 		}
 		this.cancelOverloadResume();
 		this.overloadAttempts += 1;
@@ -551,6 +689,7 @@ export class ProviderRecoveryRuntime {
 			this.options.actions.remove(this.options.overloadActionId);
 			this.dispatchIfOwned(sessionId, "provider-overload");
 		}, delayMs);
+		return true;
 	}
 
 	/**

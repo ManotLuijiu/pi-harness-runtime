@@ -88,6 +88,7 @@ export class NtfyAdapter extends BaseChannelAdapter {
 			TaskFailed: "x",
 			QuotaPaused: "pause_button",
 			QuotaLowRemaining: "hourglass",
+			QuotaWeeklyExhausted: "calendar",
 			ResumeScheduled: "play_button",
 			ContextCompacted: "package",
 			OutputLimitContinued: "repeat",

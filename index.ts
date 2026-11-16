@@ -86,6 +86,19 @@ import {
 } from "./harness/pi-retry-policy.ts";
 import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts";
 import { confirmedQuotaReset } from "./harness/provider-quota-reset.ts";
+import { mergeMirrorRecord } from "./harness/mirror-record-merge.ts";
+import { onOptionalEvent } from "./harness/optional-event.ts";
+import {
+	providerDisplayName,
+	weeklyExhaustionMessage,
+	weeklyQuotaExhausted,
+	type WeeklyQuotaExhaustion,
+} from "./harness/weekly-quota-exhaustion.ts";
+import {
+	buildWeeklyRequestId,
+	WeeklyExhaustionRegistry,
+	type WeeklyDecision,
+} from "./harness/weekly-exhaustion-registry.ts";
 import { resetEpochFromDuration } from "./harness/quota-reset-duration.ts";
 import { QuotaCaptureController } from "./harness/quota-capture.ts";
 import { QuotaLowRemainingTracker } from "./harness/quota-low-remaining.ts";
@@ -177,6 +190,7 @@ import {
 	isProviderRetryFailedReport,
 	shouldQueuePostCompactionResume,
 	shouldTriggerProactiveCompact,
+	isProviderOverloadText,
 } from "./proactive-compact.ts";
 import { aggregateWindows } from "./windows.ts";
 
@@ -496,6 +510,76 @@ const PROVIDER_BLOCKED_ACTION_ID = "provider-blocked";
  * resumes when the user pauses the work.
  */
 let providerRecoveryRuntime: ProviderRecoveryRuntime | null = null;
+
+/**
+ * The decisions of the human about an empty weekly allowance.
+ *
+ * The weekly window of a provider lasts days, and the work stays paused
+ * until the human decides: the harness counts down to the reset of the
+ * week, or the human deals with the account itself. The registry holds the
+ * decisions - the first answer wins - and it never asks the judge.
+ */
+const weeklyExhaustions = new WeeklyExhaustionRegistry();
+
+/**
+ * The decision of the human about the weekly allowance.
+ *
+ * One resolver for every channel: the first answer wins, and the button
+ * of an old message is stale. Only the count down schedules anything -
+ * the human handling the account leaves the work paused.
+ *
+ * The resolver lives at the top level of the extension: the click of
+ * Telegram and the postback of LINE arrive in different places of the
+ * harness, and both of them have to reach the same decision.
+ */
+async function resolveWeeklyDecision(
+	requestId: string,
+	decision: WeeklyDecision,
+	channel: "telegram" | "line",
+): Promise<{ ok: boolean; message: string }> {
+	const claim = weeklyExhaustions.claim(
+		requestId,
+		decision,
+		channel,
+		Date.now(),
+	);
+	if (!claim.ok) {
+		const reason = claim.reason ?? "the decision was refused";
+		logToFile("[pi-harness]", `Weekly decision (${channel}): stale - ${reason}`);
+		return { ok: false, message: `Stale button - ${reason}` };
+	}
+	const record = claim.record;
+	if (!record) {
+		return { ok: false, message: "Stale button - the decision is unknown" };
+	}
+	if (decision === "countdown") {
+		const scheduled =
+			providerRecoveryRuntime?.scheduleWeeklyReset(
+				record.resetAt,
+				record.provider,
+			) ?? false;
+		logToFile(
+			"[pi-harness]",
+			`Weekly decision (${channel}): count down to ${new Date(record.resetAt).toISOString()} (scheduled=${scheduled})`,
+		);
+		return {
+			ok: true,
+			message: scheduled
+				? "Counting down to the reset of the week."
+				: "The reset of the week cannot be scheduled.",
+		};
+	}
+	// The human deals with the account: the work stays paused until the
+	// human says otherwise.
+	logToFile(
+		"[pi-harness]",
+		`Weekly decision (${channel}): the user handles the account, the work stays paused`,
+	);
+	return {
+		ok: true,
+		message: "Understood - the work stays paused until you say otherwise.",
+	};
+}
 
 /**
  * The continuation controller of the todos.
@@ -4262,6 +4346,23 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					}
 					break;
 				}
+				case CallbackActions.WEEK_COUNTDOWN:
+				case CallbackActions.WEEK_MANUAL: {
+					// The decision about the weekly allowance of the provider.
+					// It is the human alone: the judge is never asked, and the
+					// first answer wins.
+					const decision: WeeklyDecision =
+						parsed.action === CallbackActions.WEEK_COUNTDOWN
+							? "countdown"
+							: "manual";
+					const result = await resolveWeeklyDecision(
+						parsed.targetId,
+						decision,
+						"telegram",
+					);
+					await acknowledge(result.message);
+					break;
+				}
 				default:
 					// Check for channel toggle actions
 					if (parsed.action === "toggle_telegram") {
@@ -4786,6 +4887,27 @@ async function initRelayStream(): Promise<void> {
 							? callback.action.slice("biome_".length)
 							: callback.targetId;
 						await resolveToolingPreference(raw, "line", _extensionApi);
+					} else if (
+						callback.action === "weekcountdown" ||
+						callback.action === "weekmanual" ||
+						callback.action.startsWith("weekcountdown_") ||
+						callback.action.startsWith("weekmanual_")
+					) {
+						// The decision about the weekly allowance is the same
+						// decision as in Telegram: one resolver, the first
+						// answer wins. The postback data arrives split into
+						// the action and the request ID, and it may arrive as
+						// one string.
+						const separator = callback.action.indexOf("_");
+						const raw =
+							separator === -1
+								? callback.targetId
+								: callback.action.slice(separator + 1);
+						const decision: WeeklyDecision =
+							callback.action.startsWith("weekcountdown")
+								? "countdown"
+								: "manual";
+						await resolveWeeklyDecision(raw, decision, "line");
 					} else {
 						applyChannelApproval(callback.action, callback.targetId, "line");
 					}
@@ -6201,6 +6323,27 @@ type NcCenter = {
 };
 
 /**
+ * The failure of a compaction.
+ *
+ * The installed core of Pi fires this event. The declaration of the
+ * extension API that the harness compiles against does not name it yet,
+ * so the shape is described here: the fields the harness reads are the
+ * fields of the core.
+ */
+interface SessionCompactFailedEvent {
+	/** What triggered the compaction. */
+	reason: "manual" | "threshold" | "overflow";
+	/** The text of the failure, when it failed for a reason other than an abort. */
+	errorMessage?: string;
+	/** Was the compaction cancelled or aborted? */
+	aborted: boolean;
+	/** Would the aborted turn be retried after the compaction? */
+	willRetry: boolean;
+	/** Did the failing content come from an extension? */
+	fromExtension: boolean;
+}
+
+/**
  * Fire a Telegram notification event. Logs delivery outcomes.
  * Silently skips if Telegram is not configured.
  */
@@ -7408,6 +7551,114 @@ issue is not authorized work of the current request).
 	// and a scheduled resume checks that it still owns the session before it
 	// dispatches. The resume itself goes through the executor below, so
 	// there is no second resume loop.
+	// --- The weekly exhaustion of the quota ------------------------------
+	//
+	// The weekly allowance of a provider lasts days. When it is empty, no
+	// bounded cycle of retries reaches its end, and the work stays paused
+	// until the human decides: the harness counts down to the reset of the
+	// week, or the human deals with the account itself. The judge is never
+	// asked, and the silence of the human keeps the work paused.
+	//
+	// The message carries the whole text: the remaining time of the week
+	// and the state of the work are what the human decides about.
+	async function notifyWeeklyExhaustion(
+		exhaustion: WeeklyQuotaExhaustion,
+	): Promise<void> {
+		const center = _nc?.center as NcCenter | undefined;
+		if (!center || typeof center.notifyWithButtons !== "function") {
+			logToFile(
+				"[pi-harness]",
+				"Weekly quota exhausted: no notification center, the work stays paused",
+			);
+			return;
+		}
+		const now = Date.now();
+		const requestId = buildWeeklyRequestId(
+			exhaustion.provider,
+			exhaustion.resetAt,
+		);
+		const message = weeklyExhaustionMessage({
+			provider: exhaustion.provider,
+			resetAt: exhaustion.resetAt,
+			now,
+		});
+		// A repeated failure of the provider must not send the same
+		// question again: the decision is the same one, and the user
+		// answers it once.
+		const existing = weeklyExhaustions.get(requestId);
+		if (existing?.delivered) {
+			logToFile(
+				"[pi-harness]",
+				"Weekly quota exhausted: the message is already delivered, the work stays paused",
+			);
+			return;
+		}
+		// The decision is registered before the message goes out: a click
+		// that arrives before the delivery is acknowledged still finds it.
+		weeklyExhaustions.register({
+			requestId,
+			provider: exhaustion.provider,
+			resetAt: exhaustion.resetAt,
+			now,
+		});
+		let delivered = false;
+		try {
+			const results = (await center.notifyWithButtons(
+				"QuotaWeeklyExhausted",
+				{
+					jobId: requestId,
+					requirement: message,
+					provider: providerDisplayName(exhaustion.provider),
+					quotaWindow: "weekly",
+					resetAt: new Date(exhaustion.resetAt).toISOString(),
+					remainingPct: exhaustion.remainingPct,
+				},
+				[
+					{
+						text: "Count down week resets",
+						action: "weekcountdown",
+						targetId: requestId,
+					},
+					{
+						text: "I will handle it",
+						action: "weekmanual",
+						targetId: requestId,
+					},
+				],
+			)) as
+				| Array<{ success: boolean; channel: string; error?: string }>
+				| undefined;
+			delivered =
+				Array.isArray(results) &&
+				results.some((result) => result?.success === true);
+			for (const result of results ?? []) {
+				logToFile(
+					"[pi-harness]",
+					`Weekly quota exhausted: ${result?.success ? "sent to" : "failed on"} ${result?.channel}${result?.error ? ` (${result.error})` : ""}`,
+				);
+			}
+		} catch (error) {
+			logToFile(
+				"[pi-harness]",
+				`Weekly quota exhausted: the message failed: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
+		if (!delivered) {
+			// A decision nobody can reach would wait for an answer that
+			// never comes.
+			weeklyExhaustions.remove(requestId);
+			logToFile(
+				"[pi-harness]",
+				"Weekly quota exhausted: no channel carried the message, the work stays paused",
+			);
+			return;
+		}
+		// The window of the answer starts when the delivery is acknowledged.
+		weeklyExhaustions.markDelivered(requestId);
+	}
+
 	providerRecoveryRuntime = new ProviderRecoveryRuntime({
 		controller: providerRecovery,
 		actions: pendingActions,
@@ -7435,6 +7686,21 @@ issue is not authorized work of the current request).
 				mirrorStore.readProvider(provider.toLowerCase()),
 				Date.now(),
 			);
+		},
+		weeklyExhaustionEvidence: (failure, provider) => {
+			// The same rule as for the deadline: a capture that failed
+			// leaves the old row of the mirror, and an old row cannot prove
+			// an empty week.
+			if (quotaCaptureController.failed(provider)) return undefined;
+			return weeklyQuotaExhausted({
+				failure,
+				provider,
+				mirror: mirrorStore.readProvider(provider.toLowerCase()),
+				now: Date.now(),
+			});
+		},
+		onWeeklyExhaustion: (exhaustion) => {
+			void notifyWeeklyExhaustion(exhaustion);
 		},
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
 		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
@@ -8029,8 +8295,16 @@ issue is not authorized work of the current request).
 		// 	"record:",
 		// 	JSON.stringify(record),
 		// );
-		mirrorStore.writeProvider(provider, { ...record, provider });
-		notifyQuotaLowRemaining(provider, record);
+		// A write that knows no quota window must not throw the evidence of
+		// the windows away: the signal of the TUI arrives with the failure
+		// of the provider, and that is the moment the recovery needs the
+		// evidence of the week.
+		const merged = mergeMirrorRecord(mirrorStore.readProvider(provider), {
+			...record,
+			provider,
+		});
+		mirrorStore.writeProvider(provider, merged);
+		notifyQuotaLowRemaining(provider, merged);
 		if (footerSetStatus) {
 			refreshFooterStatus(
 				footerSetStatus,
@@ -9257,6 +9531,51 @@ issue is not authorized work of the current request).
 		// pi.dev expects the literal "resume" command to continue after compaction.
 		await queueAutoResume("post-compact", "resume", "followUp");
 	});
+
+	// The compaction failed. A compaction that fails with the overload of
+	// the provider is the same overload as a failed turn, and it shares the
+	// executor of the overload: one countdown, one resume, and the same
+	// limit of attempts. A second countdown would continue the work twice.
+	onOptionalEvent<SessionCompactFailedEvent>(
+		pi,
+		"session_compact_failed",
+		(event) => {
+			const errorMessage =
+				typeof event.errorMessage === "string" ? event.errorMessage : "";
+			if (event.aborted) {
+				// The user aborted the compaction: a decision of the user and
+				// not an overload. An automatic resume would fight it.
+				logToFile("[pi-harness]", "Compaction aborted by the user");
+				return;
+			}
+			if (!isProviderOverloadText(errorMessage)) {
+				logToFile(
+					"[pi-harness]",
+					`Compaction failed: ${errorMessage || event.reason}`,
+				);
+				return;
+			}
+			if (event.willRetry) {
+				// Pi retries the turn itself after the compaction: a resume
+				// of the harness would continue the work a second time.
+				logToFile(
+					"[pi-harness]",
+					"Compaction failed with an overload of the provider: Pi retries the turn itself",
+				);
+				return;
+			}
+			const scheduled =
+				providerRecoveryRuntime?.scheduleOverloadResume() ?? false;
+			logToFile(
+				"[pi-harness]",
+				`Compaction failed with an overload of the provider: ${
+					scheduled
+						? "the countdown of the overload is armed"
+						: "no countdown - the budget of the overload is spent"
+				}`,
+			);
+		},
+	);
 
 	// --- Periodic quota refresh every 15 minutes ---
 	// `maybeAutoFetchQuota` checks its own rate-limit (MINIMAX_REFRESH_MIN_INTERVAL_MS)

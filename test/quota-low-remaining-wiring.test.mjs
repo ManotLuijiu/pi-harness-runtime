@@ -27,8 +27,13 @@ test("the write of the mirror is the funnel of the alert", () => {
 	assert.ok(region, "the write of the mirror is registered");
 	assert.match(
 		region,
-		/notifyQuotaLowRemaining\(provider, record\);/,
+		/notifyQuotaLowRemaining\(provider, merged\);/,
 		"every capture of the quota passes the alert",
+	);
+	assert.match(
+		region,
+		/const merged = mergeMirrorRecord\(/,
+		"the alert reads the row that keeps the evidence of the windows",
 	);
 	assert.ok(
 		region.indexOf("mirrorStore.writeProvider(") <

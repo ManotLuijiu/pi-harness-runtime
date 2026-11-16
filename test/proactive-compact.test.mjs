@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 const {
 	getProviderOverloadResumeDelayMs,
 	isProviderOverloadAssistantMessage,
+	isProviderOverloadText,
 	isProviderRetryFailedReport,
 	isOutputLimitAssistantMessage,
 	shouldQueueOutputLimitResume,
@@ -246,4 +247,21 @@ test("shouldQueuePostCompactionResume respects reason, retry, force, and pending
 		),
 		false,
 	);
+});
+
+test("the text of a compaction failure says whether it is an overload", () => {
+	assert.equal(isProviderOverloadText("HTTP 529 overloaded_error"), true);
+	assert.equal(isProviderOverloadText("529 Too Many Requests"), true);
+	assert.equal(
+		isProviderOverloadText("overloaded_error: peak-hour surge"),
+		true,
+	);
+	assert.equal(
+		isProviderOverloadText("the server is temporarily busy"),
+		true,
+	);
+	assert.equal(isProviderOverloadText("401 unauthorized"), false);
+	assert.equal(isProviderOverloadText("context length exceeded"), false);
+	assert.equal(isProviderOverloadText(""), false);
+	assert.equal(isProviderOverloadText(undefined), false);
 });

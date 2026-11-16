@@ -859,6 +859,12 @@ export class NotificationCenter {
 					context.resetAt ? `, it resets at ${context.resetAt}` : ""
 				}.`,
 			},
+			QuotaWeeklyExhausted: {
+				title: "Weekly Quota Exhausted",
+				// The whole message travels: the remaining time of the week
+				// and the state of the work are what the human decides about.
+				message: fullRequirement,
+			},
 			ResumeScheduled: {
 				title: "Resume Scheduled",
 				message: `Job will resume work on: "${requirement}"`,

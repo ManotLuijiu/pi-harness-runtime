@@ -336,6 +336,7 @@ export class LineAdapter extends BaseChannelAdapter {
 			TaskFailed: "❌",
 			QuotaPaused: "⏸️",
 			QuotaLowRemaining: "⏳",
+			QuotaWeeklyExhausted: "📅",
 			ResumeScheduled: "▶️",
 			ContextCompacted: "📦",
 			OutputLimitContinued: "🔄",
