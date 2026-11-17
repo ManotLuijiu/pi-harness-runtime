@@ -20,7 +20,10 @@ export type ProviderId =
 	| string;
 
 /** Input file format. */
-export type CookieFileFormat = "netscape" | "edit-this-cookie-json";
+export type CookieFileFormat =
+	| "netscape"
+	| "netscape-space"
+	| "edit-this-cookie-json";
 
 /** A single cookie in canonical (post-normalize) form. */
 export interface CanonicalCookie {

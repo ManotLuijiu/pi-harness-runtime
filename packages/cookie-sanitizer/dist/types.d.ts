@@ -12,7 +12,7 @@
 /** Provider identifier — inferred from filename or dominant cookie domain. */
 export type ProviderId = "minimax" | "anthropic" | "openai" | "glm" | "openrouter" | string;
 /** Input file format. */
-export type CookieFileFormat = "netscape" | "edit-this-cookie-json";
+export type CookieFileFormat = "netscape" | "netscape-space" | "edit-this-cookie-json";
 /** A single cookie in canonical (post-normalize) form. */
 export interface CanonicalCookie {
     /** Provider this cookie belongs to. Set during infer-provider pass. */

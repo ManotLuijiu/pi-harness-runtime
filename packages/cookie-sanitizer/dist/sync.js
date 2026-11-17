@@ -16,8 +16,9 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, } from "node:fs";
 import { join } from "node:path";
-import { buildDetectedFile, safePreview } from "./detect-format.js";
-import { parseNetscape, serializeNetscape } from "./parse-netscape.js";
+import { buildDetectedFile, diagnoseFormat, } from "./detect-format.js";
+import { parseNetscape, parseNetscapeDetailed, serializeNetscape, } from "./parse-netscape.js";
+import { parseNetscapeSpace } from "./parse-netscape-space.js";
 import { parseEditThisCookieJson } from "./parse-json.js";
 import { normalize } from "./normalize.js";
 import { inferProvider } from "./infer-provider.js";
@@ -113,6 +114,25 @@ export function readInputFile(filePath) {
     }
 }
 /**
+ * The reason a file was not imported, in words a user can act on.
+ *
+ * The sentence names the file by its basename and says what to do. It
+ * never repeats a line, a header, a cookie name, or a cookie value: the
+ * content of a credential file never reaches a log line.
+ */
+export function formatRejectionReason(basename, reason) {
+    switch (reason) {
+        case "space-rows-not-valid":
+            return `${basename} found, but its Netscape rows use spaces and did not validate; export Netscape TSV or EditThisCookie JSON`;
+        case "no-rows":
+            return `${basename} found, but it holds no cookie rows; export Netscape TSV or EditThisCookie JSON`;
+        case "tab-rows-not-valid":
+            return `${basename} found, but its rows did not validate; export Netscape TSV or EditThisCookie JSON`;
+        default:
+            return `${basename} found, but its format was not recognized; export Netscape TSV or EditThisCookie JSON`;
+    }
+}
+/**
  * Run the full sync pipeline.
  *
  * Options:
@@ -156,29 +176,40 @@ export function sync(opts = {}) {
         }
         const det = buildDetectedFile(filePath, text);
         if (det.format == null) {
-            const preview = safePreview(text);
-            tmpResult.skippedFiles.push({
-                basename: det.basename,
-                reason: `unrecognised format (preview: ${preview})`,
-            });
-            tmpResult.errors.push({
-                basename: det.basename,
-                message: "unrecognised format",
-            });
+            const diagnosis = diagnoseFormat(text);
+            const reason = formatRejectionReason(det.basename, diagnosis.reason);
+            tmpResult.skippedFiles.push({ basename: det.basename, reason });
+            tmpResult.errors.push({ basename: det.basename, message: reason });
             continue;
         }
         let cookies = [];
+        let accepted = 0;
+        let rejected = 0;
         if (det.format === "netscape") {
-            cookies = parseNetscape(text);
+            // A file may hold both kinds of rows. The fallback reads the
+            // rows that the tab split rejects with the compatible parser.
+            const parsed = parseNetscapeDetailed(text, { compatibleFallback: true });
+            cookies = parsed.cookies;
+            accepted = parsed.accepted;
+            rejected = parsed.rejected;
+        }
+        else if (det.format === "netscape-space") {
+            const parsed = parseNetscapeSpace(text);
+            cookies = parsed.cookies;
+            accepted = parsed.accepted;
+            rejected = parsed.rejected;
         }
         else if (det.format === "edit-this-cookie-json") {
             cookies = parseEditThisCookieJson(text);
+            accepted = cookies.length;
         }
         if (cookies.length === 0) {
-            tmpResult.skippedFiles.push({
-                basename: det.basename,
-                reason: `${det.format} parsed but yielded 0 cookies`,
-            });
+            const counts = det.format === "edit-this-cookie-json"
+                ? "0 cookies"
+                : `${accepted} rows read, ${rejected} rows rejected`;
+            const reason = `${det.basename} parsed as ${det.format} but yielded 0 cookies (${counts})`;
+            tmpResult.skippedFiles.push({ basename: det.basename, reason });
+            tmpResult.errors.push({ basename: det.basename, message: reason });
             continue;
         }
         allCookies.push(...cookies);

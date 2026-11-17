@@ -19,6 +19,7 @@
  */
 
 import type { CanonicalCookie } from "./types.js";
+import { parseCompatibleRow } from "./parse-netscape-space.js";
 
 /** Raw row as parsed from a Netscape file. */
 interface NetscapeRow {
@@ -31,6 +32,28 @@ interface NetscapeRow {
 	value: string;
 }
 
+/** The options of the Netscape parser. */
+export interface ParseNetscapeOptions {
+	/**
+	 * Read a row that the tab split rejects with the compatible parser.
+	 *
+	 * A file may hold both kinds of rows: an export that a tool wrote with
+	 * tabs and rows that a human typed with spaces. The fallback reads the
+	 * second kind instead of dropping it. It stays off by default, so the
+	 * strict parser keeps its documented behaviour.
+	 */
+	compatibleFallback?: boolean;
+}
+
+/** The outcome of a parse: the cookies and the counts of the rows. */
+export interface ParseNetscapeResult {
+	cookies: CanonicalCookie[];
+	/** Rows that were read. */
+	accepted: number;
+	/** Rows that looked like a row but did not validate. */
+	rejected: number;
+}
+
 /**
  * Parse a Netscape-format cookie string into canonical records.
  *
@@ -41,8 +64,29 @@ interface NetscapeRow {
  *
  * Never throws; returns empty array if input is invalid.
  */
-export function parseNetscape(text: string): CanonicalCookie[] {
-	if (typeof text !== "string" || text.length === 0) return [];
+export function parseNetscape(
+	text: string,
+	options: ParseNetscapeOptions = {},
+): CanonicalCookie[] {
+	return parseNetscapeDetailed(text, options).cookies;
+}
+
+/**
+ * Parse a Netscape-format cookie string and report the counts of the rows.
+ *
+ * The counts are what a diagnostic may show. The rows themselves stay in
+ * memory and never reach a log line.
+ */
+export function parseNetscapeDetailed(
+	text: string,
+	options: ParseNetscapeOptions = {},
+): ParseNetscapeResult {
+	const result: ParseNetscapeResult = {
+		cookies: [],
+		accepted: 0,
+		rejected: 0,
+	};
+	if (typeof text !== "string" || text.length === 0) return result;
 
 	const rows: NetscapeRow[] = [];
 	const lines = text.split(/\r?\n/);
@@ -61,10 +105,30 @@ export function parseNetscape(text: string): CanonicalCookie[] {
 		}
 
 		const cols = line.split("\t");
-		if (cols.length < 7) continue;
+		if (cols.length < 7) {
+			const compatible = options.compatibleFallback
+				? parseCompatibleRow(raw)
+				: null;
+			if (compatible?.kind === "accepted") {
+				result.cookies.push(compatible.cookie);
+				result.accepted++;
+				continue;
+			}
+			if (compatible?.kind === "rejected") {
+				result.rejected++;
+				continue;
+			}
+			// The strict parser skips a row it cannot read. The count is
+			// what a diagnostic may show; the row itself stays unread.
+			result.rejected++;
+			continue;
+		}
 
 		const [domain, _flag, cookiePath, secure, expires, name, value] = cols;
-		if (!name || !value) continue;
+		if (!name || !value) {
+			result.rejected++;
+			continue;
+		}
 
 		rows.push({
 			domain: (domain ?? "").trim(),
@@ -78,15 +142,19 @@ export function parseNetscape(text: string): CanonicalCookie[] {
 	}
 
 	// Map to CanonicalCookie shape.
-	return rows.map((r) => ({
-		name: r.name,
-		value: r.value,
-		domain: r.domain,
-		path: r.path,
-		expires: r.expires === 0 ? undefined : r.expires,
-		secure: r.secure,
-		httpOnly: r.httpOnly,
-	}));
+	for (const r of rows) {
+		result.cookies.push({
+			name: r.name,
+			value: r.value,
+			domain: r.domain,
+			path: r.path,
+			expires: r.expires === 0 ? undefined : r.expires,
+			secure: r.secure,
+			httpOnly: r.httpOnly,
+		});
+		result.accepted++;
+	}
+	return result;
 }
 
 /**

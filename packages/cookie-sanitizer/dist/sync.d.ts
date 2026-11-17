@@ -15,6 +15,7 @@
  * use file basenames and 64-char previews with values redacted.
  */
 import type { SyncOptions, SyncResult } from "./types.js";
+import { type FormatRejection } from "./detect-format.js";
 /** Default drop-folder location. */
 export declare const DEFAULT_DROP_DIR: string;
 /**
@@ -33,6 +34,14 @@ export declare function readInputFile(filePath: string): {
     text: string;
     reason?: string;
 };
+/**
+ * The reason a file was not imported, in words a user can act on.
+ *
+ * The sentence names the file by its basename and says what to do. It
+ * never repeats a line, a header, a cookie name, or a cookie value: the
+ * content of a credential file never reaches a log line.
+ */
+export declare function formatRejectionReason(basename: string, reason: FormatRejection | undefined): string;
 /**
  * Run the full sync pipeline.
  *
