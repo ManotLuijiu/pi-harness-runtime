@@ -44,20 +44,37 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
 
-/** How long a single file may take to load. */
-const TIMEOUT_MS = 20_000;
+/**
+ * How long a single file may take to load.
+ *
+ * The budget catches a module that blocks at import time. It is not a
+ * performance target: the node suite runs its files in parallel, so this
+ * sweep competes with every other test file for the cores of the
+ * machine. A file that loads in a second on an idle machine can need
+ * half a minute on a loaded one, and a budget that reports that as
+ * "blocked" fails a build for the wrong reason.
+ */
+const TIMEOUT_MS = 60_000;
 
 /**
  * How long the whole sweep may take.
  *
  * The default timeout of a test is five seconds, and this sweep starts
  * one process per file. A test that needs longer has to say so, or it
- * fails on a slow machine while it passes on a fast one.
+ * fails on a slow machine while it passes on a fast one. The budget
+ * holds several blocked files, so a module that blocks at import time
+ * is reported instead of running the sweep out of time.
  */
-const TEST_TIMEOUT_MS = 300_000;
+const TEST_TIMEOUT_MS = 900_000;
 
-/** How many files load at the same time. */
-const CONCURRENCY = 8;
+/**
+ * How many files load at the same time.
+ *
+ * Fewer workers than the machine has cores: the sweep is not the only
+ * work of the machine, and a worker that competes with the other test
+ * files makes every one of them slower.
+ */
+const CONCURRENCY = 4;
 
 /**
  * The published scripts.
@@ -161,7 +178,7 @@ process.stdout.write("LOADED\\n");
 	"utf8",
 );
 
-function loadOne(file) {
+function loadOne(file, budget = TIMEOUT_MS) {
 	return new Promise((resolve) => {
 		const child = spawn(process.execPath, [loader, file], {
 			cwd: repo,
@@ -178,7 +195,7 @@ function loadOne(file) {
 		});
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
-		}, TIMEOUT_MS);
+		}, budget);
 		child.on("close", (code, signal) => {
 			clearTimeout(timer);
 			const loaded = stdout.includes("LOADED");
@@ -193,6 +210,40 @@ function loadOne(file) {
 		});
 	});
 }
+
+test("a module that is slow is not a module that blocks", { timeout: 120_000 }, async () => {
+	// The budget of the sweep must separate a module that takes its time
+	// from a module that never returns. A build that reports a slow
+	// module as a blocked one is wrong, and the machine that runs the
+	// build decides how slow "slow" is.
+	const slow = join(scratch, "slow-module.ts");
+	writeFileSync(
+		slow,
+		"await new Promise((resolve) => setTimeout(resolve, 3000));\nexport const loaded = true;\n",
+		"utf8",
+	);
+	const result = await loadOne(slow);
+	assert.equal(
+		result.ok,
+		true,
+		`the slow module was reported as: ${result.reason}`,
+	);
+});
+
+test("a module that never lets the process end is reported as blocked", { timeout: 120_000 }, async () => {
+	// The other side of the budget: a module that keeps the process
+	// alive must still be a failure. A generous budget must not turn a
+	// module that blocks at import time into a module that loads.
+	const blocked = join(scratch, "blocked-module.ts");
+	writeFileSync(
+		blocked,
+		"setInterval(() => {}, 1000);\nexport const loaded = true;\n",
+		"utf8",
+	);
+	const result = await loadOne(blocked, 2000);
+	assert.equal(result.ok, false, "the blocked module was reported as loaded");
+	assert.equal(result.signal, "SIGKILL", "the blocked module was not killed");
+});
 
 test("every published source file loads with the runtime loader", { timeout: TEST_TIMEOUT_MS }, async () => {
 	const files = collectSourceFiles();
