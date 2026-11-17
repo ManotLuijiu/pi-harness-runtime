@@ -28,12 +28,14 @@
  * watcher.start();
  * ```
  */
-export { sync, hasAnyCookieSource, inferCachePath, enumerateDropFiles, readInputFile, DEFAULT_DROP_DIR, } from "./sync.js";
-export { parseNetscape, serializeNetscape, } from "./parse-netscape.js";
+export { inspectCookieSource, hasCookieSourceState, } from "./source-state.js";
+export { sync, hasAnyCookieSource, inferCachePath, enumerateDropFiles, readInputFile, formatRejectionReason, DEFAULT_DROP_DIR, } from "./sync.js";
+export { parseNetscape, parseNetscapeDetailed, serializeNetscape, } from "./parse-netscape.js";
+export { parseNetscapeSpace, parseCompatibleRow, hasCompatibleRow, looksSpaceSeparated, } from "./parse-netscape-space.js";
 export { parseEditThisCookieJson } from "./parse-json.js";
 export { inferProvider, inferProviderFromFilename, inferProviderFromCookies, knownProviders, } from "./infer-provider.js";
 export { normalize, domainMatchesProvider, isExpired, } from "./normalize.js";
-export { detectFormat, buildDetectedFile, safeBasename, safePreview, } from "./detect-format.js";
+export { detectFormat, diagnoseFormat, buildDetectedFile, safeBasename, } from "./detect-format.js";
 export { atomicWriteFileSync, defaultCachePathFor, } from "./atomic-write.js";
 export { CookieWatcher, createWatcher, defaultDropDir, } from "./watcher.js";
 //# sourceMappingURL=index.js.map

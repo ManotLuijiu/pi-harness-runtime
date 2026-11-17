@@ -164,8 +164,14 @@ import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
 	DEFAULT_DROP_DIR as COOKIE_DROP_DIR,
-	hasAnyCookieSource as sanitizerHasAnyCookieSource,
+	inspectCookieSource,
 } from "./packages/cookie-sanitizer/src/index.ts";
+import {
+	QuotaRefreshCoordinator,
+	type QuotaRefreshOutcome,
+} from "./harness/quota-refresh-coordinator.ts";
+import { handleCookieWatcherEvent } from "./harness/cookie-import-refresh.ts";
+import { chooseQuotaCredential } from "./harness/quota-credential-choice.ts";
 import {
 	providerFromModelId,
 	type ProviderId,
@@ -176,6 +182,7 @@ import {
 } from "./packages/quota-manager/src/tui-usage-monitor.ts";
 import { QuotaManager } from "./packages/quota-manager/src/quota-manager.ts";
 import { buildFooterStatusValue } from "./footer-status.ts";
+import type { FooterQuotaSource } from "./footer-status.ts";
 import { getProviderLabel } from "./packages/types/src/ai-providers.ts";
 import { registerGithubLoginCommand } from "./packages/clipboard/dist/src/github-login.js";
 import {
@@ -8097,18 +8104,47 @@ issue is not authorized work of the current request).
 	const cookieDropDir = COOKIE_DROP_DIR;
 	const cookieCachePath = join(homedir(), ".config", "minimax-cookies.txt");
 
-	const hasCookieSource = (): boolean => {
+	/**
+	 * The shared quota refresh.
+	 *
+	 * One refresh at a time. A watcher event, a periodic tick and a command
+	 * that arrive together share one fetch, so a burst never opens two
+	 * browsers and never asks the provider twice.
+	 */
+	const quotaRefresh = new QuotaRefreshCoordinator({
+		refresh: () => autoFetchQuota({ suppressErrors: true }),
+		logger: (message) => logToFile("[pi-harness] quota refresh:", message),
+	});
+
+	/**
+	 * The state of the credential source.
+	 *
+	 * Three facts are different and were conflated: a file was found
+	 * (discovery), the file was imported into the canonical cache (import),
+	 * and the provider accepted the credential (authentication). The first
+	 * two are read from the disk; the third comes from the last fetch.
+	 */
+	const cookieSourceState = (): FooterQuotaSource => {
+		let stage: FooterQuotaSource["stage"] = "none";
 		try {
-			if (existsSync(cookieCachePath)) return true;
+			stage = inspectCookieSource({
+				dropDir: cookieDropDir,
+				cachePath: cookieCachePath,
+			}).stage;
 		} catch {
-			// ignore
+			stage = "none";
 		}
-		try {
-			return sanitizerHasAnyCookieSource(cookieDropDir);
-		} catch {
-			return false;
-		}
+		const last = quotaRefresh.lastOutcome;
+		return {
+			stage,
+			lastFetch: last
+				? { ok: last.ok, source: last.source, reason: last.reason }
+				: null,
+		};
 	};
+
+	/** Whether any credential source exists, imported or not. */
+	const hasCookieSource = (): boolean => cookieSourceState().stage !== "none";
 
 	// --- TUI quota signal plumbing (OpenAI / GLM / Anthropic / OpenRouter) --
 	// The TUIUsageMonitor parses provider quota-exhaustion messages from pi's
@@ -8145,48 +8181,21 @@ issue is not authorized work of the current request).
 		dropDir: cookieDropDir,
 		syncOptions: { cachePath: cookieCachePath, providerHint: "minimax" },
 		onEvent: (event) => {
-			if (event.kind === "sync-error" || event.kind === "watcher-error") {
-				const msg = "message" in event ? event.message : "";
-				if (msg.includes("ENOSPC")) {
-					logToFile(
-						"[pi-harness] cookie-sanitizer: ENOSPC — inotify watchers exhausted.\n" +
-							"  Fix (run once as sudo):\n" +
-							"    echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
-							"    sudo sysctl --system",
-					);
-					} else {
-						logToFile("[pi-harness] cookie-sanitizer:", msg);
-					}
-			}
-			// A successful sync means the canonical cache is fresh; the
-			// next autoFetchQuota() should pick it up immediately. Reset
-			// the rate-limit so we don't wait 15 min for the first scrape.
+			// A successful sync means the canonical cache is fresh. One
+			// shared refresh, outside the model, picks the new credential
+			// up. The rate limit is reset so the periodic tick does not
+			// ask again before the shared refresh finished.
 			if (event.kind === "sync-ok") {
 				lastQuotaAutoFetchAt = 0;
 			}
+			handleCookieWatcherEvent(event, {
+				requestRefresh: (trigger) => {
+					void quotaRefresh.request(trigger);
+				},
+				log: (message) => logToFile("[pi-harness]", message),
+			});
 		},
 	});
-
-	try {
-		cookieWatcher.start();
-		// Sync existing drop-folder cookies now (ignoreInitial: true means
-		// the watcher won't do this automatically on startup).
-		cookieWatcher.triggerNow();
-	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
-		if (msg.includes("ENOSPC")) {
-			logToFile(
-				"[pi-harness] cookie-sanitizer watcher: ENOSPC — " +
-					"inotify watcher limit reached.\n" +
-					"Fix (once, as root):\n" +
-					"  echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
-					"  sudo sysctl --system\n" +
-					"Drop folder sync still works — polling will resume automatically.",
-			);
-		} else {
-			logToFile("[pi-harness] cookie-sanitizer watcher failed to start:", msg);
-		}
-	}
 
 	// Store only the setStatus function, NOT the ctx itself.
 	// Storing ctx causes stale-context errors after pi reload/restart.
@@ -8310,7 +8319,7 @@ issue is not authorized work of the current request).
 				footerSetStatus,
 				tracker,
 				mirrorStore,
-				hasCookieSource,
+				cookieSourceState,
 				() => lastActiveProvider,
 			);
 		}
@@ -8386,7 +8395,7 @@ issue is not authorized work of the current request).
 					footerSetStatus,
 					tracker,
 					mirrorStore,
-					hasCookieSource,
+					cookieSourceState,
 					() => lastActiveProvider,
 				);
 			}
@@ -8411,9 +8420,9 @@ issue is not authorized work of the current request).
 
 	async function autoFetchQuotaFromBrowserProfile(
 		suppressErrors = false,
-	): Promise<MirrorRecord | null> {
+	): Promise<{ record: MirrorRecord | null; reason?: string }> {
 		if (!(await hasBrowserProfileAutoFetchSource())) {
-			return null;
+			return { record: null };
 		}
 
 		try {
@@ -8425,19 +8434,28 @@ issue is not authorized work of the current request).
 				status.page_url.includes("unified-login") ||
 				status.page_url.includes("login")
 			) {
-				return null;
+				return {
+					record: null,
+					reason: "the browser profile is not signed in",
+				};
 			}
 			const rawText =
 				status.usage_lines?.join("\n")?.trim() ||
 				status.detected_text_sample?.trim() ||
 				"";
 			if (!rawText) {
-				return null;
+				return {
+					record: null,
+					reason: "the browser profile holds no quota reading",
+				};
 			}
 
 			const parsed = parseMiniMaxQuotaText(rawText);
 			if (parsed.h5UsedPct === undefined && parsed.weeklyUsedPct === undefined) {
-				return null;
+				return {
+					record: null,
+					reason: "the browser profile reading holds no quota window",
+				};
 			}
 
 			// The console writes the remaining time of a window as text. The
@@ -8446,39 +8464,43 @@ issue is not authorized work of the current request).
 			const observedAt = Date.parse(status.checked_at);
 
 			return {
-				synced_at: status.checked_at,
-				provider: "minimax",
-				h5_used_pct: parsed.h5UsedPct,
-				h5_resets_at: parsed.h5ResetsAt,
-				h5_resets_at_epoch: resetEpochFromDuration(
-					parsed.h5ResetsAt,
-					observedAt,
-				),
-				weekly_used_pct: parsed.weeklyUsedPct,
-				weekly_resets_at: parsed.weeklyResetsAt,
-				weekly_resets_at_epoch: resetEpochFromDuration(
-					parsed.weeklyResetsAt,
-					observedAt,
-				),
+				record: {
+					synced_at: status.checked_at,
+					provider: "minimax",
+					h5_used_pct: parsed.h5UsedPct,
+					h5_resets_at: parsed.h5ResetsAt,
+					h5_resets_at_epoch: resetEpochFromDuration(
+						parsed.h5ResetsAt,
+						observedAt,
+					),
+					weekly_used_pct: parsed.weeklyUsedPct,
+					weekly_resets_at: parsed.weeklyResetsAt,
+					weekly_resets_at_epoch: resetEpochFromDuration(
+						parsed.weeklyResetsAt,
+						observedAt,
+					),
+				},
 			};
 		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
 			if (!suppressErrors) {
 				logToFile(
 					"[pi-harness]",
 					"Browser-profile quota fetch skipped:",
-					error instanceof Error ? error.message : String(error),
+					reason,
 				);
 			}
-			return null;
+			return { record: null, reason };
 		}
 	}
 
 	async function autoFetchQuota(options?: {
 		suppressErrors?: boolean;
-	}): Promise<boolean> {
+	}): Promise<QuotaRefreshOutcome> {
 		const suppressErrors = options?.suppressErrors === true;
-		const profileRecord = await autoFetchQuotaFromBrowserProfile(suppressErrors);
-		if (profileRecord) {
+		const profile = await autoFetchQuotaFromBrowserProfile(suppressErrors);
+		if (profile.record) {
+			const profileRecord = profile.record;
 			writeMirrorRecord("minimax", {
 				synced_at: profileRecord.synced_at,
 				source: "scrape",
@@ -8490,11 +8512,19 @@ issue is not authorized work of the current request).
 				weekly_resets_at: profileRecord.weekly_resets_at,
 				weekly_resets_at_epoch: profileRecord.weekly_resets_at_epoch,
 			});
-			return true;
+			return { ok: true, source: "browser-profile" };
 		}
 
-		if (!hasCookieSource()) {
-			return false;
+		// The browser profile already ran and did not answer. The cookie
+		// cache is the second credential, and it only exists when an import
+		// published it: a file that was found but not imported gives a
+		// scraper nothing to read.
+		const choice = chooseQuotaCredential({
+			browserProfile: { ok: false, reason: profile.reason },
+			cookieStage: cookieSourceState().stage,
+		});
+		if (choice.choice !== "cookie-cache") {
+			return { ok: false, source: "none", reason: choice.reason };
 		}
 
 		try {
@@ -8509,16 +8539,41 @@ issue is not authorized work of the current request).
 				weekly_resets_at: data.weeklyResetsAt,
 				weekly_resets_at_epoch: data.weeklyResetsAtEpoch,
 			});
-			return true;
+			return { ok: true, source: "cookie-cache" };
 		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
 			if (!suppressErrors) {
 				logToFile(
 					"[pi-harness]",
 					"Quota auto-fetch skipped:",
-					error instanceof Error ? error.message : String(error),
+					reason,
 				);
 			}
-			return false;
+			return { ok: false, source: "cookie-cache", reason };
+		}
+	}
+
+	// The watcher starts here, not at the top of the initialization: a sync
+	// that runs during the initialization would ask for a refresh that reads
+	// capture state that does not exist yet.
+	try {
+		cookieWatcher.start();
+		// Sync existing drop-folder cookies now (ignoreInitial: true means
+		// the watcher won't do this automatically on startup).
+		cookieWatcher.triggerNow();
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes("ENOSPC")) {
+			logToFile(
+				"[pi-harness] cookie-sanitizer watcher: ENOSPC — " +
+					"inotify watcher limit reached.\n" +
+					"Fix (once, as root):\n" +
+					"  echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-watch.conf\n" +
+					"  sudo sysctl --system\n" +
+					"Drop folder sync still works — polling will resume automatically.",
+			);
+		} else {
+			logToFile("[pi-harness] cookie-sanitizer watcher failed to start:", msg);
 		}
 	}
 
@@ -8671,7 +8726,8 @@ issue is not authorized work of the current request).
 	 */
 	async function captureQuotaOf(provider: string): Promise<boolean> {
 		if (provider === "minimax") {
-			return autoFetchQuota({ suppressErrors: true });
+			const outcome = await autoFetchQuota({ suppressErrors: true });
+			return outcome.ok;
 		}
 		if (provider === "openai" || provider === "openai-codex") {
 			return autoFetchOpenAIQuota({ suppressErrors: true });
@@ -8820,23 +8876,46 @@ issue is not authorized work of the current request).
 	pi.registerCommand("usage-refresh", {
 		description: "Force refresh quota from provider console",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
-			const autoFetchAvailable =
-				hasCookieSource() || (await hasBrowserProfileAutoFetchSource());
-			if (!autoFetchAvailable) {
+			const source = cookieSourceState();
+			const browserProfile = await hasBrowserProfileAutoFetchSource();
+			if (!hasCookieSource() && !browserProfile) {
 				ctx.ui.notify(
-					"MiniMax cookies not found. Drop any cookie file (Netscape or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.",
+					"MiniMax cookies not found. Drop any cookie file (Netscape, the space-separated Netscape export, or EditThisCookie JSON) into ~/.pi-harness-runtime/cookies/ — the runtime normalizes it for you. Or run `bun packages/auth/src/run-minimax-auth.ts auth`.",
 					"warning",
 				);
 				return;
 			}
 			ctx.ui.notify("Fetching quota from MiniMax console...", "info");
-			const refreshed = await autoFetchQuota();
-			ctx.ui.notify(
-				refreshed
-					? "Quota refreshed. Run `/usage` to see updated status."
-					: "Quota refresh skipped. Check cookie validity or MiniMax auth profile, then run `/usage` again.",
-				"info",
-			);
+			const outcome = await quotaRefresh.request("usage-refresh");
+			if (outcome.ok) {
+				const via =
+					outcome.source === "browser-profile"
+						? "the browser profile"
+						: "the imported cookie cache";
+				ctx.ui.notify(
+					`Quota refreshed via ${via}. Run \`/usage\` to see updated status.`,
+					"info",
+				);
+				return;
+			}
+			// The failure names what failed: the import, the authentication
+			// or the provider. It never carries a credential.
+			const reason =
+				outcome.reason ??
+				"the provider did not answer with a quota reading";
+			const via =
+				outcome.source === "cookie-cache"
+					? "the imported cookie cache"
+					: outcome.source === "browser-profile"
+						? "the browser profile"
+						: "no credential";
+			ctx.ui.notify(`Quota refresh failed via ${via}: ${reason}`, "warning");
+			if (source.stage === "discovered" && !browserProfile) {
+				ctx.ui.notify(
+					"The cookie file was found but not imported. Check the harness log for the reason, then run `/usage-refresh` again.",
+					"warning",
+				);
+			}
 		},
 	});
 
@@ -8908,7 +8987,7 @@ issue is not authorized work of the current request).
 					footerSetStatus,
 					tracker,
 					mirrorStore,
-					hasCookieSource,
+					cookieSourceState,
 					() => lastActiveProvider,
 				);
 			} catch (e) {
@@ -9369,7 +9448,7 @@ issue is not authorized work of the current request).
 			footerSetStatus,
 			tracker,
 			mirrorStore,
-			hasCookieSource,
+			cookieSourceState,
 			() => lastActiveProvider,
 		);
 
@@ -9453,7 +9532,7 @@ issue is not authorized work of the current request).
 			footerSetStatus,
 			tracker,
 			mirrorStore,
-			hasCookieSource,
+			cookieSourceState,
 			() => lastActiveProvider,
 		);
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
@@ -9491,7 +9570,7 @@ issue is not authorized work of the current request).
 			footerSetStatus,
 			tracker,
 			mirrorStore,
-			hasCookieSource,
+			cookieSourceState,
 			() => lastActiveProvider,
 		);
 
@@ -9588,7 +9667,7 @@ issue is not authorized work of the current request).
 				footerSetStatus,
 				tracker,
 				mirrorStore,
-				hasCookieSource,
+				cookieSourceState,
 				() => lastActiveProvider,
 			);
 		}
@@ -9753,7 +9832,7 @@ function refreshFooterStatus(
 	setStatus: (key: string, value: string) => void,
 	tracker: UsageTracker,
 	mirrorStore: MirrorStore,
-	hasCookieSource: () => boolean,
+	cookieSourceState: () => FooterQuotaSource,
 	getActiveProvider: () => ProviderId | null = () => null,
 ) {
 	const nowMs = Date.now();
@@ -9764,7 +9843,13 @@ function refreshFooterStatus(
 	// 	mirror ? JSON.stringify(mirror) : null,
 	// );
 	const freshness = mirrorStore.freshness(mirror, nowMs);
-	const statusValue = buildFooterStatusValue(local, mirror, freshness, hasCookieSource(), provider);
+	const statusValue = buildFooterStatusValue(
+		local,
+		mirror,
+		freshness,
+		cookieSourceState(),
+		provider,
+	);
 	// Prepend harness version so it shows in the footer during startup
 	setStatus(
 		"harness-runtime",

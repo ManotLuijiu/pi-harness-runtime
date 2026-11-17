@@ -17,6 +17,7 @@
  * never be logged. The scrubber in cookie-sanitizer applies value
  * redaction before any path-touching log line.
  */
+import { parseCompatibleRow } from "./parse-netscape-space.js";
 /**
  * Parse a Netscape-format cookie string into canonical records.
  *
@@ -27,9 +28,23 @@
  *
  * Never throws; returns empty array if input is invalid.
  */
-export function parseNetscape(text) {
+export function parseNetscape(text, options = {}) {
+    return parseNetscapeDetailed(text, options).cookies;
+}
+/**
+ * Parse a Netscape-format cookie string and report the counts of the rows.
+ *
+ * The counts are what a diagnostic may show. The rows themselves stay in
+ * memory and never reach a log line.
+ */
+export function parseNetscapeDetailed(text, options = {}) {
+    const result = {
+        cookies: [],
+        accepted: 0,
+        rejected: 0,
+    };
     if (typeof text !== "string" || text.length === 0)
-        return [];
+        return result;
     const rows = [];
     const lines = text.split(/\r?\n/);
     for (const raw of lines) {
@@ -46,11 +61,29 @@ export function parseNetscape(text) {
             continue;
         }
         const cols = line.split("\t");
-        if (cols.length < 7)
+        if (cols.length < 7) {
+            const compatible = options.compatibleFallback
+                ? parseCompatibleRow(raw)
+                : null;
+            if (compatible?.kind === "accepted") {
+                result.cookies.push(compatible.cookie);
+                result.accepted++;
+                continue;
+            }
+            if (compatible?.kind === "rejected") {
+                result.rejected++;
+                continue;
+            }
+            // The strict parser skips a row it cannot read. The count is
+            // what a diagnostic may show; the row itself stays unread.
+            result.rejected++;
             continue;
+        }
         const [domain, _flag, cookiePath, secure, expires, name, value] = cols;
-        if (!name || !value)
+        if (!name || !value) {
+            result.rejected++;
             continue;
+        }
         rows.push({
             domain: (domain ?? "").trim(),
             path: (cookiePath ?? "/").trim() || "/",
@@ -62,15 +95,19 @@ export function parseNetscape(text) {
         });
     }
     // Map to CanonicalCookie shape.
-    return rows.map((r) => ({
-        name: r.name,
-        value: r.value,
-        domain: r.domain,
-        path: r.path,
-        expires: r.expires === 0 ? undefined : r.expires,
-        secure: r.secure,
-        httpOnly: r.httpOnly,
-    }));
+    for (const r of rows) {
+        result.cookies.push({
+            name: r.name,
+            value: r.value,
+            domain: r.domain,
+            path: r.path,
+            expires: r.expires === 0 ? undefined : r.expires,
+            secure: r.secure,
+            httpOnly: r.httpOnly,
+        });
+        result.accepted++;
+    }
+    return result;
 }
 /**
  * Serialize a list of canonical cookies back to Netscape format.

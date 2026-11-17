@@ -1,29 +1,43 @@
 /**
- * Format detection — does the input look like Netscape or EditThisCookie JSON?
+ * Format detection — does the input look like Netscape, a space-separated
+ * Netscape export, or EditThisCookie JSON?
  *
  * Detection rule:
- *  - File extension `.json` AND first non-blank byte is `[` or `{`  →  JSON
- *  - File content has `# Netscape HTTP Cookie File` header OR
- *    ≥ 1 tab-separated 7-column row                              →  Netscape
- *  - Otherwise                                                    →  unknown
+ *  - First non-blank byte is `[` or `{`                          →  JSON
+ *  - ≥ 1 tab-separated 7-column row                             →  Netscape
+ *  - ≥ 1 row that the compatible parser accepts                →  Netscape (space)
+ *  - Otherwise                                                  →  unknown
  *
- * Cookie VALUES are never copied into return values that get logged.
- * Only the basename and a 64-char prefix of the first non-blank line.
+ * The header wording is not part of the rule: an export whose header
+ * differs from the canonical wording is still a supported format when its
+ * rows are readable.
+ *
+ * SEC-001: cookie values are never copied into a return value that gets
+ * logged. A diagnostic carries counts and reason codes only — never a
+ * line, a header, a cookie name, or a cookie value.
  */
 import type { CookieFileFormat, DetectedFile } from "./types.js";
+/** Why a file was not recognized. A reason code, never its content. */
+export type FormatRejection = "empty" | "no-rows" | "space-rows-not-valid" | "tab-rows-not-valid";
+/** The outcome of a detection. */
+export interface FormatDiagnosis {
+    /** The detected format, or null when the file is not supported. */
+    format: CookieFileFormat | null;
+    /** The reason the file was not recognized. */
+    reason?: FormatRejection;
+}
 /**
  * Returns the basename only, never a path that could leak directory
  * structure. Safe to log.
  */
 export declare function safeBasename(filePath: string): string;
 /**
- * Safely truncated preview of a file's content (for diagnostics).
- * Strips cookie values to avoid leaking secrets.
+ * Detect the format of cookie file text and say why it failed.
  *
- * Heuristic: any line that has a tab-separated name=value pair,
- * replace the value column with `<redacted>`.
+ * The reason is a code. A caller that wants to tell the user what to do
+ * maps the code to a sentence; the code itself never carries content.
  */
-export declare function safePreview(text: string, maxChars?: number): string;
+export declare function diagnoseFormat(text: string): FormatDiagnosis;
 /**
  * Detect the format of cookie file text.
  */

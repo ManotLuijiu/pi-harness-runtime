@@ -34,14 +34,15 @@ test("buildFooterStatusValue prefers quota mirror data for footer badge", () => 
 			weekly_used_pct: 74,
 		},
 		"fresh",
-		false,
+		{ stage: "none" },
 	);
 
 	// The status line carries the reset countdown per window (see
-	// footer-status.ts: "5h: ... (resets soon) - week: ... (resets soon)").
+	// footer-status.ts: "5h: ... (reset time unknown) - week: ..."). A
+	// reset that is not known is never rendered as a near reset.
 	assert.equal(
 		status,
-		"MiniMax: 5h: 100% left (resets soon) - week: 26% left (resets soon)",
+		"MiniMax: 5h: 100% left (reset time unknown) - week: 26% left (reset time unknown)",
 	);
 });
 
@@ -50,7 +51,7 @@ test("buildFooterStatusValue falls back to local today summary when mirror is mi
 		{ today: { tokens: 12500, cost: 0.1234 } },
 		null,
 		"missing",
-		false,
+		{ stage: "none" },
 	);
 
 	assert.equal(status, "today: 12.5k tok · $0.123");
@@ -66,12 +67,12 @@ test("buildFooterStatusValue marks stale quota mirror data", () => {
 			weekly_used_pct: 80,
 		},
 		"stale",
-		false,
+		{ stage: "none" },
 	);
 
 	assert.equal(
 		status,
-		"MiniMax: 5h: 80% left (resets soon) - week: 20% left (resets soon) · stale",
+		"MiniMax: 5h: 80% left (reset time unknown) - week: 20% left (reset time unknown) · stale",
 	);
 });
 
@@ -85,7 +86,7 @@ test("buildFooterStatusValue ignores expired mirror data and falls back to local
 			weekly_used_pct: 74,
 		},
 		"expired",
-		false,
+		{ stage: "none" },
 	);
 
 	// When mirror is expired but provider is known: show hint instead of stale data.

@@ -1,21 +1,46 @@
 /**
- * Format detection — does the input look like Netscape or EditThisCookie JSON?
+ * Format detection — does the input look like Netscape, a space-separated
+ * Netscape export, or EditThisCookie JSON?
  *
  * Detection rule:
- *  - File extension `.json` AND first non-blank byte is `[` or `{`  →  JSON
- *  - File content has `# Netscape HTTP Cookie File` header OR
- *    ≥ 1 tab-separated 7-column row                              →  Netscape
- *  - Otherwise                                                    →  unknown
+ *  - First non-blank byte is `[` or `{`                          →  JSON
+ *  - ≥ 1 tab-separated 7-column row                             →  Netscape
+ *  - ≥ 1 row that the compatible parser accepts                →  Netscape (space)
+ *  - Otherwise                                                  →  unknown
  *
- * Cookie VALUES are never copied into return values that get logged.
- * Only the basename and a 64-char prefix of the first non-blank line.
+ * The header wording is not part of the rule: an export whose header
+ * differs from the canonical wording is still a supported format when its
+ * rows are readable.
+ *
+ * SEC-001: cookie values are never copied into a return value that gets
+ * logged. A diagnostic carries counts and reason codes only — never a
+ * line, a header, a cookie name, or a cookie value.
  */
 
 import { basename } from "node:path";
+import {
+	hasCompatibleRow,
+	looksSpaceSeparated,
+} from "./parse-netscape-space.js";
 import type { CookieFileFormat, DetectedFile } from "./types.js";
 
 const HEADER_RE = /^# Netscape HTTP Cookie File/im;
 const MIN_TAB_COLS = 7;
+
+/** Why a file was not recognized. A reason code, never its content. */
+export type FormatRejection =
+	| "empty"
+	| "no-rows"
+	| "space-rows-not-valid"
+	| "tab-rows-not-valid";
+
+/** The outcome of a detection. */
+export interface FormatDiagnosis {
+	/** The detected format, or null when the file is not supported. */
+	format: CookieFileFormat | null;
+	/** The reason the file was not recognized. */
+	reason?: FormatRejection;
+}
 
 /**
  * Returns the basename only, never a path that could leak directory
@@ -26,47 +51,28 @@ export function safeBasename(filePath: string): string {
 }
 
 /**
- * Safely truncated preview of a file's content (for diagnostics).
- * Strips cookie values to avoid leaking secrets.
+ * Detect the format of cookie file text and say why it failed.
  *
- * Heuristic: any line that has a tab-separated name=value pair,
- * replace the value column with `<redacted>`.
+ * The reason is a code. A caller that wants to tell the user what to do
+ * maps the code to a sentence; the code itself never carries content.
  */
-export function safePreview(text: string, maxChars = 64): string {
-	const firstLine =
-		text
-			.split("\n")
-			.map((l) => l.trim())
-			.find((l) => l.length > 0) ?? "";
-	const redacted = firstLine
-		.split("\t")
-		.map((col, i) => (i >= 5 ? "<redacted>" : col))
-		.join("\t");
-	return redacted.length > maxChars
-		? `${redacted.slice(0, maxChars)}…`
-		: redacted;
-}
-
-/**
- * Detect the format of cookie file text.
- */
-export function detectFormat(text: string): CookieFileFormat | null {
-	if (typeof text !== "string" || text.length === 0) return null;
+export function diagnoseFormat(text: string): FormatDiagnosis {
+	if (typeof text !== "string" || text.length === 0) {
+		return { format: null, reason: "empty" };
+	}
 
 	const trimmed = text.trimStart();
 	const firstByte = trimmed[0];
 
 	// JSON heuristic — array or object at the top.
 	if (firstByte === "[" || firstByte === "{") {
-		return "edit-this-cookie-json";
-	}
-
-	// Netscape heuristic — header OR a tab-separated 7-column row.
-	if (HEADER_RE.test(text)) {
-		return "netscape";
+		return { format: "edit-this-cookie-json" };
 	}
 
 	const lines = text.split(/\r?\n/);
+
+	// A tab-separated row is the strict Netscape format.
+	let hasTabRow = false;
 	for (const line of lines) {
 		if (!line || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) {
 			continue;
@@ -74,13 +80,44 @@ export function detectFormat(text: string): CookieFileFormat | null {
 		const trimmedLine = line.startsWith("#HttpOnly_")
 			? line.slice("#HttpOnly_".length)
 			: line;
-		const cols = trimmedLine.split("\t");
-		if (cols.length >= MIN_TAB_COLS) {
-			return "netscape";
+		if (trimmedLine.split("\t").length >= MIN_TAB_COLS) {
+			hasTabRow = true;
+			break;
 		}
 	}
+	if (hasTabRow) {
+		return { format: "netscape" };
+	}
 
-	return null;
+	// The header alone is not enough: the rows decide the format.
+	if (hasCompatibleRow(text)) {
+		return { format: "netscape-space" };
+	}
+	if (HEADER_RE.test(text)) {
+		// The wording of the header matches, but no row could be read.
+		// The file claims the format; the parse reports that it holds no
+		// cookie.
+		return { format: "netscape" };
+	}
+
+	if (looksSpaceSeparated(text)) {
+		return { format: null, reason: "space-rows-not-valid" };
+	}
+
+	const hasDataLine = lines.some(
+		(line) => line.trim().length > 0 && !line.startsWith("#"),
+	);
+	return {
+		format: null,
+		reason: hasDataLine ? "tab-rows-not-valid" : "no-rows",
+	};
+}
+
+/**
+ * Detect the format of cookie file text.
+ */
+export function detectFormat(text: string): CookieFileFormat | null {
+	return diagnoseFormat(text).format;
 }
 
 /**

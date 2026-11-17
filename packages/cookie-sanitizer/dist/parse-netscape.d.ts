@@ -18,6 +18,26 @@
  * redaction before any path-touching log line.
  */
 import type { CanonicalCookie } from "./types.js";
+/** The options of the Netscape parser. */
+export interface ParseNetscapeOptions {
+    /**
+     * Read a row that the tab split rejects with the compatible parser.
+     *
+     * A file may hold both kinds of rows: an export that a tool wrote with
+     * tabs and rows that a human typed with spaces. The fallback reads the
+     * second kind instead of dropping it. It stays off by default, so the
+     * strict parser keeps its documented behaviour.
+     */
+    compatibleFallback?: boolean;
+}
+/** The outcome of a parse: the cookies and the counts of the rows. */
+export interface ParseNetscapeResult {
+    cookies: CanonicalCookie[];
+    /** Rows that were read. */
+    accepted: number;
+    /** Rows that looked like a row but did not validate. */
+    rejected: number;
+}
 /**
  * Parse a Netscape-format cookie string into canonical records.
  *
@@ -28,7 +48,14 @@ import type { CanonicalCookie } from "./types.js";
  *
  * Never throws; returns empty array if input is invalid.
  */
-export declare function parseNetscape(text: string): CanonicalCookie[];
+export declare function parseNetscape(text: string, options?: ParseNetscapeOptions): CanonicalCookie[];
+/**
+ * Parse a Netscape-format cookie string and report the counts of the rows.
+ *
+ * The counts are what a diagnostic may show. The rows themselves stay in
+ * memory and never reach a log line.
+ */
+export declare function parseNetscapeDetailed(text: string, options?: ParseNetscapeOptions): ParseNetscapeResult;
 /**
  * Serialize a list of canonical cookies back to Netscape format.
  * Used by atomic-write.ts to produce the canonical cache.

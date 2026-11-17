@@ -1,4 +1,6 @@
 import type { MirrorRecord, ProviderMirrorRecord } from "./mirror.ts";
+import type { CookieSourceStage } from "./packages/cookie-sanitizer/src/source-state.ts";
+import type { QuotaAuthSource } from "./harness/quota-refresh-coordinator.ts";
 
 import {
 	parseContextWindowStatusLine,
@@ -44,11 +46,20 @@ function getLimitTypeLabel(provider: string, limitType?: string): string {
 }
 
 /**
+ * The text for a reset that is not known.
+ *
+ * A missing reset is not a near reset. "resets soon" claimed a timing that
+ * the runtime does not have; the honest text says that the reset time is
+ * unknown.
+ */
+export const UNKNOWN_RESET_TEXT = "reset time unknown";
+
+/**
  * Format reset time for display.
  * Converts ISO strings or human-readable times to a compact format.
  */
 function formatResetTime(resetAt?: string): string {
-	if (!resetAt) return "soon";
+	if (!resetAt) return UNKNOWN_RESET_TEXT;
 
 	// If it's already a short human-readable string, return as-is
 	if (/^\d+\s*(hr|min|day|d|h|m|s)/i.test(resetAt)) {
@@ -87,6 +98,17 @@ function formatResetTime(resetAt?: string): string {
 }
 
 /**
+ * The phrase that names a reset.
+ *
+ * "resets Aug 25 01:47" when the reset is known, "reset time unknown" when
+ * it is not.
+ */
+function formatResetPhrase(resetAt?: string): string {
+	if (!resetAt) return UNKNOWN_RESET_TEXT;
+	return `resets ${formatResetTime(resetAt)}`;
+}
+
+/**
  * Build a TUI-signal exhaustion status line with optional countdown.
  * This is used when a provider (like GLM) hits its limit.
  */
@@ -97,14 +119,14 @@ export function buildExhaustionStatusLine(
 ): string {
 	const label = providerDisplayName(provider);
 	const limitTypeLabel = getLimitTypeLabel(provider, view.limitType);
-	const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
+	const resetPhrase = formatResetPhrase(view.resets_at ?? view.h5_resets_at);
 
 	if (countdownSeconds !== undefined && countdownSeconds > 0) {
 		const countdown = formatCountdownForDisplay(countdownSeconds);
 		return `${label}: ⏳ ${countdown} (${limitTypeLabel})`;
 	}
 
-	return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
+	return `${label}: ${limitTypeLabel} hit, ${resetPhrase}`;
 }
 import { getProviderLabel } from "./packages/types/src/ai-providers.ts";
 import {
@@ -156,42 +178,94 @@ function providerDisplayName(provider: string | null | undefined): string {
 }
 
 /**
+ * The state of the credential source, as the footer needs it.
+ *
+ * The stage says whether a credential was found and imported; the last
+ * fetch says whether the provider accepted it. They are different facts
+ * and the footer keeps them apart.
+ */
+export interface FooterQuotaSource {
+	/** How far the cookie source got. */
+	stage: CookieSourceStage;
+	/** The outcome of the last fetch, when one ran. */
+	lastFetch?: {
+		ok: boolean;
+		source: QuotaAuthSource;
+		reason?: string;
+	} | null;
+}
+
+/**
  * Hint shown when the provider has no usage data yet.
  * Covers all 9 known providers from KNOWN_AI_PROVIDERS.
  */
 function missingDataHint(
 	provider: string | null | undefined,
-	hasCookieSource: boolean,
+	source: FooterQuotaSource,
 ): string {
 	if (!provider) return "no usage source configured";
 
+	let hint: string;
+
 	// MiniMax: needs cookies for continuous scrape
 	if (provider === "minimax") {
-		return hasCookieSource
-			? "no data yet (updates after first scrape)"
-			: "drop minimax cookies into ~/.pi-harness-runtime/cookies/";
+		if (source.stage === "none") {
+			hint = "drop minimax cookies into ~/.pi-harness-runtime/cookies/";
+		} else if (source.stage === "discovered") {
+			// A file was found but the import did not publish a cache.
+			hint = "the cookie file was found but not imported yet";
+		} else {
+			hint = "no data yet (updates after first scrape)";
+		}
+	} else if (providerHasTUISignal(provider)) {
+		// TUI signal providers: one-shot signal on limit hit
+		hint = "no signal yet (updates on first limit hit)";
+	} else if (provider === "deepseek") {
+		// Providers without any tracking implementation yet
+		hint = "deepseek usage tracking not yet implemented";
+	} else if (provider === "gemini") {
+		hint = "gemini usage tracking not yet implemented";
+	} else if (provider === "kimi") {
+		hint = "kimi usage tracking not yet implemented";
+	} else if (source.stage === "none") {
+		// Generic fallback for any other unknown provider
+		hint = "no usage source configured";
+	} else {
+		hint = "no data yet";
 	}
 
-	// TUI signal providers: one-shot signal on limit hit
-	if (providerHasTUISignal(provider)) {
-		return "no signal yet (updates on first limit hit)";
+	const lastFetch = source.lastFetch;
+	if (lastFetch && !lastFetch.ok && lastFetch.reason) {
+		return `${hint} (the last refresh failed: ${lastFetch.reason})`;
+	}
+	return hint;
+}
+
+/**
+ * The window line of a provider that reports percentages.
+ *
+ * Returns null when the record holds no percentage: a missing window is
+ * not a window of zero.
+ */
+function windowStatusLine(
+	provider: string,
+	view: ProviderMirrorRecord,
+): string | null {
+	if (view.h5_used_pct === undefined && view.weekly_used_pct === undefined) {
+		return null;
+	}
+	const weeklyPct = view.weekly_used_pct ?? 0;
+	const weeklyLeft = Math.max(0, 100 - weeklyPct);
+	const weeklyResets = formatResetPhrase(view.weekly_resets_at);
+
+	if (view.h5_used_pct === undefined) {
+		// OpenAI: weekly-only (no 5h window)
+		return `week: ${weeklyLeft.toFixed(0)}% left (${weeklyResets})`;
 	}
 
-	// Providers without any tracking implementation yet
-	// deepseek, gemini, kimi, or any unknown provider
-	if (provider === "deepseek") {
-		return "deepseek usage tracking not yet implemented";
-	}
-	if (provider === "gemini") {
-		return "gemini usage tracking not yet implemented";
-	}
-	if (provider === "kimi") {
-		return "kimi usage tracking not yet implemented";
-	}
-
-	// Generic fallback for any other unknown provider
-	if (!hasCookieSource) return "no usage source configured";
-	return "no data yet";
+	// MiniMax/GLM: has both 5h and weekly windows
+	const h5Left = Math.max(0, 100 - view.h5_used_pct);
+	return `5h: ${h5Left.toFixed(0)}% left (${formatResetPhrase(view.h5_resets_at)}) - week: ${weeklyLeft.toFixed(0)}% left (${weeklyResets})`;
 }
 
 /** Normalize an unknown mirror record into a ProviderMirrorRecord view. */
@@ -218,7 +292,7 @@ export function buildFooterStatusValue(
 	local: { today: { tokens: number; cost: number } },
 	mirror: MirrorRecord | ProviderMirrorRecord | null,
 	freshness: "fresh" | "stale" | "expired" | "missing",
-	hasCookieSource: boolean = true,
+	source: FooterQuotaSource = { stage: "imported" },
 	activeProvider: string | null = null,
 ): string {
 	const view = toProviderView(mirror);
@@ -226,7 +300,10 @@ export function buildFooterStatusValue(
 	const label = providerDisplayName(provider);
 
 	// TUI-signal exhaustion path: fires when limit is hit (one-shot signal).
-	// This takes priority over continuous data to show the most recent state.
+	// A signal is not proof that an allowance is zero, so the window
+	// percentages stay visible next to the signal when the record holds
+	// them: the failure information and the valid percentages are separate
+	// facts.
 	if (
 		provider &&
 		view &&
@@ -239,8 +316,14 @@ export function buildFooterStatusValue(
 			provider,
 			view.limitType ?? undefined,
 		);
-		const resetFormatted = formatResetTime(view.resets_at ?? view.h5_resets_at);
-		return `${label}: ${limitTypeLabel} hit, resets ${resetFormatted}`;
+		const exhaustionNote = `${limitTypeLabel} hit, ${formatResetPhrase(view.resets_at ?? view.h5_resets_at)}`;
+		const windows = windowStatusLine(provider, view);
+		if (windows) {
+			const suffix =
+				freshness === "fresh" || freshness === "missing" ? "" : ` · ${freshness}`;
+			return `${label}: ${windows} · ${exhaustionNote}${suffix}`;
+		}
+		return `${label}: ${exhaustionNote}`;
 	}
 
 	// Continuous data path: providers with continuous scrape (MiniMax has 5h+weekly, OpenAI has weekly-only)
@@ -251,21 +334,7 @@ export function buildFooterStatusValue(
 		freshness !== "expired" &&
 		(view.h5_used_pct !== undefined || view.weekly_used_pct !== undefined)
 	) {
-		const weeklyPct = view.weekly_used_pct ?? 0;
-		const weeklyLeft = Math.max(0, 100 - weeklyPct);
-		const weeklyResets = view.weekly_resets_at ?? "soon";
-		const h5Resets = view.h5_resets_at ?? "soon";
-
-		let statusLine: string;
-		if (view.h5_used_pct === undefined) {
-			// OpenAI: weekly-only (no 5h window)
-			statusLine = `week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
-		} else {
-			// MiniMax/GLM: has both 5h and weekly windows
-			const h5Pct = view.h5_used_pct;
-			const h5Left = Math.max(0, 100 - h5Pct);
-			statusLine = `5h: ${h5Left.toFixed(0)}% left (resets ${h5Resets}) - week: ${weeklyLeft.toFixed(0)}% left (resets ${weeklyResets})`;
-		}
+		const statusLine = windowStatusLine(provider, view) ?? "";
 
 		const freshnessSuffix =
 			freshness === "fresh" || freshness === "missing" ? "" : ` · ${freshness}`;
@@ -292,10 +361,10 @@ export function buildFooterStatusValue(
 		provider &&
 		(!view || freshness === "expired" || freshness === "missing")
 	) {
-		const hint = missingDataHint(provider, hasCookieSource);
+		const hint = missingDataHint(provider, source);
 		// MiniMax-on-fresh-machine still gets the cookie hint; for others
 		// the hint explains the signal-driven design.
-		if (provider === "minimax" && !hasCookieSource) {
+		if (provider === "minimax" && source.stage === "none") {
 			return `${label}: 5h: -- (${hint})`;
 		}
 		return `${label}: 5h: -- · week: -- (${hint})`;

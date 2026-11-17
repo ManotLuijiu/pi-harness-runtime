@@ -30,18 +30,32 @@
  */
 
 export {
+	inspectCookieSource,
+	hasCookieSourceState,
+} from "./source-state.js";
+
+export {
 	sync,
 	hasAnyCookieSource,
 	inferCachePath,
 	enumerateDropFiles,
 	readInputFile,
+	formatRejectionReason,
 	DEFAULT_DROP_DIR,
 } from "./sync.js";
 
 export {
 	parseNetscape,
+	parseNetscapeDetailed,
 	serializeNetscape,
 } from "./parse-netscape.js";
+
+export {
+	parseNetscapeSpace,
+	parseCompatibleRow,
+	hasCompatibleRow,
+	looksSpaceSeparated,
+} from "./parse-netscape-space.js";
 
 export { parseEditThisCookieJson } from "./parse-json.js";
 
@@ -60,9 +74,9 @@ export {
 
 export {
 	detectFormat,
+	diagnoseFormat,
 	buildDetectedFile,
 	safeBasename,
-	safePreview,
 } from "./detect-format.js";
 
 export {
@@ -85,5 +99,24 @@ export type {
 	SyncResult,
 	WatcherEvent,
 } from "./types.js";
+
+export type { FormatDiagnosis, FormatRejection } from "./detect-format.js";
+
+export type {
+	CookieSourceStage,
+	CookieSourceState,
+	InspectCookieSourceOptions,
+} from "./source-state.js";
+
+export type {
+	CompatibleParseResult,
+	CompatibleRowOutcome,
+	CompatibleRowRejection,
+} from "./parse-netscape-space.js";
+
+export type {
+	ParseNetscapeOptions,
+	ParseNetscapeResult,
+} from "./parse-netscape.js";
 
 export type { CookieWatcherConfig } from "./watcher.js";
