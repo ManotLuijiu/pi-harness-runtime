@@ -368,24 +368,6 @@
         "typescript": "^5.0.0",
       },
     },
-    "packages/knowledge-graph": {
-      "name": "@pi-harness/knowledge-graph",
-      "version": "1.1.514",
-      "dependencies": {
-        "@pi-harness/okf-indexer": "workspace:*",
-      },
-      "devDependencies": {
-        "typescript": "^5.4.0",
-      },
-    },
-    "packages/knowledge-retrieval": {
-      "name": "@pi-harness/knowledge-retrieval",
-      "version": "1.1.514",
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.0.0",
-      },
-    },
     "packages/laravel-plugin": {
       "name": "@pi/laravel-plugin",
       "version": "1.1.514",
@@ -460,10 +442,6 @@
         "@types/node": "^20.11.0",
         "typescript": "^7.0.2",
       },
-    },
-    "packages/okf-indexer": {
-      "name": "@pi-harness/okf-indexer",
-      "version": "1.1.514",
     },
     "packages/paperclip-integration": {
       "name": "@pi-harness/paperclip-integration",
@@ -712,21 +690,6 @@
       },
       "devDependencies": {
         "@types/node": "^20.14.0",
-      },
-    },
-    "packages/tencentdb-memory": {
-      "name": "@moocoding/tencentdb-memory",
-      "version": "1.1.514",
-    },
-    "packages/tencentdb-sync": {
-      "name": "@pi-harness/tencentdb-sync",
-      "version": "1.1.514",
-      "dependencies": {
-        "chokidar": "^5.0.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.0.0",
       },
     },
     "packages/test-data-generator": {
@@ -1018,8 +981,6 @@
 
     "@moocoding/file-copy-helper": ["@moocoding/file-copy-helper@workspace:packages/file-copy-helper"],
 
-    "@moocoding/tencentdb-memory": ["@moocoding/tencentdb-memory@workspace:packages/tencentdb-memory"],
-
     "@moocoding/todo-bd-sync": ["@moocoding/todo-bd-sync@workspace:packages/todo-bd-sync"],
 
     "@moocoding/write-review": ["@moocoding/write-review@workspace:packages/write-review"],
@@ -1064,10 +1025,6 @@
 
     "@pi-harness/jev-judge": ["@pi-harness/jev-judge@workspace:packages/jev-judge"],
 
-    "@pi-harness/knowledge-graph": ["@pi-harness/knowledge-graph@workspace:packages/knowledge-graph"],
-
-    "@pi-harness/knowledge-retrieval": ["@pi-harness/knowledge-retrieval@workspace:packages/knowledge-retrieval"],
-
     "@pi-harness/learning-engine": ["@pi-harness/learning-engine@workspace:packages/learning-engine"],
 
     "@pi-harness/logging": ["@pi-harness/logging@workspace:packages/logging"],
@@ -1081,8 +1038,6 @@
     "@pi-harness/nextjs-plugin": ["@pi-harness/nextjs-plugin@workspace:packages/nextjs-plugin"],
 
     "@pi-harness/notification": ["@pi-harness/notification@workspace:packages/notification"],
-
-    "@pi-harness/okf-indexer": ["@pi-harness/okf-indexer@workspace:packages/okf-indexer"],
 
     "@pi-harness/paperclip-integration": ["@pi-harness/paperclip-integration@workspace:packages/paperclip-integration"],
 
@@ -1119,8 +1074,6 @@
     "@pi-harness/skills": ["@pi-harness/skills@workspace:packages/skills"],
 
     "@pi-harness/task-compiler": ["@pi-harness/task-compiler@workspace:packages/task-compiler"],
-
-    "@pi-harness/tencentdb-sync": ["@pi-harness/tencentdb-sync@workspace:packages/tencentdb-sync"],
 
     "@pi-harness/test-generator": ["@pi-harness/test-generator@workspace:packages/test-generator"],
 
@@ -2098,12 +2051,6 @@
 
     "@pi-harness/jev-judge/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
-    "@pi-harness/knowledge-graph/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
-
-    "@pi-harness/knowledge-retrieval/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
-
-    "@pi-harness/knowledge-retrieval/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
-
     "@pi-harness/learning-engine/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
 
     "@pi-harness/logging/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
@@ -2135,10 +2082,6 @@
     "@pi-harness/skill-registry/@types/node": ["@types/node@20.19.43", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA=="],
 
     "@pi-harness/task-compiler/@types/node": ["@types/node@20.19.43", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA=="],
-
-    "@pi-harness/tencentdb-sync/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
-
-    "@pi-harness/tencentdb-sync/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@pi-harness/trajectory/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
 
@@ -2314,8 +2257,6 @@
 
     "@pi-harness/experience-replay/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
-    "@pi-harness/knowledge-retrieval/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
-
     "@pi-harness/learning-engine/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@pi-harness/memory-engine/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
@@ -2333,8 +2274,6 @@
     "@pi-harness/skill-registry/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@pi-harness/task-compiler/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
-
-    "@pi-harness/tencentdb-sync/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@pi-harness/trajectory/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
