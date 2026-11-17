@@ -1,6 +1,6 @@
 {
   "name": "@pi/codex-adapter",
-  "version": "1.1.516",
+  "version": "1.1.517",
   "type": "module",
   "description": "OpenAI Codex provider adapter for pi-harness",
   "main": "dist/index.js",
