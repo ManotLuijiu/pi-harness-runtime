@@ -104,9 +104,6 @@ const ALLOWED_PUBLISHED_MARKDOWN = new Set([
 	"prompts/agents/reviewer.md",
 	"prompts/agents/writer.md",
 	"prompts/slash-commands.md",
-	"prompts/tencentdb-connect.md",
-	"prompts/tencentdb-setup.md",
-	"prompts/tencentdb.md",
 	"prompts/write-review.md",
 	"skills/harness-runtime/SKILL.md",
 ]);

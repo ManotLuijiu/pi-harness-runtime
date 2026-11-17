@@ -137,9 +137,7 @@ test("the browser authentication loads without Playwright", async () => {
 	assert.equal(typeof mod.getRuntimeDir(), "string");
 });
 
-test("the two MCP clients load without a third-party http client", async () => {
-	const retrieval = await load("packages/knowledge-retrieval/dist/mcp-client.js");
-	assert.ok(retrieval);
+test("the MCP client loads without a third-party http client", async () => {
 	const skillClient = await load("packages/skill-mcp-client/dist/client.js");
 	assert.ok(skillClient);
 });

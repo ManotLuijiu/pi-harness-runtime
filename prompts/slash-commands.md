@@ -12,8 +12,6 @@ Type `/` in the editor to see autocomplete.
 | `/wr` | Start write-review loop (writer + reviewer) |
 | `/writer` | Activate writer agent for a task |
 | `/reviewer` | Activate reviewer agent |
-| `/tdb` | Connect to TencentDB |
-| `/tdb-setup` | Setup TencentDB connection |
 | `/cl` | Code review for changelog |
 
 ## Write-Review Loop

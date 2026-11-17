@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "1.1.514",
+  "version": "1.1.515",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -86,9 +86,6 @@
     "/packages/jev-judge/src",
     "/packages/jev-judge/dist",
     "/packages/jev-judge/package.json",
-    "/packages/knowledge-retrieval/src",
-    "/packages/knowledge-retrieval/dist",
-    "/packages/knowledge-retrieval/package.json",
     "/packages/learning-engine/src",
     "/packages/learning-engine/dist",
     "/packages/learning-engine/package.json",
