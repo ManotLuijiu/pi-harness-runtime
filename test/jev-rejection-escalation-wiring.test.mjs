@@ -48,6 +48,20 @@ afterEach(() => {
 });
 
 /**
+ * Whether a captured request went to the Telegram API.
+ *
+ * The host is compared, not a fragment of the URL: a URL that carries
+ * the name of the API in its query is a request to another host.
+ */
+function isTelegramRequest(url) {
+	try {
+		return new URL(url).host === "api.telegram.org";
+	} catch {
+		return false;
+	}
+}
+
+/**
  * A center with a Telegram and a LINE channel.
  */
 function createCenter() {
@@ -154,7 +168,7 @@ test("the refusal of the judge reaches the human with working buttons", async ()
 
 	// Telegram carries the buttons with the id of the escalation.
 	const telegram = captured.find((request) =>
-		request.url.includes("api.telegram.org"),
+		isTelegramRequest(request.url),
 	);
 	assert.ok(telegram, "the message did not reach Telegram");
 	const keyboard = telegram.body.reply_markup?.inline_keyboard ?? [];
