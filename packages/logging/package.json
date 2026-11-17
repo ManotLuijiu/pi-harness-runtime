@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/logging",
-  "version": "1.1.516",
+  "version": "1.1.517",
   "type": "module",
   "description": "Centralized structured application logging with buffered Cloudflare R2 and webhook transports",
   "main": "./dist/index.js",
