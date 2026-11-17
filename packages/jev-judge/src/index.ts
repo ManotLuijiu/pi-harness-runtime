@@ -768,6 +768,14 @@ export type { ContinuationConfig, ContinuationState, ContinuationResult } from "
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
 
+// Export the reconciliation of the todos before a continuation
+export {
+	TODO_RECONCILIATION_REMINDER,
+	todoReconciliationItems,
+	buildTodoReconciliationBlock,
+} from "./todo-reconciliation.js";
+export type { TodoReconciliationItem } from "./todo-reconciliation.js";
+
 // Export staged validation plans
 export {
 	parseValidationPlan,

@@ -44,6 +44,14 @@ export const CallbackActions = {
 	 * The action must be a single token, like every other action here.
 	 */
 	WEEK_MANUAL: "weekmanual",
+	/**
+	 * The user chooses the Pi instance that receives a plan.
+	 *
+	 * Several instances can run in the workspace of a plan. The plan is not
+	 * broadcast: the user picks the recipient. The action must be a single
+	 * token, like every other action here.
+	 */
+	PLAN_RECIPIENT: "planpick",
 	/** Custom action prefix */
 	CUSTOM: "custom",
 } as const;

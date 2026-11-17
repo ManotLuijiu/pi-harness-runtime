@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "1.1.513",
+  "version": "1.1.514",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -65,6 +65,9 @@
     "/packages/evaluation-engine/src",
     "/packages/evaluation-engine/dist",
     "/packages/evaluation-engine/package.json",
+    "/packages/exploration-guard/src",
+    "/packages/exploration-guard/dist",
+    "/packages/exploration-guard/package.json",
     "/packages/event-bus/src",
     "/packages/event-bus/dist",
     "/packages/event-bus/package.json",
@@ -104,6 +107,9 @@
     "/packages/performance-optimizer/src",
     "/packages/performance-optimizer/dist",
     "/packages/performance-optimizer/package.json",
+    "/packages/plan-handoff/src",
+    "/packages/plan-handoff/dist",
+    "/packages/plan-handoff/package.json",
     "/packages/privilege-broker/src",
     "/packages/privilege-broker/dist",
     "/packages/privilege-broker/package.json",

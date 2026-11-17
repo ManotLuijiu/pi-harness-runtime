@@ -195,6 +195,8 @@ export { TodoContinuationController, createTodoContinuation } from "./continuati
 export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
+export { TODO_RECONCILIATION_REMINDER, todoReconciliationItems, buildTodoReconciliationBlock, } from "./todo-reconciliation.js";
+export type { TodoReconciliationItem } from "./todo-reconciliation.js";
 export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, planWorkload, planHasPilot, } from "./validation-plan.js";
 export type { ValidationPlan, ValidationTier, ValidationTierKind, ValidationState, ValidationTierState, ValidationBudgetStatus, } from "./validation-plan.js";
 export { ValidationLedger, defaultLedgerPath, parseRunRecord, parseLedgerContent, } from "./validation-ledger.js";

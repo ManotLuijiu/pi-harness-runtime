@@ -34,6 +34,20 @@ import {
 } from "./harness/key-file-audit.ts";
 import { renderDetailLines } from "./harness/startup-lines.ts";
 import {
+	startPlanHandoffRegistration,
+	type PlanHandoffAgent,
+} from "./harness/plan-handoff-registration.ts";
+import { deliverPlanToWorkspace } from "./harness/plan-handoff-delivery.ts";
+import {
+	offerRecipientSelection,
+	resolveRecipientSelection,
+} from "./harness/plan-handoff-recipient-selection.ts";
+import { ExplorationGuardRuntime } from "./harness/exploration-guard-runtime.ts";
+import {
+	describeCandidates,
+	type AgentRegistration,
+} from "./packages/plan-handoff/dist/index.js";
+import {
 	isQuestionOpen,
 	isRejection,
 	mayContinue,
@@ -606,6 +620,188 @@ let todoContinuationHandle: { isExplicitlyPaused(): boolean } | null = null;
 let activeExtensionContext: ExtensionContext | null = null;
 
 /**
+ * The registration of this instance in the plan handoff store.
+ *
+ * The instance registers itself, so a sender can find the recipient of a
+ * plan in this workspace. The registration proves that the instance is
+ * alive, never that it may start a task.
+ */
+let planHandoffAgent: PlanHandoffAgent | null = null;
+
+/**
+ * The guard of the exploration of the running request.
+ *
+ * The guard watches the reads of the agent, keeps the record of what was
+ * already read, and asks for a checkpoint when the exploration passes the
+ * budget that the deployment chose.
+ *
+ * The guard never authorises anything: it never commits, never pushes,
+ * never builds, never answers a question of the human and never touches a
+ * countdown of the provider. It says what it saw, and the agent decides.
+ */
+let explorationGuard: ExplorationGuardRuntime | null = null;
+
+/**
+ * The phase of the request that is running, as the guard names it.
+ *
+ * The phase is the phase of the two-phase review when it is known, and
+ * "other" when it is not: an unknown phase is never guessed.
+ */
+function explorationPhase(): "implementation" | "review" | "review_fixes" | "test" | "other" {
+	try {
+		const runtime = sharedState.twoPhaseRuntime as
+			| { getPhase?: () => string }
+			| null
+			| undefined;
+		const phase = runtime?.getPhase?.();
+		if (phase === "review" || phase === "review_fixes") return phase;
+		if (phase === "implementation") return "implementation";
+		if (phase === "test_pending" || phase === "test") return "test";
+	} catch {
+		// The phase is not known: the guard falls back to "other".
+	}
+	return "other";
+}
+
+/**
+ * The guard of the exploration, created when the session begins.
+ */
+function startExplorationGuard(sessionId: string): void {
+	try {
+		explorationGuard = new ExplorationGuardRuntime({
+			identity: {
+				workspace: () => _piSessionCwd || process.cwd(),
+				sessionId: () => sessionId,
+				generation: () => String(requestScopeTracker.generation),
+				phase: () => explorationPhase(),
+			},
+		});
+	} catch (error) {
+		explorationGuard = null;
+		logToFile(
+			"[exploration-guard]",
+			"the guard could not be started:",
+			oneLineError(error),
+		);
+	}
+}
+
+/**
+ * Offer the user the choice of the recipient of a plan.
+ *
+ * Several Pi instances can run in the workspace of a plan. The plan is not
+ * broadcast: the user chooses the instance that receives it. The offer names
+ * the identity of every candidate, because the model label is not an
+ * identity.
+ */
+async function offerPlanRecipient(options: {
+	workspace: string;
+	candidates: AgentRegistration[];
+	planPath?: string;
+	summary?: string;
+	senderSessionId?: string;
+}): Promise<void> {
+	const selection = offerRecipientSelection({
+		workspace: options.workspace,
+		candidates: options.candidates,
+		...(options.planPath ? { planPath: options.planPath } : {}),
+		...(options.summary ? { summary: options.summary } : {}),
+		...(options.senderSessionId
+			? { senderSessionId: options.senderSessionId }
+			: {}),
+	});
+
+	const candidates = describeCandidates(options.candidates);
+	const lines = candidates.map(
+		(candidate, index) => `${index + 1}. ${candidate}`,
+	);
+	const message = [
+		`Several Pi instances run in ${options.workspace}.`,
+		"The plan is not broadcast: choose the instance that receives it.",
+		"",
+		...lines,
+	].join("\n");
+
+	const buttons = selection.offers.map((offer, index) => ({
+		text: `${index + 1}. ${offer.agentId.slice(0, 8)}`,
+		action: "planpick",
+		targetId: offer.token,
+	}));
+
+	logToFile(
+		"[plan-handoff]",
+		`Offering ${options.candidates.length} recipients for the workspace of the plan`,
+	);
+
+	try {
+		await _nc?.notifyWithButtons?.(
+			"PlanRecipientSelection",
+			{ requirement: message, jobId: "plan-handoff" },
+			buttons,
+		);
+	} catch (error) {
+		logToFile("[plan-handoff]", "The offer of the recipients failed:", String(error));
+	}
+}
+
+/**
+ * Apply the choice of the user about the recipient of a plan.
+ *
+ * The choice names one candidate of an offer. The first answer wins, and the
+ * choice becomes the pairing of the workspace, so the next plan of the same
+ * workspace goes to the same instance without asking again.
+ */
+async function resolvePlanRecipient(
+	offerToken: string,
+	channel: "telegram" | "line",
+): Promise<{ ok: boolean; message: string }> {
+	const result = resolveRecipientSelection(offerToken, Date.now());
+	if (!result.ok || !result.selection || !result.recipient) {
+		logToFile(
+			"[plan-handoff]",
+			`The choice of the recipient (${channel}) was refused: ${result.reason}`,
+		);
+		return { ok: false, message: `Stale button - ${result.reason}` };
+	}
+
+	const selection = result.selection;
+	const recipient = result.recipient;
+
+	// The plan goes to the instance the user chose. The routing runs again
+	// with the pairing that the choice has just written, so the plan is
+	// delivered to the chosen instance and to no other.
+	const delivery = deliverPlanToWorkspace({
+		workspace: selection.workspace,
+		sender: {
+			agentId: "codex",
+			sessionId: selection.senderSessionId ?? "unknown",
+		},
+		summary: selection.summary ?? `Codex finished a plan: ${selection.planPath ?? ""}`,
+		...(selection.planPath ? { reference: selection.planPath } : {}),
+	});
+
+	if (delivery.decision !== "queued") {
+		logToFile(
+			"[plan-handoff]",
+			`The chosen recipient could not be reached: ${delivery.reason}`,
+		);
+		return {
+			ok: false,
+			message: "The chosen instance cannot be reached right now.",
+		};
+	}
+
+	logToFile(
+		"[plan-handoff]",
+		`The plan goes to the chosen instance: ${recipient.agentId}`,
+	);
+	return {
+		ok: true,
+		message: `The plan goes to the chosen instance (${recipient.agentId.slice(0, 8)}).`,
+	};
+}
+
+/**
  * The controller of the bounded recovery cycles.
  *
  * The controller decides the deadlines of the attempts; the executor that
@@ -765,6 +961,10 @@ const sharedState = {
 	delegationHarness: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	workspaceEnvMessage: null as string | null,
+	// The runtime of the two-phase workflow. The guard of the exploration
+	// reads its phase, so the exploration budget follows the phase of the
+	// work: a review reads differently than an implementation.
+	twoPhaseRuntime: null as unknown,
 	// The state of the work of the request that is running. The automatic
 	// resume reads it to know whether the work of the request remains.
 	workContext: null as unknown,
@@ -901,6 +1101,9 @@ function beginHumanRequest(): void {
 	// A new request of the human has its own report: the completion of the
 	// previous one was already reported.
 	suppressedResumeReported = false;
+	// The guard of the exploration is active again. The state of the new
+	// request is its own: the counters of the old request do not carry over.
+	explorationGuard?.activate();
 }
 
 /**
@@ -1349,6 +1552,9 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 				}
 			},
 			log: (message: string) => logToFile("[TwoPhase]", message),
+		}).then((runtime) => {
+			// The guard of the exploration reads the phase of the workflow.
+			sharedState.twoPhaseRuntime = runtime;
 		});
 	} catch (error) {
 		logToFile("[TwoPhase]", `runtime not registered: ${oneLineError(error)}`);
@@ -1930,6 +2136,29 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			}
 		});
 
+		// The guard of the exploration remembers the call, so the result can be
+		// paired with it. Nothing is observed here: a call that fails read
+		// nothing, and only the result says what was read.
+		pi.on("tool_call", (event) => {
+			try {
+				const toolEvent = event as {
+					toolCallId?: string;
+					toolName?: string;
+					input?: unknown;
+				};
+				explorationGuard?.toolCall(String(toolEvent.toolCallId ?? ""), {
+					toolName: String(toolEvent.toolName ?? ""),
+					input: toolEvent.input,
+				});
+			} catch (error) {
+				logToFile(
+					"[exploration-guard]",
+					"the call could not be remembered:",
+					oneLineError(error),
+				);
+			}
+		});
+
 		pi.on("tool_execution_end", (event) => {
 			try {
 				const toolEvent = event as {
@@ -1937,7 +2166,24 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					toolName?: string;
 					result?: unknown;
 					isError?: boolean;
+					durationMs?: number;
 				};
+				// The guard of the exploration observes the read and the search.
+				// It speaks at a safe boundary and it never authorises anything.
+				try {
+					explorationGuard?.toolCallEnd(String(toolEvent.toolCallId ?? ""), {
+										toolName: String(toolEvent.toolName ?? ""),
+										isError: toolEvent.isError === true,
+										result: toolEvent.result,
+										durationMs: toolEvent.durationMs,
+					});
+				} catch (error) {
+					logToFile(
+										"[exploration-guard]",
+										"the observation failed:",
+										oneLineError(error),
+					);
+				}
 				const child = sharedState.delegationHarness?.observeToolEnd?.({
 					toolCallId: String(toolEvent.toolCallId ?? ""),
 					toolName: String(toolEvent.toolName ?? ""),
@@ -2197,8 +2443,6 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Capture UI context from session_start
 		pi.on("session_start", (_event, ctx) => {
-			// The context of the running extension: a resume checks it
-			// before it dispatches, so it does not compete with the user.
 			activeExtensionContext = ctx;
 			// The session of the runtime: the countdown of a question belongs
 			// to the session that asked it.
@@ -2215,6 +2459,28 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}
 				_piSessionId = sessionId;
 				activeSessionId = sessionId;
+			}
+			// The instance registers itself in its workspace, so a sender can
+			// find the recipient of a plan here. The registration proves that
+			// the instance is alive, never that it may start a task.
+			if (planHandoffAgent) {
+				planHandoffAgent.stop();
+				planHandoffAgent = null;
+			}
+			if (_piSessionId) {
+				startExplorationGuard(_piSessionId);
+				try {
+					planHandoffAgent = startPlanHandoffRegistration({
+						sessionId: _piSessionId,
+						modelLabel: ctx.model?.id,
+					});
+				} catch (error) {
+					logToFile(
+						"[plan-handoff]",
+						"the registration of the instance failed:",
+						error instanceof Error ? error.message : String(error),
+					);
+				}
 			}
 			if (ctx.hasUI && ctx.ui) {
 				_setAutoContinueStatus = ctx.ui.setStatus.bind(ctx.ui, "harness-auto-continue");
@@ -2235,9 +2501,16 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		});
 
-		// Clear status and cancel background work on session shutdown
-		pi.on("session_shutdown", () => {
-			// Cancel the auto-continue interval
+			// Clear status and cancel background work on session shutdown
+			pi.on("session_shutdown", () => {
+				// The instance leaves the plan handoff store: a sender must
+				// not find an instance that is no longer running.
+				if (planHandoffAgent) {
+					planHandoffAgent.stop();
+					planHandoffAgent = null;
+				}
+
+				// Cancel the auto-continue interval
 			if (autoContinueTimer) {
 				clearInterval(autoContinueTimer);
 				autoContinueTimer = null;
@@ -3506,6 +3779,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			sharedState.scopeRuntime = null;
 			// The scope belongs to the session that is ending.
 			requestScopeTracker.reset();
+			// The pending actions of the guard belong to the session that
+			// is ending: a completed request is not continued by the guard.
+			explorationGuard?.deactivate();
 		});
 
 		// --- task-intake: Automatic todo capture from user requests -----------
@@ -4001,7 +4277,7 @@ interface PlanEvent {
 	codexSessionId: string;
 	planPath: string;
 	planHash: string;
-	status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done";
+	status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done" | "retained" | "needs_recipient";
 	ordinal: number;
 	lastActivity: number;
 	settleTimer: ReturnType<typeof setTimeout> | null;
@@ -4370,6 +4646,17 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					await acknowledge(result.message);
 					break;
 				}
+				case CallbackActions.PLAN_RECIPIENT: {
+					// The user chose the Pi instance that receives the plan.
+					// The choice is the human alone, the first answer wins,
+					// and the plan is never broadcast.
+					const result = await resolvePlanRecipient(
+						parsed.targetId,
+						"telegram",
+					);
+					await acknowledge(result.message);
+					break;
+				}
 				default:
 					// Check for channel toggle actions
 					if (parsed.action === "toggle_telegram") {
@@ -4491,6 +4778,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				ctx: Record<string, unknown>,
 				options?: { approveLabel?: string; rejectLabel?: string },
 			) => center.notifyWithApproval(event as never, ctx as never, options as never),
+			notifyWithButtons: (
+				event: string,
+				ctx: Record<string, unknown>,
+				buttons: Array<{ text: string; action: string; targetId: string; url?: string }>,
+			) => center.notifyWithButtons(event as never, ctx as never, buttons as never),
 		};
 
 		// Wire to GLMQuotaCountdown so it sends Telegram alerts
@@ -4915,6 +5207,21 @@ async function initRelayStream(): Promise<void> {
 								? "countdown"
 								: "manual";
 						await resolveWeeklyDecision(raw, decision, "line");
+					} else if (
+						callback.action === "planpick" ||
+						callback.action.startsWith("planpick_")
+					) {
+						// The choice of the recipient of a plan is the same
+						// choice as in Telegram: one resolver, the first
+						// answer wins. The postback data arrives split into the
+						// action and the token of the candidate, and it may
+						// arrive as one string.
+						const separator = callback.action.indexOf("_");
+						const raw =
+							separator === -1
+								? callback.targetId
+								: callback.action.slice(separator + 1);
+						await resolvePlanRecipient(raw, "line");
 					} else {
 						applyChannelApproval(callback.action, callback.targetId, "line");
 					}
@@ -6163,6 +6470,15 @@ interface LoopCompletion {
 	finishedAt: string;
 }
 
+/**
+ * The tag of a completed loop, for the log line.
+ */
+function loopCompletionTag(verdict: string): string {
+	if (verdict === "approved") return "[ok]";
+	if (verdict === "blocked") return "[blocked]";
+	return "[done]";
+}
+
 function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 	const { existsSync, readFileSync, unlinkSync } = require("node:fs");
 	try {
@@ -6170,12 +6486,7 @@ function processCompletionFile(filePath: string, pi: ExtensionAPI): void {
 		const raw = readFileSync(filePath, "utf8");
 		const completion = JSON.parse(raw) as LoopCompletion;
 
-		const tag =
-			completion.verdict === "approved"
-				? "[ok]"
-				: completion.verdict === "blocked"
-					? "[blocked]"
-					: "[done]";
+		const tag = loopCompletionTag(completion.verdict);
 
 		const message =
 			`Loop completed ${tag}: ${completion.taskId}\n` +
@@ -6891,7 +7202,7 @@ export default async function (pi: ExtensionAPI) {
 				codexSessionId: string;
 				planPath: string;
 				planHash: string;
-				status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done";
+				status: "observed" | "settling" | "ready" | "triggered" | "failed" | "manual_wait" | "done" | "retained" | "needs_recipient";
 				ordinal: number;
 				lastActivity: number;
 				settleTimer: ReturnType<typeof setTimeout> | null;
@@ -6929,10 +7240,44 @@ export default async function (pi: ExtensionAPI) {
 
 			// Trigger Pi to read the plan
 			async function triggerPiForPlan(event: PlanEvent): Promise<void> {
-				// Check cwd match
-				if (_piSessionCwd && codexSessionState.currentProjectRoot && _piSessionCwd !== codexSessionState.currentProjectRoot) {
-					logToFile("[codex-trigger]", "Cwd mismatch, skipping:", _piSessionCwd, "!=", codexSessionState.currentProjectRoot);
-					return;
+				// The workspace of the plan decides where it goes. The
+				// comparison is on the canonical paths, so a symlink of the
+				// same directory matches and two worktrees of one repository
+				// do not.
+				const planWorkspace = codexSessionState.currentProjectRoot || _piSessionCwd || "";
+				if (planWorkspace) {
+					const delivery = deliverPlanToWorkspace({
+						workspace: planWorkspace,
+						sender: {
+							agentId: "codex",
+							sessionId: codexSessionState.currentCodexSessionId || "unknown",
+						},
+						summary: `Codex finished a plan: ${event.planPath}`,
+						reference: event.planPath,
+					});
+					if (delivery.decision === "retained") {
+						// No Pi instance runs in the workspace of the plan: the
+						// plan waits for one. It is never delivered to an
+						// instance of another project.
+						logToFile("[codex-trigger]", "No instance in the workspace of the plan, retained:", planWorkspace);
+						event.status = "retained";
+						return;
+					}
+					if (delivery.decision === "needs-recipient") {
+						// Several instances run in the workspace: the recipient
+						// has to be selected, and the plan is not broadcast.
+						logToFile("[codex-trigger]", "Several instances in the workspace of the plan, a recipient has to be selected:", planWorkspace);
+						event.status = "needs_recipient";
+						await offerPlanRecipient({
+							workspace: planWorkspace,
+							candidates: delivery.candidates,
+							planPath: event.planPath,
+							summary: `Codex finished a plan: ${event.planPath}`,
+							senderSessionId: codexSessionState.currentCodexSessionId || undefined,
+						});
+						return;
+					}
+					logToFile("[codex-trigger]", "Plan routed to the instance of the workspace:", delivery.recipient?.agentId ?? "unknown");
 				}
 
 				// In manual mode, do NOT auto-trigger Pi - wait for human command
@@ -9538,6 +9883,9 @@ issue is not authorized work of the current request).
 		void maybeAutoFetchQuota(ctx.model?.id ?? null);
 		maybeTriggerProactiveCompact(ctx);
 		maybeNotifyContextUsage(ctx);
+		// The guard of the exploration speaks at the boundary of the turn:
+		// it asks for a checkpoint and it authorises nothing.
+		void deliverExplorationIntervention();
 		// The quality check of the workspace runs after the turn: it never
 		// writes and it never steers the session.
 		void maybeRunToolingCheck(ctx);
@@ -9574,6 +9922,12 @@ issue is not authorized work of the current request).
 			() => lastActiveProvider,
 		);
 
+		// The checkpoint of the exploration is saved before the compaction,
+		// so the summary of the context and the record of what was read are
+		// two separate things. The compaction does not reset the budget of
+		// the request.
+		explorationGuard?.saveCheckpoint();
+
 		const forceOutputLimitResume = pendingOutputLimitResumeAfterCompact;
 		pendingOutputLimitResumeAfterCompact = false;
 
@@ -9608,7 +9962,17 @@ issue is not authorized work of the current request).
 			"the compaction continues the turn",
 		);
 		// pi.dev expects the literal "resume" command to continue after compaction.
-		await queueAutoResume("post-compact", "resume", "followUp");
+		// The checkpoint of the exploration rides along, so the agent reuses
+		// the findings instead of reading the same files again. The text
+		// authorises nothing: it asks, it does not instruct.
+		const explorationContinuation = explorationGuard?.continuationAfterCompaction();
+		await queueAutoResume(
+			"post-compact",
+			explorationContinuation
+				? `resume\n\n${explorationContinuation}`
+				: "resume",
+			"followUp",
+		);
 	});
 
 	// The compaction failed. A compaction that fails with the overload of
@@ -9776,6 +10140,48 @@ issue is not authorized work of the current request).
 		}
 	}
 
+	/**
+	 * Deliver the intervention of the exploration guard.
+	 *
+	 * The turn end is the safe boundary: the agent is between turns, so a
+	 * message here does not interrupt a tool call and does not race another
+	 * tool. The guard speaks at most three times in a request, so a request
+	 * that ignored the warnings is not nagged.
+	 *
+	 * The message asks for a checkpoint and it authorises nothing: it never
+	 * commits, never pushes, never builds and never starts another request.
+	 */
+	async function deliverExplorationIntervention(): Promise<void> {
+		const pending = explorationGuard?.takePending();
+		if (!pending) return;
+		try {
+			pi.sendMessage(
+				{
+					customType: "harness:exploration-guard",
+					content: pending.message,
+					display: false,
+					details: {
+						reason: pending.kind,
+						// The message continues the request that is running, so
+						// it carries the generation of that request.
+						requestGeneration: pending.key.generation,
+					},
+				},
+				{ deliverAs: "followUp", triggerTurn: true },
+			);
+			logToFile(
+				"[exploration-guard]",
+				`The guard spoke after ${pending.state.readCount} reads: ${pending.kind}`,
+			);
+		} catch (error) {
+			logToFile(
+				"[exploration-guard]",
+				"the intervention could not be delivered:",
+				oneLineError(error),
+			);
+		}
+	}
+
 	function maybeTriggerProactiveCompact(ctx: ExtensionContext): void {
 		if (proactiveCompactInFlight) {
 			return;
@@ -9860,6 +10266,33 @@ function refreshFooterStatus(
 	// Pi renders every status value on ONE shared line, so the harness footer
 	// (see installHarnessFooter) renders it on a dedicated row instead.
 	setWorkspaceEnvStatus(setStatus);
+
+	// The exploration of the request is published under its own status key.
+	// The numbers describe the reads, never what the agent understood.
+	setExplorationStatus(setStatus);
+}
+
+/**
+ * Publish the status of the exploration of the request.
+ *
+ * The status is passive: it shows what was observed and it never steers the
+ * session. A guard that cannot read its own state says so instead of
+ * showing a number it does not know.
+ */
+function setExplorationStatus(
+	setStatus: (key: string, value: string) => void,
+): void {
+	try {
+		const status = explorationGuard?.status();
+		if (!status) return;
+		setStatus("harness-exploration", status);
+	} catch (error) {
+		logToFile(
+			"[exploration-guard]",
+			"the status could not be published:",
+			oneLineError(error),
+		);
+	}
 }
 
 /**

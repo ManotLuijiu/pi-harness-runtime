@@ -11,7 +11,14 @@ export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | 
  * whether the harness counts down to the reset of the week or the human
  * deals with the account itself.
  */
- | "QuotaWeeklyExhausted" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
+ | "QuotaWeeklyExhausted" | "ResumeScheduled" | "ContextCompacted" | "OutputLimitContinued" | "E2EFailed" | "HumanReviewNeeded" | "ReadyForClient" | "JobCancelled" | "WaitingForUserInput" | "CodexSessionStarted" | "CodexPlanDetected" | "CodexReviewDetected"
+/**
+ * Several Pi instances run in the workspace of a plan.
+ *
+ * The plan is not broadcast: the user chooses the instance that receives
+ * it. The event asks for that choice.
+ */
+ | "PlanRecipientSelection" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;

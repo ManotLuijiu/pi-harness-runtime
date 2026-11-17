@@ -1,0 +1,316 @@
+/**
+ * The runtime of the exploration guard.
+ *
+ * The runtime observes the tools of the agent, keeps the state of the
+ * request, and hands the decision of the guard to the caller.
+ *
+ * The runtime never sends anything and never authorises anything. It
+ * returns a pending intervention at a safe boundary, and the caller decides
+ * what to do with it. The runtime never touches a provider countdown, never
+ * answers a question of the human and never starts a second continuation
+ * owner.
+ */
+
+import type {
+	ExplorationKey,
+	ExplorationPhase,
+	ExplorationState,
+	Intervention,
+	ToolCallEnd,
+	ToolCallInput,
+} from "../packages/exploration-guard/dist/index.js";
+import {
+	buildContinuationText,
+	describeUnreadableCheckpoint,
+	ExplorationTracker,
+	toCompactCheckpoint,
+} from "../packages/exploration-guard/dist/index.js";
+
+/**
+ * The identity of the request that is running.
+ *
+ * Every part of it is read when it is needed, so a change of the session or
+ * of the generation moves the exploration to another state.
+ */
+export interface ExplorationIdentity {
+	/** The canonical workspace of the request. */
+	workspace: () => string;
+	/** The session of the request. */
+	sessionId: () => string;
+	/** The generation of the request. */
+	generation: () => string;
+	/** The phase of the request. */
+	phase: () => ExplorationPhase;
+	/** The todo of the request, when the request owns one. */
+	todoId?: () => number | undefined;
+}
+
+/**
+ * The options of the runtime.
+ */
+export interface ExplorationRuntimeOptions {
+	/** The identity of the request. */
+	identity: ExplorationIdentity;
+	/** The tracker of the exploration. */
+	tracker?: ExplorationTracker;
+	/** The clock, so a test can pin the time. */
+	now?: () => number;
+}
+
+/**
+ * A pending intervention of the guard.
+ *
+ * It is pending until a safe boundary: the runtime speaks once, and the
+ * caller consumes it when the agent is between turns.
+ */
+export interface PendingIntervention {
+	/** The key of the request. */
+	key: ExplorationKey;
+	/** The text the agent receives. */
+	message: string;
+	/** True when the guard asks for a checkpoint. */
+	requiresCheckpoint: boolean;
+	/** The kind of the intervention. */
+	kind: Intervention["kind"];
+	/** The state of the request when the intervention was raised. */
+	state: ExplorationState;
+}
+
+/**
+ * How serious an intervention is.
+ *
+ * A soft warning is the least serious, a budget that is reached is more
+ * serious, and a blocker is the most serious. The guard speaks again when
+ * the seriousness grows, even when the checkpoint did not change.
+ */
+const SEVERITY: Record<Intervention["kind"], number> = {
+	none: 0,
+	"repeat-read": 1,
+	stall: 1,
+	"read-budget": 2,
+	"token-budget": 2,
+	"time-budget": 2,
+	blocked: 3,
+};
+
+/**
+ * The number of times the guard speaks in one request.
+ *
+ * The guard asks, it does not nag: a request that ignored three warnings
+ * does not get a fourth one. The agent decides, and a decision that is not
+ * taken is not the business of the guard.
+ */
+const MAX_SPEECHES_PER_REQUEST = 3;
+
+/**
+ * The runtime of the exploration guard.
+ */
+export class ExplorationGuardRuntime {
+	private readonly identity: ExplorationIdentity;
+	private readonly tracker: ExplorationTracker;
+	private readonly now: () => number;
+	/** The calls that are running, by their id. */
+	private readonly running = new Map<string, ToolCallInput>();
+	/** The intervention that was not consumed yet. */
+	private pending: PendingIntervention | null = null;
+	/** The generation the pending intervention belongs to. */
+	private pendingGeneration = "";
+	/** True when the request was completed or cancelled. */
+	private inactive = false;
+	/** How often the guard spoke in this request. */
+	private speechCount = 0;
+	/** How serious the last intervention was. */
+	private lastSeverity = -1;
+	/** The checkpoint revision the guard last spoke at. */
+	private spokenRevision = -1;
+
+	constructor(options: ExplorationRuntimeOptions) {
+		this.identity = options.identity;
+		this.tracker = options.tracker ?? new ExplorationTracker();
+		this.now = options.now ?? (() => Date.now());
+	}
+
+	/** The key of the request that is running. */
+	key(): ExplorationKey {
+		return {
+			workspace: this.identity.workspace(),
+			sessionId: this.identity.sessionId(),
+			generation: this.identity.generation(),
+			phase: this.identity.phase(),
+			todoId: this.identity.todoId?.(),
+		};
+	}
+
+	/**
+	 * A tool call begins.
+	 *
+	 * The call is remembered, so its result can be paired with it. Nothing
+	 * is observed yet: a call that fails read nothing.
+	 */
+	toolCall(toolCallId: string, call: ToolCallInput): void {
+		this.running.set(toolCallId, call);
+	}
+
+	/**
+	 * A tool call ended.
+	 *
+	 * The observation is made here, because only the result says whether
+	 * the tool read anything.
+	 */
+	toolCallEnd(
+		toolCallId: string,
+		end: ToolCallEnd,
+	): PendingIntervention | null {
+		const call = this.running.get(toolCallId);
+		this.running.delete(toolCallId);
+		if (!call) return null;
+		if (this.inactive) return null;
+
+		let result: { shouldSpeak: boolean; intervention: Intervention; state: ExplorationState };
+		try {
+			result = this.tracker.observe(this.key(), call, end);
+		} catch {
+			// The state could not be read or written: the guard stays quiet
+			// instead of guessing what was read.
+			return null;
+		}
+		if (!result.shouldSpeak) return null;
+
+		const severity = SEVERITY[result.intervention.kind] ?? 0;
+		if (!this.maySpeak(severity, result.state)) return null;
+
+		this.tracker.markSpoken(result.state);
+		this.speechCount += 1;
+		this.lastSeverity = severity;
+		this.spokenRevision = result.state.checkpointRevision;
+		const key = this.key();
+		this.pending = {
+			key,
+			message: result.intervention.message,
+			requiresCheckpoint: result.intervention.requiresCheckpoint,
+			kind: result.intervention.kind,
+			state: result.state,
+		};
+		this.pendingGeneration = key.generation;
+		return this.pending;
+	}
+
+	/**
+	 * True when the guard may speak.
+	 *
+	 * The guard speaks once per checkpoint revision, and again when the
+	 * seriousness of the intervention grew. It speaks at most three times
+	 * in one request: a request that ignored the warnings is not nagged.
+	 */
+	private maySpeak(severity: number, state: ExplorationState): boolean {
+		if (this.speechCount >= MAX_SPEECHES_PER_REQUEST) return false;
+		const revisionChanged = this.spokenRevision !== state.checkpointRevision;
+		const escalated = severity > this.lastSeverity;
+		return revisionChanged || escalated;
+	}
+
+	/**
+	 * The intervention that was not consumed yet.
+	 *
+	 * The intervention is inert when the request changed: a new request of
+	 * the human does not inherit the warning of the old one.
+	 */
+	takePending(): PendingIntervention | null {
+		const pending = this.pending;
+		if (!pending) return null;
+		if (pending.key.generation !== this.pendingGeneration) {
+			this.pending = null;
+			return null;
+		}
+		if (pending.key.generation !== this.identity.generation()) {
+			this.pending = null;
+			return null;
+		}
+		this.pending = null;
+		return pending;
+	}
+
+	/**
+	 * The request is finished, cancelled or answered.
+	 *
+	 * The pending actions of the guard become inert: a completed request
+	 * must not be continued by the guard.
+	 */
+	deactivate(): void {
+		this.inactive = true;
+		this.pending = null;
+		this.running.clear();
+	}
+
+	/**
+	 * A new request of the human begins.
+	 *
+	 * The guard is active again, and the state of the new request is its
+	 * own: the counters of the old request do not carry over.
+	 */
+	activate(): void {
+		this.inactive = false;
+		this.pending = null;
+		this.speechCount = 0;
+		this.lastSeverity = -1;
+		this.spokenRevision = -1;
+	}
+
+	/**
+	 * The checkpoint that survives a compaction.
+	 *
+	 * The checkpoint is saved before the compaction, so the summary of the
+	 * context and the record of the exploration are two separate things.
+	 */
+	saveCheckpoint(): void {
+		if (this.inactive) return;
+		try {
+			const state = this.tracker.state(this.key());
+			this.tracker.save(this.key(), {
+				...state,
+				updatedAt: this.now(),
+			});
+		} catch {
+			// The checkpoint could not be saved: the compaction continues and
+			// the uncertainty is reported afterwards.
+		}
+	}
+
+	/**
+	 * The text that the agent receives after a compaction.
+	 *
+	 * The text names the checkpoint of the request. When the checkpoint
+	 * cannot be read, the text says so: an unknown coverage is never a
+	 * fresh budget and never the knowledge of the whole repository.
+	 */
+	continuationAfterCompaction(): string {
+		try {
+			const state = this.tracker.state(this.key());
+			return buildContinuationText(state);
+		} catch (error) {
+			return describeUnreadableCheckpoint((error as Error).message);
+		}
+	}
+
+	/**
+	 * The compact checkpoint of the request, for a durable copy.
+	 */
+	compactCheckpoint(): ReturnType<typeof toCompactCheckpoint> | null {
+		try {
+			return toCompactCheckpoint(this.tracker.state(this.key()), this.now());
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * The status of the exploration.
+	 */
+	status(): string {
+		try {
+			return this.tracker.status(this.key());
+		} catch {
+			return "investigating | unknown";
+		}
+	}
+}

@@ -51,6 +51,7 @@ export function telegramStatusLabel(event) {
         Info: "[INFO]",
         CodexSessionStarted: "[CODEX]",
         CodexPlanDetected: "[PLAN]",
+        PlanRecipientSelection: "[PICK]",
         AssistantResponse: "[TODO]",
         ToolSummary: "[TOOL]",
         ScopeProposal: "[SCOPE]",
