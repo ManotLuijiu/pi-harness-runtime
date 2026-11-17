@@ -393,6 +393,29 @@ todo create "Replace Film icon with themed icon"
 
 **Why**: Agents often identify issues verbally but forget to track them. This rule ensures nothing slips through.
 
+**Recheck before you create, and after you finish.** The full `todo list`
+output can exceed the limit of a tool result and arrive **truncated** — the
+first entries only. A truncated list is not an empty list: it is a list you
+have not really read. Before you create a task, ask for the open work with
+a status filter, which is small enough to read in full:
+
+```bash
+todo list --status pending
+todo list --status in_progress
+```
+
+After the work is done, run the same two queries again and mark every item
+that is genuinely finished as completed. A task that is still `pending` or
+`in_progress` after the code is merged is a lie the next agent has to
+undo.
+
+**Duplicates are a defect.** When a task is created twice, the second copy
+is not harmless: the harness reads the list, and a finished task that stays
+open blocks the report of the whole work. When you find a duplicate,
+tombstone the newer copy (`todo delete`), move the evidence into the
+description of the original, and record the validation runs under the
+**original** id.
+
 **IMPORTANT**: The `todo` tool and `bd` commands are DIFFERENT systems. Use `todo` for local task tracking.
 
 **Who owns the todo list.** The **agent** creates the todos, the harness
