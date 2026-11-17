@@ -62,6 +62,9 @@ const APPROVAL_REQUIRED_EVENTS = new Set([
   // A proposal of a new scope needs an answer: the backlog is not work of
   // the request that finished, and it does not become work by silence.
   "ScopeProposal",
+  // The judge refused an operation: the human is asked, because the
+  // refusal of the judge is a recommendation and the human may answer it.
+  "JevRejectedAction",
 ]);
 
 /**
@@ -80,6 +83,9 @@ const HIGH_PRIORITY_EVENTS = new Set([
   // The choice of the recipient of a plan is a question that waits for an
   // answer: the plan waits for the user, so the offer may not be dropped.
   "PlanRecipientSelection",
+  // The judge refused an operation and the human is asked about it: the
+  // work waits for the answer, so the question may not be dropped.
+  "JevRejectedAction",
 ]);
 
 /**

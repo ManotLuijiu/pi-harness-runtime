@@ -57,6 +57,14 @@ export interface PlanHandoffAgent {
 	generation: number;
 	/** The store the registration lives in. */
 	store: RegistrationStore;
+	/**
+	 * The registration of this instance.
+	 *
+	 * The receiver of the plans reads the mailbox of the instance with
+	 * this identity, so the receiver and the registration always agree on
+	 * which instance they are.
+	 */
+	registration: AgentRegistration;
 	/** Remove the registration and stop the heartbeat. */
 	stop: () => void;
 }
@@ -135,20 +143,26 @@ export function startPlanHandoffRegistration(
 	const host = options.host ?? hostname();
 	const pid = options.pid ?? process.pid;
 
+	// The registration of this instance. The receiver of the plans reads
+	// the mailbox of the instance with this identity.
+	const registration: AgentRegistration = {
+		agentId,
+		sessionId: options.sessionId,
+		generation,
+		workspace: workspace.path,
+		host,
+		pid,
+		modelLabel: options.modelLabel,
+		busy: false,
+		paused: false,
+		startedAt: now(),
+		heartbeatAt: now(),
+	};
+
+	// The heartbeat raises the beat of the same registration: the start of
+	// the instance does not change with every beat.
 	const write = (): void => {
-		const registration: AgentRegistration = {
-			agentId,
-			sessionId: options.sessionId,
-			generation,
-			workspace: workspace.path,
-			host,
-			pid,
-			modelLabel: options.modelLabel,
-			busy: false,
-			paused: false,
-			startedAt: now(),
-			heartbeatAt: now(),
-		};
+		registration.heartbeatAt = now();
 		store.upsert(registration);
 	};
 
@@ -161,6 +175,7 @@ export function startPlanHandoffRegistration(
 		sessionId: options.sessionId,
 		generation,
 		store,
+		registration,
 		stop: () => {
 			clearInterval(heartbeat);
 			store.remove(agentId);

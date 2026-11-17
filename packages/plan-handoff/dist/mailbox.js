@@ -106,6 +106,15 @@ export class Mailbox {
         return this.entries().filter((entry) => entry.state === "pending");
     }
     /**
+     * The messages that still have to be delivered, oldest first.
+     *
+     * A message that was claimed but not acknowledged stays here: a crash
+     * between the claim and the acknowledgement must not lose the plan.
+     */
+    claimable() {
+        return this.entries().filter((entry) => entry.state === "pending" || entry.state === "claimed");
+    }
+    /**
      * The message that is already claimed or delivered.
      */
     read(id) {

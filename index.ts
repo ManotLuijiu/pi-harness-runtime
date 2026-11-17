@@ -39,10 +39,24 @@ import {
 } from "./harness/plan-handoff-registration.ts";
 import { deliverPlanToWorkspace } from "./harness/plan-handoff-delivery.ts";
 import {
+	planDeliveryText,
+	startPlanReceiver,
+	type PlanReceiver,
+} from "./harness/plan-handoff-receiver.ts";
+import {
 	offerRecipientSelection,
 	resolveRecipientSelection,
 } from "./harness/plan-handoff-recipient-selection.ts";
 import { ExplorationGuardRuntime } from "./harness/exploration-guard-runtime.ts";
+import {
+	JevRejectionEscalationRuntime,
+} from "./harness/jev-rejection-escalation.ts";
+import { DelegatedApprovalRuntime } from "./harness/delegated-approval-runtime.ts";
+import { DelegationStore } from "./harness/delegation-store.ts";
+import { ApprovalDecisionStore } from "./harness/approval-decision-store.ts";
+import { operationKindFor } from "./harness/delegated-approval-types.ts";
+import type { NotificationResult } from "./packages/notification/src/types.ts";
+import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
 import {
 	describeCandidates,
 	type AgentRegistration,
@@ -178,6 +192,7 @@ import { parseMiniMaxQuotaText } from "./harness/e2e/minimax-quota-parser.js";
 import {
 	CookieWatcher,
 	DEFAULT_DROP_DIR as COOKIE_DROP_DIR,
+	atomicWriteFileSync,
 	inspectCookieSource,
 } from "./packages/cookie-sanitizer/src/index.ts";
 import {
@@ -629,6 +644,16 @@ let activeExtensionContext: ExtensionContext | null = null;
 let planHandoffAgent: PlanHandoffAgent | null = null;
 
 /**
+ * The receiver of the plans of this instance.
+ *
+ * The receiver reads the mailbox of this instance and hands a plan that is
+ * addressed to it to the session. Without it a plan that was routed to
+ * this instance would stay in the mailbox, and the instance that sent the
+ * plan would execute it instead.
+ */
+let planReceiver: PlanReceiver | null = null;
+
+/**
  * The guard of the exploration of the running request.
  *
  * The guard watches the reads of the agent, keeps the record of what was
@@ -979,6 +1004,27 @@ const sharedState = {
 	 * the human twice about the same backlog.
 	 */
 	scopeProposedFor: null as number | null,
+	/**
+	 * The runtime of the escalation of a refusal of the judge.
+	 *
+	 * A refusal of the judge is asked of the human with working buttons,
+	 * so the work stays blocked until the human answers.
+	 */
+	jevRejectionEscalation: null as JevRejectionEscalationRuntime | null,
+	/**
+	 * The runtime of the delegated timeout.
+	 *
+	 * The deadline of a question is not an answer: the work continues only
+	 * when the user delegated that outcome in advance.
+	 */
+	delegatedApproval: null as DelegatedApprovalRuntime | null,
+	/**
+	 * The resume of the delegated timeout.
+	 *
+	 * It is set where the executor of the automatic resumes lives, so the
+	 * runtime does not depend on the order of the setup.
+	 */
+	delegatedResume: null as null | (() => void),
 };
 
 /**
@@ -1194,6 +1240,41 @@ function applyChannelApproval(
 		return false;
 	}
 
+	// An escalation of a refusal of the judge is not a question of the
+	// work either: the answer decides the action that the judge refused.
+	// The work stays blocked until the human answers, so the answer does
+	// not steer a message into the conversation.
+	const escalation = sharedState.jevRejectionEscalation?.forQuestion(requestId);
+	if (escalation) {
+		const outcome = action === "approve" ? ("yes" as const) : ("no" as const);
+		const result = controller.applyApproval(action, requestId, channel, {
+			notifyUser: false,
+		});
+		if (!result?.applied) {
+			logToFile(
+				"[Approval]",
+				`Stale or duplicate ${channel} click for ${requestId}: ${result?.reason ?? "ignored"}`,
+			);
+			return false;
+		}
+		logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
+		logQuestionTransition(requestId, "answered", `${channel}:${action}`);
+		// The question is answered, so the wait is over. The state of the
+		// session says so, and the countdown of the question is over with
+		// it.
+		sharedState.cancelWait?.();
+		sharedState.updateAutoContinueStatus?.("IDLE");
+		sharedState.pendingCountdown?.stop();
+		if (!sharedState.jevRejectionEscalation?.answer(requestId, outcome)) {
+			logToFile(
+				"[Approval]",
+				`The escalation ${requestId} was answered already - the answer is stale`,
+			);
+			return false;
+		}
+		return true;
+	}
+
 	// A question of a scope proposal is not a question of the work of the
 	// request: it asks whether the backlog may follow. The answer decides
 	// the proposal, and the work of the request stays what it was.
@@ -1250,6 +1331,17 @@ function applyChannelApproval(
 	sharedState.updateAutoContinueStatus?.("IDLE");
 	// The countdown of the answered question is over with it.
 	sharedState.pendingCountdown?.stop();
+
+	// A delegated question was answered by the human, and its deadline
+	// must not decide anything any more: the answer of the human wins
+	// over the timeout.
+	const delegated = sharedState.delegatedApproval?.get(requestId);
+	if (delegated) {
+		sharedState.delegatedApproval?.answer(
+			requestId,
+			result.resolution === "yes" ? "yes" : "no",
+		);
+	}
 
 	if (result.resolution === "yes") {
 		(sharedState.todoContinuationController as any)?.resume?.();
@@ -2269,6 +2361,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			},
 			onDeadline: (requestId: string) => {
 				logToFile("[auto-continue]", "The decision deadline was reached:", requestId);
+				// A delegated question is decided by the delegation, not by
+				// the judge: the deadline continues the work under the
+				// configured default of the user, and the judge is not
+				// asked a question that already has its answer.
+				const delegated = sharedState.delegatedApproval?.get(requestId);
+				if (delegated) {
+					logToFile(
+						"[auto-continue]",
+						"The deadline of the delegated question was reached:",
+						requestId,
+					);
+					sharedState.delegatedApproval?.expire(requestId);
+					return;
+				}
 				checkAndAutoContinue("countdown")
 					.then(() => {
 						// The decision did not start: another one was still in
@@ -2335,6 +2441,119 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			},
 		});
 		sharedState.pendingCountdown = pendingCountdown;
+
+		// The escalation of a refusal of the judge: the human is asked with
+		// working [Yes] / [No] buttons, and the work stays blocked until
+		// the human decides.
+		sharedState.jevRejectionEscalation = new JevRejectionEscalationRuntime({
+			registerQuestion: (context, text) => {
+				const question = pqController.createQuestion({
+					text,
+					sessionId: _sessionId,
+					workspacePath: _piSessionCwd || "/",
+					jobId: context.originalRequestId,
+					kind: "approval",
+					askType: "approval",
+					contextText: text,
+					// The escalation is asked after the judge refused: it
+					// waits for the human and not for a decision of the
+					// request.
+					relevance: "final-request",
+					risk: {
+						requiresExplicitAuthorization: true,
+						destructive: false,
+						reversible: true,
+						external: false,
+					},
+				});
+				return question.requestId;
+			},
+			deliver: async (questionId, text) => {
+				const results = await _nc?.notifyWithApproval(
+					"JevRejectedAction",
+					{
+						jobId: questionId,
+						questionId,
+						questionKind: "approval",
+						requirement: text,
+					},
+					// The buttons answer the action proposal, not the
+					// recommendation of the judge.
+					{ approveLabel: "Yes", rejectLabel: "No" },
+				);
+				return ((results ?? []) as NotificationResult[]).map((result) => ({
+					success: result.success,
+					channel: result.channel,
+					error: result.error,
+				}));
+			},
+			onApproved: (state) => {
+				logToFile(
+					"[Approval]",
+					`The human approved the action of ${state.questionId} - the work resumes once`,
+				);
+				// The resume continues the work of the request. The action
+				// itself still goes through the checks of the repository:
+				// an approval of the human is not a passed validation.
+				(sharedState.todoContinuationController as any)?.resume?.();
+			},
+			onRejected: (state) => {
+				logToFile(
+					"[Approval]",
+					`The human rejected the action of ${state.questionId} - the action stays blocked`,
+				);
+				(sharedState.todoContinuationController as any)?.explicitPause?.();
+			},
+			log: (message) => logToFile("[auto-continue]", message),
+		});
+
+		// The delegations of the user: the deadline of a question is not an
+		// answer. The work continues at the deadline only when the user
+		// delegated that outcome in advance, and only for the kinds of
+		// operation the delegation names.
+		sharedState.delegatedApproval = new DelegatedApprovalRuntime({
+			now: () => Date.now(),
+			delegations: new DelegationStore(
+				join(homedir(), ".pi-harness-runtime"),
+			),
+			decisions: new ApprovalDecisionStore(
+				join(homedir(), ".pi-harness-runtime"),
+			),
+			deliver: async () => ({ delivered: true, failures: [] }),
+			resume: (request, decision) => {
+				logToFile(
+					"[auto-continue]",
+					`The deadline of ${request.requestId} passed under the delegation ${
+						decision.delegationId ?? "unknown"
+					} - one resume is queued`,
+				);
+				// The user is told that the automatic continuation used the
+				// configured default: a silent continuation would look
+				// like a decision of the judge.
+				void _nc
+					?.notify("Info", {
+						jobId: `delegated-timeout-${request.requestId}`,
+						requirement: `The wait ended. The automatic continuation used your configured default (${
+							decision.delegationId ?? "delegation"
+						}): ${request.operation}.`,
+					})
+					.catch(() => {
+						// The report is best effort: the continuation itself
+						// does not depend on it.
+					});
+				sharedState.delegatedResume?.();
+			},
+			active: (request) => {
+				const current = sharedState.pqController?.getCurrentQuestion?.();
+				if (!current) return false;
+				if (current.requestId !== request.requestId) return false;
+				return current.state === "pending" || current.state === "evaluating";
+			},
+			paused: () =>
+				(sharedState.todoContinuationController as any)?.isExplicitlyPaused?.() ===
+				true,
+			log: (message) => logToFile("[auto-continue]", message),
+		});
 
 		// Wire shared state for callback handlers
 		sharedState.cancelWait = () => {
@@ -2467,6 +2686,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				planHandoffAgent.stop();
 				planHandoffAgent = null;
 			}
+			if (planReceiver) {
+				planReceiver.stop();
+				planReceiver = null;
+			}
 			if (_piSessionId) {
 				startExplorationGuard(_piSessionId);
 				try {
@@ -2474,6 +2697,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						sessionId: _piSessionId,
 						modelLabel: ctx.model?.id,
 					});
+					// The receiver reads the mailbox of this instance: a plan
+					// that was routed to this instance is handed to this
+					// session, and to no other session.
+					planReceiver = startPlanReceiver({
+						registration: planHandoffAgent.registration,
+						deliver: async (message) => {
+							await pi.sendUserMessage(planDeliveryText(message), {
+								deliverAs: "steer",
+							});
+						},
+						// In manual mode the human decides: the plan waits in
+						// the mailbox instead of being handed over.
+						hold: (message) =>
+							process.env.CODEX_MANUAL_MODE === "true" &&
+							message.sender.agentId === "codex",
+					});
+					planReceiver.start();
 				} catch (error) {
 					logToFile(
 						"[plan-handoff]",
@@ -2508,6 +2748,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				if (planHandoffAgent) {
 					planHandoffAgent.stop();
 					planHandoffAgent = null;
+				}
+				if (planReceiver) {
+					planReceiver.stop();
+					planReceiver = null;
 				}
 
 				// Cancel the auto-continue interval
@@ -2839,10 +3083,28 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// pending question and every click would be reported stale.
 				// A choice question shows its alternatives: the human has to
 				// see what the agent is choosing between.
-				const requirement = result.alternatives && result.alternatives.length >= 2
+				const options = result.alternatives && result.alternatives.length >= 2
 					? `${result.questionText}\n\nOptions:\n${result.alternatives.map((alternative, index) => `${index + 1}. ${alternative}`).join("\n")}`
 					: result.questionText;
-				_nc?.notifyWithApproval("WaitingForUserInput", {
+				// A delegation of the user may cover the operation of this
+				// question. The human is then told what happens without an
+				// answer, and the deadline is watched for that decision.
+				const delegatedKind = operationKindFor(
+					questionAction ?? result.questionText,
+				);
+				const delegation = delegatedKind
+					? sharedState.delegatedApproval?.delegationFor({
+							kind: delegatedKind,
+							workspace: _piSessionCwd || "/",
+						})
+					: undefined;
+				const delegatedNotice = delegation
+					? `If you do not answer within ${MIN_WAIT_MINUTES} minutes, I will continue under your configured authorization (${delegation.id}).`
+					: undefined;
+				const requirement = delegatedNotice
+					? `${options}\n\n${delegatedNotice}`
+					: options;
+				const notified = _nc?.notifyWithApproval("WaitingForUserInput", {
 					jobId: questionJobId,
 					questionId: questionJobId,
 					questionKind: question.kind,
@@ -2850,7 +3112,38 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				}, {
 					approveLabel: "Continue",
 					rejectLabel: "Not yet",
-				}).catch((e) => logToFile("[Notification]", "notifyWithApproval failed:", String(e)));
+				});
+				if (delegation && delegatedKind) {
+					// The window of a delegated question starts with the
+					// delivery: a question that nobody was told about must
+					// not consume the opportunity of the human to answer.
+					const delivery = ((await notified?.catch((e) => {
+						logToFile("[Notification]", "notifyWithApproval failed:", String(e));
+						return [] as NotificationResult[];
+					})) ?? []) as NotificationResult[];
+					await sharedState.delegatedApproval?.open(
+						{
+							requestId: questionJobId,
+							workspace: _piSessionCwd || "/",
+							sessionId: _sessionId,
+							generation: requestScopeTracker.generation,
+							kind: delegatedKind,
+							operation: questionAction ?? result.questionText,
+							blocked: [questionAction ?? result.questionText],
+							deadlineAt: Date.now() + MIN_WAIT_MINUTES * 60_000,
+						},
+						{
+							delivered: delivery.some((entry) => entry.success),
+							failures: delivery
+								.filter((entry) => !entry.success)
+								.map((entry) => entry.channel),
+						},
+					);
+				} else {
+					void notified?.catch((e) =>
+						logToFile("[Notification]", "notifyWithApproval failed:", String(e)),
+					);
+				}
 				logQuestionTransition(questionJobId, "notified", "waiting-for-user");
 
 				// Also send context info as a follow-up message (not in error field)
@@ -3258,6 +3551,63 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		};
 
 		/**
+		 * Ask the human about the refusal of the judge.
+		 *
+		 * The refusal of the judge is a recommendation, and the human
+		 * decides with the buttons of the escalation. When no channel
+		 * accepts the message, the work stays visibly blocked and the
+		 * harness never claims that the human was notified.
+		 */
+		const escalateJevRejection = async (input: {
+			originalRequestId: string;
+			action: string;
+			reason: string;
+		}): Promise<void> => {
+			const runtime = sharedState.jevRejectionEscalation;
+			if (!runtime) {
+				logToFile(
+					"[auto-continue]",
+					"The escalation runtime is not ready - the work stays blocked",
+				);
+				return;
+			}
+			try {
+				// The work that remains is named in the message: the human
+				// has to know what stays blocked and what may continue.
+				const read = await requestScopeTracker.read();
+				const open = (read.items ?? [])
+					.filter((item) => item.status !== "completed")
+					.map((item) => item.subject)
+					.filter((subject): subject is string => Boolean(subject));
+				const result = await runtime.escalate({
+					originalRequestId: input.originalRequestId,
+					sessionId: _sessionId,
+					generation: requestScopeTracker.generation,
+					workspace: _piSessionCwd || "/",
+					task: open[0],
+					action: input.action,
+					reason: input.reason,
+					blocked: [input.action],
+					independentWork: open.length
+						? `the remaining work (${open.slice(0, 3).join(", ")}) may continue`
+						: undefined,
+				});
+				logToFile(
+					"[auto-continue]",
+					`The escalation of ${input.originalRequestId} was ${
+						result.deliveredAtLeastOne ? "delivered" : "NOT delivered"
+					} - the work stays blocked until the human answers`,
+				);
+			} catch (error) {
+				logToFile(
+					"[auto-continue]",
+					"The escalation of the refusal failed:",
+					oneLineError(error),
+				);
+			}
+		};
+
+		/**
 		 * Apply the decision of the judge.
 		 *
 		 * The decision belongs to the request that was evaluated: the
@@ -3401,6 +3751,25 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// countdown of the wait are over with it.
 					clearWait();
 					updateAutoContinueStatus("IDLE");
+				}
+				// The refusal of the judge is asked of the human. The
+				// question of the judge is closed, so a linked question
+				// with a fresh id carries the buttons: live buttons on a
+				// resolved request would be a lie. The work stays blocked
+				// until the human answers.
+				if (requestId) {
+					const question = sharedState.pqController?.getQuestion?.(requestId);
+					const action =
+						extractQuestionAction(question?.questionText) ??
+						question?.questionText?.slice(0, 200) ??
+						"the proposed action";
+					await escalateJevRejection({
+						originalRequestId: requestId,
+						action,
+						reason:
+							evaluation.reasoning ||
+							"the judge did not approve the action",
+					});
 				}
 				return;
 			}
@@ -3740,9 +4109,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				todoContinuationController = new TodoContinuationController(
 					ctx as unknown as import("./packages/jev-judge/dist/todo-provider.js").TodoContext,
 					{
-						dispatch: async (content: string) => {
-							await pi.sendUserMessage(content, { deliverAs: "steer" });
-						},
+					dispatch: async (content: string) => {
+						await pi.sendUserMessage(content, { deliverAs: "steer" });
+					},
+					// An advisory is a hidden observation, not a steer: it
+					// continues the request that is running, so it carries
+					// the generation of that request.
+					advisoryDispatch: async (content: string, meta) => {
+						pi.sendMessage(
+							{
+								customType: "harness:exploration-guard",
+								content,
+								display: false,
+								details: {
+									reason: meta?.reason ?? "exploration-guard",
+									requestGeneration: meta?.requestGeneration,
+								},
+							},
+							{ deliverAs: "followUp", triggerTurn: true },
+						);
+					},
 						validationLedger,
 					}
 				);
@@ -5779,7 +6165,7 @@ function initLangChain(pi: {
 		},
 	): void;
 }): void {
-	const { readFileSync, writeFileSync, existsSync } = require("node:fs");
+	const { readFileSync, existsSync } = require("node:fs");
 	const { spawn } = require("node:child_process");
 	const { fileURLToPath } = require("url");
 	const { dirname } = require("node:path");
@@ -5892,7 +6278,10 @@ function initLangChain(pi: {
 				coder: coderSpec,
 				reviewer: reviewerSpec,
 			};
-			writeFileSync(roleConfigPath, JSON.stringify(config, null, 2), "utf8");
+			// The role config is a durable JSON store: it is published
+			// through the atomic write seam, so a reader never sees a
+			// half-written file.
+			atomicWriteFileSync(roleConfigPath, JSON.stringify(config, null, 2));
 
 			logToFile("[pi-harness]", "LangChain role config saved:");
 			logToFile("[pi-harness]", `  planner:   ${plannerSpec}`);
@@ -7184,6 +7573,22 @@ export default async function (pi: ExtensionAPI) {
 	// prompt input field. The guard sends it to the harness log instead.
 	initConsoleGuard(pi);
 
+	// --- exploration-checkpoint: let the agent record what it found ---
+	// The guard watches the reads, but only the agent knows what it learned
+	// from them. The tool records that statement beside the coverage of the
+	// request, so a compaction does not make the agent find it again.
+	try {
+		registerExplorationCheckpointTool(pi, {
+			current: () => explorationGuard,
+		});
+	} catch (error) {
+		logToFile(
+			"[exploration-guard]",
+			"the tool of the checkpoint could not be registered:",
+			oneLineError(error),
+		);
+	}
+
 	// --- mcp-connector: the fallback for the MCP servers of the extensions ----
 	// The built-in MCP extension of Pi connects the servers that extensions
 	// register. The connector takes over only the servers that nobody else
@@ -7238,6 +7643,27 @@ export default async function (pi: ExtensionAPI) {
 			// Check if manual mode is enabled (human-in-the-loop)
 			const isManualMode = process.env.CODEX_MANUAL_MODE === "true";
 
+			/**
+			 * Is this instance the recipient of the plan?
+			 *
+			 * The identity is the runtime identity of the instance: the
+			 * agent, the session and the generation. A plan of another
+			 * instance, of another session or of another generation is
+			 * never executed here.
+			 */
+			function isLocalPlanRecipient(recipient?: {
+				agentId: string;
+				sessionId: string;
+				generation: number;
+			}): boolean {
+				if (!recipient || !planReceiver) return false;
+				return (
+					recipient.agentId === planReceiver.agentId &&
+					recipient.sessionId === planReceiver.sessionId &&
+					recipient.generation === planReceiver.generation
+				);
+			}
+
 			// Trigger Pi to read the plan
 			async function triggerPiForPlan(event: PlanEvent): Promise<void> {
 				// The workspace of the plan decides where it goes. The
@@ -7245,6 +7671,9 @@ export default async function (pi: ExtensionAPI) {
 				// same directory matches and two worktrees of one repository
 				// do not.
 				const planWorkspace = codexSessionState.currentProjectRoot || _piSessionCwd || "";
+				let routedRecipient:
+					| { agentId: string; sessionId: string; generation: number }
+					| undefined;
 				if (planWorkspace) {
 					const delivery = deliverPlanToWorkspace({
 						workspace: planWorkspace,
@@ -7277,6 +7706,7 @@ export default async function (pi: ExtensionAPI) {
 						});
 						return;
 					}
+					routedRecipient = delivery.recipient;
 					logToFile("[codex-trigger]", "Plan routed to the instance of the workspace:", delivery.recipient?.agentId ?? "unknown");
 				}
 
@@ -7288,10 +7718,40 @@ export default async function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const triggerMsg = `Codex finished a plan for this workspace. Read and follow the plan at:\n${event.planPath}\n\nTreat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.`;
+				if (!planWorkspace) {
+					// The workspace of the plan is unknown: there is no
+					// routing and no recipient. The plan was found in the
+					// project of this session, so this session takes it.
+					const triggerMsg = `Codex finished a plan for this workspace. Read and follow the plan at:\n${event.planPath}\n\nTreat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.`;
+
+					try {
+						await pi.sendUserMessage(triggerMsg, { deliverAs: "steer" });
+						event.status = "triggered";
+						logToFile("[codex-trigger]", "Triggered Pi for plan:", event.planPath);
+					} catch (err) {
+						event.status = "failed";
+						logToFile("[codex-trigger]", "Trigger failed:", String(err));
+					}
+					return;
+				}
+
+				// The plan was routed to the instance that was selected. Only
+				// that instance executes it: the instance that watched the
+				// plan never executes the plan of another instance.
+				if (!isLocalPlanRecipient(routedRecipient)) {
+					event.status = "triggered";
+					logToFile(
+						"[codex-trigger]",
+						"The plan waits for the selected instance:",
+						routedRecipient?.agentId ?? "unknown",
+					);
+					return;
+				}
 
 				try {
-					await pi.sendUserMessage(triggerMsg, { deliverAs: "steer" });
+					// The receiver of this instance hands the plan to this
+					// session: one delivery, one execution.
+					await planReceiver?.poll();
 					event.status = "triggered";
 					logToFile("[codex-trigger]", "Triggered Pi for plan:", event.planPath);
 				} catch (err) {
@@ -10141,6 +10601,17 @@ issue is not authorized work of the current request).
 	}
 
 	/**
+	 * The resume of the delegated timeout.
+	 *
+	 * The deadline of a question is not an answer: it continues the work
+	 * only under a delegation of the user, and the executor of the
+	 * automatic resumes binds the resume to the request that is running.
+	 */
+	sharedState.delegatedResume = () => {
+		void queueAutoResume("delegated-timeout", "resume", "followUp");
+	};
+
+	/**
 	 * Deliver the intervention of the exploration guard.
 	 *
 	 * The turn end is the safe boundary: the agent is between turns, so a
@@ -10154,21 +10625,43 @@ issue is not authorized work of the current request).
 	async function deliverExplorationIntervention(): Promise<void> {
 		const pending = explorationGuard?.takePending();
 		if (!pending) return;
-		try {
-			pi.sendMessage(
-				{
-					customType: "harness:exploration-guard",
-					content: pending.message,
-					display: false,
-					details: {
-						reason: pending.kind,
-						// The message continues the request that is running, so
-						// it carries the generation of that request.
-						requestGeneration: pending.key.generation,
-					},
+		const controller = sharedState.todoContinuationController as {
+			dispatchAdvisory?: (
+				message: string,
+				options?: {
+					itemId?: number;
+					meta?: { reason?: string; requestGeneration?: string };
 				},
-				{ deliverAs: "followUp", triggerTurn: true },
+			) => Promise<{ dispatched: boolean; reason?: string }>;
+		} | null;
+		if (!controller || typeof controller.dispatchAdvisory !== "function") {
+			// Without the controller there is no guarded path. The reminder
+			// is not sent: an unguarded message would force a turn, and the
+			// guard never forces a turn.
+			logToFile(
+				"[exploration-guard]",
+				"the guarded path is not available, the reminder was not delivered",
 			);
+			return;
+		}
+		try {
+			// The reminder goes through the guarded path: a pause, a pending
+			// user message, a busy session and a completed task all stop it.
+			const result = await controller.dispatchAdvisory(pending.message, {
+				itemId: pending.key.todoId,
+				meta: {
+					reason: pending.kind,
+					requestGeneration: pending.key.generation,
+				},
+			});
+			if (!result.dispatched) {
+				logToFile(
+					"[exploration-guard]",
+					"the reminder was not delivered:",
+					result.reason,
+				);
+				return;
+			}
 			logToFile(
 				"[exploration-guard]",
 				`The guard spoke after ${pending.state.readCount} reads: ${pending.kind}`,

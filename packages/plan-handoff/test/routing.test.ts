@@ -33,6 +33,16 @@ import {
 } from "../src/index.js";
 
 /**
+ * The workspace of the sender and of the instances of the fixture.
+ */
+const WORKSPACE = temporary("plan-handoff-routing-");
+
+/**
+ * Another workspace: a plan is never routed into it.
+ */
+const OTHER_WORKSPACE = temporary("plan-handoff-other-");
+
+/**
  * A registration of an instance, with the fields the router reads.
  */
 function registration(
@@ -41,7 +51,7 @@ function registration(
 	return {
 		sessionId: "session-1",
 		generation: 1,
-		workspace: "/home/frappe/pi-harness-runtime",
+		workspace: WORKSPACE,
 		host: "host-a",
 		pid: 4242,
 		modelLabel: "minimax",
@@ -61,11 +71,11 @@ function temporary(prefix: string): string {
 describe("the routing of a plan", () => {
 	it("selects the only live instance of the workspace", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({ agentId: "agent-a" }),
-				registration({ agentId: "agent-b", workspace: "/home/frappe/other" }),
+				registration({ agentId: "agent-b", workspace: OTHER_WORKSPACE }),
 			],
 		});
 		expect(result.status).toBe("selected");
@@ -74,12 +84,12 @@ describe("the routing of a plan", () => {
 
 	it("never delivers a plan to another project", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({
 					agentId: "agent-other",
-					workspace: "/home/frappe/bunchee-laris",
+					workspace: OTHER_WORKSPACE,
 				}),
 			],
 		});
@@ -91,13 +101,13 @@ describe("the routing of a plan", () => {
 	it("never decides by the model label", () => {
 		// Two instances of two projects carry the same label.
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({ agentId: "agent-a" }),
 				registration({
 					agentId: "agent-b",
-					workspace: "/home/frappe/other",
+					workspace: OTHER_WORKSPACE,
 				}),
 			],
 		});
@@ -107,7 +117,7 @@ describe("the routing of a plan", () => {
 
 	it("asks which one when several instances share the workspace", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({ agentId: "agent-a" }),
@@ -124,7 +134,7 @@ describe("the routing of a plan", () => {
 
 	it("uses an existing pairing when several instances share the workspace", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({ agentId: "agent-a" }),
@@ -138,7 +148,7 @@ describe("the routing of a plan", () => {
 
 	it("ignores a pairing that names a session that ended", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [
 				registration({ agentId: "agent-a" }),
@@ -151,7 +161,7 @@ describe("the routing of a plan", () => {
 
 	it("retains the plan when no instance matches", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [],
 		});
@@ -161,7 +171,7 @@ describe("the routing of a plan", () => {
 
 	it("never selects an instance of another host", () => {
 		const result = resolveRecipient({
-			workspace: "/home/frappe/pi-harness-runtime",
+			workspace: WORKSPACE,
 			host: "host-a",
 			registrations: [registration({ agentId: "agent-a", host: "host-b" })],
 		});
@@ -276,7 +286,7 @@ describe("the message of a plan", () => {
 			sender: {
 				agentId: "codex-1",
 				sessionId: "codex-session-1",
-				workspace: "/home/frappe/pi-harness-runtime",
+				workspace: WORKSPACE,
 			},
 			recipient: {
 				agentId: recipient.agentId,
@@ -360,7 +370,7 @@ describe("the message of a plan", () => {
 
 	it("refuses a scope that lies outside the workspace", () => {
 		const result = validatePlanHandoffMessage(
-			message({ scope: { paths: ["/home/frappe/other/file"] } }),
+			message({ scope: { paths: ["/other/file"] } }),
 		);
 		expect(result.ok).toBe(false);
 	});
@@ -393,7 +403,7 @@ describe("the message of a plan", () => {
 	it("refuses a message of another workspace", () => {
 		const elsewhere = registration({
 			agentId: recipient.agentId,
-			workspace: "/home/frappe/other",
+			workspace: OTHER_WORKSPACE,
 		});
 		const result = validateRecipientIdentity(message(), elsewhere);
 		expect(result.ok).toBe(false);

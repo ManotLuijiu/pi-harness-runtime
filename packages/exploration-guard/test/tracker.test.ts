@@ -41,6 +41,60 @@ function readCall(path: string, offset?: number, limit?: number) {
 }
 
 describe("the tracker of the exploration", () => {
+	test("an edit is not a read", () => {
+		const { tracker, dir } = temporaryTracker();
+		try {
+			tracker.observe(
+				KEY,
+				readCall("src/a.ts"),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			const result = tracker.observe(
+				KEY,
+				{ toolName: "edit", input: { path: "src/a.ts" } },
+				{ toolName: "edit", isError: false, result: "ok" },
+			);
+			// One read and one edit is one read.
+			expect(result.state.readCount).toBe(1);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a search is not a read", () => {
+		const { tracker, dir } = temporaryTracker();
+		try {
+			const result = tracker.observe(
+				KEY,
+				{ toolName: "grep", input: { pattern: "todo", path: "src" } },
+				{ toolName: "grep", isError: false, result: { content: "x" } },
+			);
+			expect(result.state.readCount).toBe(0);
+			expect(result.state.searches).toHaveLength(1);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("the cost of a result that carries text blocks is estimated", () => {
+		const { tracker, dir } = temporaryTracker();
+		try {
+			const result = tracker.observe(
+				KEY,
+				readCall("src/a.ts"),
+				{
+					toolName: "read",
+					isError: false,
+					result: { content: [{ type: "text", text: "a".repeat(40) }] },
+				},
+			);
+			expect(result.state.estimatedTokens).toBeGreaterThan(0);
+			expect(result.state.estimatedTokensApproximate).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("a read is counted", () => {
 		const { tracker, dir } = temporaryTracker();
 		try {
@@ -140,7 +194,8 @@ describe("the tracker of the exploration", () => {
 				{ toolName: "bash", isError: false, result: { content: "ok" } },
 			);
 			expect(result.state.files).toHaveLength(0);
-			expect(result.state.readCount).toBe(1);
+			// The command reads no known file, so it is not a read.
+			expect(result.state.readCount).toBe(0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

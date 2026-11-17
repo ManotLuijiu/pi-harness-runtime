@@ -84,7 +84,12 @@ test("the answer of a channel reaches the proposal", () => {
 		"the answer of a proposal never becomes an answer of the request",
 	);
 	const proposalAt = region.indexOf("proposalForQuestion(requestId)");
-	const approvalAt = region.indexOf("controller.applyApproval(action, requestId, channel");
+	// The shared resolution of the question is the generic one: the calls
+	// of a specific question - an escalation of a refusal, for example -
+	// resolve their own question and do not answer the request.
+	const approvalAt = region.indexOf(
+		"const result = controller.applyApproval(action, requestId, channel);",
+	);
 	assert.ok(
 		proposalAt !== -1 && approvalAt !== -1,
 		"the proposal is recognized and the question is resolved",

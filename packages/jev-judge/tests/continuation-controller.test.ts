@@ -11,9 +11,21 @@ import { describe, it, expect } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TodoContinuationController } from "../src/continuation-controller.js";
-import { MockTodoProvider, type TodoContext } from "../src/todo-provider.js";
+import {
+	TodoContinuationController,
+	type AdvisoryMeta,
+} from "../src/continuation-controller.js";
+import {
+	MockTodoProvider,
+	type TodoContext,
+	type TodoItem,
+} from "../src/todo-provider.js";
 import { ValidationLedger } from "../src/validation-ledger.js";
+import {
+	TODO_RECONCILIATION_REMINDER,
+	buildTodoReconciliationBlock,
+	todoReconciliationItems,
+} from "../src/todo-reconciliation.js";
 
 function makeCtx(overrides: Partial<TodoContext> = {}): TodoContext {
 	return {
@@ -1282,7 +1294,10 @@ describe("TodoContinuationController - staged validation context", () => {
 		});
 
 		await controller.steerToContinue(1);
-		expect(sent[0]).toBe("Continue todo item ID 1.");
+		// The reconciliation block rides along with every continuation. What
+		// this test is about is the validation suffix: there is no plan, so
+		// there is no suffix.
+		expect(sent[0].startsWith("Continue todo item ID 1.")).toBe(true);
 		expect(sent[0]).not.toContain("VALIDATION PLAN");
 	});
 });
@@ -1392,5 +1407,252 @@ describe("TodoContinuationController - validation budget and ledger", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("TodoContinuationController - the advisory dispatch", () => {
+	function makeAdvisoryController(opts: {
+		provider: MockTodoProvider;
+		dispatch: (content: string) => Promise<void>;
+		advisoryDispatch?: (content: string, meta?: AdvisoryMeta) => Promise<void>;
+		ctx?: TodoContext;
+	}) {
+		return new TodoContinuationController(opts.ctx ?? makeCtx(), {
+			dispatch: opts.dispatch,
+			todoProvider: opts.provider,
+			advisoryDispatch: opts.advisoryDispatch,
+		});
+	}
+
+	it("dispatches the advisory through the advisory hook", async () => {
+		const provider = new MockTodoProvider();
+		const advisories: { content: string; meta?: AdvisoryMeta }[] = [];
+		const ordinary: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async (content) => {
+				ordinary.push(content);
+			},
+			advisoryDispatch: async (content, meta) => {
+				advisories.push({ content, meta });
+			},
+		});
+
+		const result = await controller.dispatchAdvisory("record your findings", {
+			meta: { reason: "repeat", requestGeneration: "gen-1" },
+		});
+
+		expect(result.dispatched).toBe(true);
+		expect(advisories).toHaveLength(1);
+		expect(advisories[0].content).toBe("record your findings");
+		expect(advisories[0].meta?.reason).toBe("repeat");
+		expect(advisories[0].meta?.requestGeneration).toBe("gen-1");
+		// The ordinary dispatch is not used for an advisory.
+		expect(ordinary).toHaveLength(0);
+	});
+
+	it("uses the ordinary dispatch when there is no advisory hook", async () => {
+		const provider = new MockTodoProvider();
+		const ordinary: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async (content) => {
+				ordinary.push(content);
+			},
+		});
+
+		const result = await controller.dispatchAdvisory("an advisory");
+		expect(result.dispatched).toBe(true);
+		expect(ordinary).toEqual(["an advisory"]);
+	});
+
+	it("does not dispatch the advisory while the work is paused", async () => {
+		const provider = new MockTodoProvider();
+		const advisories: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async () => {},
+			advisoryDispatch: async (content) => {
+				advisories.push(content);
+			},
+		});
+		controller.explicitPause();
+
+		const result = await controller.dispatchAdvisory("an advisory");
+		expect(result.dispatched).toBe(false);
+		expect(result.reason).toContain("paused");
+		expect(advisories).toHaveLength(0);
+	});
+
+	it("does not dispatch the advisory while the session is busy", async () => {
+		const provider = new MockTodoProvider();
+		const advisories: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async () => {},
+			advisoryDispatch: async (content) => {
+				advisories.push(content);
+			},
+			ctx: makeCtx({ isIdle: () => false }),
+		});
+
+		const result = await controller.dispatchAdvisory("an advisory");
+		expect(result.dispatched).toBe(false);
+		expect(result.reason).toContain("not idle");
+		expect(advisories).toHaveLength(0);
+	});
+
+	it("does not dispatch the advisory when the task of the request is completed", async () => {
+		const provider = new MockTodoProvider();
+		const item = provider.addItem({
+			subject: "the task of the request",
+			status: "in_progress",
+		} as never);
+		const advisories: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async () => {},
+			advisoryDispatch: async (content) => {
+				advisories.push(content);
+			},
+		});
+		provider.setStatus(item.id, "completed");
+
+		const result = await controller.dispatchAdvisory("an advisory", {
+			itemId: item.id,
+		});
+		expect(result.dispatched).toBe(false);
+		expect(result.reason).toContain("completed");
+		expect(advisories).toHaveLength(0);
+	});
+
+	it("does not consume the attempt budget of a task", async () => {
+		const provider = new MockTodoProvider();
+		const item = provider.addItem({
+			subject: "a task",
+			status: "in_progress",
+		} as never);
+		const advisories: string[] = [];
+		const controller = makeAdvisoryController({
+			provider,
+			dispatch: async () => {},
+			advisoryDispatch: async (content) => {
+				advisories.push(content);
+			},
+		});
+
+		await controller.dispatchAdvisory("an advisory", { itemId: item.id });
+		// The advisory holds the queue until its turn settles, like every
+		// dispatch does.
+		const blocked = await controller.steerToContinue(item.id);
+		expect(blocked.dispatched).toBe(false);
+		expect(blocked.reason).toContain("already queued");
+
+		// After the settle the task itself still has its full budget: the
+		// advisory is not a continuation of the task.
+		controller.releaseContinuationGuard("settled");
+		const steer = await controller.steerToContinue(item.id);
+		expect(steer.dispatched).toBe(true);
+		expect(steer.attempts).toBe(1);
+	});
+});
+
+describe("TodoContinuationController - the reconciliation rides along", () => {
+	it("the steer carries the reconciliation block", async () => {
+		const provider = new MockTodoProvider();
+		const item = provider.addItem({
+			subject: "the open item of the request",
+			status: "in_progress",
+		} as never);
+		const sent: string[] = [];
+		const controller = new TodoContinuationController(makeCtx(), {
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+			todoProvider: provider,
+		});
+
+		const result = await controller.steerToContinue(item.id);
+		expect(result.dispatched).toBe(true);
+		expect(sent).toHaveLength(1);
+		// The same builder as the other continuation path.
+		expect(sent[0]).toContain(TODO_RECONCILIATION_REMINDER);
+		expect(sent[0]).toContain("the open item of the request");
+		expect(sent[0]).toContain(`#${item.id}`);
+	});
+
+	it("the reconciliation is not repeated for the same generation", async () => {
+		const provider = new MockTodoProvider();
+		const item = provider.addItem({
+			subject: "the open item of the request",
+			status: "in_progress",
+		} as never);
+		const sent: string[] = [];
+		const controller = new TodoContinuationController(makeCtx(), {
+			dispatch: async (content) => {
+				sent.push(content);
+			},
+			todoProvider: provider,
+		});
+
+		await controller.steerToContinue(item.id);
+		controller.releaseContinuationGuard("settled");
+		await controller.steerToContinue(item.id);
+		controller.releaseContinuationGuard("settled");
+		await controller.steerToContinue(item.id);
+
+		expect(sent).toHaveLength(3);
+		// The reminder rides along once per generation.
+		const withReminder = sent.filter((message) =>
+			message.includes(TODO_RECONCILIATION_REMINDER),
+		);
+		expect(withReminder).toHaveLength(1);
+	});
+
+	it("the two continuation paths build the same block", async () => {
+		// Each path runs in its own controller, so the reconciliation of one
+		// does not consume the reconciliation of the other.
+		const run = async (
+			dispatchPath: (
+				controller: TodoContinuationController,
+				item: TodoItem,
+			) => Promise<unknown>,
+		): Promise<string> => {
+			const provider = new MockTodoProvider();
+			const item = provider.addItem({
+				subject: "the open item of the request",
+				status: "in_progress",
+			} as never);
+			const sent: string[] = [];
+			const controller = new TodoContinuationController(makeCtx(), {
+				dispatch: async (content) => {
+					sent.push(content);
+				},
+				todoProvider: provider,
+			});
+			await dispatchPath(controller, item);
+
+			// The shared builder is the contract: the message carries the
+			// block it produces.
+			const expected = buildTodoReconciliationBlock(
+				todoReconciliationItems((await provider.getSnapshot()).items),
+			);
+			expect(expected).not.toBe("");
+			expect(sent).toHaveLength(1);
+			expect(sent[0]).toContain(expected);
+			return sent[0];
+		};
+
+		const steerMessage = await run((controller, item) =>
+			controller.steerToContinue(item.id),
+		);
+		const continueMessage = await run((controller, item) =>
+			controller.continueItem(item),
+		);
+
+		// The block of both messages is the same.
+		const blockOf = (message: string): string =>
+			message.slice(message.indexOf(TODO_RECONCILIATION_REMINDER));
+		expect(blockOf(steerMessage)).toBe(blockOf(continueMessage));
 	});
 });

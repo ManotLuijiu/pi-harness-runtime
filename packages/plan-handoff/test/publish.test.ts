@@ -30,7 +30,7 @@ function registration(
 	return {
 		sessionId: "session-1",
 		generation: 1,
-		workspace: "/home/frappe/pi-harness-runtime",
+		workspace: WORKSPACE,
 		host: "host-a",
 		pid: 4242,
 		modelLabel: "minimax",
@@ -45,6 +45,23 @@ function registration(
  */
 function temporary(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
+}
+
+/**
+ * The workspace of the sender and of the instances of the fixture.
+ *
+ * The tests name the workspace explicitly: a test that depends on the
+ * directory the suite runs in passes in one directory and fails in another.
+ */
+const WORKSPACE = temporary("plan-handoff-publish-");
+
+/**
+ * Publish a plan in the workspace of the fixture.
+ */
+function publish(
+	options: Omit<Parameters<typeof publishPlan>[0], "cwd">,
+): ReturnType<typeof publishPlan> {
+	return publishPlan({ ...options, cwd: WORKSPACE });
 }
 
 describe("the publication of a plan", () => {
@@ -63,7 +80,7 @@ describe("the publication of a plan", () => {
 	};
 
 	it("addresses the only live instance of the workspace", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
@@ -71,7 +88,7 @@ describe("the publication of a plan", () => {
 				registration({ agentId: "agent-a" }),
 				registration({
 					agentId: "agent-b",
-					workspace: "/home/frappe/other",
+					workspace: temporary("plan-handoff-other-"),
 				}),
 			],
 		});
@@ -83,7 +100,7 @@ describe("the publication of a plan", () => {
 	});
 
 	it("publishes a valid message that the recipient accepts", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
@@ -100,7 +117,7 @@ describe("the publication of a plan", () => {
 	});
 
 	it("retains the plan when no instance matches", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
@@ -112,7 +129,7 @@ describe("the publication of a plan", () => {
 	});
 
 	it("exposes the candidates when several instances match", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
@@ -142,7 +159,7 @@ describe("the publication of a plan", () => {
 	});
 
 	it("uses the pairing when several instances match", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
@@ -157,14 +174,14 @@ describe("the publication of a plan", () => {
 	});
 
 	it("never addresses a plan to another project", () => {
-		const result = publishPlan({
+		const result = publish({
 			plan: content,
 			sender,
 			host: "host-a",
 			registrations: [
 				registration({
 					agentId: "agent-other",
-					workspace: "/home/frappe/bunchee-laris",
+					workspace: temporary("plan-handoff-other-"),
 				}),
 			],
 		});

@@ -15,7 +15,7 @@
  * never touches a provider countdown.
  */
 import { EXPLORATION_CONTINUATION_TEXT } from "./budget.js";
-import { sanitizeText } from "./state.js";
+import { ensureCoverage, sanitizePath, sanitizeText } from "./state.js";
 /**
  * The compact checkpoint of a state.
  */
@@ -106,10 +106,42 @@ export function applyCheckpoint(state, input, now = Date.now()) {
     };
     return {
         ...state,
+        files: applyReferences(state.files, input.references ?? []),
         checkpoint,
         checkpointRevision: revision,
         updatedAt: now,
     };
+}
+/**
+ * Apply the references of a checkpoint to the coverage of the files.
+ *
+ * The hash of a file that changed makes the coverage that was recorded for
+ * it void: the ranges are dropped, so a re-read of the file is a new read
+ * and not a repetition of a reading that no longer holds.
+ */
+function applyReferences(files, references) {
+    if (references.length === 0)
+        return files;
+    const next = [...files];
+    for (const reference of references) {
+        const path = sanitizePath(reference.path);
+        if (!path)
+            continue;
+        const coverage = ensureCoverage(next, path);
+        const previous = coverage.contentHash;
+        const changed = previous !== undefined &&
+            reference.contentHash !== undefined &&
+            previous !== reference.contentHash;
+        coverage.contentHash = reference.contentHash ?? previous;
+        coverage.version = reference.version ?? coverage.version;
+        if (changed) {
+            // The file holds something else now: the ranges that were
+            // covered describe a content that is gone.
+            coverage.ranges = [];
+            coverage.readCount = 0;
+        }
+    }
+    return next;
 }
 /**
  * The summary of the checkpoint, for the agent.

@@ -1,9 +1,31 @@
 import type { TodoHistoryEntry, TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
 import { type ValidationBudgetStatus } from "./validation-plan.js";
 import type { ValidationLedger } from "./validation-ledger.js";
+/**
+ * The context of an advisory message.
+ *
+ * The fields are known: they name the reason of the advisory and the
+ * generation of the request it belongs to.
+ */
+export interface AdvisoryMeta {
+    /** The reason of the advisory, in the vocabulary of its source. */
+    reason?: string;
+    /** The generation of the request the advisory belongs to. */
+    requestGeneration?: string;
+}
 export interface ContinuationConfig {
     /** Dispatch function to send messages to the agent (required) */
     dispatch: (content: string) => Promise<void>;
+    /**
+     * The dispatch of an advisory message.
+     *
+     * An advisory is not the continuation of a task: it is an observation
+     * that the caller wants the agent to see. It goes through the same
+     * guards as a continuation, so it never forces a turn.
+     *
+     * Without this hook the advisory uses the ordinary dispatch.
+     */
+    advisoryDispatch?: (content: string, meta?: AdvisoryMeta) => Promise<void>;
     /** Minimum wait before Jev fallback (ms) */
     jevFallbackMinWaitMs?: number;
     /** Threshold for routine continuation */
@@ -311,6 +333,27 @@ export declare class TodoContinuationController {
      * blocked attempt can never exhaust the retry budget.
      */
     steerToContinue(itemId: number): Promise<SteerResult>;
+    /**
+     * Dispatch an advisory message through the guarded path.
+     *
+     * An advisory is an observation, not the continuation of a task. It goes
+     * through the same guards as a continuation: a pause, a pending user
+     * message, a busy session, a queued dispatch, a cancelled dispatch and
+     * an open circuit breaker all stop it. The advisory therefore never
+     * forces a turn.
+     *
+     * The task-completion safeguard holds as well: when the task of the
+     * request is completed, the advisory is not delivered.
+     *
+     * An advisory does not consume the attempt budget of a task: it is not
+     * a continuation of one.
+     */
+    dispatchAdvisory(message: string, options?: {
+        /** The task of the request. The advisory is not delivered when it is done. */
+        itemId?: number;
+        /** The context of the advisory. It reaches the dispatch, never the state. */
+        meta?: AdvisoryMeta;
+    }): Promise<GuardedDispatchResult>;
     /**
      * Mark a todo item as complete.
      *

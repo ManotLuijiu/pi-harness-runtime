@@ -51,6 +51,51 @@ describe("the checkpoint of the agent", () => {
 		expect(state.checkpoint.findings[0].statement).not.toContain("sk-secret");
 	});
 
+	test("a reference records the hash of the file", () => {
+		const state = applyCheckpoint(baseState(), {
+			references: [{ path: "src/a.ts", contentHash: "abc123" }],
+		}, 2000);
+		expect(state.files).toHaveLength(1);
+		expect(state.files[0].path).toBe("src/a.ts");
+		expect(state.files[0].contentHash).toBe("abc123");
+	});
+
+	test("a hash that changed voids the coverage of the file", () => {
+		let state = baseState();
+		const coverage = ensureCoverage(state.files, "src/a.ts");
+		coverage.ranges = [{ start: 1, end: 10 }];
+		coverage.readCount = 3;
+		coverage.contentHash = "abc123";
+
+		state = applyCheckpoint(state, {
+			references: [{ path: "src/a.ts", contentHash: "def456" }],
+		}, 2000);
+		// The file holds something else now: the ranges describe a content
+		// that is gone, so a re-read is a new read.
+		expect(state.files[0].contentHash).toBe("def456");
+		expect(state.files[0].ranges).toHaveLength(0);
+		expect(state.files[0].readCount).toBe(0);
+	});
+
+	test("the same hash keeps the coverage of the file", () => {
+		let state = baseState();
+		const coverage = ensureCoverage(state.files, "src/a.ts");
+		coverage.ranges = [{ start: 1, end: 10 }];
+		coverage.contentHash = "abc123";
+
+		state = applyCheckpoint(state, {
+			references: [{ path: "src/a.ts", contentHash: "abc123" }],
+		}, 2000);
+		expect(state.files[0].ranges).toHaveLength(1);
+	});
+
+	test("a path that names a credential store is not referenced", () => {
+		const state = applyCheckpoint(baseState(), {
+			references: [{ path: "/home/frappe/.pi-harness-runtime/keys/token.txt" }],
+		}, 2000);
+		expect(state.files).toHaveLength(0);
+	});
+
 	test("the revision rises with every checkpoint", () => {
 		let state = baseState();
 		state = applyCheckpoint(state, { findings: [{ statement: "a" }] }, 2000);

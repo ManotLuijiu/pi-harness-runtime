@@ -35,6 +35,13 @@ export interface Observation {
     failed: boolean;
     /** True when the result was cut short. */
     truncated: boolean;
+    /**
+     * True when the observation counts as a read of a file.
+     *
+     * A search is not a read, and a tool the guard does not know says
+     * nothing about the reading of a file.
+     */
+    countsAsRead: boolean;
     /** How long the tool took, in milliseconds. */
     durationMs?: number;
 }

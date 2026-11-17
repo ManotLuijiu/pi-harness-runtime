@@ -80,6 +80,7 @@ export {
 } from "./detect-format.js";
 
 export {
+	atomicCreateFileSync,
 	atomicWriteFileSync,
 	defaultCachePathFor,
 } from "./atomic-write.js";

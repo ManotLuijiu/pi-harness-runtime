@@ -36,7 +36,7 @@ export { parseEditThisCookieJson } from "./parse-json.js";
 export { inferProvider, inferProviderFromFilename, inferProviderFromCookies, knownProviders, } from "./infer-provider.js";
 export { normalize, domainMatchesProvider, isExpired, } from "./normalize.js";
 export { detectFormat, diagnoseFormat, buildDetectedFile, safeBasename, } from "./detect-format.js";
-export { atomicWriteFileSync, defaultCachePathFor, } from "./atomic-write.js";
+export { atomicCreateFileSync, atomicWriteFileSync, defaultCachePathFor, } from "./atomic-write.js";
 export { CookieWatcher, createWatcher, defaultDropDir, } from "./watcher.js";
 export type { CanonicalCookie, CookieFileFormat, DetectedFile, ProviderId, SyncOptions, SyncResult, WatcherEvent, } from "./types.js";
 export type { FormatDiagnosis, FormatRejection } from "./detect-format.js";

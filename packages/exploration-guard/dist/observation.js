@@ -11,12 +11,43 @@
  * command is never executed to find out what it does.
  */
 /**
- * The number of characters of a result, when it is a string.
+ * The text of a result.
+ *
+ * Pi returns the content of a tool as a plain text or as an array of
+ * blocks. A block that carries text contributes its text, and a block that
+ * carries something else contributes nothing: the size of a block that is
+ * not text is not the size of the reading.
+ */
+function resultText(value) {
+    if (typeof value === "string")
+        return value;
+    if (!Array.isArray(value))
+        return undefined;
+    const parts = [];
+    for (const block of value) {
+        if (typeof block === "string") {
+            parts.push(block);
+            continue;
+        }
+        if (!block || typeof block !== "object")
+            continue;
+        const candidate = block;
+        if (typeof candidate.text === "string") {
+            parts.push(candidate.text);
+            continue;
+        }
+        if (typeof candidate.content === "string") {
+            parts.push(candidate.content);
+        }
+    }
+    return parts.length > 0 ? parts.join("\n") : undefined;
+}
+/**
+ * The number of characters of a result, when it carries text.
  */
 function contentLength(value) {
-    if (typeof value === "string")
-        return Buffer.byteLength(value, "utf8");
-    return undefined;
+    const text = resultText(value);
+    return text === undefined ? undefined : Buffer.byteLength(text, "utf8");
 }
 /**
  * What the result says about the size and the truncation.
@@ -30,36 +61,45 @@ function readResultShape(result) {
         return { observedBytes: length, truncated: false };
     }
     const shape = result;
-    const truncated = shape.truncated === true || shape.details?.truncation?.truncated === true;
+    const truncation = shape.details?.truncation;
+    const truncated = shape.truncated === true || truncation?.truncated === true;
+    // The size of the result is what the agent paid for, so the size that
+    // came back is measured and not the size of the whole file.
     const observedBytes = shape.outputBytes ??
-        shape.details?.truncation?.outputBytes ??
-        shape.totalBytes ??
-        contentLength(shape.content);
+        truncation?.outputBytes ??
+        contentLength(shape.content) ??
+        shape.totalBytes;
     return {
         observedBytes,
         truncated,
-        outputLines: shape.outputLines,
     };
 }
 /**
  * The lines of a result, when it is a text.
  *
  * The number of lines says whether the result covered the range that was
- * asked for.
+ * asked for. Pi reports the lines that came back under the truncation of
+ * the result, and the lines of the whole file beside them.
  */
 function countLines(result) {
-    if (typeof result === "string")
-        return result.split("\n").length;
+    if (typeof result === "string") {
+        const lines = result.split("\n").length;
+        return { observed: lines, total: lines };
+    }
     if (!result || typeof result !== "object")
-        return undefined;
+        return {};
     const shape = result;
-    if (typeof shape.outputLines === "number")
-        return shape.outputLines;
-    if (typeof shape.totalLines === "number")
-        return shape.totalLines;
-    if (typeof shape.content === "string")
-        return shape.content.split("\n").length;
-    return undefined;
+    const truncation = shape.details?.truncation;
+    const observed = shape.outputLines ?? truncation?.outputLines;
+    const total = shape.totalLines ?? truncation?.totalLines;
+    if (observed !== undefined)
+        return { observed, total: total ?? observed };
+    const text = resultText(shape.content);
+    if (text !== undefined) {
+        const lines = text.split("\n").length;
+        return { observed: lines, total: total ?? lines };
+    }
+    return { total };
 }
 /**
  * Decode the input of a tool call.
@@ -99,13 +139,28 @@ function parseToolInput(input) {
  * covers the lines it returned, and a read that was truncated covers only
  * the part that came back: the rest of the file is not known.
  */
-function readRange(input, outputLines, truncated) {
+function readRange(input, lines, truncated) {
     const start = input.offset !== undefined && input.offset > 0 ? input.offset : 1;
-    if (input.limit !== undefined && input.limit > 0) {
-        return { start, end: start + input.limit - 1, truncated };
+    const requested = input.limit !== undefined && input.limit > 0 ? input.limit : undefined;
+    if (truncated) {
+        // Only the lines that came back were seen: the rest of the range
+        // was asked for and never delivered.
+        if (lines.observed !== undefined && lines.observed > 0) {
+            const seen = requested !== undefined
+                ? Math.min(requested, lines.observed)
+                : lines.observed;
+            return { start, end: start + seen - 1, truncated };
+        }
+        // The number of lines is unknown, so the coverage of the rest is
+        // unknown too.
+        return { start, end: start, truncated };
     }
-    if (outputLines !== undefined && outputLines > 0) {
-        return { start, end: start + outputLines - 1, truncated };
+    if (requested !== undefined) {
+        return { start, end: start + requested - 1, truncated };
+    }
+    const whole = lines.observed ?? lines.total;
+    if (whole !== undefined && whole > 0) {
+        return { start, end: start + whole - 1, truncated };
     }
     return { start, end: start, truncated };
 }
@@ -180,7 +235,7 @@ export function observeToolCall(call, end) {
     if (toolName === "read") {
         const shape = end ? readResultShape(end.result) : { truncated: false };
         const failed = end?.isError === true;
-        const outputLines = end ? countLines(end.result) : undefined;
+        const lines = end ? countLines(end.result) : {};
         return {
             kind: "read",
             source: "known",
@@ -188,10 +243,11 @@ export function observeToolCall(call, end) {
             path: input.path,
             range: failed
                 ? undefined
-                : readRange(input, outputLines, shape.truncated),
+                : readRange(input, lines, shape.truncated),
             observedBytes: shape.observedBytes,
             failed,
             truncated: shape.truncated,
+            countsAsRead: true,
             durationMs: end?.durationMs,
         };
     }
@@ -207,6 +263,8 @@ export function observeToolCall(call, end) {
             observedBytes: shape.observedBytes,
             failed,
             truncated: shape.truncated,
+            // A search is not a read of a file.
+            countsAsRead: false,
             durationMs: end?.durationMs,
         };
     }
@@ -223,6 +281,8 @@ export function observeToolCall(call, end) {
             observedBytes: shape.observedBytes,
             failed: end?.isError === true,
             truncated: shape.truncated,
+            // A command that was not recognised reads no known file.
+            countsAsRead: reading.kind === "shell-read",
             durationMs: end?.durationMs,
         };
     }
@@ -233,6 +293,9 @@ export function observeToolCall(call, end) {
         toolName,
         failed: end?.isError === true,
         truncated: false,
+        // An edit, a write and every other tool the guard does not know
+        // read no file.
+        countsAsRead: false,
         durationMs: end?.durationMs,
     };
 }

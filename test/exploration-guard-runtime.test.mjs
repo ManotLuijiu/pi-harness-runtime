@@ -256,6 +256,56 @@ test("the status names the reads", () => {
 	}
 });
 
+test("the checkpoint of the agent is recorded", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		const recorded = runtime.recordCheckpoint({
+			findings: [{ statement: "the reset lives in the provider", locations: ["src/a.ts"] }],
+			hypotheses: [{ statement: "the cookie is stale", rejected: true }],
+			openQuestions: ["where is the reset read?"],
+			nextAction: "read the reset parser",
+			references: [{ path: "src/a.ts", contentHash: "abc123" }],
+		});
+		assert.equal(recorded, true);
+		const continuation = runtime.continuationAfterCompaction();
+		assert.match(continuation, /the reset lives in the provider/);
+		assert.match(continuation, /read the reset parser/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a checkpoint of a finished request is refused", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		runtime.deactivate();
+		const recorded = runtime.recordCheckpoint({
+			findings: [{ statement: "a finding of a request that is over" }],
+		});
+		assert.equal(recorded, false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the recorded checkpoint is written to the store", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		runtime.recordCheckpoint({
+			findings: [{ statement: "the finding survives the compaction" }],
+		});
+		// A new runtime reads the state of the request from the store.
+		const second = makeRuntime(dir);
+		const continuation = second.runtime.continuationAfterCompaction();
+		assert.match(continuation, /the finding survives the compaction/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("the checkpoint of the request is compact and holds no content", () => {
 	const dir = temporary();
 	try {

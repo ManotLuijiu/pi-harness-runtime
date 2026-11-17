@@ -67,6 +67,35 @@ export function atomicWriteFileSync(finalPath: string, content: string): void {
 }
 
 /**
+ * Atomically create `finalPath` with `content`, and fail when it exists.
+ *
+ * This is the claim of a decision: the exclusive create is atomic, so
+ * exactly one caller writes the file and every other caller is told that
+ * the claim was lost. The file is never replaced, therefore the content
+ * that won the claim is the content that stays.
+ *
+ * Steps:
+ *   1. mkdir -p the parent directory
+ *   2. open the target with O_CREAT | O_EXCL and mode 0o600
+ *   3. write the content and fsync it
+ *
+ * Throws when the file exists or when any step fails.
+ */
+export function atomicCreateFileSync(finalPath: string, content: string): void {
+	mkdirSync(dirname(finalPath), { recursive: true });
+
+	// O_CREAT | O_EXCL: the open fails when the file already exists, which
+	// is exactly the claim: only one caller can create it.
+	const fd = openSync(finalPath, "wx", 0o600);
+	try {
+		writeSync(fd, Buffer.from(content, "utf8"));
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/**
  * Compute the default cache path for a given provider, e.g.:
  *   defaultCachePathFor("minimax") → "~/.config/minimax-cookies.txt"
  *

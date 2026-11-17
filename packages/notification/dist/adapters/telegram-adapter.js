@@ -56,6 +56,7 @@ export function telegramStatusLabel(event) {
         ToolSummary: "[TOOL]",
         ScopeProposal: "[SCOPE]",
         ScopeDecision: "[SCOPE]",
+        JevRejectedAction: "[APPROVAL]",
     };
     return labels[event] ?? "[MSG]";
 }

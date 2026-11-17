@@ -16,7 +16,7 @@
  */
 
 import { EXPLORATION_CONTINUATION_TEXT } from "./budget.js";
-import { sanitizeText } from "./state.js";
+import { ensureCoverage, sanitizePath, sanitizeText } from "./state.js";
 import type {
 	ExplorationCheckpoint,
 	ExplorationFinding,
@@ -153,6 +153,14 @@ export interface CheckpointInput {
 	hypotheses?: { statement: string; rejected?: boolean }[];
 	openQuestions?: string[];
 	nextAction?: string;
+	/**
+	 * The files the findings refer to, with the hash that was observed.
+	 *
+	 * A hash is what makes a finding checkable: the file can be compared
+	 * with the hash later, and a file whose hash changed has a new content,
+	 * so the coverage that was recorded for it is void.
+	 */
+	references?: { path: string; contentHash?: string; version?: string }[];
 }
 
 /**
@@ -192,10 +200,45 @@ export function applyCheckpoint(
 	};
 	return {
 		...state,
+		files: applyReferences(state.files, input.references ?? []),
 		checkpoint,
 		checkpointRevision: revision,
 		updatedAt: now,
 	};
+}
+
+/**
+ * Apply the references of a checkpoint to the coverage of the files.
+ *
+ * The hash of a file that changed makes the coverage that was recorded for
+ * it void: the ranges are dropped, so a re-read of the file is a new read
+ * and not a repetition of a reading that no longer holds.
+ */
+function applyReferences(
+	files: ExplorationState["files"],
+	references: { path: string; contentHash?: string; version?: string }[],
+): ExplorationState["files"] {
+	if (references.length === 0) return files;
+	const next = [...files];
+	for (const reference of references) {
+		const path = sanitizePath(reference.path);
+		if (!path) continue;
+		const coverage = ensureCoverage(next, path);
+		const previous = coverage.contentHash;
+		const changed =
+			previous !== undefined &&
+			reference.contentHash !== undefined &&
+			previous !== reference.contentHash;
+		coverage.contentHash = reference.contentHash ?? previous;
+		coverage.version = reference.version ?? coverage.version;
+		if (changed) {
+			// The file holds something else now: the ranges that were
+			// covered describe a content that is gone.
+			coverage.ranges = [];
+			coverage.readCount = 0;
+		}
+	}
+	return next;
 }
 
 /**

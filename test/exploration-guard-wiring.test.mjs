@@ -42,6 +42,14 @@ const observationSource = readFileSync(
 	new URL("../packages/exploration-guard/src/observation.ts", import.meta.url),
 	"utf8",
 );
+const toolSource = readFileSync(
+	new URL("../harness/exploration-checkpoint-tool.ts", import.meta.url),
+	"utf8",
+);
+const controllerSource = readFileSync(
+	new URL("../packages/jev-judge/src/continuation-controller.ts", import.meta.url),
+	"utf8",
+);
 
 test("the harness observes the tools of the agent", () => {
 	assert.ok(indexSource.includes('pi.on("tool_call"'));
@@ -80,6 +88,44 @@ test("the intervention is delivered at the boundary of the turn", () => {
 		"the intervention is delivered after the turn",
 	);
 	assert.ok(indexSource.includes("takePending()"));
+});
+
+test("the agent can record the checkpoint of the request", () => {
+	assert.ok(indexSource.includes("registerExplorationCheckpointTool(pi"));
+	assert.ok(indexSource.includes("current: () => explorationGuard"));
+});
+
+test("the checkpoint tool records evidence and authorises nothing", () => {
+	assert.ok(toolSource.includes("recordCheckpoint("));
+	assert.ok(toolSource.includes("EXPLORATION_CHECKPOINT_TOOL"));
+	assert.ok(!toolSource.includes("git commit"));
+	assert.ok(!toolSource.includes("npm publish"));
+	assert.ok(!toolSource.includes("bd close"));
+});
+
+test("the reminder goes through the guarded continuation path", () => {
+	// The delivery of the reminder is a guarded dispatch, not a raw send.
+	assert.ok(indexSource.includes("controller.dispatchAdvisory(pending.message"));
+	// The send of the advisory lives in the advisory hook, so it only
+	// happens after the guards of the continuation passed.
+	assert.ok(indexSource.includes("advisoryDispatch: async (content: string, meta) =>"));
+	assert.ok(indexSource.includes('customType: "harness:exploration-guard"'));
+	// The controller knows the guarded path for an advisory.
+	assert.ok(controllerSource.includes("async dispatchAdvisory("));
+	assert.ok(controllerSource.includes("this.guardedDispatch("));
+});
+
+test("the guarded advisory never forces a turn on its own", () => {
+	// The advisory is dispatched by the controller, which stops it when the
+	// work is paused, when the session is busy and when the task is done.
+	const advisory = controllerSource.slice(
+		controllerSource.indexOf("async dispatchAdvisory("),
+		controllerSource.indexOf("async dispatchAdvisory(") + 2000,
+	);
+	assert.ok(advisory.includes("itemId?: number"));
+	assert.ok(advisory.includes("guardedDispatch"));
+	// The advisory does not consume the attempt budget of a task.
+	assert.ok(!advisory.includes("recordAttempt("));
 });
 
 test("the intervention authorises nothing", () => {
