@@ -25,8 +25,17 @@ The previous design expected users to know the exact path (`~/.config/minimax-co
 
 **Input formats** (auto-detected per file):
 
-1. **Netscape HTTP Cookie File** — the canonical format
-2. **EditThisCookie / Chrome devtools JSON export** — array of records in the Chrome/Edge cookie store shape
+1. **Netscape HTTP Cookie File** — the canonical format, tab separated
+2. **The same export with space separated rows** — an export whose rows are
+   separated by spaces instead of tabs. The row is validated (domain, flag,
+   path, secure marker, expiry) and the rest of the line is the value, so a
+   value that contains a space survives.
+3. **EditThisCookie / Chrome devtools JSON export** — array of records in the Chrome/Edge cookie store shape
+
+The format is decided by the rows, not by the wording of the header: an
+export whose header differs from the canonical wording is still read when
+its rows validate, and a file whose rows do not validate is rejected with a
+reason instead of a guess.
 
 **File names** — any name in the drop folder. Inference prefers:
 
@@ -93,9 +102,13 @@ The sanitizer is the **only** writer of the canonical cache. Manual edits are ov
 
 ## What is NOT logged
 
-- Cookie **values** — never. Diagnostics use file basenames and 64-char previews with values redacted.
+- Cookie **values** — never. A diagnostic carries the basename of the file, a reason code and counts. It carries no line, no header, no cookie name and no value.
 - Cookie **paths** (except the canonical cache path, which is a configuration location).
 - Cookie **domains** are OK to print (public).
+
+A file that does not validate leaves the previous canonical cache alone:
+only a successfully validated normalization is published, and the write is
+atomic.
 
 ## Tests
 
