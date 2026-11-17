@@ -1,6 +1,6 @@
 {
   "name": "@pi/release-manager",
-  "version": "1.1.514",
+  "version": "1.1.515",
   "type": "module",
   "description": "Release management for pi-harness",
   "main": "dist/index.js",

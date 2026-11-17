@@ -1,6 +1,6 @@
 {
   "name": "@pi/project-analyzer",
-  "version": "1.1.514",
+  "version": "1.1.515",
   "description": "Project analysis system for pi-harness-runtime - detects frameworks, rules, and project structure",
   "type": "module",
   "main": "./dist/index.js",
