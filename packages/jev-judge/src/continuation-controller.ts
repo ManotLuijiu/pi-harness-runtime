@@ -1,6 +1,11 @@
 import type { TodoHistoryEntry, TodoItem, TodoContext, TodoProvider } from "./todo-provider.js";
 import { createTodoProvider } from "./todo-provider.js";
 import {
+	buildTodoReconciliationBlock,
+	todoReconciliationItems,
+	type TodoReconciliationItem,
+} from "./todo-reconciliation.js";
+import {
 	buildValidationSteerSuffix,
 	formatDuration,
 	parseValidationPlan,
@@ -230,6 +235,10 @@ export class TodoContinuationController {
 	private _maxTotalSteerAttempts = 9;  // Session-wide cap on successful dispatches
 	private _disposed = false;  // Set on shutdown: no dispatch and no timer may act anymore
 	private _validationLedger?: ValidationLedger;  // Optional ledger of validation runs
+	/** The session and generation the reconciliation block was last sent for */
+	private _reconciliationSentFor: string | null = null;
+	/** True when a reconciliation was requested for the current generation */
+	private _reconciliationRequested = false;
 
 	/** True while a dispatch is on the wire */
 	private get inFlight(): boolean {
@@ -295,6 +304,36 @@ export class TodoContinuationController {
 	private validationStateFor(item: TodoItem | undefined): ValidationState | undefined {
 		if (!item || !this._validationLedger) return undefined;
 		return this._validationLedger.stateFor(item);
+	}
+
+	/**
+	 * The key of the current request: the session and the generation.
+	 *
+	 * A new request (a new generation) asks for the reconciliation again.
+	 */
+	private reconciliationKey(): string {
+		return `${this.state.sessionId}#${this.state.generation}`;
+	}
+
+	/**
+	 * The reconciliation block for the open items of the list.
+	 *
+	 * The block is empty when nothing is open, and it is not repeated for the
+	 * same generation: a reminder that is repeated on every continuation is a
+	 * reminder nobody reads. A requested reconciliation (an item that was
+	 * reported complete while it is still open) asks again.
+	 */
+	private reconciliationBlockFor(items: TodoItem[]): string {
+		const open: TodoReconciliationItem[] = todoReconciliationItems(items).map((entry) => {
+			const task = items.find((i) => i.id === entry.id);
+			const validation = this.validationStateFor(task);
+			return validation ? { ...entry, validation } : entry;
+		});
+		if (open.length === 0) return "";
+		if (!this._reconciliationRequested && this._reconciliationSentFor === this.reconciliationKey()) {
+			return "";
+		}
+		return buildTodoReconciliationBlock(open);
 	}
 
 	/**
@@ -661,7 +700,11 @@ export class TodoContinuationController {
 
 		debugLog("TodoContinuation", "Sending continuation:", item.subject);
 
-		const result = await this.guardedDispatch(item.id, (dispatched) => {
+		// The reconciliation block rides along with the message: it is the
+		// checkpoint before a continuation. It is built at the moment the
+		// dispatch goes out, so the open items are the ones of that moment.
+		let reconciliationSent = false;
+		const result = await this.guardedDispatch(item.id, (dispatched, items) => {
 			const target = dispatched ?? item;
 			const baseMessage = target.description
 				? `Continue task: ${target.subject}\n\n${target.description}`
@@ -677,6 +720,10 @@ export class TodoContinuationController {
 			if (budget.exhausted) {
 				return { abort: this.budgetAbortReason(target, budget) };
 			}
+			// The reconciliation checkpoint: the reminder and the open items of
+			// this request, so the agent can close the finished ones itself.
+			const reconciliation = this.reconciliationBlockFor(items);
+			reconciliationSent = reconciliation !== "";
 			// A declared staged-validation plan rides along with the
 			// continuation: the agent must know which tier is cheap before it
 			// picks a command.
@@ -684,15 +731,19 @@ export class TodoContinuationController {
 				elapsedMs: this.elapsedForItem(target.id),
 				state: this.validationStateFor(target),
 			});
-			return {
-				send: validation
-					? `${baseMessage}${retryNote}\n\n${validation}`
-					: `${baseMessage}${retryNote}`,
-			};
+			const parts = [`${baseMessage}${retryNote}`];
+			if (reconciliation) parts.push(reconciliation);
+			if (validation) parts.push(validation);
+			return { send: parts.join("\n\n") };
 		});
 		if (result.dispatched) {
 			// Only a dispatch that actually reached the agent consumes an attempt
 			this.recordAttempt(item.id);
+			if (reconciliationSent) {
+				// The reminder was sent: it is not repeated for this generation.
+				this._reconciliationSentFor = this.reconciliationKey();
+				this._reconciliationRequested = false;
+			}
 			if (this._stalledItemId === item.id) this._stalledItemId = null;
 		} else {
 			debugLog("TodoContinuation", "Continuation not dispatched:", result.reason);
@@ -719,7 +770,7 @@ export class TodoContinuationController {
 	 */
 	private async guardedDispatch(
 		itemId: number,
-		buildMessage: (item: TodoItem | undefined) => DispatchPayload,
+		buildMessage: (item: TodoItem | undefined, items: TodoItem[]) => DispatchPayload,
 	): Promise<GuardedDispatchResult> {
 		// 0. A disposed controller never dispatches.
 		if (this._disposed) {
@@ -816,9 +867,11 @@ export class TodoContinuationController {
 		try {
 			// 7. Verify item still needs work (not completed)
 			let item: TodoItem | undefined;
+			let items: TodoItem[] = [];
 			try {
 				const snapshot = await this.todoProvider.getSnapshot();
-				item = snapshot.items.find((i) => i.id === itemId);
+				items = snapshot.items;
+				item = items.find((i) => i.id === itemId);
 			} catch {
 				// If we can't read todos, skip dispatch
 				debugLog("TodoContinuation", "Guarded dispatch: failed to read todos, skipping");
@@ -869,7 +922,7 @@ export class TodoContinuationController {
 			this.scheduleGuardRelease();
 
 			try {
-				const payload = buildMessage(item);
+				const payload = buildMessage(item, items);
 				if ("abort" in payload) {
 					// The message builder refused the dispatch (e.g. the item
 					// ran out of its declared time budget). Nothing goes on the
@@ -1035,10 +1088,33 @@ export class TodoContinuationController {
 	}
 
 	/**
-	 * Mark a todo item as complete
+	 * Mark a todo item as complete.
+	 *
+	 * The controller never closes a todo by itself: the read confirms that the
+	 * agent closed the item with the real todo tool. An item that is still
+	 * open means the work is not finished: the internal state stays, the
+	 * reconciliation is requested and the normal continuation continues the
+	 * item.
 	 */
-	async markComplete(_itemId: number): Promise<void> {
-		debugLog("TodoContinuation", "Marking item complete");
+	async markComplete(itemId: number): Promise<void> {
+		debugLog("TodoContinuation", "Marking item complete", itemId);
+		let closed = false;
+		try {
+			const snapshot = await this.todoProvider.getSnapshot();
+			const item = snapshot.items.find((i) => i.id === itemId);
+			closed = item?.status === "completed";
+		} catch (err) {
+			// A read that fails cannot confirm the close: the item stays open.
+			debugLog("TodoContinuation", "Failed to read todos in markComplete:", String(err));
+			closed = false;
+		}
+		if (!closed) {
+			// The work is not finished. The state stays as it is, and the
+			// agent is asked to reconcile the list again.
+			this._reconciliationRequested = true;
+			debugLog("TodoContinuation", "Item still open, reconciliation requested:", itemId);
+			return;
+		}
 		this.state.currentItemId = null;
 		this.state.generation++;
 	}
@@ -1071,6 +1147,8 @@ export class TodoContinuationController {
 		this._cancelRequested = false;
 		this._attemptsByItem.clear();
 		this._totalAttempts = 0;
+		this._reconciliationSentFor = null;
+		this._reconciliationRequested = false;
 		this.state = {
 			sessionId: `session-${Date.now()}`,
 			generation: 0,

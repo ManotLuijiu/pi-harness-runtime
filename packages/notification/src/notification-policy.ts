@@ -77,6 +77,9 @@ const HIGH_PRIORITY_EVENTS = new Set([
   // A proposal of a new scope is a question that waits for an answer: the
   // policy of the package may not drop it.
   "ScopeProposal",
+  // The choice of the recipient of a plan is a question that waits for an
+  // answer: the plan waits for the user, so the offer may not be dropped.
+  "PlanRecipientSelection",
 ]);
 
 /**

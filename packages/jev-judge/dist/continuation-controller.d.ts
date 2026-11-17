@@ -155,6 +155,10 @@ export declare class TodoContinuationController {
     private _maxTotalSteerAttempts;
     private _disposed;
     private _validationLedger?;
+    /** The session and generation the reconciliation block was last sent for */
+    private _reconciliationSentFor;
+    /** True when a reconciliation was requested for the current generation */
+    private _reconciliationRequested;
     /** True while a dispatch is on the wire */
     private get inFlight();
     constructor(ctx: TodoContext, config?: ContinuationConfig);
@@ -184,6 +188,21 @@ export declare class TodoContinuationController {
      * declared plan alone.
      */
     private validationStateFor;
+    /**
+     * The key of the current request: the session and the generation.
+     *
+     * A new request (a new generation) asks for the reconciliation again.
+     */
+    private reconciliationKey;
+    /**
+     * The reconciliation block for the open items of the list.
+     *
+     * The block is empty when nothing is open, and it is not repeated for the
+     * same generation: a reminder that is repeated on every continuation is a
+     * reminder nobody reads. A requested reconciliation (an item that was
+     * reported complete while it is still open) asks again.
+     */
+    private reconciliationBlockFor;
     /**
      * The budget status of an item.
      *
@@ -293,9 +312,15 @@ export declare class TodoContinuationController {
      */
     steerToContinue(itemId: number): Promise<SteerResult>;
     /**
-     * Mark a todo item as complete
+     * Mark a todo item as complete.
+     *
+     * The controller never closes a todo by itself: the read confirms that the
+     * agent closed the item with the real todo tool. An item that is still
+     * open means the work is not finished: the internal state stays, the
+     * reconciliation is requested and the normal continuation continues the
+     * item.
      */
-    markComplete(_itemId: number): Promise<void>;
+    markComplete(itemId: number): Promise<void>;
     /**
      * User paused
      */

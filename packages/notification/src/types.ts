@@ -29,6 +29,13 @@ export type NotificationEvent =
 	| "CodexSessionStarted"
 	| "CodexPlanDetected"
 	| "CodexReviewDetected"
+	/**
+	 * Several Pi instances run in the workspace of a plan.
+	 *
+	 * The plan is not broadcast: the user chooses the instance that receives
+	 * it. The event asks for that choice.
+	 */
+	| "PlanRecipientSelection"
 	| "ToolingPreferenceProposal"
 	| "ScopeProposal"
 	| "ScopeDecision"

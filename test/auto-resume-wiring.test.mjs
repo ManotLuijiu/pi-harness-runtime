@@ -131,7 +131,7 @@ test("the resumes of the output limit keep the scope of the turn", () => {
 });
 
 test("the resume of the request keeps the scope of the request", () => {
-	const region = around('queueAutoResume("post-compact", "resume", "followUp")', 0, 200);
+	const region = around('"post-compact",', 0, 400);
 	assert.ok(region, "the resume after a compaction is registered");
 	assert.equal(
 		region.includes('scope: "turn"'),

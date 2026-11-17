@@ -126,6 +126,7 @@ export class EmailAdapter extends BaseChannelAdapter {
 			Error: "[⚠]",
 			ScopeProposal: "[🔭]",
 			ScopeDecision: "[🔭]",
+			PlanRecipientSelection: "[🎯]",
 		};
 		return map[event] ?? "[📢]";
 	}

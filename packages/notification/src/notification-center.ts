@@ -917,6 +917,13 @@ export class NotificationCenter {
 				title: "[REVIEW] Codex Review",
 				message: context.requirement ?? "(no review content)",
 			},
+			PlanRecipientSelection: {
+				title: "[PICK] Plan Recipient",
+				// The candidate list travels in full: the user chooses the
+				// instance by its agent id and its session, and a truncated
+				// list hides the choice.
+				message: fullRequirement,
+			},
 			ToolingPreferenceProposal: {
 				title: "Tooling Proposal",
 				// The full proposal travels: a truncated proposal is not a

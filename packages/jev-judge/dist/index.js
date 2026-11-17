@@ -572,6 +572,8 @@ export { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, score
 export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
 // Export TodoProvider
 export { createTodoProvider } from "./todo-provider.js";
+// Export the reconciliation of the todos before a continuation
+export { TODO_RECONCILIATION_REMINDER, todoReconciliationItems, buildTodoReconciliationBlock, } from "./todo-reconciliation.js";
 // Export staged validation plans
 export { parseValidationPlan, formatValidationContext, buildValidationSteerSuffix, describeTier, parseTier, parseDurationMs, formatDuration, summarizeValidationState, validationBudgetStatus, planWorkload, planHasPilot, } from "./validation-plan.js";
 // Export the validation ledger (durable record of the tiers that ran)
