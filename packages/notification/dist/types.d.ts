@@ -18,7 +18,15 @@ export type NotificationEvent = "JobStarted" | "TaskCompleted" | "TaskFailed" | 
  * The plan is not broadcast: the user chooses the instance that receives
  * it. The event asks for that choice.
  */
- | "PlanRecipientSelection" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
+ | "PlanRecipientSelection" | "ToolingPreferenceProposal" | "ScopeProposal" | "ScopeDecision"
+/**
+ * The judge refused a proposed operation.
+ *
+ * The human is asked: the refusal of the judge is a recommendation, and
+ * the human may answer it. The event carries the buttons of that
+ * answer.
+ */
+ | "JevRejectedAction" | "AssistantResponse" | "ToolSummary" | "Error" | "Info";
 export interface NotificationPayload {
     event: NotificationEvent;
     jobId: string;

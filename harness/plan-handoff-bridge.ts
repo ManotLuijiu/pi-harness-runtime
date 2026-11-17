@@ -206,6 +206,13 @@ export interface BridgeReceiveOptions {
 	registration: AgentRegistration;
 	/** The clock of the receipt. */
 	now?: () => number;
+	/**
+	 * The mailbox to read.
+	 *
+	 * The mailbox of the agent by default. A test passes its own mailbox
+	 * and still exercises the real bridge.
+	 */
+	mailbox?: Mailbox;
 }
 
 /**
@@ -214,13 +221,17 @@ export interface BridgeReceiveOptions {
  * The recipient validates the message against its own registration before
  * it queues anything: a plan of a session that ended, of another generation
  * or of another workspace never enters the queue.
+ *
+ * A plan that was claimed but not acknowledged is here again: a crash
+ * between the claim and the acknowledgement must not lose the plan.
  */
 export function receivePlans(
 	options: BridgeReceiveOptions,
 ): PlanHandoffMessage[] {
-	const mailbox = planHandoffMailbox(options.registration.agentId);
+	const mailbox =
+		options.mailbox ?? planHandoffMailbox(options.registration.agentId);
 	const received: PlanHandoffMessage[] = [];
-	for (const entry of mailbox.pending()) {
+	for (const entry of mailbox.claimable()) {
 		const message = entry.message;
 		if (message.recipient.agentId !== options.registration.agentId) continue;
 		if (message.recipient.sessionId !== options.registration.sessionId) continue;
@@ -233,15 +244,25 @@ export function receivePlans(
 /**
  * Acknowledge the delivery of a plan.
  */
-export function acknowledgePlan(agentId: string, messageId: string): boolean {
-	const acknowledged = planHandoffMailbox(agentId).acknowledge(messageId);
+export function acknowledgePlan(
+	agentId: string,
+	messageId: string,
+	mailbox?: Mailbox,
+): boolean {
+	const acknowledged = (mailbox ?? planHandoffMailbox(agentId)).acknowledge(
+		messageId,
+	);
 	return acknowledged?.state === "delivered";
 }
 
 /**
  * Claim a plan for this instance.
  */
-export function claimPlan(agentId: string, messageId: string): boolean {
-	const claimed = planHandoffMailbox(agentId).claim(messageId);
+export function claimPlan(
+	agentId: string,
+	messageId: string,
+	mailbox?: Mailbox,
+): boolean {
+	const claimed = (mailbox ?? planHandoffMailbox(agentId)).claim(messageId);
 	return claimed?.state === "claimed";
 }

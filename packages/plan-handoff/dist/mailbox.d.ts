@@ -99,6 +99,13 @@ export declare class Mailbox {
      */
     pending(): MailboxEntry[];
     /**
+     * The messages that still have to be delivered, oldest first.
+     *
+     * A message that was claimed but not acknowledged stays here: a crash
+     * between the claim and the acknowledgement must not lose the plan.
+     */
+    claimable(): MailboxEntry[];
+    /**
      * The message that is already claimed or delivered.
      */
     read(id: string): MailboxEntry | undefined;

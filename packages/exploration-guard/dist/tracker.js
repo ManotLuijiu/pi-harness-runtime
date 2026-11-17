@@ -85,7 +85,9 @@ export class ExplorationTracker {
         const now = this.now();
         const next = {
             ...state,
-            readCount: state.readCount + 1,
+            // Only a read of a file counts as a read: a search and a tool
+            // the guard does not know read no file.
+            readCount: state.readCount + (observation.countsAsRead ? 1 : 0),
             explorationTimeMs: state.explorationTimeMs + (observation.durationMs ?? 0),
             estimatedTokens: state.estimatedTokens +
                 Math.ceil((observation.observedBytes ?? 0) / CHARS_PER_TOKEN),

@@ -942,6 +942,13 @@ export class NotificationCenter {
 				// know what was decided before the work starts.
 				message: fullRequirement,
 			},
+			JevRejectedAction: {
+				title: "[APPROVAL] The Judge Refused",
+				// The full proposal travels: the operation, the workspace,
+				// the reason of the refusal and what stays blocked are
+				// what the human answers about.
+				message: fullRequirement,
+			},
 			Error: {
 				title: "Runtime Error",
 				message: `An error occurred${context.error ? `: ${context.error}` : ""}`,

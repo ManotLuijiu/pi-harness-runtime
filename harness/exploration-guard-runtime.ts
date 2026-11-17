@@ -12,6 +12,7 @@
  */
 
 import type {
+	CheckpointInput,
 	ExplorationKey,
 	ExplorationPhase,
 	ExplorationState,
@@ -311,6 +312,28 @@ export class ExplorationGuardRuntime {
 			return this.tracker.status(this.key());
 		} catch {
 			return "investigating | unknown";
+		}
+	}
+
+	/**
+	 * Record the checkpoint that the agent reports.
+	 *
+	 * The findings, the questions, the next action and the hashes of the
+	 * files that were read are written to the state of the request, so a
+	 * compaction does not make the agent find them again.
+	 *
+	 * A checkpoint of a finished request is ignored: the request is over
+	 * and its record is closed.
+	 */
+	recordCheckpoint(input: CheckpointInput): boolean {
+		if (this.inactive) return false;
+		try {
+			this.tracker.recordCheckpoint(this.key(), input);
+			return true;
+		} catch {
+			// The checkpoint could not be written: the agent continues
+			// without it, and the record of the request stays as it was.
+			return false;
 		}
 	}
 }

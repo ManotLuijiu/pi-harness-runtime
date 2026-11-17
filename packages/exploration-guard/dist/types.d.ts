@@ -172,7 +172,7 @@ export interface ExplorationState {
     readCount: number;
     /** How many reads repeated a range that was already covered. */
     repeatCount: number;
-    /** The estimated cost of the reads, in tokens. */
+    /** The estimated cost of the observed output, in tokens. */
     estimatedTokens: number;
     /** True when the estimate is an estimate and not a measured value. */
     estimatedTokensApproximate: boolean;

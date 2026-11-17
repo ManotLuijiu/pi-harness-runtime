@@ -39,6 +39,14 @@ export type NotificationEvent =
 	| "ToolingPreferenceProposal"
 	| "ScopeProposal"
 	| "ScopeDecision"
+	/**
+	 * The judge refused a proposed operation.
+	 *
+	 * The human is asked: the refusal of the judge is a recommendation, and
+	 * the human may answer it. The event carries the buttons of that
+	 * answer.
+	 */
+	| "JevRejectedAction"
 	| "AssistantResponse"
 	| "ToolSummary"
 	| "Error"

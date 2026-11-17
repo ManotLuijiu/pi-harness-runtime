@@ -583,7 +583,7 @@ export class TodoContinuationController {
      * about to send, so the payload always reflects the state at that moment
      * (and the item comes from the snapshot read this dispatch already does).
      */
-    async guardedDispatch(itemId, buildMessage) {
+    async guardedDispatch(itemId, buildMessage, send) {
         // 0. A disposed controller never dispatches.
         if (this._disposed) {
             debugLog("TodoContinuation", "Guarded dispatch: controller disposed, skipping");
@@ -663,7 +663,7 @@ export class TodoContinuationController {
             // Only when the send had already started - a hang in the todo read
             // never put a message on the wire, so there is no duplicate to warn
             // about.
-            if (hadStartedSending)
+            if (hadStartedSending && itemId !== undefined)
                 this._stalledItemId = itemId;
         }, this._inFlightTimeoutMs);
         if (typeof watchdog.unref === "function")
@@ -675,7 +675,7 @@ export class TodoContinuationController {
             try {
                 const snapshot = await this.todoProvider.getSnapshot();
                 items = snapshot.items;
-                item = items.find((i) => i.id === itemId);
+                item = itemId === undefined ? undefined : items.find((i) => i.id === itemId);
             }
             catch {
                 // If we can't read todos, skip dispatch
@@ -683,7 +683,10 @@ export class TodoContinuationController {
                 this._blockedDispatches++;
                 return { dispatched: false, reason: "todo read failed", blocked: true };
             }
-            if (item?.status === "completed") {
+            // The task-completion safeguard: a task that is done is not
+            // continued. An advisory without a task of its own is not
+            // covered by this check.
+            if (itemId !== undefined && item?.status === "completed") {
                 debugLog("TodoContinuation", "Guarded dispatch: item completed, skipping");
                 this._blockedDispatches++;
                 return { dispatched: false, reason: "item already completed", blocked: true };
@@ -735,7 +738,7 @@ export class TodoContinuationController {
                     return { dispatched: false, reason: payload.abort, blocked: true };
                 }
                 const message = payload.send;
-                await this.config.dispatch(message);
+                await (send ?? this.config.dispatch)(message);
                 this.state.lastSteerMessage = message;
                 // Only the dispatch that owns the guard may reset the
                 // breaker: a stale success must not close a breaker that is
@@ -843,7 +846,12 @@ export class TodoContinuationController {
         // The message is built when the dispatch is about to be sent, from the
         // item the dispatch itself read: one snapshot read, no extra latency,
         // and the validation context is always current.
-        const result = await this.guardedDispatch(itemId, (item) => {
+        //
+        // The reconciliation block rides along with the message: it is the
+        // checkpoint before a continuation, and it is built at the moment the
+        // dispatch goes out, so the open items are the ones of that moment.
+        let reconciliationSent = false;
+        const result = await this.guardedDispatch(itemId, (item, items) => {
             const baseMessage = this._stalledItemId === itemId
                 ? `Continue todo item ID ${itemId}. (retry after a stalled dispatch - a duplicate continuation for this item may still arrive)`
                 : `Continue todo item ID ${itemId}.`;
@@ -852,6 +860,11 @@ export class TodoContinuationController {
             if (budget.exhausted && item) {
                 return { abort: this.budgetAbortReason(item, budget) };
             }
+            // The reconciliation checkpoint rides along with the message in
+            // every continuation path: the reminder and the open items of
+            // this request, so the agent can close the finished ones itself.
+            const reconciliation = this.reconciliationBlockFor(items);
+            reconciliationSent = reconciliation !== "";
             // A declared staged-validation plan rides along with the
             // continuation: the agent must know which tier is cheap before it
             // picks a command.
@@ -859,11 +872,21 @@ export class TodoContinuationController {
                 elapsedMs: this.elapsedForItem(itemId),
                 state: this.validationStateFor(item),
             });
-            return { send: validation ? `${baseMessage}\n\n${validation}` : baseMessage };
+            const parts = [baseMessage];
+            if (reconciliation)
+                parts.push(reconciliation);
+            if (validation)
+                parts.push(validation);
+            return { send: parts.join("\n\n") };
         });
         if (result.dispatched) {
             // Only a dispatch that actually reached the agent consumes an attempt
             this.recordAttempt(itemId);
+            if (reconciliationSent) {
+                // The reminder was sent: it is not repeated for this generation.
+                this._reconciliationSentFor = this.reconciliationKey();
+                this._reconciliationRequested = false;
+            }
             if (this._stalledItemId === itemId)
                 this._stalledItemId = null;
             return {
@@ -879,6 +902,30 @@ export class TodoContinuationController {
             attempts: this.state.steerAttemptsForCurrentItem,
             blockedDispatches: this._blockedDispatches,
         };
+    }
+    /**
+     * Dispatch an advisory message through the guarded path.
+     *
+     * An advisory is an observation, not the continuation of a task. It goes
+     * through the same guards as a continuation: a pause, a pending user
+     * message, a busy session, a queued dispatch, a cancelled dispatch and
+     * an open circuit breaker all stop it. The advisory therefore never
+     * forces a turn.
+     *
+     * The task-completion safeguard holds as well: when the task of the
+     * request is completed, the advisory is not delivered.
+     *
+     * An advisory does not consume the attempt budget of a task: it is not
+     * a continuation of one.
+     */
+    async dispatchAdvisory(message, options = {}) {
+        const result = await this.guardedDispatch(options.itemId, () => ({ send: message }), this.config.advisoryDispatch
+            ? (content, meta) => this.config.advisoryDispatch(content, meta ?? options.meta)
+            : undefined);
+        if (!result.dispatched) {
+            debugLog("TodoContinuation", "Advisory not dispatched:", result.reason);
+        }
+        return result;
     }
     /**
      * Mark a todo item as complete.

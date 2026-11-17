@@ -95,6 +95,18 @@ export interface CheckpointInput {
     }[];
     openQuestions?: string[];
     nextAction?: string;
+    /**
+     * The files the findings refer to, with the hash that was observed.
+     *
+     * A hash is what makes a finding checkable: the file can be compared
+     * with the hash later, and a file whose hash changed has a new content,
+     * so the coverage that was recorded for it is void.
+     */
+    references?: {
+        path: string;
+        contentHash?: string;
+        version?: string;
+    }[];
 }
 /**
  * Merge the checkpoint of the agent into the state.

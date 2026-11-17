@@ -129,4 +129,116 @@ describe("the observation of an unknown tool", () => {
 		expect(observation?.source).toBe("unknown");
 		expect(observation?.path).toBeUndefined();
 	});
+
+	test("a tool the guard does not know is not a read", () => {
+		const observation = observeToolCall(
+			{ toolName: "edit", input: { path: "src/a.ts" } },
+			{ toolName: "edit", isError: false, result: "ok" },
+		);
+		expect(observation?.countsAsRead).toBe(false);
+	});
+});
+
+describe("the observation of the result of Pi", () => {
+	test("a result that carries text blocks is measured", () => {
+		// Pi returns the content of a tool as an array of blocks.
+		const observation = observeToolCall(
+			{ toolName: "read", input: { path: "src/a.ts" } },
+			{
+				toolName: "read",
+				isError: false,
+				result: { content: [{ type: "text", text: "a\nb\nc" }] },
+			},
+		);
+		expect(observation?.observedBytes).toBe(5);
+		expect(observation?.range?.start).toBe(1);
+		expect(observation?.range?.end).toBe(3);
+	});
+
+	test("several text blocks are measured together", () => {
+		const observation = observeToolCall(
+			{ toolName: "read", input: { path: "src/a.ts" } },
+			{
+				toolName: "read",
+				isError: false,
+				result: {
+					content: [
+						{ type: "text", text: "one" },
+						{ type: "text", text: "two" },
+					],
+				},
+			},
+		);
+		expect(observation?.observedBytes).toBe(7);
+	});
+
+	test("a block that carries no text contributes nothing", () => {
+		const observation = observeToolCall(
+			{ toolName: "read", input: { path: "src/a.ts" } },
+			{
+				toolName: "read",
+				isError: false,
+				result: {
+					content: [
+						{ type: "image", data: "not text" },
+						{ type: "text", text: "ab" },
+					],
+				},
+			},
+		);
+		expect(observation?.observedBytes).toBe(2);
+	});
+
+	test("a truncated read covers the lines that came back", () => {
+		// The source asked for a thousand lines and got two.
+		const observation = observeToolCall(
+			{ toolName: "read", input: { path: "src/a.ts", limit: 1000 } },
+			{
+				toolName: "read",
+				isError: false,
+				result: {
+					content: [{ type: "text", text: "a\nb" }],
+					details: {
+						truncation: {
+							truncated: true,
+							outputLines: 2,
+							totalLines: 1000,
+							outputBytes: 4,
+						},
+					},
+				},
+			},
+		);
+		expect(observation?.truncated).toBe(true);
+		expect(observation?.range?.start).toBe(1);
+		expect(observation?.range?.end).toBe(2);
+		expect(observation?.observedBytes).toBe(4);
+	});
+
+	test("a truncated read without a known line count covers what came back", () => {
+		const observation = observeToolCall(
+			{ toolName: "read", input: { path: "src/a.ts", limit: 1000 } },
+			{
+				toolName: "read",
+				isError: false,
+				result: {
+					content: [{ type: "text", text: "a\nb" }],
+					truncated: true,
+				},
+			},
+		);
+		expect(observation?.range?.start).toBe(1);
+		expect(observation?.range?.end).toBe(2);
+	});
+});
+
+describe("the observation of a search", () => {
+	test("a search is not a read", () => {
+		const observation = observeToolCall(
+			{ toolName: "grep", input: { pattern: "todo", path: "src" } },
+			{ toolName: "grep", isError: false, result: { content: "x" } },
+		);
+		expect(observation?.kind).toBe("search");
+		expect(observation?.countsAsRead).toBe(false);
+	});
 });
