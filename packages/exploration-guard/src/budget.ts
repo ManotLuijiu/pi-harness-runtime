@@ -45,6 +45,33 @@ export type InterventionKind =
 	| "blocked";
 
 /**
+ * How serious an intervention is.
+ *
+ * A soft warning is the least serious, a budget that is reached is more
+ * serious, and a blocker is the most serious.
+ */
+const SEVERITY: Record<InterventionKind, number> = {
+	none: 0,
+	"repeat-read": 1,
+	stall: 1,
+	"read-budget": 2,
+	"token-budget": 2,
+	"time-budget": 2,
+	blocked: 3,
+};
+
+/**
+ * The seriousness of an intervention.
+ *
+ * The number is what decides whether the guard may speak again: a warning
+ * that was delivered does not silence a budget that is reached later in the
+ * same checkpoint.
+ */
+export function interventionSeverity(kind: InterventionKind): number {
+	return SEVERITY[kind] ?? 0;
+}
+
+/**
  * What the guard decided.
  */
 export interface Intervention {

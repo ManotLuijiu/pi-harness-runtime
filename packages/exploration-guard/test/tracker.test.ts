@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExplorationStateStore } from "../src/state.js";
+import { interventionSeverity } from "../src/budget.js";
 import { ExplorationTracker } from "../src/tracker.js";
 import type { ExplorationBudget, ExplorationKey } from "../src/types.js";
 
@@ -226,13 +227,96 @@ describe("the speech of the guard", () => {
 				{ toolName: "read", isError: false, result: { content: "x" } },
 			);
 			expect(first.shouldSpeak).toBe(true);
-			tracker.markSpoken(first.state);
+			tracker.markSpoken(
+				first.state,
+				interventionSeverity(first.intervention.kind),
+			);
 			const second = tracker.observe(
 				KEY,
 				readCall("src/b.ts", 1, 10),
 				{ toolName: "read", isError: false, result: { content: "x" } },
 			);
 			expect(second.shouldSpeak).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a warning that was delivered does not silence a budget of the same revision", () => {
+		const dir = mkdtempSync(join(tmpdir(), "exploration-tracker-"));
+		try {
+			// A tracker whose budget turns the reads into a budget warning.
+			const tracker = new ExplorationTracker({
+				store: new ExplorationStateStore(dir),
+				budget: {
+					readWarning: 0,
+					readBudget: 2,
+					stallWarning: 0,
+					tokenWarning: 0,
+					timeWarningMs: 0,
+					repeatWarning: 99,
+				},
+				now: () => 1000,
+			});
+			// The guard delivered a soft warning in this revision.
+			tracker.markSpoken(tracker.state(KEY), 1);
+			// The budget of the reads is reached in the same revision. The
+			// agent has to hear that: the warning did not spend the budget
+			// warning.
+			tracker.observe(
+				KEY,
+				readCall("src/a.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			const budget = tracker.observe(
+				KEY,
+				readCall("src/b.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			expect(budget.intervention.kind).toBe("read-budget");
+			expect(budget.shouldSpeak).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("the same budget of the same revision is not repeated", () => {
+		const dir = mkdtempSync(join(tmpdir(), "exploration-tracker-"));
+		try {
+			const tracker = new ExplorationTracker({
+				store: new ExplorationStateStore(dir),
+				budget: {
+					readWarning: 0,
+					readBudget: 2,
+					stallWarning: 0,
+					tokenWarning: 0,
+					timeWarningMs: 0,
+					repeatWarning: 99,
+				},
+				now: () => 1000,
+			});
+			tracker.observe(
+				KEY,
+				readCall("src/a.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			const budget = tracker.observe(
+				KEY,
+				readCall("src/b.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			expect(budget.intervention.kind).toBe("read-budget");
+			// The guard delivered that budget warning already.
+			tracker.markSpoken(
+				budget.state,
+				interventionSeverity(budget.intervention.kind),
+			);
+			const again = tracker.observe(
+				KEY,
+				readCall("src/c.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			expect(again.shouldSpeak).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -246,7 +330,10 @@ describe("the speech of the guard", () => {
 				readCall("src/a.ts", 1, 10),
 				{ toolName: "read", isError: false, result: { content: "x" } },
 			);
-			tracker.markSpoken(first.state);
+			tracker.markSpoken(
+				first.state,
+				interventionSeverity(first.intervention.kind),
+			);
 			tracker.recordCheckpoint(KEY, { findings: [{ statement: "x" }] });
 			const second = tracker.observe(
 				KEY,

@@ -8,7 +8,7 @@
  * The tracker never sends anything and never authorises anything: it
  * returns the text that the caller may show, and the caller decides.
  */
-import { assessExploration, DEFAULT_EXPLORATION_BUDGET, classifyRepeat, isVisibleIntervention, } from "./budget.js";
+import { assessExploration, DEFAULT_EXPLORATION_BUDGET, classifyRepeat, interventionSeverity, isVisibleIntervention, } from "./budget.js";
 import { applyCheckpoint, buildContinuationText, } from "./checkpoint.js";
 import { observeToolCall, } from "./observation.js";
 import { createState, ensureCoverage, ensureSearch, ExplorationStateStore, sanitizePath, sanitizeText, stateFileName, } from "./state.js";
@@ -21,14 +21,27 @@ import { explorationStatus, formatExplorationStatus } from "./status.js";
  */
 const CHARS_PER_TOKEN = 4;
 /**
+ * The key of a state.
+ *
+ * The state carries its own identity, so the tracker can write the memory
+ * of the guard back into the file of the request.
+ */
+function keyOfState(state) {
+    return {
+        workspace: state.workspace,
+        sessionId: state.sessionId,
+        generation: state.generation,
+        phase: state.phase,
+        todoId: state.todoId,
+    };
+}
+/**
  * The tracker of the exploration of a request.
  */
 export class ExplorationTracker {
     store;
     budget;
     now;
-    /** The revision the guard last spoke at. */
-    spokenRevision = -1;
     /**
      * The states of the requests this tracker owns.
      *
@@ -141,24 +154,48 @@ export class ExplorationTracker {
     /**
      * True when the guard has to speak.
      *
-     * The guard speaks once per checkpoint revision, so a batch of parallel
-     * reads produces one reminder and not one per file.
+     * The guard speaks once per checkpoint revision and seriousness: a
+     * batch of parallel reads produces one reminder and not one per file.
+     *
+     * The seriousness is part of the identity of an intervention. A warning
+     * that was delivered does not silence a budget that is reached later in
+     * the same checkpoint: the agent has to hear that the budget is gone.
      */
     shouldSpeak(intervention, state) {
         if (!isVisibleIntervention(intervention))
             return false;
-        if (this.spokenRevision === state.checkpointRevision)
+        const severity = interventionSeverity(intervention.kind);
+        // The memory of the guard belongs to the request, not to the
+        // tracker: a warning that was delivered in one request must not
+        // silence the first warning of the next one.
+        const spokenRevision = state.spokenRevision ?? -1;
+        const spokenSeverity = state.spokenSeverity ?? 0;
+        if (spokenRevision === state.checkpointRevision &&
+            severity <= spokenSeverity) {
             return false;
+        }
         return true;
     }
     /**
      * Mark the guard as having spoken.
      *
-     * The guard speaks again when the checkpoint of the agent changes, so a
-     * new checkpoint opens a new intervention.
+     * The guard speaks again when the checkpoint of the agent changes, or
+     * when the seriousness of the intervention grows. The seriousness is
+     * remembered as it was, not as the largest one ever seen: a request
+     * that answered a budget warning with a checkpoint may run into a soft
+     * warning again, and that warning has to be heard too.
      */
-    markSpoken(state) {
-        this.spokenRevision = state.checkpointRevision;
+    markSpoken(state, severity) {
+        // The memory of the guard is part of the state of the request: it
+        // is durable, and it does not leak into the next request.
+        const next = {
+            ...state,
+            spokenRevision: state.checkpointRevision,
+            spokenSeverity: severity,
+            updatedAt: this.now(),
+        };
+        this.cache.set(stateFileName(keyOfState(next)), next);
+        this.store.write(next);
     }
     /**
      * The checkpoint of the agent, merged into the state.

@@ -15,6 +15,7 @@ import { deliverPlanToWorkspace } from "../harness/plan-handoff-delivery.ts";
 import {
 	claimPlan,
 	receivePlans,
+	acknowledgePlan,
 } from "../harness/plan-handoff-bridge.ts";
 import {
 	planDeliveryText,
@@ -91,15 +92,17 @@ function route(fixture, { workspace, registrations, pairing }) {
 /**
  * A receiver of an instance, with the plans it was given.
  */
-function receiverFor(fixture, reg, { hold } = {}) {
+function receiverFor(fixture, reg, { hold, defer, deliver, deliveryTimeoutMs } = {}) {
 	const delivered = [];
 	const receiver = startPlanReceiver({
 		registration: reg,
 		mailbox: fixture.mailbox(reg.agentId),
-		deliver: (message) => {
+		deliver: deliver ?? ((message) => {
 			delivered.push(message);
-		},
+		}),
 		...(hold ? { hold } : {}),
+		...(defer ? { defer } : {}),
+		...(deliveryTimeoutMs ? { deliveryTimeoutMs } : {}),
 	});
 	return { receiver, delivered };
 }
@@ -121,6 +124,201 @@ test("the receiver hands a plan that is addressed to it to the session", async (
 		fixture.mailbox("agent-a").read(delivered[0].id).state,
 		"delivered",
 	);
+});
+
+test("two rounds that overlap hand the plan over once", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const delivered = [];
+	let release = () => {};
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const { receiver } = receiverFor(fixture, reg, {
+		deliver: async (message) => {
+			delivered.push(message);
+			// The delivery waits: the second round runs while the plan is
+			// on its way to the session.
+			await gate;
+		},
+	});
+
+	const first = receiver.poll();
+	const second = receiver.poll();
+	// The second round finds the round that is running and does nothing.
+	await Promise.resolve();
+	release();
+	const [firstHanded, secondHanded] = await Promise.all([first, second]);
+	assert.equal(firstHanded, 1);
+	assert.equal(secondHanded, 0);
+	// The plan was handed over exactly once.
+	assert.equal(delivered.length, 1);
+});
+
+test("a plan that is deferred waits for the session to be free", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	let busy = true;
+	const { receiver, delivered } = receiverFor(fixture, reg, {
+		defer: () => busy,
+	});
+
+	// The session is busy on other work: the plan waits in the mailbox.
+	assert.equal(await receiver.poll(), 0);
+	assert.equal(delivered.length, 0);
+	const waiting = fixture.mailbox("agent-a").pending();
+	assert.equal(waiting.length, 1);
+	assert.equal(waiting[0].state, "pending");
+
+	// The session is free again: the plan is handed over.
+	busy = false;
+	assert.equal(await receiver.poll(), 1);
+	assert.equal(delivered.length, 1);
+});
+
+test("the text of a plan respects its action", () => {
+	const message = {
+		id: "message-1",
+		action: "inform",
+		plan: {
+			revision: "1",
+			summary: "Codex finished a plan",
+			reference: "/tmp/plan.md",
+		},
+	};
+	const inform = planDeliveryText(message);
+	assert.ok(inform.includes("/tmp/plan.md"));
+	assert.ok(inform.includes("for your information"));
+	assert.ok(
+		!inform.includes("then carry it out"),
+		"a plan that is for information is not an order to implement it",
+	);
+
+	const review = planDeliveryText({ ...message, action: "review" });
+	assert.ok(review.includes("review"));
+	assert.ok(!review.includes("then carry it out"));
+
+	const implement = planDeliveryText({ ...message, action: "implement" });
+	assert.ok(implement.includes("then carry it out"));
+});
+
+test("a plan without a reference carries its content and its action", () => {
+	const message = {
+		id: "message-1",
+		action: "implement",
+		plan: {
+			revision: "1",
+			summary: "Codex finished a plan",
+			payload: "Step one: write the report. Step two: send it.",
+		},
+	};
+	const text = planDeliveryText(message);
+	// The plan travels with the message: the session gets the plan itself
+	// and not a path to it.
+	assert.ok(text.includes("Step one: write the report."));
+	// The action of the message decides what the session is asked to do.
+	assert.ok(text.includes("then carry it out"));
+	assert.ok(
+		!text.includes("Read the plan at:"),
+		"a plan without a reference has no path to read",
+	);
+});
+
+test("a callback that throws does not take the round down", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const { receiver, delivered } = receiverFor(fixture, reg, {
+		hold: () => {
+			throw new Error("the session is gone");
+		},
+		defer: () => {
+			throw new Error("the context is torn down");
+		},
+	});
+
+	// The round survives a callback that throws: the plan waits and the
+	// session is not taken down.
+	assert.equal(await receiver.poll(), 0);
+	assert.equal(delivered.length, 0);
+	assert.equal(fixture.mailbox("agent-a").pending().length, 1);
+});
+
+test("a delivery that never settles does not block the receiver", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const { receiver } = receiverFor(fixture, reg, {
+		deliver: () => new Promise(() => {}),
+		deliveryTimeoutMs: 50,
+	});
+
+	// The delivery is bounded: the round ends even when the delivery
+	// never settles.
+	const handed = await receiver.poll();
+	assert.equal(handed, 0);
+	// The plan is not lost: it stays in the mailbox.
+	assert.equal(fixture.mailbox("agent-a").claimable().length, 1);
+});
+
+test("the acknowledgement of a delivered plan is retried while the session is busy", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const mailbox = fixture.mailbox("agent-a");
+	let acknowledgeFails = true;
+	const bridge = {
+		receive: (options) => receivePlans(options),
+		claim: (agentId, messageId, box) => claimPlan(agentId, messageId, box),
+		acknowledge: (agentId, messageId, box) => {
+			if (acknowledgeFails) {
+				acknowledgeFails = false;
+				throw new Error("the store is not writable");
+			}
+			return acknowledgePlan(agentId, messageId, box);
+		},
+	};
+	const delivered = [];
+	let busy = false;
+	const receiver = startPlanReceiver({
+		registration: reg,
+		mailbox: mailbox,
+		bridge,
+		defer: () => busy,
+		deliver: (message) => {
+			delivered.push(message);
+		},
+	});
+
+	// The plan is handed over, but the acknowledgement fails.
+	assert.equal(await receiver.poll(), 1);
+	assert.equal(delivered.length, 1);
+	assert.equal(mailbox.read(delivered[0].id).state, "claimed");
+
+	// The session is busy on other work. The plan is not delivered again,
+	// but its acknowledgement is retried: the entry does not stay in the
+	// mailbox for good.
+	busy = true;
+	assert.equal(await receiver.poll(), 0);
+	assert.equal(delivered.length, 1, "the plan was not delivered a second time");
+	assert.equal(mailbox.read(delivered[0].id).state, "delivered");
 });
 
 test("only the selected recipient executes the plan", async () => {

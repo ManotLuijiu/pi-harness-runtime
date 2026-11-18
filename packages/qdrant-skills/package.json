@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/qdrant-skills",
-  "version": "1.1.517",
+  "version": "1.1.518",
   "description": "Qdrant vector search integration for Hermes-style skill system",
   "type": "module",
   "main": "./dist/index.js",

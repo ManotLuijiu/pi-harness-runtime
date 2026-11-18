@@ -65,6 +65,7 @@ export {
 	hasSubstantiveProgress,
 	type Intervention,
 	type InterventionKind,
+	interventionSeverity,
 	isVisibleIntervention,
 	rangeCovered,
 	readsSinceNarrowing,

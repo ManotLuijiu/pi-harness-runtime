@@ -258,6 +258,10 @@ export function normalizeState(
 				: emptyCheckpoint(),
 		checkpointRevision:
 			typeof raw.checkpointRevision === "number" ? raw.checkpointRevision : 0,
+		spokenRevision:
+			typeof raw.spokenRevision === "number" ? raw.spokenRevision : undefined,
+		spokenSeverity:
+			typeof raw.spokenSeverity === "number" ? raw.spokenSeverity : undefined,
 		lastWarning:
 			raw.lastWarning && typeof raw.lastWarning === "object"
 				? (raw.lastWarning as ExplorationState["lastWarning"])

@@ -66,7 +66,10 @@ test("the completion of the request triggers the proposal", () => {
 });
 
 test("the answer of a channel reaches the proposal", () => {
-	const region = around("function applyChannelApproval(", 0, 4200);
+	// The window covers the whole decision of the channel: the escalation
+	// of a refusal is recognized before the proposal, and the shared
+	// question is resolved last.
+	const region = around("function applyChannelApproval(", 0, 5600);
 	assert.ok(region, "the channel approval is applied");
 	assert.match(
 		region,

@@ -32,7 +32,7 @@ function context(overrides = {}) {
 /**
  * A runtime with a recording of the delivery and the answers.
  */
-function makeRuntime(deliverResults) {
+function makeRuntime(deliverResults, options = {}) {
 	const delivered = [];
 	const approved = [];
 	const rejected = [];
@@ -47,10 +47,16 @@ function makeRuntime(deliverResults) {
 		},
 		deliver: async (questionId, text) => {
 			delivered.push({ questionId, text });
+			if (typeof deliverResults === "function") {
+				return deliverResults(delivered.length, questionId, text);
+			}
 			return deliverResults ?? [{ success: true, channel: "telegram" }];
 		},
 		onApproved: (state) => approved.push(state),
 		onRejected: (state) => rejected.push(state),
+		// The tests do not wait for a pause between two attempts.
+		retryDelayMs: 0,
+		...options,
 	});
 	return { runtime, delivered, approved, rejected };
 }
@@ -100,7 +106,33 @@ test("a delivery that fails leaves the work blocked", async () => {
 	assert.equal(result.state.status, "blocked");
 	assert.equal(result.state.delivered.length, 0);
 	assert.equal(result.state.failures.length, 2);
-	assert.equal(delivered.length, 1);
+	// The delivery is retried a bounded number of times.
+	assert.equal(delivered.length, 3);
+});
+
+test("the retry asks the human once", async () => {
+	const { runtime, delivered } = makeRuntime([
+		{ success: false, channel: "telegram", error: "no chat" },
+	]);
+	const result = await runtime.escalate(context());
+	assert.equal(result.state.status, "blocked");
+	// Every attempt used the same question: the human is never asked
+	// twice, and the buttons of an earlier attempt stay valid.
+	const questionIds = new Set(delivered.map((entry) => entry.questionId));
+	assert.equal(questionIds.size, 1);
+	assert.equal([...questionIds][0], result.state.questionId);
+});
+
+test("a delivery that succeeds on a later attempt stops the retry", async () => {
+	const { runtime, delivered } = makeRuntime((attempt) =>
+		attempt === 1
+			? [{ success: false, channel: "telegram", error: "no chat" }]
+			: [{ success: true, channel: "telegram" }],
+	);
+	const result = await runtime.escalate(context());
+	assert.equal(result.deliveredAtLeastOne, true);
+	assert.equal(result.state.status, "open");
+	assert.equal(delivered.length, 2);
 });
 
 test("the answer of the human is applied once", async () => {
@@ -130,4 +162,75 @@ test("the escalation is found by its question id", async () => {
 	assert.ok(found);
 	assert.equal(found.context.originalRequestId, "q-179494");
 	assert.equal(runtime.forQuestion("q-179494"), undefined);
+});
+
+test("a delivery that throws is a failed attempt", async () => {
+	const { runtime, delivered } = makeRuntime(() => {
+		throw new Error("the channel is not reachable");
+	});
+	const result = await runtime.escalate(context());
+	// The work stays blocked: a delivery that throws is a delivery that
+	// failed, not a delivery that nobody can see.
+	assert.equal(result.deliveredAtLeastOne, false);
+	assert.equal(result.state.status, "blocked");
+	assert.equal(result.state.failures.length, 1);
+	// The delivery is retried a bounded number of times.
+	assert.equal(delivered.length, 3);
+});
+
+test("a channel that disappears between the attempts is still reported", async () => {
+	const { runtime } = makeRuntime((attempt) =>
+		attempt === 1
+			? [
+					{ success: false, channel: "telegram", error: "no chat" },
+					{ success: false, channel: "line", error: "no channel" },
+				]
+			: [{ success: false, channel: "telegram", error: "no chat" }],
+	);
+	const result = await runtime.escalate(context());
+	assert.equal(result.state.status, "blocked");
+	// The channel of the first attempt is named in the report even when it
+	// is not part of the later attempts.
+	const channels = result.state.failures.map((failure) => failure.channel);
+	assert.ok(channels.includes("telegram"));
+	assert.ok(channels.includes("line"));
+});
+
+test("a refusal that nobody received may still be answered", async () => {
+	const { runtime, approved, rejected } = makeRuntime([
+		{ success: false, channel: "telegram", error: "no chat" },
+	]);
+	const result = await runtime.escalate(context());
+	assert.equal(result.state.status, "blocked");
+	// The human may answer a refusal that no channel carried: the human
+	// saw it in the session.
+	assert.equal(runtime.answer(result.state.questionId, "yes"), true);
+	assert.equal(approved.length, 1);
+	assert.equal(rejected.length, 0);
+});
+
+test("an answered refusal is not asked again", async () => {
+	const { runtime, delivered, approved } = makeRuntime();
+	const result = await runtime.escalate(context());
+	assert.equal(runtime.answer(result.state.questionId, "yes"), true);
+	// The refusal of the judge comes again: the human is not asked twice.
+	const second = await runtime.escalate(context());
+	assert.equal(second.reused, true);
+	assert.equal(delivered.length, 1);
+	assert.equal(approved.length, 1);
+});
+
+test("a hook that throws does not undo the answer", async () => {
+	const { runtime } = makeRuntime(undefined, {
+		onApproved: () => {
+			throw new Error("the session is gone");
+		},
+	});
+	const result = await runtime.escalate(context());
+	// The answer of the human was recorded before the hook ran: a broken
+	// hook must not make the answer look stale.
+	assert.equal(runtime.answer(result.state.questionId, "yes"), true);
+	// A second answer does nothing: the first answer won.
+	assert.equal(runtime.answer(result.state.questionId, "no"), false);
+	assert.equal(runtime.forQuestion(result.state.questionId).status, "answered");
 });

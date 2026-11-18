@@ -90,7 +90,11 @@ test("the watcher never executes the plan of another instance", () => {
 test("the receiver hands the plan over and acknowledges it", () => {
 	assert.ok(receiverSource.includes("bridge.claim("));
 	assert.ok(receiverSource.includes("bridge.acknowledge("));
-	assert.ok(receiverSource.includes("await options.deliver(message)"));
+	// The delivery is awaited: a plan that was not handed over stays
+	// claimed and is delivered again in the next round. The wait is
+	// bounded, so a delivery that never settles does not keep the mailbox.
+	assert.ok(receiverSource.includes("options.deliver(message)"));
+	assert.ok(receiverSource.includes("await withTimeout("));
 });
 
 test("a plan that the human holds is never claimed", () => {

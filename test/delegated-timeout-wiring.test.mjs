@@ -43,6 +43,7 @@ function makeHarness(dir, overrides = {}) {
 	const decisions = new ApprovalDecisionStore(dir);
 	const resumes = [];
 	const delivered = [];
+	const order = [];
 	const runtime = new DelegatedApprovalRuntime({
 		now: () => now,
 		delegations,
@@ -51,7 +52,18 @@ function makeHarness(dir, overrides = {}) {
 			delivered.push(request);
 			return { delivered: true, failures: [] };
 		},
+		// The wiring of the harness: the request is settled before the
+		// continuation is queued.
+		onDecided: (request, decision) => {
+			order.push("decided");
+			controller.applyApproval(
+				decision.outcome === "yes" ? "approve" : "reject",
+				request.requestId,
+				"pi",
+			);
+		},
 		resume: (request, decision) => {
+			order.push("resumed");
 			resumes.push({ request, decision });
 		},
 		...overrides,
@@ -99,7 +111,9 @@ function makeHarness(dir, overrides = {}) {
 		decisions,
 		resumes,
 		delivered,
+		order,
 		ask,
+		now: () => now,
 		setNow: (value) => {
 			now = value;
 		},
@@ -162,8 +176,43 @@ test("the deadline under a delegation continues the work once", async () => {
 	}
 });
 
-test("the answer of the human wins over the deadline", async () => {
+test("the deadline resolves the question before the continuation is queued", async () => {
 	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		harness.delegations.record({
+			id: "d-1",
+			workspace: WORKSPACE,
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const result = await harness.ask();
+		assert.ok(result.questionId);
+
+		// The window is open: the question waits for the human.
+		assert.equal(harness.controller.getQuestion(result.questionId).state, "pending");
+
+		harness.setNow(1000 + 60_000);
+		const decision = harness.runtime.expire(result.questionId);
+		assert.ok(decision);
+
+		// The question of the request is resolved: the judge is not asked
+		// about a question that already has its answer.
+		assert.equal(
+			harness.controller.getQuestion(result.questionId).state,
+			"resolved",
+		);
+		// The request was settled before the continuation was queued, so the
+		// continuation never starts while the question is still open.
+		assert.deepEqual(harness.order, ["decided", "resumed"]);
+		assert.equal(harness.resumes.length, 1);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the answer of the human wins over the deadline", async () => {	const dir = temporary();
 	try {
 		const harness = makeHarness(dir);
 		harness.delegations.record({
@@ -226,6 +275,44 @@ test("a delegation for a commit does not cover a push", async () => {
 		});
 		const result = await harness.ask();
 		assert.equal(result.delegation, undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the countdown of the question and the deadline of the delegation are one moment", async () => {
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		harness.delegations.record({
+			id: "d-1",
+			workspace: WORKSPACE,
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const result = await harness.ask();
+		assert.ok(result.questionId);
+
+		// The countdown of the question counts down to the deadline of the
+		// delegation: the two are one moment, so the countdown reaching zero
+		// and the decision of the delegation happen together.
+		const deadlineAt = harness.runtime.get(result.questionId).deadlineAt;
+		assert.equal(deadlineAt, harness.now() + 50);
+
+		// The deadline passes: the question is resolved and exactly one
+		// continuation is queued.
+		harness.setNow(deadlineAt);
+		const decision = harness.runtime.expire(result.questionId);
+		assert.ok(decision);
+		assert.equal(harness.controller.getQuestion(result.questionId).state, "resolved");
+		assert.deepEqual(harness.order, ["decided", "resumed"]);
+		assert.equal(harness.resumes.length, 1);
+
+		// A late tick of the countdown asks again: the decision was claimed,
+		// so nothing happens a second time.
+		assert.equal(harness.runtime.expire(result.questionId), null);
+		assert.equal(harness.resumes.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
