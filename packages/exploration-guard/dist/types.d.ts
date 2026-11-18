@@ -182,6 +182,18 @@ export interface ExplorationState {
     checkpoint: ExplorationCheckpoint;
     /** The revision of the checkpoint. */
     checkpointRevision: number;
+    /**
+     * The revision the guard spoke at, when it spoke.
+     *
+     * The pair of the revision and the seriousness is what the guard
+     * remembers. It is part of the state, so a restart of the harness does
+     * not make the guard speak again for a warning the agent already got.
+     */
+    spokenRevision?: number;
+    /**
+     * The seriousness of the last intervention the guard delivered.
+     */
+    spokenSeverity?: number;
     /** The last warning the guard raised. */
     lastWarning?: ExplorationWarning;
     /** The reason of the last allowed repeat. */

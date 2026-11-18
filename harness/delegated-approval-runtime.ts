@@ -31,6 +31,15 @@ import type {
 } from "./delegated-approval-types.ts";
 import { delegationCovers } from "./delegated-approval-types.ts";
 
+/**
+ * The delay before a request whose deadline passed is tried again.
+ *
+ * The work can be paused or busy at the moment the deadline passes. The
+ * decision of the delegation waits for the work to run again: a delegation
+ * of the user must not be lost because the session was not free.
+ */
+const RETRY_DELAY_MS = 60_000;
+
 /** What the caller wants to ask the human. */
 export interface OpenApprovalInput {
 	/** The canonical id of the request. It is the id of the pending question. */
@@ -116,7 +125,6 @@ export class DelegatedApprovalRuntime {
 	private readonly requests = new Map<string, ApprovalRequest>();
 	/** The timer of the earliest deadline. */
 	private timer: ReturnType<typeof setTimeout> | null = null;
-
 	constructor(deps: DelegatedApprovalDeps) {
 		this.deps = deps;
 	}
@@ -149,16 +157,46 @@ export class DelegatedApprovalRuntime {
 	private armTimer(): void {
 		this.stop();
 		const now = this.deps.now();
-		const next = this.pending()
+		const pending = this.pending();
+		const next = pending
 			.filter((request) => request.deadlineAt > now)
 			.sort((a, b) => a.deadlineAt - b.deadlineAt)[0];
-		if (!next) return;
-		const delay = Math.max(0, next.deadlineAt - now);
+		if (next) {
+			this.arm(Math.max(0, next.deadlineAt - now), next.requestId);
+			return;
+		}
+		// A request whose deadline passed but that could not be decided -
+		// the work was paused, or the session was busy - is tried again:
+		// the delegation of the user must not be lost because the session
+		// was not free at that moment.
+		const overdue = pending
+			.filter((request) => request.deadlineAt <= now)
+			.sort((a, b) => a.deadlineAt - b.deadlineAt)[0];
+		if (overdue) {
+			this.arm(RETRY_DELAY_MS, overdue.requestId);
+		}
+	}
+
+	/**
+	 * Arm one timer for one request.
+	 *
+	 * The timer never throws: a decision that fails must not take the
+	 * timer chain of the other requests with it.
+	 */
+	private arm(delay: number, requestId: string): void {
 		const timer = setTimeout(() => {
 			this.timer = null;
-			this.expire(next.requestId);
+			try {
+				this.expire(requestId);
+			} catch (error) {
+				this.deps.log?.(
+					`The deadline of the approval request ${requestId} failed: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				);
+			}
 			this.armTimer();
-		}, delay);
+		}, Math.max(0, delay));
 		// The timer must not hold the process of the harness open.
 		(timer as { unref?: () => void }).unref?.();
 		this.timer = timer;
@@ -236,7 +274,10 @@ export class DelegatedApprovalRuntime {
 	): ApprovalDecision | null {
 		const request = this.requests.get(requestId);
 		if (!request) return null;
-		if (request.state !== "pending") {
+		// A request that is not decided yet may still be answered: a
+		// request that was not delivered, or whose deadline passed without
+		// an authorization, is still a question of the human.
+		if (request.state !== "pending" && request.state !== "expired") {
 			this.deps.log?.(
 				`The approval request ${requestId} was answered already - the answer is stale.`,
 			);
@@ -252,10 +293,22 @@ export class DelegatedApprovalRuntime {
 		// The claim is atomic: two answers that arrive at the same moment
 		// still produce one decision.
 		if (!this.deps.decisions.claim(decision)) {
+			// The decision was made already. The durable record is the
+			// truth: the answer of the human is stale, and the work must
+			// not continue a second time.
+			const known = this.deps.decisions.get(requestId);
 			this.deps.log?.(
-				`The approval request ${requestId} was answered already - the answer is stale.`,
+				`The approval request ${requestId} was decided already - the answer of the human is stale.`,
 			);
-			return null;
+			if (known) {
+				request.state = "claimed";
+				request.answer = {
+					outcome: known.outcome,
+					source: known.source,
+					at: known.at,
+				};
+			}
+			return known ?? null;
 		}
 		request.state = "answered";
 		request.answer = { outcome, source: "human", at: decision.at };
@@ -280,12 +333,15 @@ export class DelegatedApprovalRuntime {
 		if (!request) return null;
 		// The human wins: an answer that arrived before the claim is kept,
 		// and the deadline never overrides it.
-		if (request.state === "answered") {
+		if (request.state === "answered" || request.state === "claimed") {
 			this.deps.log?.(
-				`The approval request ${requestId} was answered by the human - the deadline does not override it.`,
+				`The approval request ${requestId} was decided already - the deadline does not override it.`,
 			);
 			return null;
 		}
+		// A request that was not delivered, or whose deadline passed
+		// without an authorization, is not decided by the deadline: nobody
+		// was asked, or nobody authorized anything.
 		if (request.state !== "pending") return null;
 		// The deadline of the request is the only deadline. A request that
 		// is not due yet is not decided: the timer is armed again for the
@@ -309,28 +365,41 @@ export class DelegatedApprovalRuntime {
 			this.deps.log?.(
 				`The approval request ${requestId} is not active - the deadline does not continue it.`,
 			);
+			request.state = "expired";
 			return null;
 		}
 		if (this.deps.paused?.() === true) {
 			this.deps.log?.(
-				`The approval request ${requestId} is paused - the deadline does not continue it.`,
+				`The approval request ${requestId} is paused - the deadline does not continue it. The decision waits for the work to run again.`,
 			);
+			// The work is paused: the decision waits. The timer tries
+			// again, so a pause does not lose the delegation of the user.
+			this.armTimer();
 			return null;
 		}
 		// The scope of the delegation decides: an operation that no
 		// delegation covers stays blocked.
 		const delegation = this.delegationForRequest(request);
+		if (!delegation) {
+			// Nobody is authorized. The operation stays blocked, and the
+			// human may still answer. No decision is recorded: a deadline
+			// without a delegation is not a decision of the user, and a
+			// recorded decision would close the question for the human.
+			request.state = "expired";
+			this.deps.log?.(
+				`The deadline of the approval request ${requestId} passed and no delegation covers the operation: the operation stays blocked until the human answers.`,
+			);
+			return null;
+		}
 		const outcome: ApprovalOutcome =
-			delegation?.defaultOutcome === "continue" ? "yes" : "no";
+			delegation.defaultOutcome === "continue" ? "yes" : "no";
 		const decision: ApprovalDecision = {
 			requestId,
 			outcome,
 			source: "delegated-timeout",
-			...(delegation ? { delegationId: delegation.id } : {}),
-			reason: delegation
-				? `the deadline passed under the delegation ${delegation.id}`
-				: "no delegation covers the operation",
-			at: this.deps.now(),
+			delegationId: delegation.id,
+			reason: `the deadline passed under the delegation ${delegation.id}`,
+			at: now,
 		};
 		// The claim is atomic and durable: the decision is handed out once,
 		// and a restart does not hand it out again.
@@ -338,14 +407,34 @@ export class DelegatedApprovalRuntime {
 			this.deps.log?.(
 				`The decision of the approval request ${requestId} was claimed already.`,
 			);
-			return null;
+			// The decision was made: the durable record is the truth, and
+			// the work must not continue a second time.
+			const known = this.deps.decisions.get(requestId);
+			if (known) {
+				request.state = "claimed";
+				request.answer = {
+					outcome: known.outcome,
+					source: known.source,
+					at: known.at,
+				};
+			}
+			return known ?? null;
 		}
 		request.state = "claimed";
 		request.answer = { outcome, source: "delegated-timeout", at: decision.at };
 		// The caller settles the request: the question of the request is
 		// resolved and the wait of the judge ends before the continuation
-		// is queued.
-		this.deps.onDecided?.(request, decision);
+		// is queued. A hook that throws must not strand the decision: the
+		// continuation is queued anyway.
+		try {
+			this.deps.onDecided?.(request, decision);
+		} catch (error) {
+			this.deps.log?.(
+				`The harness failed to settle the approval request ${requestId}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
 		if (outcome === "yes") {
 			// Exactly one resume: the claim is what guarantees it.
 			this.queueResume(request, decision);

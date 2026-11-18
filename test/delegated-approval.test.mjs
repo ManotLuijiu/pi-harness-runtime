@@ -209,11 +209,17 @@ test("the deadline keeps the operation blocked without a delegation", async () =
 		});
 		await runtime.open(requestInput());
 		const decision = runtime.expire("q-1");
-		assert.ok(decision);
-		assert.equal(decision.source, "delegated-timeout");
-		assert.equal(decision.outcome, "no");
+		// No delegation covers the operation: the deadline decided nothing
+		// and recorded nothing. A deadline is not a decision of the user,
+		// and a recorded decision would close the question for the human.
+		assert.equal(decision, null);
 		// The delegation did not cover the operation, so nothing continued.
 		assert.equal(resumes.length, 0);
+		// The human may still answer: the deadline did not close the
+		// question.
+		const answered = runtime.answer("q-1", "yes");
+		assert.ok(answered);
+		assert.equal(answered.source, "human");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -282,7 +288,12 @@ test("the decision survives a restart", async () => {
 		// the request was already claimed.
 		const second = makeRuntime(dir);
 		await second.runtime.open(requestInput());
-		assert.equal(second.runtime.expire("q-1"), null);
+		const decided = second.runtime.expire("q-1");
+		// The durable record is the truth: the restart reads the decision
+		// and does not decide anything a second time.
+		assert.ok(decided);
+		assert.equal(decided.source, "delegated-timeout");
+		assert.equal(decided.outcome, "yes");
 		assert.equal(second.resumes.length, 0);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -305,6 +316,63 @@ test("a paused request is not continued by the deadline", async () => {
 		await runtime.open(requestInput());
 		assert.equal(runtime.expire("q-1"), null);
 		assert.equal(resumes.length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a paused request keeps its decision for the moment the work runs again", async () => {
+	const dir = temporary();
+	try {
+		let paused = true;
+		const { runtime, delegations, resumes } = makeRuntime(dir, {
+			paused: () => paused,
+		});
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		await runtime.open(requestInput());
+		// The work is paused: the deadline does not decide.
+		assert.equal(runtime.expire("q-1"), null);
+		assert.equal(runtime.get("q-1").state, "pending");
+		// The work runs again: the delegation of the user is not lost.
+		paused = false;
+		const decision = runtime.expire("q-1");
+		assert.ok(decision);
+		assert.equal(decision.source, "delegated-timeout");
+		assert.equal(resumes.length, 1);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a failing settlement does not strand the decision", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes } = makeRuntime(dir, {
+			onDecided: () => {
+				throw new Error("the session is gone");
+			},
+		});
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		await runtime.open(requestInput());
+		const decision = runtime.expire("q-1");
+		// The decision was claimed: it is the truth of the request.
+		assert.ok(decision);
+		assert.equal(runtime.get("q-1").state, "claimed");
+		// The continuation is queued anyway: a broken settlement must not
+		// strand a decision that was made.
+		assert.equal(resumes.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

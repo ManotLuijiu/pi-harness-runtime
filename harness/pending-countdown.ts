@@ -110,7 +110,7 @@ interface CountdownBinding {
 export class PendingQuestionCountdown {
 	private readonly deps: PendingCountdownDeps;
 	private readonly now: () => number;
-	private readonly startTimer: (callback: () => void, ms: number) => unknown;
+	private readonly startTimerFn: (callback: () => void, ms: number) => unknown;
 	private readonly stopTimer: (handle: unknown) => void;
 	private readonly tickMs: number;
 	private handle: unknown = null;
@@ -142,7 +142,7 @@ export class PendingQuestionCountdown {
 	constructor(deps: PendingCountdownDeps) {
 		this.deps = deps;
 		this.now = deps.now ?? (() => Date.now());
-		this.startTimer =
+		this.startTimerFn =
 			deps.setInterval ??
 			((callback, ms) => setInterval(callback, ms) as unknown);
 		this.stopTimer =
@@ -198,10 +198,20 @@ export class PendingQuestionCountdown {
 		binding.deadlineAt = deadlineAt;
 		// The deadline moved: the countdown did not fire yet.
 		this.deadlineFired = false;
+		// A countdown that already fired has no timer: the timer was
+		// released with the deadline. The new deadline needs a timer again,
+		// or the row would show a time that never arrives and the decision
+		// would never start.
+		if (this.handle === null) {
+			this.startTimer(this.generation);
+		}
+		// The clock is read once: the row shows the time that is left at
+		// the moment the row was drawn.
+		const remainingMs = Math.max(0, deadlineAt - this.now());
 		this.safeRender({
 			requestId: binding.requestId,
-			remainingMs: Math.max(0, deadlineAt - this.now()),
-			remaining: formatRemainingTime(Math.max(0, deadlineAt - this.now())),
+			remainingMs,
+			remaining: formatRemainingTime(remainingMs),
 		});
 	}
 
@@ -230,19 +240,34 @@ export class PendingQuestionCountdown {
 		this.binding = { requestId, deadlineAt };
 		this.engaged = true;
 		this.deadlineFired = false;
-		try {
-			this.handle = this.startTimer(() => this.tick(generation), this.tickMs);
-		} catch (error) {
+		if (!this.startTimer(generation)) {
 			// The timer could not be created: the countdown owns nothing, so
 			// it must not claim the wait. The row of the countdown is
 			// cleared with it, so no row claims a decision that is not due.
 			this.engaged = false;
 			this.binding = null;
 			this.safeCall(() => this.deps.onStop?.(requestId));
-			this.report(error);
 			return;
 		}
 		this.tick(generation);
+	}
+
+	/**
+	 * Start the timer of the countdown.
+	 *
+	 * The timer belongs to the generation of the binding: a tick of an
+	 * older generation is ignored.
+	 */
+	private startTimer(generation: number): boolean {
+		try {
+			this.handle = this.startTimerFn(() => this.tick(generation), this.tickMs);
+			return true;
+		} catch (error) {
+			// The timer could not be created: the failure is reported and
+			// the countdown owns nothing.
+			this.report(error);
+			return false;
+		}
 	}
 
 	/**

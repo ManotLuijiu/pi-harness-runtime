@@ -88,6 +88,13 @@ export interface PlanReceiverOptions {
 	 * paused session does not act on it at all.
 	 */
 	defer?: (message: PlanHandoffMessage) => boolean;
+	/**
+	 * How long the delivery of a plan may take.
+	 *
+	 * A delivery that never settles would keep the round and the mailbox
+	 * of this session blocked for the rest of the process.
+	 */
+	deliveryTimeoutMs?: number;
 }
 
 /**
@@ -119,6 +126,44 @@ export interface PlanReceiver {
 export const PLAN_RECEIVER_INTERVAL_MS = 2_000;
 
 /**
+ * How long the delivery of a plan may take.
+ *
+ * A delivery that never settles must not keep the mailbox of the session
+ * blocked: the plan stays claimed and the next round hands it over again.
+ */
+export const PLAN_DELIVERY_TIMEOUT_MS = 30_000;
+
+/**
+ * Wait for a promise, but not longer than a bound.
+ *
+ * The timer is released, so a delivery that settles in time does not leave
+ * a timer behind.
+ */
+async function withTimeout<T>(
+	promise: Promise<T> | T,
+	timeoutMs: number,
+): Promise<T> {
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+		return Promise.resolve(promise);
+	}
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const race = Promise.race([
+		Promise.resolve(promise),
+		new Promise<never>((_resolve, reject) => {
+			timer = setTimeout(() => {
+				reject(new Error(`the delivery did not settle in ${timeoutMs}ms`));
+			}, timeoutMs);
+			if (typeof timer.unref === "function") timer.unref();
+		}),
+	]);
+	try {
+		return await race;
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
+/**
  * The bridge of the real store.
  */
 const realBridge: PlanReceiverBridge = {
@@ -147,23 +192,28 @@ export function planDeliveryText(message: PlanHandoffMessage): string {
 	}
 	if (message.plan.reference) {
 		lines.push("", `Read the plan at: ${message.plan.reference}`, "");
-		switch (message.action) {
-			case "review":
-				lines.push(
-					"Treat that file as the requirements of a review. Read it, then report what it asks for and what is missing. Do not implement it.",
-				);
-				break;
-			case "implement":
-				lines.push(
-					"Treat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.",
-				);
-				break;
-			default:
-				lines.push(
-					"That plan is for your information. Read it so you know what the other session is working on. Do not carry it out: the human decides what happens next.",
-				);
-				break;
-		}
+	} else if (message.plan.payload) {
+		// The plan travels with the message: the session gets the plan
+		// itself and not a path to it. A plan that is only a path would
+		// arrive without its content.
+		lines.push("", "The plan:", message.plan.payload, "");
+	}
+	switch (message.action) {
+		case "review":
+			lines.push(
+				"Treat that plan as the requirements of a review. Read it, then report what it asks for and what is missing. Do not implement it.",
+			);
+			break;
+		case "implement":
+			lines.push(
+				"Treat that plan as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.",
+			);
+			break;
+		default:
+			lines.push(
+				"That plan is for your information. Read it so you know what the other session is working on. Do not carry it out: the human decides what happens next.",
+			);
+			break;
 	}
 	return lines.join("\n");
 }
@@ -237,25 +287,11 @@ export function startPlanReceiver(
 
 		let handed = 0;
 		for (const message of messages) {
-			if (options.hold?.(message)) {
-				// The plan waits for the human: it stays pending and is
-				// never claimed.
-				continue;
-			}
-			if (options.defer?.(message)) {
-				// The session cannot take the plan now: it is paused or
-				// busy on other work. The plan waits in the mailbox.
-				continue;
-			}
-			if (inFlight.has(message.id)) {
-				// Another round is handing this plan over right now. The
-				// claim is reconciled below: the plan is acknowledged once
-				// the delivery is over.
-				continue;
-			}
 			if (delivered.has(message.id)) {
 				// The plan was handed over already: the acknowledgement is
-				// retried, the plan is not delivered twice.
+				// retried, the plan is not delivered twice. A plan that
+				// waits for its acknowledgement does not need a free
+				// session: the acknowledgement is not a delivery.
 				try {
 					bridge.acknowledge(
 						options.registration.agentId,
@@ -265,6 +301,41 @@ export function startPlanReceiver(
 				} catch {
 					continue;
 				}
+				continue;
+			}
+			// The callbacks of the session decide whether the plan waits.
+			// A callback that throws must not take the round and the
+			// session with it: the plan waits for the next round.
+			let held = false;
+			try {
+				held = options.hold?.(message) === true;
+			} catch {
+				// The callback could not answer: the plan waits. A plan
+				// that is delivered on a broken callback would reach a
+				// session that cannot receive it.
+				held = true;
+			}
+			if (held) {
+				// The plan waits for the human: it stays pending and is
+				// never claimed.
+				continue;
+			}
+			let deferred = false;
+			try {
+				deferred = options.defer?.(message) === true;
+			} catch {
+				// The callback could not answer: the plan waits.
+				deferred = true;
+			}
+			if (deferred) {
+				// The session cannot take the plan now: it is paused or
+				// busy on other work. The plan waits in the mailbox.
+				continue;
+			}
+			if (inFlight.has(message.id)) {
+				// Another round is handing this plan over right now. The
+				// claim is reconciled below: the plan is acknowledged once
+				// the delivery is over.
 				continue;
 			}
 			try {
@@ -283,7 +354,13 @@ export function startPlanReceiver(
 			}
 			inFlight.add(message.id);
 			try {
-				await options.deliver(message);
+				// The delivery is bounded: a delivery that never settles
+				// would keep the round and the mailbox of this session
+				// blocked for the rest of the process.
+				await withTimeout(
+					options.deliver(message),
+					options.deliveryTimeoutMs ?? PLAN_DELIVERY_TIMEOUT_MS,
+				);
 			} catch {
 				// The plan stays claimed: the next round hands it over
 				// again. A plan that cannot be delivered is never lost.

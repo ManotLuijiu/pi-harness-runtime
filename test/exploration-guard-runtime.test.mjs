@@ -93,11 +93,14 @@ test("the guard does not speak twice without a new checkpoint", () => {
 	try {
 		const { runtime } = makeRuntime(dir);
 		runtime.toolCall("call-1", readCall("src/a.ts"));
-		assert.ok(runtime.toolCallEnd("call-1", {
+		const first = runtime.toolCallEnd("call-1", {
 			toolName: "read",
 			isError: false,
 			result: { content: "x" },
-		}));
+		});
+		assert.ok(first, "the first intervention was not queued");
+		// The intervention reached the agent: the guard remembers it.
+		runtime.delivered(first);
 		runtime.toolCall("call-2", readCall("src/b.ts"));
 		const second = runtime.toolCallEnd("call-2", {
 			toolName: "read",
@@ -105,6 +108,88 @@ test("the guard does not speak twice without a new checkpoint", () => {
 			result: { content: "x" },
 		});
 		assert.equal(second, null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("an intervention that was not delivered may be spoken again", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		runtime.toolCall("call-1", readCall("src/a.ts"));
+		const first = runtime.toolCallEnd("call-1", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.ok(first, "the first intervention was not queued");
+		// Nothing was delivered: the agent heard nothing, so the guard may
+		// speak again.
+		runtime.toolCall("call-2", readCall("src/b.ts"));
+		const second = runtime.toolCallEnd("call-2", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.ok(second, "the guard stayed quiet after a refused delivery");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a delivered intervention is not repeated after a restart", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		runtime.toolCall("call-1", readCall("src/a.ts"));
+		const first = runtime.toolCallEnd("call-1", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.ok(first, "the first intervention was not queued");
+		runtime.delivered(first);
+
+		// A new runtime reads the state of the request from the store: the
+		// memory of the guard belongs to the request and not to the
+		// process.
+		const { runtime: restarted } = makeRuntime(dir);
+		restarted.toolCall("call-2", readCall("src/b.ts"));
+		const second = restarted.toolCallEnd("call-2", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.equal(second, null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a new checkpoint opens a new intervention", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		runtime.toolCall("call-1", readCall("src/a.ts"));
+		const first = runtime.toolCallEnd("call-1", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.ok(first, "the first intervention was not queued");
+		runtime.delivered(first);
+
+		// The agent reports a checkpoint: a new revision opens a new
+		// intervention.
+		runtime.recordCheckpoint({ findings: [{ statement: "the shape of the guard" }] });
+		runtime.toolCall("call-2", readCall("src/b.ts"));
+		const second = runtime.toolCallEnd("call-2", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.ok(second, "the guard stayed quiet after a new checkpoint");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

@@ -226,17 +226,24 @@ test("a refusal that nobody received leaves a local blocked row", () => {
 	const block = source.slice(start, start + 4000);
 
 	// The row of a refusal that nobody received is the local sign that the
-	// work is blocked.
+	// work is blocked. The row is registered by the helper of the harness.
 	assert.ok(
-		block.includes("pendingActions.register("),
+		block.includes("registerBlockedEscalation("),
 		"the escalation registers no row",
 	);
+	const helperStart = source.indexOf("function registerBlockedEscalation");
+	assert.ok(helperStart > 0, "the harness has no helper for the blocked row");
+	const helper = source.slice(helperStart, helperStart + 2000);
 	assert.ok(
-		block.includes("jevEscalationActionId"),
+		helper.includes("pendingActions.register("),
+		"the helper registers no row",
+	);
+	assert.ok(
+		helper.includes("jevEscalationActionId"),
 		"the row has no identity",
 	);
 	assert.ok(
-		block.includes('state: "blocked"'),
+		helper.includes('state: "blocked"'),
 		"the row does not say that the work is blocked",
 	);
 	// The row is gone when the human answered the refusal.

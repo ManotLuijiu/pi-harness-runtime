@@ -47,15 +47,6 @@ export declare class ExplorationTracker {
     private readonly store;
     private readonly budget;
     private readonly now;
-    /** The revision the guard last spoke at. */
-    private spokenRevision;
-    /**
-     * The seriousness of the last intervention the guard delivered.
-     *
-     * The guard speaks again when the seriousness grows, even when the
-     * checkpoint of the agent did not change.
-     */
-    private spokenSeverity;
     /**
      * The states of the requests this tracker owns.
      *

@@ -112,21 +112,6 @@ export class ExplorationGuardRuntime {
 	private inactive = false;
 	/** How often the guard spoke in this request. */
 	private speechCount = 0;
-	/**
-	 * How serious the last queued intervention was.
-	 *
-	 * The number is what keeps a batch of parallel reads to one reminder:
-	 * a second read of the same revision at the same seriousness is not a
-	 * new thing to say.
-	 */
-	private queuedSeverity = -1;
-	/**
-	 * The checkpoint revision of the last queued intervention.
-	 *
-	 * The revision is part of the identity of an intervention: a new
-	 * checkpoint of the agent opens a new intervention.
-	 */
-	private queuedRevision = -1;
 
 	constructor(options: ExplorationRuntimeOptions) {
 		this.identity = options.identity;
@@ -197,8 +182,6 @@ export class ExplorationGuardRuntime {
 			state: result.state,
 		};
 		this.pendingGeneration = key.generation;
-		this.queuedSeverity = severity;
-		this.queuedRevision = result.state.checkpointRevision;
 		return this.pending;
 	}
 
@@ -225,11 +208,18 @@ export class ExplorationGuardRuntime {
 	 * The guard speaks once per checkpoint revision, and again when the
 	 * seriousness of the intervention grew. It speaks at most three times
 	 * in one request: a request that ignored the warnings is not nagged.
+	 *
+	 * The memory of the guard is the state of the request: it is durable,
+	 * it belongs to the request, and it is only written when the
+	 * intervention really reached the agent. A delivery that was refused
+	 * spends nothing, so the intervention may be spoken again.
 	 */
 	private maySpeak(severity: number, state: ExplorationState): boolean {
 		if (this.speechCount >= MAX_SPEECHES_PER_REQUEST) return false;
-		const revisionChanged = this.queuedRevision !== state.checkpointRevision;
-		const escalated = severity > this.queuedSeverity;
+		const spokenRevision = state.spokenRevision ?? -1;
+		const spokenSeverity = state.spokenSeverity ?? 0;
+		const revisionChanged = spokenRevision !== state.checkpointRevision;
+		const escalated = severity > spokenSeverity;
 		return revisionChanged || escalated;
 	}
 
@@ -276,8 +266,6 @@ export class ExplorationGuardRuntime {
 		this.inactive = false;
 		this.pending = null;
 		this.speechCount = 0;
-		this.queuedSeverity = -1;
-		this.queuedRevision = -1;
 	}
 
 	/**

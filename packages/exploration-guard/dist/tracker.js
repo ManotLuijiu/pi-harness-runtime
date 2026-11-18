@@ -21,21 +21,27 @@ import { explorationStatus, formatExplorationStatus } from "./status.js";
  */
 const CHARS_PER_TOKEN = 4;
 /**
+ * The key of a state.
+ *
+ * The state carries its own identity, so the tracker can write the memory
+ * of the guard back into the file of the request.
+ */
+function keyOfState(state) {
+    return {
+        workspace: state.workspace,
+        sessionId: state.sessionId,
+        generation: state.generation,
+        phase: state.phase,
+        todoId: state.todoId,
+    };
+}
+/**
  * The tracker of the exploration of a request.
  */
 export class ExplorationTracker {
     store;
     budget;
     now;
-    /** The revision the guard last spoke at. */
-    spokenRevision = -1;
-    /**
-     * The seriousness of the last intervention the guard delivered.
-     *
-     * The guard speaks again when the seriousness grows, even when the
-     * checkpoint of the agent did not change.
-     */
-    spokenSeverity = 0;
     /**
      * The states of the requests this tracker owns.
      *
@@ -159,8 +165,13 @@ export class ExplorationTracker {
         if (!isVisibleIntervention(intervention))
             return false;
         const severity = interventionSeverity(intervention.kind);
-        if (this.spokenRevision === state.checkpointRevision &&
-            severity <= this.spokenSeverity) {
+        // The memory of the guard belongs to the request, not to the
+        // tracker: a warning that was delivered in one request must not
+        // silence the first warning of the next one.
+        const spokenRevision = state.spokenRevision ?? -1;
+        const spokenSeverity = state.spokenSeverity ?? 0;
+        if (spokenRevision === state.checkpointRevision &&
+            severity <= spokenSeverity) {
             return false;
         }
         return true;
@@ -175,8 +186,16 @@ export class ExplorationTracker {
      * warning again, and that warning has to be heard too.
      */
     markSpoken(state, severity) {
-        this.spokenRevision = state.checkpointRevision;
-        this.spokenSeverity = severity;
+        // The memory of the guard is part of the state of the request: it
+        // is durable, and it does not leak into the next request.
+        const next = {
+            ...state,
+            spokenRevision: state.checkpointRevision,
+            spokenSeverity: severity,
+            updatedAt: this.now(),
+        };
+        this.cache.set(stateFileName(keyOfState(next)), next);
+        this.store.write(next);
     }
     /**
      * The checkpoint of the agent, merged into the state.

@@ -42,6 +42,14 @@ export interface JevRejectionContext {
 	blocked?: string[];
 	/** The work that may continue on its own. */
 	independentWork?: string;
+	/**
+	 * True when the work was already paused before the refusal.
+	 *
+	 * A pause of the user is not the pause of the refusal: the approval of
+	 * the human releases the action, but it does not clear a pause the user
+	 * set with a "stop".
+	 */
+	pausedBefore?: boolean;
 	/** The deadline of the answer, in words. */
 	deadlineText?: string;
 	/**
@@ -217,9 +225,13 @@ export class JevRejectionEscalationRuntime {
 	 */
 	async escalate(context: JevRejectionContext): Promise<EscalationResult> {
 		const existing = this.byOriginal.get(context.originalRequestId);
-		if (existing && existing.status === "open") {
+		if (existing) {
+			// The question was already asked for this request. The human is
+			// asked once: a second question about the same refusal would be
+			// a duplicate, and the buttons of an answered question are
+			// stale.
 			this.deps.log?.(
-				`The escalation of ${context.originalRequestId} is already open - it is not asked again.`,
+				`The escalation of ${context.originalRequestId} was already asked (${existing.status}) - it is not asked again.`,
 			);
 			return {
 				state: existing,
@@ -278,10 +290,26 @@ export class JevRejectionEscalationRuntime {
 	): Promise<Pick<NotificationResult, "success" | "channel" | "error">[]> {
 		const maxAttempts = Math.max(1, this.deps.maxDeliveryAttempts ?? 3);
 		const delayMs = Math.max(0, this.deps.retryDelayMs ?? 250);
-		let results: Pick<NotificationResult, "success" | "channel" | "error">[] =
-			await this.deps.deliver(questionId, text);
+		// The channels of every attempt are collected: a channel that
+		// refused the message in the first attempt and is not part of the
+		// second one has still refused it, and the report of the failure
+		// must name it.
+		const channels = new Map<
+			string,
+			Pick<NotificationResult, "success" | "channel" | "error">
+		>();
 		let attempt = 1;
-		while (!results.some((result) => result.success) && attempt < maxAttempts) {
+		for (;;) {
+			const results = await this.attemptDelivery(questionId, text);
+			for (const result of results) {
+				const known = channels.get(result.channel);
+				if (!known || (!known.success && result.success)) {
+					channels.set(result.channel, { ...result });
+				}
+			}
+			if (results.some((result) => result.success) || attempt >= maxAttempts) {
+				break;
+			}
 			attempt += 1;
 			this.deps.log?.(
 				`The escalation ${questionId} was not delivered - the attempt ${attempt} of ${maxAttempts} follows.`,
@@ -289,9 +317,31 @@ export class JevRejectionEscalationRuntime {
 			if (delayMs > 0) {
 				await new Promise((resolve) => setTimeout(resolve, delayMs));
 			}
-			results = await this.deps.deliver(questionId, text);
 		}
-		return results;
+		return [...channels.values()];
+	}
+
+	/**
+	 * One attempt of the delivery.
+	 *
+	 * A channel that throws is a failed attempt, not a crash: a throw that
+	 * escaped would leave the escalation in the state "open" while nobody
+	 * was asked, and the work would wait for a human who never got the
+	 * question.
+	 */
+	private async attemptDelivery(
+		questionId: string,
+		text: string,
+	): Promise<Pick<NotificationResult, "success" | "channel" | "error">[]> {
+		try {
+			return await this.deps.deliver(questionId, text);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			this.deps.log?.(
+				`The delivery of the escalation ${questionId} failed: ${reason}`,
+			);
+			return [{ success: false, channel: "notification", error: reason }];
+		}
 	}
 
 	/**
@@ -303,7 +353,11 @@ export class JevRejectionEscalationRuntime {
 	answer(questionId: string, answer: "yes" | "no"): boolean {
 		const state = this.byQuestion.get(questionId);
 		if (!state) return false;
-		if (state.status !== "open") {
+		// A refusal that nobody received may still be answered: the human
+		// saw it in the session, or a channel that reported a failure
+		// delivered the message anyway. The row of the blocked refusal is
+		// removed by the answer, so the refusal must be answerable.
+		if (state.status !== "open" && state.status !== "blocked") {
 			this.deps.log?.(
 				`The escalation ${questionId} was answered already - the answer is stale.`,
 			);
@@ -311,10 +365,21 @@ export class JevRejectionEscalationRuntime {
 		}
 		state.status = "answered";
 		state.answer = answer;
-		if (answer === "yes") {
-			this.deps.onApproved(state);
-		} else {
-			this.deps.onRejected(state);
+		// The hook of the harness decides what happens with the work. A
+		// hook that throws does not undo the answer - the answer is the
+		// fact - but it must not leave the harness in a state where
+		// nothing happened and every later click is refused as stale.
+		try {
+			if (answer === "yes") {
+				this.deps.onApproved(state);
+			} else {
+				this.deps.onRejected(state);
+			}
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			this.deps.log?.(
+				`The escalation ${questionId} was answered, but the harness failed to continue the work: ${reason}`,
+			);
 		}
 		return true;
 	}

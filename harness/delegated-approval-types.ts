@@ -132,29 +132,210 @@ export interface ApprovalDecision {
 }
 
 /**
+ * The words that ask for permission to do something.
+ *
+ * The classification runs on free prose, so the words of the text are not
+ * enough: a text that only mentions an operation does not propose it. The
+ * question has to ask for something.
+ */
+const INTENT_STEMS = [
+	"may i",
+	"may we",
+	"can i",
+	"can we",
+	"should i",
+	"should we",
+	"shall i",
+	"would i",
+	"could i",
+	"am i allowed to",
+	"are i allowed to",
+	"is it ok to",
+	"is it okay to",
+	"is it fine to",
+	"is it allowed to",
+	"do you want me to",
+	"do you want us to",
+	"would you like me to",
+	"would you like us to",
+	"please",
+	"go ahead and",
+	"go ahead with",
+	"go ahead",
+	"ok to",
+	"okay to",
+	"i want to",
+	"i need to",
+	"i would like to",
+	"we want to",
+	"we need to",
+	"authorize me to",
+	"authorise me to",
+	"allow me to",
+	"let me",
+	"let us",
+];
+
+/**
+ * The pattern of an ask.
+ *
+ * The word boundary at the end matters: "may issue a ticket" is not an ask
+ * of the shape "may i".
+ */
+const INTENT_PATTERN = new RegExp(
+	`\\b(?:${INTENT_STEMS.map((stem) => stem.replace(/ /g, "\\s+")).join("|")})\\b`,
+);
+
+/**
+ * The words that deny an operation.
+ *
+ * A denial speaks for the rest of the ask: "do not commit and push" denies
+ * both.
+ */
+const DENYING_WORDS = new Set([
+	"not",
+	"never",
+	"without",
+	"avoid",
+	"skip",
+	"refuse",
+	"deny",
+	"denied",
+	"neither",
+	"nor",
+]);
+
+/**
+ * The personal subjects.
+ *
+ * An operation behind one of them is a fact and not a proposal: "the
+ * service I deployed yesterday" talks about the past.
+ */
+const PERSONAL_SUBJECTS = new Set([
+	"i",
+	"we",
+	"he",
+	"she",
+	"they",
+	"you",
+	"it",
+	"my",
+	"our",
+	"me",
+	"us",
+	"them",
+]);
+
+/**
+ * The operations and the words that name them.
+ *
+ * Only the active forms are named. The past tense describes what happened
+ * and never proposes anything, so a delegation must not cover it.
+ */
+const OPERATION_WORDS: { kind: DelegatedOperationKind; words: string[] }[] = [
+	{ kind: "commit", words: ["commit", "commits", "committing"] },
+	{ kind: "push", words: ["push", "pushes", "pushing"] },
+	{
+		kind: "deploy",
+		words: [
+			"deploy",
+			"deploys",
+			"deploying",
+			"deployment",
+			"deployments",
+			"ship",
+			"ships",
+			"shipping",
+		],
+	},
+	{
+		kind: "external-write",
+		words: [
+			"publish",
+			"publishes",
+			"publishing",
+			"publication",
+			"upload",
+			"uploads",
+			"uploading",
+		],
+	},
+];
+
+/**
+ * The kind of operation a word names.
+ */
+function operationKindOfWord(word: string): DelegatedOperationKind | undefined {
+	for (const entry of OPERATION_WORDS) {
+		if (entry.words.includes(word)) return entry.kind;
+	}
+	return undefined;
+}
+
+/**
+ * The operations the ask names, in the order they appear.
+ */
+function operationKindsAfter(value: string, from: number): DelegatedOperationKind[] {
+	const sentence = value.slice(from).split(/[.!?;\n]/)[0] ?? "";
+	const words = sentence
+		.split(/[^a-z0-9-]+/)
+		.filter((word) => word.length > 0);
+	const kinds: DelegatedOperationKind[] = [];
+	let personalWindow = 0;
+	let denied = false;
+	for (const word of words) {
+		if (DENYING_WORDS.has(word)) {
+			// The denial speaks for the rest of the ask.
+			denied = true;
+			continue;
+		}
+		if (denied) continue;
+		if (PERSONAL_SUBJECTS.has(word)) {
+			// The next words belong to the past of the speaker.
+			personalWindow = 3;
+			continue;
+		}
+		if (personalWindow > 0) {
+			personalWindow -= 1;
+			continue;
+		}
+		const kind = operationKindOfWord(word);
+		if (kind && !kinds.includes(kind)) kinds.push(kind);
+	}
+	// A post to somebody else is an external write.
+	if (!denied && /\bpost(?:s|ing)?\s+to\b/.test(sentence)) {
+		if (!kinds.includes("external-write")) kinds.push("external-write");
+	}
+	return kinds;
+}
+
+/**
  * The kind of operation of a proposal.
  *
  * The classification is narrow on purpose. A proposal whose kind is not
  * known is not covered by a delegation, so an unknown operation never
  * continues by silence.
+ *
+ * The text is free prose, so a word is not enough: the text has to ask for
+ * something, and the operation has to be the active form of the ask. A
+ * mention of the past ("the service I deployed yesterday") and a denial
+ * ("do not commit") name no operation at all.
  */
 export function operationKindFor(
 	text: string | undefined,
 ): DelegatedOperationKind | undefined {
 	const value = (text ?? "").toLowerCase();
-	if (value.length === 0) return undefined;
-	const commit = /\bcommits?\b/.test(value);
-	const push = /\bpush(?:ed|es|ing)?\b/.test(value);
-	const deploy = /\bdeploy(?:ment|ed|ing)?\b|\bship(?:ped|s|ping)? to production\b/.test(value);
-	const external = /\bpublish(?:ed|es|ing)?\b|\bupload(?:ed|s|ing)?\b|\bpost(?:ed|s|ing)? to\b/.test(
-		value,
-	);
-	if (deploy) return "deploy";
-	if (external) return "external-write";
-	if (commit && push) return "commit-and-push";
-	if (commit) return "commit";
-	if (push) return "push";
-	return undefined;
+	if (value.trim().length === 0) return undefined;
+	const ask = INTENT_PATTERN.exec(value);
+	if (!ask) return undefined;
+	const kinds = operationKindsAfter(value, ask.index + ask[0].length);
+	if (kinds.length === 0) return undefined;
+	if (kinds.includes("deploy")) return "deploy";
+	if (kinds.includes("external-write")) return "external-write";
+	if (kinds.includes("commit") && kinds.includes("push")) {
+		return "commit-and-push";
+	}
+	return kinds[0];
 }
 
 /**

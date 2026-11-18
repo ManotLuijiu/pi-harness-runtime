@@ -169,6 +169,28 @@ test("the deadline of another question is not moved", () => {
 	assert.equal(lastView(views).remainingMs, 300_000, "the row of q-1 did not move");
 });
 
+test("a countdown that already fired fires again after a rebased deadline", () => {
+	const clock = createClock();
+	const { countdown, views, deadlines } = createCountdown(clock);
+
+	countdown.start("q-1", clock.now());
+	// The countdown reaches its deadline: the decision is due.
+	clock.advance(300_000);
+	assert.deepEqual(deadlines, ["q-1"]);
+	assert.equal(countdown.fired, true);
+
+	// The deadline moves. The countdown owns a new deadline and needs a
+	// timer again: without one the row would show a time that never
+	// arrives and the decision would never start.
+	countdown.rebase("q-1", clock.now() + 300_000);
+	assert.equal(countdown.fired, false);
+	assert.equal(lastView(views).remainingMs, 300_000);
+
+	// The new deadline arrives: the decision is due again.
+	clock.advance(300_000);
+	assert.deepEqual(deadlines, ["q-1", "q-1"]);
+});
+
 test("the countdown refreshes once per second", () => {
 	const clock = createClock();
 	const { countdown, views } = createCountdown(clock);
