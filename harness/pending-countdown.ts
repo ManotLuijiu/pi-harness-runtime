@@ -178,6 +178,34 @@ export class PendingQuestionCountdown {
 	}
 
 	/**
+	 * Move the deadline of the running countdown.
+	 *
+	 * The countdown owns the deadline of the decision, so the displayed
+	 * time and the time the decision uses cannot drift apart. A question
+	 * whose window starts with the delivery of the message has a later
+	 * deadline than the moment the question was asked: the deadline is
+	 * moved to that moment, so the row of the countdown and the decision
+	 * show the same time.
+	 *
+	 * A countdown of another request, or no countdown at all, is left
+	 * alone: the deadline of a question that is not running is not moved.
+	 */
+	rebase(requestId: string, deadlineAt: number): void {
+		const binding = this.binding;
+		if (!binding || binding.requestId !== requestId) return;
+		if (!Number.isFinite(deadlineAt) || deadlineAt <= 0) return;
+		if (binding.deadlineAt === deadlineAt) return;
+		binding.deadlineAt = deadlineAt;
+		// The deadline moved: the countdown did not fire yet.
+		this.deadlineFired = false;
+		this.safeRender({
+			requestId: binding.requestId,
+			remainingMs: Math.max(0, deadlineAt - this.now()),
+			remaining: formatRemainingTime(Math.max(0, deadlineAt - this.now())),
+		});
+	}
+
+	/**
 	 * Stop the countdown and release its timer.
 	 *
 	 * Stopping is idempotent: a countdown that is not running can be stopped

@@ -104,6 +104,20 @@ export interface JevRejectionEscalationDeps {
 	 * The human rejected the action.
 	 */
 	onRejected(state: EscalationState): void;
+	/**
+	 * How many times the delivery is attempted.
+	 *
+	 * A channel that refused the message may refuse the next one too, but a
+	 * transient failure must not leave the work blocked without a reason.
+	 * The default is three attempts.
+	 */
+	maxDeliveryAttempts?: number;
+	/**
+	 * The pause between two attempts.
+	 *
+	 * The default is 250 milliseconds.
+	 */
+	retryDelayMs?: number;
 	/** The log of the runtime. */
 	log?(message: string): void;
 }
@@ -139,6 +153,35 @@ export function buildJevRejectionMessage(context: JevRejectionContext): string {
 		lines.push(context.delegatedNotice);
 	}
 	lines.push("Do you approve this action? [Yes] [No]");
+	return lines.join("\n");
+}
+
+/**
+ * The continuation that carries the approval of the human.
+ *
+ * The approval releases the block of the action the judge refused, so the
+ * agent has to learn about it: a resume alone leaves the session idle and
+ * the work blocked. The message names the approved action and the scope
+ * that is released.
+ *
+ * The approval is not a passed validation: the message says that the
+ * checks of the repository still run, so the agent does not treat the
+ * approval as a licence that skips them.
+ */
+export function buildJevApprovalContinuation(
+	context: JevRejectionContext,
+	questionId: string,
+): string {
+	const lines: string[] = [];
+	lines.push(`The human approved the action of ${questionId}.`);
+	lines.push(`Approved action: ${context.action}.`);
+	const blocked = context.blocked?.filter((entry) => entry.trim() !== "");
+	if (blocked?.length) {
+		lines.push(`Released scope: ${blocked.join(", ")}.`);
+	}
+	lines.push(
+		"Continue the work of the request. The approval releases the block of this action; it does not replace the checks of the repository, so the validation and the safety checks still run.",
+	);
 	return lines.join("\n");
 }
 
@@ -196,7 +239,7 @@ export class JevRejectionEscalationRuntime {
 		this.byOriginal.set(context.originalRequestId, state);
 		this.byQuestion.set(questionId, state);
 
-		const results = await this.deps.deliver(questionId, text);
+		const results = await this.deliverWithRetry(questionId, text);
 		for (const result of results) {
 			if (result.success) {
 				state.delivered.push(result.channel);
@@ -219,6 +262,36 @@ export class JevRejectionEscalationRuntime {
 			);
 		}
 		return { state, deliveredAtLeastOne, reused: false };
+	}
+
+	/**
+	 * Deliver the escalation, with a bounded number of attempts.
+	 *
+	 * A channel that refused the message may refuse the next one too, but a
+	 * transient failure must not leave the work blocked without a reason.
+	 * The question is the same one in every attempt: a retry never asks the
+	 * human twice, and the buttons of an earlier attempt stay valid.
+	 */
+	private async deliverWithRetry(
+		questionId: string,
+		text: string,
+	): Promise<Pick<NotificationResult, "success" | "channel" | "error">[]> {
+		const maxAttempts = Math.max(1, this.deps.maxDeliveryAttempts ?? 3);
+		const delayMs = Math.max(0, this.deps.retryDelayMs ?? 250);
+		let results: Pick<NotificationResult, "success" | "channel" | "error">[] =
+			await this.deps.deliver(questionId, text);
+		let attempt = 1;
+		while (!results.some((result) => result.success) && attempt < maxAttempts) {
+			attempt += 1;
+			this.deps.log?.(
+				`The escalation ${questionId} was not delivered - the attempt ${attempt} of ${maxAttempts} follows.`,
+			);
+			if (delayMs > 0) {
+				await new Promise((resolve) => setTimeout(resolve, delayMs));
+			}
+			results = await this.deps.deliver(questionId, text);
+		}
+		return results;
 	}
 
 	/**

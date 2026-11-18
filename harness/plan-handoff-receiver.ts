@@ -79,6 +79,15 @@ export interface PlanReceiverOptions {
 	 * when it is handed over.
 	 */
 	hold?: (message: PlanHandoffMessage) => boolean;
+	/**
+	 * Should this plan wait for the session to be free?
+	 *
+	 * A plan that is deferred stays pending in the mailbox: it is never
+	 * claimed, never delivered and never acknowledged. The session of a
+	 * busy agent is not the place for the plan of another request, and a
+	 * paused session does not act on it at all.
+	 */
+	defer?: (message: PlanHandoffMessage) => boolean;
 }
 
 /**
@@ -126,6 +135,10 @@ const realBridge: PlanReceiverBridge = {
  * The text says what the plan is and where it lives. It never tells the
  * session to commit, to push or to build: the plan itself carries that
  * decision, and the human owns the rest.
+ *
+ * The action of the message decides what the session is asked to do. A
+ * plan that is handed over for information is not a task, and a plan that
+ * is handed over for a review is not an order to implement it.
  */
 export function planDeliveryText(message: PlanHandoffMessage): string {
 	const lines = ["A plan was handed to this session."];
@@ -133,12 +146,24 @@ export function planDeliveryText(message: PlanHandoffMessage): string {
 		lines.push(`Summary: ${message.plan.summary}`);
 	}
 	if (message.plan.reference) {
-		lines.push(
-			"",
-			`Read and follow the plan at: ${message.plan.reference}`,
-			"",
-			"Treat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.",
-		);
+		lines.push("", `Read the plan at: ${message.plan.reference}`, "");
+		switch (message.action) {
+			case "review":
+				lines.push(
+					"Treat that file as the requirements of a review. Read it, then report what it asks for and what is missing. Do not implement it.",
+				);
+				break;
+			case "implement":
+				lines.push(
+					"Treat that file as the task requirements. Start by summarizing the plan and then carry it out. Do not edit the plan unless the user asks.",
+				);
+				break;
+			default:
+				lines.push(
+					"That plan is for your information. Read it so you know what the other session is working on. Do not carry it out: the human decides what happens next.",
+				);
+				break;
+		}
 	}
 	return lines.join("\n");
 }
@@ -163,11 +188,40 @@ export function startPlanReceiver(
 	 * is never delivered twice.
 	 */
 	const delivered = new Set<string>();
+	/**
+	 * The plans that are on their way to the session right now.
+	 *
+	 * A plan that is claimed and awaited must not be handed over by a
+	 * second round: the round that is running owns the plan until the
+	 * delivery is over.
+	 */
+	const inFlight = new Set<string>();
+	/**
+	 * True while a round is running.
+	 *
+	 * One round at a time: two overlapping rounds would both see a claimed
+	 * plan, and both would hand it over.
+	 */
+	let polling = false;
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let stopped = false;
 
 	const poll = async (): Promise<number> => {
 		if (stopped) return 0;
+		if (polling) {
+			// A round is running: this one does nothing. The running round
+			// owns the plans it found.
+			return 0;
+		}
+		polling = true;
+		try {
+			return await runRound();
+		} finally {
+			polling = false;
+		}
+	};
+
+	const runRound = async (): Promise<number> => {
 		let messages: PlanHandoffMessage[];
 		try {
 			messages = bridge.receive({
@@ -186,6 +240,17 @@ export function startPlanReceiver(
 			if (options.hold?.(message)) {
 				// The plan waits for the human: it stays pending and is
 				// never claimed.
+				continue;
+			}
+			if (options.defer?.(message)) {
+				// The session cannot take the plan now: it is paused or
+				// busy on other work. The plan waits in the mailbox.
+				continue;
+			}
+			if (inFlight.has(message.id)) {
+				// Another round is handing this plan over right now. The
+				// claim is reconciled below: the plan is acknowledged once
+				// the delivery is over.
 				continue;
 			}
 			if (delivered.has(message.id)) {
@@ -213,12 +278,19 @@ export function startPlanReceiver(
 					// The plan was delivered by somebody else or cancelled.
 					continue;
 				}
+			} catch {
+				continue;
+			}
+			inFlight.add(message.id);
+			try {
 				await options.deliver(message);
 			} catch {
 				// The plan stays claimed: the next round hands it over
 				// again. A plan that cannot be delivered is never lost.
+				inFlight.delete(message.id);
 				continue;
 			}
+			inFlight.delete(message.id);
 			delivered.add(message.id);
 			handed += 1;
 			try {

@@ -24,6 +24,31 @@ export const DEFAULT_EXPLORATION_BUDGET = {
     repeatWarning: 3,
 };
 /**
+ * How serious an intervention is.
+ *
+ * A soft warning is the least serious, a budget that is reached is more
+ * serious, and a blocker is the most serious.
+ */
+const SEVERITY = {
+    none: 0,
+    "repeat-read": 1,
+    stall: 1,
+    "read-budget": 2,
+    "token-budget": 2,
+    "time-budget": 2,
+    blocked: 3,
+};
+/**
+ * The seriousness of an intervention.
+ *
+ * The number is what decides whether the guard may speak again: a warning
+ * that was delivered does not silence a budget that is reached later in the
+ * same checkpoint.
+ */
+export function interventionSeverity(kind) {
+    return SEVERITY[kind] ?? 0;
+}
+/**
  * The continuation the agent receives after the guard intervened.
  *
  * The text asks for the checkpoint and the smallest justified change, and

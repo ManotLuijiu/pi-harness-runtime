@@ -14,6 +14,7 @@ import {
 	DEFAULT_EXPLORATION_BUDGET,
 	classifyRepeat,
 	type Intervention,
+	interventionSeverity,
 	isVisibleIntervention,
 } from "./budget.js";
 import {
@@ -89,6 +90,13 @@ export class ExplorationTracker {
 	private readonly now: () => number;
 	/** The revision the guard last spoke at. */
 	private spokenRevision = -1;
+	/**
+	 * The seriousness of the last intervention the guard delivered.
+	 *
+	 * The guard speaks again when the seriousness grows, even when the
+	 * checkpoint of the agent did not change.
+	 */
+	private spokenSeverity = 0;
 	/**
 	 * The states of the requests this tracker owns.
 	 *
@@ -216,26 +224,40 @@ export class ExplorationTracker {
 	/**
 	 * True when the guard has to speak.
 	 *
-	 * The guard speaks once per checkpoint revision, so a batch of parallel
-	 * reads produces one reminder and not one per file.
+	 * The guard speaks once per checkpoint revision and seriousness: a
+	 * batch of parallel reads produces one reminder and not one per file.
+	 *
+	 * The seriousness is part of the identity of an intervention. A warning
+	 * that was delivered does not silence a budget that is reached later in
+	 * the same checkpoint: the agent has to hear that the budget is gone.
 	 */
 	private shouldSpeak(
 		intervention: Intervention,
 		state: ExplorationState,
 	): boolean {
 		if (!isVisibleIntervention(intervention)) return false;
-		if (this.spokenRevision === state.checkpointRevision) return false;
+		const severity = interventionSeverity(intervention.kind);
+		if (
+			this.spokenRevision === state.checkpointRevision &&
+			severity <= this.spokenSeverity
+		) {
+			return false;
+		}
 		return true;
 	}
 
 	/**
 	 * Mark the guard as having spoken.
 	 *
-	 * The guard speaks again when the checkpoint of the agent changes, so a
-	 * new checkpoint opens a new intervention.
+	 * The guard speaks again when the checkpoint of the agent changes, or
+	 * when the seriousness of the intervention grows. The seriousness is
+	 * remembered as it was, not as the largest one ever seen: a request
+	 * that answered a budget warning with a checkpoint may run into a soft
+	 * warning again, and that warning has to be heard too.
 	 */
-	markSpoken(state: ExplorationState): void {
+	markSpoken(state: ExplorationState, severity: number): void {
 		this.spokenRevision = state.checkpointRevision;
+		this.spokenSeverity = severity;
 	}
 
 	/**

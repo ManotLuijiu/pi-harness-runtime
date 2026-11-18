@@ -24,6 +24,7 @@ import {
 	buildContinuationText,
 	describeUnreadableCheckpoint,
 	ExplorationTracker,
+	interventionSeverity,
 	toCompactCheckpoint,
 } from "../packages/exploration-guard/dist/index.js";
 
@@ -73,26 +74,17 @@ export interface PendingIntervention {
 	requiresCheckpoint: boolean;
 	/** The kind of the intervention. */
 	kind: Intervention["kind"];
+	/**
+	 * How serious the intervention is.
+	 *
+	 * The seriousness is part of the identity of the intervention: a
+	 * warning that was delivered does not silence a budget that is reached
+	 * later in the same checkpoint.
+	 */
+	severity: number;
 	/** The state of the request when the intervention was raised. */
 	state: ExplorationState;
 }
-
-/**
- * How serious an intervention is.
- *
- * A soft warning is the least serious, a budget that is reached is more
- * serious, and a blocker is the most serious. The guard speaks again when
- * the seriousness grows, even when the checkpoint did not change.
- */
-const SEVERITY: Record<Intervention["kind"], number> = {
-	none: 0,
-	"repeat-read": 1,
-	stall: 1,
-	"read-budget": 2,
-	"token-budget": 2,
-	"time-budget": 2,
-	blocked: 3,
-};
 
 /**
  * The number of times the guard speaks in one request.
@@ -120,10 +112,21 @@ export class ExplorationGuardRuntime {
 	private inactive = false;
 	/** How often the guard spoke in this request. */
 	private speechCount = 0;
-	/** How serious the last intervention was. */
-	private lastSeverity = -1;
-	/** The checkpoint revision the guard last spoke at. */
-	private spokenRevision = -1;
+	/**
+	 * How serious the last queued intervention was.
+	 *
+	 * The number is what keeps a batch of parallel reads to one reminder:
+	 * a second read of the same revision at the same seriousness is not a
+	 * new thing to say.
+	 */
+	private queuedSeverity = -1;
+	/**
+	 * The checkpoint revision of the last queued intervention.
+	 *
+	 * The revision is part of the identity of an intervention: a new
+	 * checkpoint of the agent opens a new intervention.
+	 */
+	private queuedRevision = -1;
 
 	constructor(options: ExplorationRuntimeOptions) {
 		this.identity = options.identity;
@@ -177,23 +180,43 @@ export class ExplorationGuardRuntime {
 		}
 		if (!result.shouldSpeak) return null;
 
-		const severity = SEVERITY[result.intervention.kind] ?? 0;
+		const severity = interventionSeverity(result.intervention.kind);
 		if (!this.maySpeak(severity, result.state)) return null;
 
-		this.tracker.markSpoken(result.state);
-		this.speechCount += 1;
-		this.lastSeverity = severity;
-		this.spokenRevision = result.state.checkpointRevision;
+		// The intervention is queued, not delivered. The budget of the
+		// speech and the deduplication of the revision are only spent when
+		// the delivery worked: a message that never reached the agent has
+		// not been spoken yet, and it may be spoken again.
 		const key = this.key();
 		this.pending = {
 			key,
 			message: result.intervention.message,
 			requiresCheckpoint: result.intervention.requiresCheckpoint,
 			kind: result.intervention.kind,
+			severity,
 			state: result.state,
 		};
 		this.pendingGeneration = key.generation;
+		this.queuedSeverity = severity;
+		this.queuedRevision = result.state.checkpointRevision;
 		return this.pending;
+	}
+
+	/**
+	 * The intervention reached the agent.
+	 *
+	 * The caller reports a delivery that worked. Only then does the guard
+	 * count the speech, remember the revision and remember the
+	 * seriousness: a delivery that the guarded path refused has not spoken,
+	 * and the next observation may speak again.
+	 */
+	delivered(pending: PendingIntervention): void {
+		if (pending.key.generation !== this.pendingGeneration) {
+			// The intervention belongs to a request that is gone.
+			return;
+		}
+		this.tracker.markSpoken(pending.state, pending.severity);
+		this.speechCount += 1;
 	}
 
 	/**
@@ -205,8 +228,8 @@ export class ExplorationGuardRuntime {
 	 */
 	private maySpeak(severity: number, state: ExplorationState): boolean {
 		if (this.speechCount >= MAX_SPEECHES_PER_REQUEST) return false;
-		const revisionChanged = this.spokenRevision !== state.checkpointRevision;
-		const escalated = severity > this.lastSeverity;
+		const revisionChanged = this.queuedRevision !== state.checkpointRevision;
+		const escalated = severity > this.queuedSeverity;
 		return revisionChanged || escalated;
 	}
 
@@ -253,8 +276,8 @@ export class ExplorationGuardRuntime {
 		this.inactive = false;
 		this.pending = null;
 		this.speechCount = 0;
-		this.lastSeverity = -1;
-		this.spokenRevision = -1;
+		this.queuedSeverity = -1;
+		this.queuedRevision = -1;
 	}
 
 	/**

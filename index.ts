@@ -49,6 +49,7 @@ import {
 } from "./harness/plan-handoff-recipient-selection.ts";
 import { ExplorationGuardRuntime } from "./harness/exploration-guard-runtime.ts";
 import {
+	buildJevApprovalContinuation,
 	JevRejectionEscalationRuntime,
 } from "./harness/jev-rejection-escalation.ts";
 import { DelegatedApprovalRuntime } from "./harness/delegated-approval-runtime.ts";
@@ -873,6 +874,17 @@ function jevDecisionActionId(requestId: string): string {
 }
 
 /**
+ * The identity of the pending action of a refused action.
+ *
+ * The row of a refusal that nobody received is the local sign that the
+ * work is blocked: it names the request, so a second refusal of another
+ * request has its own row.
+ */
+function jevEscalationActionId(originalRequestId: string): string {
+	return `jev-escalation:${originalRequestId}`;
+}
+
+/**
  * The identity of the pending action of the resume of a job.
  *
  * The job is part of the identity: two jobs have two resumes.
@@ -1323,15 +1335,6 @@ function applyChannelApproval(
 	logToFile("[Approval]", `${channel} decision '${action}' applied to ${requestId}`);
 	logQuestionTransition(requestId, "answered", `${channel}:${action}`);
 
-	// The question is answered, so the wait is over. The wait state is only
-	// cleared after a successful resolution.
-	// The controller owns the wait: the answer ends it, and an evaluation
-	// that is still running is invalidated with it.
-	sharedState.cancelWait?.();
-	sharedState.updateAutoContinueStatus?.("IDLE");
-	// The countdown of the answered question is over with it.
-	sharedState.pendingCountdown?.stop();
-
 	// A delegated question was answered by the human, and its deadline
 	// must not decide anything any more: the answer of the human wins
 	// over the timeout.
@@ -1343,13 +1346,49 @@ function applyChannelApproval(
 		);
 	}
 
-	if (result.resolution === "yes") {
+	// The one path of a decision: the wait ends, the countdown is over and
+	// the work continues or pauses.
+	settlePendingDecision(
+		requestId,
+		result.resolution === "yes" ? "yes" : "no",
+		`${channel}:${action}`,
+	);
+
+	return true;
+}
+
+/**
+ * The one path of a decision about a pending question.
+ *
+ * The answer of the human and the deadline of a delegation are two ways
+ * into this path: the wait of the judge ends, the countdown of the
+ * question is over, and the work continues or pauses. Two paths would let
+ * the two disagree about the state of the work.
+ */
+function settlePendingDecision(
+	requestId: string,
+	outcome: "yes" | "no",
+	source: string,
+): void {
+	// The question is answered, so the wait is over. The wait state is only
+	// cleared after a successful resolution.
+	// The controller owns the wait: the answer ends it, and an evaluation
+	// that is still running is invalidated with it.
+	sharedState.cancelWait?.();
+	sharedState.updateAutoContinueStatus?.("IDLE");
+	// The countdown of the answered question is over with it.
+	sharedState.pendingCountdown?.stop();
+	logToFile(
+		"[Approval]",
+		`The decision of ${source} for ${requestId} is applied: ${
+			outcome === "yes" ? "the work continues" : "the work stays blocked"
+		}`,
+	);
+	if (outcome === "yes") {
 		(sharedState.todoContinuationController as any)?.resume?.();
 	} else {
 		(sharedState.todoContinuationController as any)?.explicitPause?.();
 	}
-
-	return true;
 }
 
 /**
@@ -2372,6 +2411,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						"The deadline of the delegated question was reached:",
 						requestId,
 					);
+					// The decision is claimed once, and the request is settled
+					// before the continuation is queued: the question of the
+					// request is resolved and the wait of the judge ends.
 					sharedState.delegatedApproval?.expire(requestId);
 					return;
 				}
@@ -2492,16 +2534,58 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					"[Approval]",
 					`The human approved the action of ${state.questionId} - the work resumes once`,
 				);
+				// The row of a refusal that nobody received is over: the
+				// human answered it.
+				pendingActions.remove(jevEscalationActionId(state.context.originalRequestId));
+				const controller = sharedState.todoContinuationController as {
+					resume?: () => void;
+					dispatchAdvisory?: (
+						message: string,
+						options?: { meta?: { reason?: string } },
+					) => Promise<{ dispatched: boolean; reason?: string }>;
+				} | null;
 				// The resume continues the work of the request. The action
 				// itself still goes through the checks of the repository:
 				// an approval of the human is not a passed validation.
-				(sharedState.todoContinuationController as any)?.resume?.();
+				controller?.resume?.();
+				// The agent has to learn about the approval: a resume alone
+				// leaves the session idle, and the work stays blocked
+				// without the approval that released it. One guarded
+				// continuation carries the scope of the approval.
+				const message = buildJevApprovalContinuation(
+					state.context,
+					state.questionId,
+				);
+				void Promise.resolve(
+					controller?.dispatchAdvisory?.(message, {
+						meta: { reason: "human-approval" },
+					}),
+				)
+					.then((result) => {
+						if (result && !result.dispatched) {
+							logToFile(
+								"[Approval]",
+								"The approval did not reach the agent:",
+								result.reason,
+							);
+						}
+					})
+					.catch((error) => {
+						logToFile(
+							"[Approval]",
+							"The approval could not be delivered:",
+							oneLineError(error),
+						);
+					});
 			},
 			onRejected: (state) => {
 				logToFile(
 					"[Approval]",
 					`The human rejected the action of ${state.questionId} - the action stays blocked`,
 				);
+				// The row of a refusal that nobody received is over: the
+				// human answered it.
+				pendingActions.remove(jevEscalationActionId(state.context.originalRequestId));
 				(sharedState.todoContinuationController as any)?.explicitPause?.();
 			},
 			log: (message) => logToFile("[auto-continue]", message),
@@ -2520,6 +2604,34 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				join(homedir(), ".pi-harness-runtime"),
 			),
 			deliver: async () => ({ delivered: true, failures: [] }),
+			onDecided: (request, decision) => {
+				// The question of the request is resolved: the judge is not
+				// asked about a question that already has its answer.
+				const controller = sharedState.pqController;
+				const applied = controller?.applyApproval?.(
+					decision.outcome === "yes" ? "approve" : "reject",
+					request.requestId,
+					"pi",
+				);
+				if (applied?.applied) {
+					logQuestionTransition(request.requestId, "answered", "delegated-timeout");
+				} else {
+					logToFile(
+						"[Approval]",
+						`The deadline of ${request.requestId} was stale: ${
+							applied?.reason ?? "ignored"
+						}`,
+					);
+				}
+				// The one path of the decision: the wait of the judge ends,
+				// the countdown of the question is over, and the work
+				// continues or pauses. It runs before the resume is queued.
+				settlePendingDecision(
+					request.requestId,
+					decision.outcome,
+					"delegated-timeout",
+				);
+			},
 			resume: (request, decision) => {
 				logToFile(
 					"[auto-continue]",
@@ -2712,6 +2824,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						hold: (message) =>
 							process.env.CODEX_MANUAL_MODE === "true" &&
 							message.sender.agentId === "codex",
+						// The session takes the plan when it is free. A paused
+						// session does not act on it, and a session that is
+						// busy on other work receives it when it is idle
+						// again. The plan waits in the mailbox until then.
+						defer: () =>
+							(sharedState.todoContinuationController as any)
+								?.isExplicitlyPaused?.() === true ||
+							!ctx.isIdle() ||
+							ctx.hasPendingMessages(),
 					});
 					planReceiver.start();
 				} catch (error) {
@@ -3121,6 +3242,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						logToFile("[Notification]", "notifyWithApproval failed:", String(e));
 						return [] as NotificationResult[];
 					})) ?? []) as NotificationResult[];
+					// The deadline is the one of the delivery: the human had
+					// the window from the moment the message reached them.
+					// The countdown of the question is moved to it, so the
+					// row of the countdown and the decision of the
+					// delegation cannot drift apart.
+					const deadlineAt = Date.now() + MIN_WAIT_MINUTES * 60_000;
+					pendingCountdown.rebase(questionJobId, deadlineAt);
 					await sharedState.delegatedApproval?.open(
 						{
 							requestId: questionJobId,
@@ -3130,7 +3258,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							kind: delegatedKind,
 							operation: questionAction ?? result.questionText,
 							blocked: [questionAction ?? result.questionText],
-							deadlineAt: Date.now() + MIN_WAIT_MINUTES * 60_000,
+							deadlineAt,
 						},
 						{
 							delivered: delivery.some((entry) => entry.success),
@@ -3592,11 +3720,34 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						? `the remaining work (${open.slice(0, 3).join(", ")}) may continue`
 						: undefined,
 				});
+				if (result.deliveredAtLeastOne) {
+					// The human has the buttons: the local row of a delivered
+					// refusal is not needed any more.
+					pendingActions.remove(jevEscalationActionId(input.originalRequestId));
+					logToFile(
+						"[auto-continue]",
+						`The escalation of ${input.originalRequestId} was delivered - the work stays blocked until the human answers`,
+					);
+					return;
+				}
+				// Nobody was told: the work stays visibly blocked, and the row
+				// says what to do. The escalation was asked again a bounded
+				// number of times with the same question, so the human is never
+				// asked twice.
+				const channels = result.state.failures
+					.map((failure) => failure.channel)
+					.join(", ");
+				pendingActions.register({
+					id: jevEscalationActionId(input.originalRequestId),
+					sessionId: activeSessionId,
+					owner: "jev",
+					kind: "jev-decision",
+					state: "blocked",
+					reason: `the refusal of the judge could not be delivered (${channels}) - the action stays blocked until you answer in the session`,
+				});
 				logToFile(
 					"[auto-continue]",
-					`The escalation of ${input.originalRequestId} was ${
-						result.deliveredAtLeastOne ? "delivered" : "NOT delivered"
-					} - the work stays blocked until the human answers`,
+					`The escalation of ${input.originalRequestId} was NOT delivered - the work stays blocked until the human answers`,
 				);
 			} catch (error) {
 				logToFile(
@@ -10662,6 +10813,10 @@ issue is not authorized work of the current request).
 				);
 				return;
 			}
+			// The reminder reached the agent. Only now the guard counts the
+			// speech and remembers the revision: a reminder that the guarded
+			// path refused has not spoken, and the guard may speak again.
+			explorationGuard?.delivered(pending);
 			logToFile(
 				"[exploration-guard]",
 				`The guard spoke after ${pending.state.readCount} reads: ${pending.kind}`,

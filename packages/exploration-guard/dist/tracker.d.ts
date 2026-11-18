@@ -50,6 +50,13 @@ export declare class ExplorationTracker {
     /** The revision the guard last spoke at. */
     private spokenRevision;
     /**
+     * The seriousness of the last intervention the guard delivered.
+     *
+     * The guard speaks again when the seriousness grows, even when the
+     * checkpoint of the agent did not change.
+     */
+    private spokenSeverity;
+    /**
      * The states of the requests this tracker owns.
      *
      * The tracker keeps the state of a request in memory, so a hundred
@@ -80,17 +87,24 @@ export declare class ExplorationTracker {
     /**
      * True when the guard has to speak.
      *
-     * The guard speaks once per checkpoint revision, so a batch of parallel
-     * reads produces one reminder and not one per file.
+     * The guard speaks once per checkpoint revision and seriousness: a
+     * batch of parallel reads produces one reminder and not one per file.
+     *
+     * The seriousness is part of the identity of an intervention. A warning
+     * that was delivered does not silence a budget that is reached later in
+     * the same checkpoint: the agent has to hear that the budget is gone.
      */
     private shouldSpeak;
     /**
      * Mark the guard as having spoken.
      *
-     * The guard speaks again when the checkpoint of the agent changes, so a
-     * new checkpoint opens a new intervention.
+     * The guard speaks again when the checkpoint of the agent changes, or
+     * when the seriousness of the intervention grows. The seriousness is
+     * remembered as it was, not as the largest one ever seen: a request
+     * that answered a budget warning with a checkpoint may run into a soft
+     * warning again, and that warning has to be heard too.
      */
-    markSpoken(state: ExplorationState): void;
+    markSpoken(state: ExplorationState, severity: number): void;
     /**
      * The checkpoint of the agent, merged into the state.
      */

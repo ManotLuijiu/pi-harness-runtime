@@ -37,6 +37,7 @@ function makeRuntime(dir, overrides = {}) {
 			tokenWarning: 0,
 			timeWarningMs: 0,
 			repeatWarning: 2,
+			...overrides.budget,
 		},
 		now: () => 1000,
 	});
@@ -104,6 +105,56 @@ test("the guard does not speak twice without a new checkpoint", () => {
 			result: { content: "x" },
 		});
 		assert.equal(second, null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the guard counts a speech only after the delivery worked", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir, {
+			budget: {
+				readWarning: 0,
+				readBudget: 1,
+				stallWarning: 0,
+				tokenWarning: 0,
+				timeWarningMs: 0,
+				repeatWarning: 99,
+			},
+		});
+		const queued = [];
+		for (let index = 0; index < 4; index += 1) {
+			// A checkpoint opens a new revision, and a new revision opens a
+			// new intervention.
+			runtime.recordCheckpoint({
+				findings: [{ statement: `finding ${index}` }],
+			});
+			runtime.toolCall(`call-${index}`, readCall(`src/${index}.ts`));
+			const pending = runtime.toolCallEnd(`call-${index}`, {
+				toolName: "read",
+				isError: false,
+				result: { content: "x" },
+			});
+			queued.push(pending);
+		}
+		// Four interventions were queued. The guard speaks at most three
+		// times, but nothing was delivered: the budget of the speeches was
+		// not spent.
+		assert.ok(queued[3], "the fourth intervention was queued");
+		// The deliveries work now.
+		for (const pending of queued) {
+			runtime.delivered(pending);
+		}
+		// The budget of the three speeches is spent: the fifth is refused.
+		runtime.recordCheckpoint({ findings: [{ statement: "finding 4" }] });
+		runtime.toolCall("call-4", readCall("src/4.ts"));
+		const fifth = runtime.toolCallEnd("call-4", {
+			toolName: "read",
+			isError: false,
+			result: { content: "x" },
+		});
+		assert.equal(fifth, null);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

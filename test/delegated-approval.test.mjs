@@ -67,7 +67,10 @@ function requestInput(overrides = {}) {
 		kind: "commit-and-push",
 		operation: "create and push two commits",
 		blocked: ["the push of the two commits"],
-		deadlineAt: 1000 + 5 * 60_000,
+		// The request is due: the tests drive the expiry themselves. A
+		// request that is not due yet is a different case, and it has its
+		// own test.
+		deadlineAt: 1000,
 		...overrides,
 	};
 }
@@ -331,7 +334,11 @@ test("a request of work that is over is not continued", async () => {
 test("the deadline of the timer claims the decision", async () => {
 	const dir = temporary();
 	try {
-		const { runtime, delegations, resumes } = makeRuntime(dir);
+		// The clock of the runtime is the wall clock here: the timer of the
+		// runtime fires the claim on its own.
+		const { runtime, delegations, resumes } = makeRuntime(dir, {
+			now: () => Date.now(),
+		});
 		delegations.record({
 			id: "d-1",
 			workspace: "/home/frappe/project",
@@ -339,12 +346,42 @@ test("the deadline of the timer claims the decision", async () => {
 			defaultOutcome: "continue",
 			recordedAt: 500,
 		});
-		await runtime.open(requestInput({ deadlineAt: 1000 + 50 }));
+		await runtime.open(requestInput({ deadlineAt: Date.now() + 50 }));
 		// The timer of the runtime fires the claim on its own.
 		await new Promise((resolve) => setTimeout(resolve, 150));
 		assert.equal(resumes.length, 1);
 		assert.equal(runtime.get("q-1").state, "claimed");
 		assert.equal(runtime.get("q-1").answer.source, "delegated-timeout");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a request that is not due yet is not decided", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes, setNow } = makeRuntime(dir);
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const deadlineAt = 1000 + 5 * 60_000;
+		await runtime.open(requestInput({ deadlineAt }));
+		// The deadline has not passed: the request is not decided and
+		// nothing is continued.
+		setNow(deadlineAt - 1);
+		assert.equal(runtime.expire("q-1"), null);
+		assert.equal(resumes.length, 0);
+		assert.equal(runtime.get("q-1").state, "pending");
+		// The deadline passes: the request is decided.
+		setNow(deadlineAt);
+		const decision = runtime.expire("q-1");
+		assert.ok(decision);
+		assert.equal(decision.source, "delegated-timeout");
+		assert.equal(resumes.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

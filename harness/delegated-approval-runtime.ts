@@ -86,6 +86,15 @@ export interface DelegatedApprovalDeps {
 	 */
 	resume(request: ApprovalRequest, decision: ApprovalDecision): void;
 	/**
+	 * The request was decided by the deadline.
+	 *
+	 * The caller settles the request here: it resolves the question of the
+	 * request and ends the wait of the judge. The hook runs before the
+	 * resume is queued, so the continuation never starts while the
+	 * question is still open.
+	 */
+	onDecided?(request: ApprovalRequest, decision: ApprovalDecision): void;
+	/**
 	 * Is the work of the request still active?
 	 *
 	 * A request that was cancelled, replaced or completed must not be
@@ -260,6 +269,11 @@ export class DelegatedApprovalRuntime {
 	 *
 	 * The state of the work is checked before the claim, the claim is
 	 * atomic, and the resume is queued at most once.
+	 *
+	 * The caller settles the request before the resume is queued: the
+	 * decision is handed to `onDecided` first, so the question of the
+	 * request is resolved and the wait of the judge ends before the
+	 * continuation starts.
 	 */
 	expire(requestId: string): ApprovalDecision | null {
 		const request = this.requests.get(requestId);
@@ -273,6 +287,22 @@ export class DelegatedApprovalRuntime {
 			return null;
 		}
 		if (request.state !== "pending") return null;
+		// The deadline of the request is the only deadline. A request that
+		// is not due yet is not decided: the timer is armed again for the
+		// time that is left, and the decision waits for the deadline.
+		//
+		// The window of a delegated question starts with the delivery of the
+		// message, so the deadline of the request is later than the deadline
+		// of the question that was asked. A countdown that reaches zero
+		// first must not decide anything.
+		const now = this.deps.now();
+		if (now < request.deadlineAt) {
+			this.deps.log?.(
+				`The approval request ${requestId} is not due yet: the deadline is at ${request.deadlineAt}. The decision waits.`,
+			);
+			this.armTimer();
+			return null;
+		}
 		// A request that was cancelled, replaced or completed must not be
 		// continued by a deadline.
 		if (this.deps.active && !this.deps.active(request)) {
@@ -312,6 +342,10 @@ export class DelegatedApprovalRuntime {
 		}
 		request.state = "claimed";
 		request.answer = { outcome, source: "delegated-timeout", at: decision.at };
+		// The caller settles the request: the question of the request is
+		// resolved and the wait of the judge ends before the continuation
+		// is queued.
+		this.deps.onDecided?.(request, decision);
 		if (outcome === "yes") {
 			// Exactly one resume: the claim is what guarantees it.
 			this.queueResume(request, decision);

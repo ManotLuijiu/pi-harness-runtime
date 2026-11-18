@@ -22,6 +22,14 @@ export declare const DEFAULT_EXPLORATION_BUDGET: ExplorationBudget;
  */
 export type InterventionKind = "none" | "repeat-read" | "stall" | "read-budget" | "token-budget" | "time-budget" | "blocked";
 /**
+ * The seriousness of an intervention.
+ *
+ * The number is what decides whether the guard may speak again: a warning
+ * that was delivered does not silence a budget that is reached later in the
+ * same checkpoint.
+ */
+export declare function interventionSeverity(kind: InterventionKind): number;
+/**
  * What the guard decided.
  */
 export interface Intervention {

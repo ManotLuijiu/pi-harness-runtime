@@ -24,7 +24,10 @@ import {
 	createPendingQuestionController,
 } from "../packages/notification/dist/index.js";
 import { TodoContinuationController } from "../packages/jev-judge/dist/index.js";
-import { JevRejectionEscalationRuntime } from "../harness/jev-rejection-escalation.ts";
+import {
+	buildJevApprovalContinuation,
+	JevRejectionEscalationRuntime,
+} from "../harness/jev-rejection-escalation.ts";
 
 /**
  * The action the judge refused.
@@ -214,18 +217,36 @@ function makeChain() {
 				error: result.error,
 			}));
 		},
-		onApproved: () => continuation.resume(),
+		onApproved: (state) => {
+			// The wiring of the harness: the pause is over, and one guarded
+			// continuation carries the approval to the agent.
+			continuation.resume();
+			void continuation.dispatchAdvisory(
+				buildJevApprovalContinuation(state.context, state.questionId),
+				{ meta: { reason: "human-approval" } },
+			);
+		},
 		onRejected: () => continuation.explicitPause(),
 	});
 	return { items, provider, dispatched, continuation, controller, runtime };
 }
 
 /**
+ * Let the guarded dispatch of the continuation settle.
+ *
+ * The dispatch is asynchronous: the approval answers the question in the
+ * same tick, and the message reaches the agent in the next ones.
+ */
+async function settle() {
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
  * The context of a refusal: the judge refused an operation and the work
  * is paused.
  */
-function refusal() {
-	return {
+function refusal() {	return {
 		originalRequestId: "req-approval-1",
 		sessionId: "session-approval",
 		generation: 1,
@@ -238,7 +259,7 @@ function refusal() {
 	};
 }
 
-test("the approval of the human resumes the work and sends nothing", async () => {
+test("the approval of the human resumes the work and queues one guarded continuation", async () => {
 	const chain = makeChain();
 	// The judge refused: the work is paused until the human answers.
 	chain.continuation.explicitPause();
@@ -249,12 +270,21 @@ test("the approval of the human resumes the work and sends nothing", async () =>
 
 	const answered = chain.runtime.answer(result.state.questionId, "yes");
 	assert.equal(answered, true);
+	await settle();
 
 	// The work may continue.
 	assert.equal(chain.continuation.isExplicitlyPaused(), false);
-	// The approval is not a dispatch: the continuation of the work is a
-	// separate, guarded step.
-	assert.deepEqual(chain.dispatched, []);
+	// The approval reaches the agent exactly once, and it carries the
+	// scope of the approval.
+	assert.equal(chain.dispatched.length, 1);
+	assert.ok(
+		chain.dispatched[0].includes(REFUSED_ACTION),
+		"the continuation does not name the approved action",
+	);
+	assert.ok(
+		chain.dispatched[0].includes("the validation and the safety checks still run"),
+		"the continuation does not say that the checks still run",
+	);
 });
 
 test("the approval of the human does not run the refused action", async () => {
@@ -277,15 +307,20 @@ test("the approval of the human does not run the refused action", async () => {
 	assert.ok(before > 0, "the message did not reach a channel");
 
 	chain.runtime.answer(result.state.questionId, "yes");
+	await settle();
 
 	assert.equal(
 		captured.length,
 		before,
 		"the approval made a request of its own",
 	);
-	// The approval sends nothing to the agent, so the action is not run
-	// as an execution of the question.
-	assert.deepEqual(chain.dispatched, []);
+	// The approval sends a continuation to the agent, not an execution of
+	// the refused action: the message says that the checks still run.
+	assert.equal(chain.dispatched.length, 1);
+	assert.ok(
+		chain.dispatched[0].includes("the validation and the safety checks still run"),
+		"the continuation does not say that the checks still run",
+	);
 });
 
 test("the approval of the human does not finish the work", async () => {
@@ -327,8 +362,10 @@ test("the answer of the human wins over the second answer", async () => {
 	const result = await chain.runtime.escalate(refusal());
 
 	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
+	await settle();
 	// A second click does not resume a work that was already resumed.
 	assert.equal(chain.runtime.answer(result.state.questionId, "no"), false);
+	await settle();
 	assert.equal(chain.continuation.isExplicitlyPaused(), false);
-	assert.deepEqual(chain.dispatched, []);
+	assert.equal(chain.dispatched.length, 1, "the approval was delivered twice");
 });

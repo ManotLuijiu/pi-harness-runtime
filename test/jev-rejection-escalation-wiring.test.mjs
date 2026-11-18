@@ -12,6 +12,7 @@
 
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
 	NotificationCenter,
@@ -216,4 +217,31 @@ test("a human rejection leaves the action blocked", async () => {
 	assert.equal(runtime.answer(questionId, "no"), true);
 	assert.equal(rejected.length, 1);
 	assert.equal(approved.length, 0);
+});
+
+test("a refusal that nobody received leaves a local blocked row", () => {
+	const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+	const start = source.indexOf("const escalateJevRejection");
+	assert.ok(start > 0, "the harness has no escalation path");
+	const block = source.slice(start, start + 4000);
+
+	// The row of a refusal that nobody received is the local sign that the
+	// work is blocked.
+	assert.ok(
+		block.includes("pendingActions.register("),
+		"the escalation registers no row",
+	);
+	assert.ok(
+		block.includes("jevEscalationActionId"),
+		"the row has no identity",
+	);
+	assert.ok(
+		block.includes('state: "blocked"'),
+		"the row does not say that the work is blocked",
+	);
+	// The row is gone when the human answered the refusal.
+	assert.ok(
+		block.includes("pendingActions.remove("),
+		"the row is not cleared when the refusal was delivered",
+	);
 });
