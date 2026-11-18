@@ -48,6 +48,15 @@ export const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
  */
 export const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
 
+/**
+ * Status key that carries the state of the task list of the session.
+ *
+ * The row names the work that is open, and it says that a completion
+ * is unverified when nothing proves it. It never says that the request
+ * is done.
+ */
+export const HARNESS_TASK_STATUS_KEY = "harness-task";
+
 export interface HarnessFooterOptions {
 	/** Status key holding the quota summary (own row). */
 	quotaStatusKey?: string;
@@ -57,6 +66,8 @@ export interface HarnessFooterOptions {
 	autoContinueStatusKey?: string;
 	/** Status key holding the pending automatic actions (own row). */
 	actionsStatusKey?: string;
+	/** Status key holding the state of the task list (own row). */
+	taskStatusKey?: string;
 	/**
 	 * Supplies the live extension context. May throw when the session was
 	 * replaced — the footer degrades to status-only rows in that case.
@@ -665,6 +676,7 @@ export function createHarnessFooter(
 	const autoContinueKey =
 		options.autoContinueStatusKey ?? HARNESS_AUTO_CONTINUE_STATUS_KEY;
 	const actionsKey = options.actionsStatusKey ?? HARNESS_ACTIONS_STATUS_KEY;
+	const taskKey = options.taskStatusKey ?? HARNESS_TASK_STATUS_KEY;
 	const getContext = options.getContext ?? (() => null);
 	const autoCompactEnabled = options.autoCompactEnabled ?? true;
 
@@ -708,6 +720,8 @@ export function createHarnessFooter(
 			if (workspace) rows.push({ label: "workspace", text: workspace, maxLines: 8 });
 			const autoContinue = statuses.get(autoContinueKey);
 			if (autoContinue) rows.push({ label: "auto-continue", text: autoContinue });
+			const task = statuses.get(taskKey);
+			if (task) rows.push({ label: "task", text: task });
 
 			const otherStatuses = Array.from(statuses.entries())
 				.filter(
@@ -715,7 +729,8 @@ export function createHarnessFooter(
 						key !== quotaKey &&
 						key !== workspaceKey &&
 						key !== autoContinueKey &&
-						key !== actionsKey,
+						key !== actionsKey &&
+						key !== taskKey,
 				)
 				.sort(([a], [b]) => a.localeCompare(b))
 				.map(([, text]) => sanitizeStatusText(text))

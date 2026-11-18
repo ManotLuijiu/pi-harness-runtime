@@ -35,6 +35,14 @@ export declare const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
  * own row, so a blocked provider stays visible next to the other statuses.
  */
 export declare const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
+/**
+ * Status key that carries the state of the task list of the session.
+ *
+ * The row names the work that is open, and it says that a completion
+ * is unverified when nothing proves it. It never says that the request
+ * is done.
+ */
+export declare const HARNESS_TASK_STATUS_KEY = "harness-task";
 export interface HarnessFooterOptions {
     /** Status key holding the quota summary (own row). */
     quotaStatusKey?: string;
@@ -44,6 +52,8 @@ export interface HarnessFooterOptions {
     autoContinueStatusKey?: string;
     /** Status key holding the pending automatic actions (own row). */
     actionsStatusKey?: string;
+    /** Status key holding the state of the task list (own row). */
+    taskStatusKey?: string;
     /**
      * Supplies the live extension context. May throw when the session was
      * replaced — the footer degrades to status-only rows in that case.

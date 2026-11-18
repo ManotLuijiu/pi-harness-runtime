@@ -77,6 +77,8 @@ import {
 } from "./harness/delegated-approval-types.ts";
 import type { NotificationResult } from "./packages/notification/src/types.ts";
 import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
+import { registerTaskMemoryReminders } from "./harness/task-memory-reminder.ts";
+import { contextFillPercent } from "./harness/context-usage.ts";
 import {
 	describeCandidates,
 	type AgentRegistration,
@@ -99,7 +101,14 @@ import {
 	type JevWorkState,
 	type TodoStateLike,
 } from "./harness/jev-wait-eligibility.ts";
-import { RequestScopeTracker } from "./harness/jev-request-scope.ts";
+import {
+	itemsOfRequest,
+	RequestScopeTracker,
+} from "./harness/jev-request-scope.ts";
+import {
+	TaskTrackingStatusController,
+	type TaskTrackingTodo,
+} from "./harness/task-tracking-status.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
@@ -1078,6 +1087,13 @@ const sharedState = {
 	// reads its phase, so the exploration budget follows the phase of the
 	// work: a review reads differently than an implementation.
 	twoPhaseRuntime: null as unknown,
+	/**
+	 * Reads the task list of the session.
+	 *
+	 * The reminder that asks the agent to record its work reads the same
+	 * list that the phase of the work reads.
+	 */
+	todoReader: null as null | ((ctx: unknown) => Promise<TwoPhaseTodoLike[] | undefined>),
 	// The state of the work of the request that is running. The automatic
 	// resume reads it to know whether the work of the request remains.
 	workContext: null as unknown,
@@ -1170,6 +1186,44 @@ async function currentRequestWorkState(): Promise<ResumeWorkState> {
 		return context.work;
 	} catch {
 		return "unknown";
+	}
+}
+
+/**
+ * The status of the task list of the session.
+ *
+ * The row names the work that is open and says that a completion is
+ * unverified when nothing proves it. It never restarts the agent, never
+ * creates a task and never announces a completion.
+ */
+const taskTracking = new TaskTrackingStatusController();
+
+/**
+ * Read the todos of the current request and keep them for the status.
+ *
+ * A list that cannot be read is not an empty list: the status says that
+ * the todos are unavailable instead of pretending that there is no work.
+ */
+async function refreshTaskTracking(): Promise<void> {
+	try {
+		const read = await requestScopeTracker.read();
+		if (read.items === null) {
+			taskTracking.stateChanged(undefined);
+			return;
+		}
+		const items = itemsOfRequest(read.items, read.scope);
+		const todos: TaskTrackingTodo[] = items.map((item) => ({
+			subject: item.subject,
+			status: item.status,
+		}));
+		taskTracking.stateChanged(todos);
+	} catch (error) {
+		logToFile(
+			"[task-tracking]",
+			"the task list could not be read:",
+			oneLineError(error),
+		);
+		taskTracking.stateChanged(undefined);
 	}
 }
 
@@ -1792,6 +1846,14 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 			// The guard of the exploration reads the phase of the workflow.
 			sharedState.twoPhaseRuntime = runtime;
 		});
+
+	// The reminder that asks the agent to record its work reads the same
+	// list. A session whose list cannot be read gets no reminder: an
+	// agent that cannot add a task cannot act on the nudge.
+	sharedState.todoReader = async (ctx: unknown) => {
+		const snapshot = await readTodos(ctx);
+		return snapshot.available ? snapshot.todos : undefined;
+	};
 	} catch (error) {
 		logToFile("[TwoPhase]", `runtime not registered: ${oneLineError(error)}`);
 	}
@@ -8015,6 +8077,20 @@ export default async function (pi: ExtensionAPI) {
 	initConsoleGuard(pi);
 
 	// --- exploration-checkpoint: let the agent record what it found ---
+	registerTaskMemoryReminders(pi, {
+		requestGeneration: () => String(requestScopeTracker.generation),
+		recoveryText: () => explorationGuard?.continuationAfterCompaction(),
+		// The reminder asks the agent to record its work only when the
+		// task list does not hold that work. The list is the same one the
+		// phase of the work reads, and a session whose list cannot be
+		// read is never nudged about it.
+		todoList: async (ctx: unknown) => {
+			const reader = sharedState.todoReader;
+			if (!reader) return undefined;
+			return reader(ctx);
+		},
+	});
+
 	// The guard watches the reads, but only the agent knows what it learned
 	// from them. The tool records that statement beside the coverage of the
 	// request, so a compaction does not make the agent find it again.
@@ -8994,6 +9070,45 @@ issue is not authorized work of the current request).
 		beginHumanRequest();
 	});
 
+	// --- The state of the task list of the session -------------------------
+	//
+	// The row of the footer tells the human what happened to the work:
+	// the open todos, or the fact that a completion is unverified. It is
+	// refreshed when the agent starts, when it settles and when the task
+	// list changes. It never steers the session.
+	function refreshTaskTrackingFooter(): void {
+		if (!footerSetStatus) return;
+		refreshFooterStatus(
+			footerSetStatus,
+			tracker,
+			mirrorStore,
+			cookieSourceState,
+			() => lastActiveProvider,
+		);
+	}
+
+	pi.on("agent_start", async () => {
+		taskTracking.agentStarted();
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
+	pi.on("agent_settled", async () => {
+		taskTracking.agentSettled();
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
+	// A write to the task list changes what the row says, so the row is
+	// refreshed. The other tools change nothing about the task list.
+	pi.on("tool_execution_end", async (event) => {
+		const toolEvent = event as { toolName?: string; isError?: boolean };
+		if (toolEvent.isError) return;
+		if (String(toolEvent.toolName ?? "") !== "todo") return;
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
 	// The run settled: the internal retries of Pi are over, so a failure
 	// that waited for the boundary is final and the recovery starts now.
 	pi.on("agent_settled", async (event) => {
@@ -9500,16 +9615,18 @@ issue is not authorized work of the current request).
 
 	// --- Context-usage escalating warning tiers -----------------------------
 	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
-	// Per-session dedup: only notify when crossing INTO a new higher tier.
-	const TIER_WARNING = 0.75; // amber
-	const TIER_ERROR = 0.85; // red
+	// The usage of the pi reports a percentage and not a fraction, so the
+	// thresholds are percentage points.
+	const TIER_WARNING = 75; // amber
+	const TIER_ERROR = 85; // red
+	const TIER_COMPACT = 90; // the proactive compaction takes over here
 	let lastNotifiedTier: "none" | "warning" | "error" = "none";
 
 	function maybeNotifyContextUsage(ctx: ExtensionContext): void {
 		const usage = ctx.getContextUsage();
-		const pct = usage?.percent;
-		if (pct === null || pct === undefined) return;
-		if (pct >= 0.9) return; // proactive compact handles 90%+
+		const pct = contextFillPercent(usage);
+		if (pct === undefined) return;
+		if (pct >= TIER_COMPACT) return; // proactive compact handles 90%+
 
 		const tier: "none" | "warning" | "error" =
 			pct >= TIER_ERROR ? "error" : pct >= TIER_WARNING ? "warning" : "none";
@@ -11237,7 +11354,7 @@ issue is not authorized work of the current request).
 
 		const compactOptions: CompactOptions = {
 			customInstructions:
-				"Preserve the current task, recent code changes, pending work, exact next step, and any unresolved errors. This compaction was triggered proactively near the context limit. After compaction, continue seamlessly without asking the user to resume or recap.",
+				"Preserve the current task, local todo IDs and statuses, recent code changes, exploration findings with file locations, rejected hypotheses, pending validation, blockers, exact next step, and any unresolved errors. Keep enough evidence to reuse completed exploration after compaction. This compaction was triggered proactively near the context limit. After compaction, continue seamlessly without asking the user to resume or recap.",
 			onComplete: () => {
 				proactiveCompactInFlight = false;
 				lastProactiveCompactAt = Date.now();
@@ -11298,6 +11415,33 @@ function refreshFooterStatus(
 	// The exploration of the request is published under its own status key.
 	// The numbers describe the reads, never what the agent understood.
 	setExplorationStatus(setStatus);
+
+	// The state of the task list is published under its own status key.
+	// It names the work that is open, and it never claims a completion.
+	setTaskTrackingStatus(setStatus);
+}
+
+/**
+ * Publish the state of the task list of the session.
+ *
+ * The status is passive: it shows what was observed and it never steers
+ * the session. A list that cannot be read says so instead of showing a
+ * number of open todos that nobody knows.
+ */
+function setTaskTrackingStatus(
+	setStatus: (key: string, value: string) => void,
+): void {
+	try {
+		const status = taskTracking.status();
+		if (!status) return;
+		setStatus("harness-task", status.text);
+	} catch (error) {
+		logToFile(
+			"[task-tracking]",
+			"the status could not be published:",
+			oneLineError(error),
+		);
+	}
 }
 
 /**

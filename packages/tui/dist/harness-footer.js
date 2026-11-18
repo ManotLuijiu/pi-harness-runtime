@@ -35,6 +35,14 @@ export const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
  * own row, so a blocked provider stays visible next to the other statuses.
  */
 export const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
+/**
+ * Status key that carries the state of the task list of the session.
+ *
+ * The row names the work that is open, and it says that a completion
+ * is unverified when nothing proves it. It never says that the request
+ * is done.
+ */
+export const HARNESS_TASK_STATUS_KEY = "harness-task";
 function readUsage(raw) {
     if (!raw || typeof raw !== "object")
         return null;
@@ -543,6 +551,7 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
     const workspaceKey = options.workspaceStatusKey ?? HARNESS_WORKSPACE_STATUS_KEY;
     const autoContinueKey = options.autoContinueStatusKey ?? HARNESS_AUTO_CONTINUE_STATUS_KEY;
     const actionsKey = options.actionsStatusKey ?? HARNESS_ACTIONS_STATUS_KEY;
+    const taskKey = options.taskStatusKey ?? HARNESS_TASK_STATUS_KEY;
     const getContext = options.getContext ?? (() => null);
     const autoCompactEnabled = options.autoCompactEnabled ?? true;
     // Last successfully collected session info. A stale extension context
@@ -589,11 +598,15 @@ export function createHarnessFooter(_tui, theme, footerData, options = {}) {
             const autoContinue = statuses.get(autoContinueKey);
             if (autoContinue)
                 rows.push({ label: "auto-continue", text: autoContinue });
+            const task = statuses.get(taskKey);
+            if (task)
+                rows.push({ label: "task", text: task });
             const otherStatuses = Array.from(statuses.entries())
                 .filter(([key]) => key !== quotaKey &&
                 key !== workspaceKey &&
                 key !== autoContinueKey &&
-                key !== actionsKey)
+                key !== actionsKey &&
+                key !== taskKey)
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([, text]) => sanitizeStatusText(text))
                 .filter(Boolean)
