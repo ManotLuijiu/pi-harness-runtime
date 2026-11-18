@@ -322,6 +322,53 @@ describe("the speech of the guard", () => {
 		}
 	});
 
+	test("the delivery of a warning keeps the reads that happened meanwhile", () => {
+		const dir = mkdtempSync(join(tmpdir(), "exploration-tracker-"));
+		try {
+			const store = new ExplorationStateStore(dir);
+			const tracker = new ExplorationTracker({
+				store,
+				budget: {
+					readWarning: 0,
+					readBudget: 99,
+					stallWarning: 0,
+					tokenWarning: 0,
+					timeWarningMs: 0,
+					repeatWarning: 99,
+				},
+				now: () => 1000,
+			});
+			const first = tracker.observe(
+				KEY,
+				readCall("src/a.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			// The warning is about the state of that moment.
+			const snapshot = first.state;
+			// The request keeps moving while the warning is delivered.
+			tracker.observe(KEY, readCall("src/b.ts", 1, 10), {
+				toolName: "read",
+				isError: false,
+				result: { content: "x" },
+			});
+			// The delivery of the warning writes its own memory into the
+			// state of the request.
+			tracker.markSpoken(snapshot, 1);
+
+			// The reads that happened meanwhile are still there: the
+			// delivery does not write the snapshot of the warning back.
+			const current = tracker.state(KEY);
+			expect(current.readCount).toBe(2);
+			expect(current.spokenSeverity).toBe(1);
+			// The durable copy says the same thing.
+			const durable = store.read(KEY);
+			expect(durable?.readCount).toBe(2);
+			expect(durable?.spokenSeverity).toBe(1);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("a new checkpoint lets the guard speak again", () => {
 		const { tracker, dir } = temporaryTracker();
 		try {
@@ -341,6 +388,77 @@ describe("the speech of the guard", () => {
 				{ toolName: "read", isError: false, result: { content: "x" } },
 			);
 			expect(second.shouldSpeak).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a delivery of an old revision does not roll the memory back", () => {
+		const { tracker, dir } = temporaryTracker();
+		try {
+			// The guard spoke about the first revision.
+			const first = tracker.observe(
+				KEY,
+				readCall("src/a.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			tracker.markSpoken(
+				first.state,
+				interventionSeverity(first.intervention.kind),
+			);
+			// The agent records a checkpoint: the revision moves on.
+			tracker.recordCheckpoint(KEY, { findings: [{ statement: "x" }] });
+			const second = tracker.observe(
+				KEY,
+				readCall("src/b.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			tracker.markSpoken(
+				second.state,
+				interventionSeverity(second.intervention.kind),
+			);
+			const memory = tracker.state(KEY);
+			expect(memory.spokenRevision).toBe(second.state.checkpointRevision);
+
+			// A delivery of the first revision arrives late. It must not
+			// undo the memory of the newer revision.
+			tracker.markSpoken(
+				first.state,
+				interventionSeverity(first.intervention.kind),
+			);
+			const after = tracker.state(KEY);
+			expect(after.spokenRevision).toBe(memory.spokenRevision);
+			// And the state of the request is untouched by the late
+			// delivery: the reads and the checkpoint of the agent stay.
+			expect(after.readCount).toBe(memory.readCount);
+			expect(after.checkpointRevision).toBe(memory.checkpointRevision);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a delivery of an old revision keeps the checkpoint of the agent", () => {
+		const { tracker, dir } = temporaryTracker();
+		try {
+			const first = tracker.observe(
+				KEY,
+				readCall("src/a.ts", 1, 10),
+				{ toolName: "read", isError: false, result: { content: "x" } },
+			);
+			tracker.recordCheckpoint(KEY, {
+				findings: [{ statement: "the reset lives in the provider" }],
+			});
+			const revision = tracker.state(KEY).checkpointRevision;
+			// The delivery is about the state before the checkpoint.
+			tracker.markSpoken(
+				first.state,
+				interventionSeverity(first.intervention.kind),
+			);
+			const state = tracker.state(KEY);
+			expect(state.checkpointRevision).toBe(revision);
+			expect(state.checkpoint.findings[0]?.statement).toBe(
+				"the reset lives in the provider",
+			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

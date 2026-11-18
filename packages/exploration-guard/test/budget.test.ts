@@ -121,6 +121,71 @@ describe("the decision of the guard", () => {
 		expect(decision.suggestsImplementation).toBe(true);
 	});
 
+	test("the read budget wins over the stall", () => {
+		// The reads reached the budget and there is no narrowing: the stall
+		// is true, but the budget is the stronger fact. The guard says the
+		// strongest thing it knows.
+		const state = baseState();
+		state.readCount = 12;
+		const decision = assessExploration(state, TIGHT);
+		expect(readsSinceNarrowing(state)).toBeGreaterThanOrEqual(
+			TIGHT.stallWarning,
+		);
+		expect(decision.kind).toBe("read-budget");
+		expect(decision.suggestsImplementation).toBe(true);
+	});
+
+	test("the token budget wins over the stall", () => {
+		const state = baseState();
+		state.readCount = 6;
+		state.estimatedTokens = 5000;
+		const decision = assessExploration(state, TIGHT);
+		expect(decision.kind).toBe("token-budget");
+	});
+
+	test("the time budget wins over the stall", () => {
+		const state = baseState();
+		state.readCount = 6;
+		state.explorationTimeMs = 90_000;
+		const decision = assessExploration(state, TIGHT);
+		expect(decision.kind).toBe("time-budget");
+	});
+
+	test("the read budget wins over the repeat of a read", () => {
+		// The reads reached the budget and one file was read again. The
+		// budget is the stronger fact: the agent has to hear that the
+		// budget is reached, not that a file was read twice.
+		const state = baseState();
+		state.readCount = 12;
+		const coverage = ensureCoverage(state.files, "src/a.ts");
+		coverage.readCount = 3;
+		coverage.repeatCount = 3;
+		const decision = assessExploration(state, TIGHT);
+		expect(decision.kind).toBe("read-budget");
+		expect(decision.suggestsImplementation).toBe(true);
+	});
+
+	test("the token budget wins over the repeat of a read", () => {
+		const state = baseState();
+		state.readCount = 6;
+		state.estimatedTokens = 5000;
+		const coverage = ensureCoverage(state.files, "src/a.ts");
+		coverage.readCount = 3;
+		coverage.repeatCount = 3;
+		const decision = assessExploration(state, TIGHT);
+		expect(decision.kind).toBe("token-budget");
+	});
+
+	test("the repeat of a read is told before the stall", () => {
+		const state = baseState();
+		state.readCount = 6;
+		const coverage = ensureCoverage(state.files, "src/a.ts");
+		coverage.readCount = 3;
+		coverage.repeatCount = 3;
+		const decision = assessExploration(state, TIGHT);
+		expect(decision.kind).toBe("repeat-read");
+	});
+
 	test("the token budget is reached", () => {
 		const state = baseState();
 		state.readCount = 1;

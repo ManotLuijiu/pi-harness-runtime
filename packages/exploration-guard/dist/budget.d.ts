@@ -104,6 +104,14 @@ export declare function repeatedPaths(state: ExplorationState): string[];
  *
  * The decision is a pure function of the state and the budget, so it can be
  * tested without a session and without a model.
+ *
+ * The branches are ordered by seriousness, not by the order in which they
+ * were written. The guard says the strongest thing it knows: a request that
+ * reached the read budget must not be told about a stall instead, because
+ * the stall is the weaker warning and the agent would hear that the budget
+ * is still far away. The seriousness of an intervention is what the dedup
+ * of the guard compares, so the branch that decides has to be the one with
+ * the highest seriousness.
  */
 export declare function assessExploration(state: ExplorationState, budget?: ExplorationBudget): Intervention;
 /**

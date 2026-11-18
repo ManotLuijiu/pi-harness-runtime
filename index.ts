@@ -48,14 +48,33 @@ import {
 	resolveRecipientSelection,
 } from "./harness/plan-handoff-recipient-selection.ts";
 import { ExplorationGuardRuntime } from "./harness/exploration-guard-runtime.ts";
+import { jevDecisionStatus, notifyJevHumanRequired } from "./harness/jev-decision-feedback.ts";
 import {
 	buildJevApprovalContinuation,
+	decideApprovalResume,
 	JevRejectionEscalationRuntime,
 } from "./harness/jev-rejection-escalation.ts";
 import { DelegatedApprovalRuntime } from "./harness/delegated-approval-runtime.ts";
 import { DelegationStore } from "./harness/delegation-store.ts";
+import {
+	applyDelegationCommand,
+	parseDelegationCommand,
+} from "./harness/delegation-command.ts";
 import { ApprovalDecisionStore } from "./harness/approval-decision-store.ts";
-import { operationKindFor } from "./harness/delegated-approval-types.ts";
+import {
+	canonicalWorkspace,
+	registerAgentCommunication,
+} from "./harness/agent-communication/registration.ts";
+import { registerAgentCommunicationTools } from "./harness/agent-communication/tools.ts";
+import { writeThroughWorker } from "./harness/agent-communication/write-lane.ts";
+import {
+	detectWorkers,
+	presenceLine,
+} from "./harness/agent-communication/detect.ts";
+import {
+	operationKindFor,
+	questionScope,
+} from "./harness/delegated-approval-types.ts";
 import type { NotificationResult } from "./packages/notification/src/types.ts";
 import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
 import {
@@ -547,6 +566,18 @@ const PROVIDER_BLOCKED_ACTION_ID = "provider-blocked";
  * resumes when the user pauses the work.
  */
 let providerRecoveryRuntime: ProviderRecoveryRuntime | null = null;
+/**
+ * The consultation of the session.
+ *
+ * It is nothing when the consultation is switched off, and the write lane
+ * of the human is then nothing too.
+ */
+let agentCommunication:
+	| {
+			runtime: import("./harness/agent-communication/runtime.ts").AgentCommunicationRuntime;
+			sender: () => import("./harness/agent-communication/types.ts").ConsultSender;
+	  }
+	| null = null;
 
 /**
  * The decisions of the human about an empty weekly allowance.
@@ -921,6 +952,16 @@ function jobQuotaResumeActionId(jobId: string): string {
  */
 function glmQuotaActionId(jobId: string): string {
 	return `glm-quota:${jobId}`;
+}
+
+/**
+ * The identity of the row of a consultation.
+ *
+ * The row belongs to the job: it is there while the worker answers and it
+ * is gone when the job is over.
+ */
+function agentConsultActionId(jobId: string): string {
+	return `agent-consult:${jobId}`;
 }
 
 /**
@@ -2618,6 +2659,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const controller = sharedState.todoContinuationController as {
 					resume?: () => void;
 					isExplicitlyPaused?: () => boolean;
+					pauseEpoch?: () => number;
+					pauseState?: () => { paused: boolean; pauseEpoch: number };
 					dispatchAdvisory?: (
 						message: string,
 						options?: { meta?: { reason?: string } },
@@ -2627,11 +2670,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// approval releases the action, but it does not clear a
 				// pause the user set with a "stop". Only an explicit resume
 				// of the human clears that one.
-				const pausedByUser = state.context.pausedBefore === true;
-				if (pausedByUser) {
+				//
+				// The pause may also come after the refusal: the user may
+				// stop the work while the question is open. The epoch of
+				// the pause tells the two apart - the refusal remembers
+				// the epoch it set, and a pause with another epoch belongs
+				// to somebody else.
+				const pause =
+					controller?.pauseState?.() ?? {
+						paused: controller?.isExplicitlyPaused?.() === true,
+						pauseEpoch: controller?.pauseEpoch?.(),
+					};
+				const decision = decideApprovalResume(state.context, pause);
+				if (!decision.resume) {
 					logToFile(
 						"[Approval]",
-						"The work stays paused: the pause of the user is not the pause of the refusal, and only an explicit resume clears it",
+						`The work stays paused: ${decision.reason}`,
 					);
 				} else {
 					// The resume continues the work of the request. The
@@ -2792,24 +2846,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		};
 		sharedState.updateAutoContinueStatus = updateAutoContinueStatus;
 
-		/**
-		 * The short hash of the current question.
-		 *
-		 * It identifies the question in the status row without showing the
-		 * question itself.
-		 */
-		function questionHash(): string {
-			return _lastNotifiedQuestion
-				? Math.abs(
-						_lastNotifiedQuestion.split("").reduce((a, c) => {
-							a = ((a << 5) - a) + c.charCodeAt(0);
-							return a & a;
-						}, 0),
-					).toString(36)
-				: "";
+		// Update auto-continue status in TUI footer
+		function showJevDecision(evaluation: import("./packages/jev-judge/dist/wait-lifecycle.js").WaitEvaluation): void {
+			_currentAutoContinueState = jevDecisionStatus(evaluation);
+			_setAutoContinueStatus?.(_currentAutoContinueState);
 		}
 
-		// Update auto-continue status in TUI footer
 		function updateAutoContinueStatus(
 			state: keyof typeof AC_STATE_MESSAGES,
 			requestId?: string,
@@ -3329,13 +3371,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// A delegation of the user may cover the operation of this
 				// question. The human is then told what happens without an
 				// answer, and the deadline is watched for that decision.
-				const delegatedKind = operationKindFor(
-					questionAction ?? result.questionText,
-				);
-				const delegation = delegatedKind
+				//
+				// The delegation is checked against every operation the
+				// question proposes: a question that asks for a commit and
+				// a push is not covered by a delegation for a commit.
+				//
+				// The scope is the complete question. The action that is
+				// extracted is shortened for the display, and a question
+				// that is longer than that bound still proposes every
+				// operation it names: classifying the shortened text would
+				// drop the operations that lie behind the bound.
+				const delegatedOperation = result.questionText ?? "";
+				const delegatedKinds = questionScope(delegatedOperation);
+				const delegatedKind =
+					delegatedKinds.length > 0
+						? operationKindFor(delegatedOperation)
+						: undefined;
+				const delegation = delegatedKinds.length > 0
 					? sharedState.delegatedApproval?.delegationFor({
-							kind: delegatedKind,
-							workspace: _piSessionCwd || "/",
+							kinds: delegatedKinds,
+							workspace: delegationWorkspace(),
 						})
 					: undefined;
 				const delegatedNotice = delegation
@@ -3371,10 +3426,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					await sharedState.delegatedApproval?.open(
 						{
 							requestId: questionJobId,
-							workspace: _piSessionCwd || "/",
+							workspace: delegationWorkspace(),
 							sessionId: _sessionId,
 							generation: requestScopeTracker.generation,
 							kind: delegatedKind,
+							kinds: delegatedKinds,
 							operation: questionAction ?? result.questionText,
 							blocked: [questionAction ?? result.questionText],
 							deadlineAt,
@@ -3817,6 +3873,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			 * clear a pause the user set with a "stop".
 			 */
 			pausedBefore?: boolean;
+			/**
+			 * The epoch of the pause that the refusal set.
+			 *
+			 * A pause that comes after it belongs to somebody else, and the
+			 * approval of the human must not clear it.
+			 */
+			pauseEpoch?: number;
 		}): Promise<void> => {
 			const runtime = sharedState.jevRejectionEscalation;
 			if (!runtime) {
@@ -3847,6 +3910,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						? `the remaining work (${open.slice(0, 3).join(", ")}) may continue`
 						: undefined,
 					pausedBefore: input.pausedBefore,
+					pauseEpoch: input.pauseEpoch,
 				});
 				if (result.reused) {
 					// The question was already asked for this request. The
@@ -3978,7 +4042,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				(sharedState.todoContinuationController as any)?.explicitPause?.();
 				// The wait is over: the work is paused until a human answers.
 				clearWait();
-				updateAutoContinueStatus("IDLE");
+				showJevDecision(evaluation);
+				if (requestId) {
+					void notifyJevHumanRequired({
+						question: { requestId, text: questionText ?? "Please answer the pending question.",
+							kind: pendingQuestion?.kind, alternatives: pendingQuestion?.alternatives },
+						evaluation,
+						isCurrent: () => {
+							const current = sharedState.pqController?.getCurrentQuestion?.();
+							return ownsQuestion(current, requestId) && isQuestionOpen(current);
+						},
+						deliver: async (question, text) => ((await _nc?.notifyWithApproval("WaitingForUserInput", {
+							jobId: question.requestId, questionId: question.requestId,
+							questionKind: question.kind, requirement: text,
+						}, { approveLabel: "Continue", rejectLabel: "Not yet" })) ?? []) as NotificationResult[],
+						onFailure: (message) => {
+							logToFile("[auto-continue]", message);
+							showJevDecision({ ...evaluation, reasoning: `${message}; answer in this session` });
+						},
+					});
+				}
 				return;
 			}
 
@@ -4035,17 +4118,27 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				);
 				// A pause that was already there belongs to the user: the
 				// approval of the human releases the action, but it does not
-				// clear a pause the user set with a "stop".
+				// clear a pause the user set with a "stop". The pause of the
+				// work is one state: a temporary pause of the user counts too.
 				const pausedBefore =
+					(sharedState.todoContinuationController as any)?.pauseState?.()
+						?.paused ??
 					(sharedState.todoContinuationController as any)?.isExplicitlyPaused?.() ===
-					true;
+						true;
 				(sharedState.todoContinuationController as any)?.explicitPause?.();
+				// The epoch of the pause that the refusal set. A pause that
+				// comes after it belongs to somebody else - the user may
+				// stop the work while the question is open - and the
+				// approval of the human must not clear it.
+				const refusalPauseEpoch =
+					(sharedState.todoContinuationController as any)?.pauseEpoch?.();
 				if (waitBelongsToRequest(requestId)) {
 					// The work pauses for a human: the wait and the
 					// countdown of the wait are over with it.
 					clearWait();
 					updateAutoContinueStatus("IDLE");
 				}
+				showJevDecision(evaluation);
 				// The refusal of the judge is asked of the human. The
 				// question of the judge is closed, so a linked question
 				// with a fresh id carries the buttons: live buttons on a
@@ -4064,6 +4157,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							evaluation.reasoning ||
 							"the judge did not approve the action",
 						pausedBefore,
+						pauseEpoch: refusalPauseEpoch,
 					});
 				}
 				return;
@@ -4076,7 +4170,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			logQuestionTransition(requestId, "applied", outcome);
 
 			// Update status to continuing
-			updateAutoContinueStatus("CONTINUING", questionHash());
+			showJevDecision(evaluation);
 
 			// The steer names the selected option, the scope and the
 			// reasoning of the decision. A bare "continue with the
@@ -4157,7 +4251,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const message = result.evaluation.error?.message ?? "the evaluation failed";
 				logToFile("[auto-continue]", "The evaluation of the question failed:", message);
 				_inferenceInProgress = false;
-				updateAutoContinueStatus("ERROR");
+				showJevDecision(result.evaluation);
 				// The question is still open: the work must not continue
 				// behind it. The pause ends when the question is answered
 				// (a channel answer resumes it) or cancelled (a reply of
@@ -4952,6 +5046,17 @@ async function initQdrant(): Promise<void> {
 
 // Shared Codex session state - accessible by both initTelegram() and the watcher
 let _piSessionCwd = "";
+
+/**
+ * The workspace of the delegations.
+ *
+ * The command that records a delegation and the runtime that reads one
+ * must agree on the workspace, otherwise a delegation never covers
+ * anything. Both use this one.
+ */
+function delegationWorkspace(): string {
+	return _piSessionCwd || "/";
+}
 const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
 
 interface PlanEvent {
@@ -7798,6 +7903,47 @@ export default async function (pi: ExtensionAPI) {
 	// --- write-review: Two-agent write with review loop ----------------------
 	void initWriteReview(pi);
 
+	// --- agent-communication: consult the workers of other vendors -----------
+	// The consultation is off by default: a user switches it on with
+	// PI_AGENT_COMMUNICATION=1. The workers are the user's own CLIs, and
+	// the answer of a worker is data that never approves anything.
+	const registration = registerAgentCommunication({
+		workspace: () => activeExtensionContext?.cwd ?? process.cwd(),
+		sessionId: () =>
+			(
+				activeExtensionContext as {
+					sessionManager?: { getSessionId?: () => string | undefined };
+				} | null
+			)?.sessionManager?.getSessionId?.(),
+		log: (message: string) => logToFile("[agent-communication]", message),
+		onJobStart: (job) => {
+			pendingActions.register({
+				id: agentConsultActionId(job.jobId),
+				sessionId: job.sessionId,
+				owner: "agent-communication",
+				kind: "consult",
+				state: "running",
+				provider: job.target,
+				reason: `the ${job.target} worker answers`,
+			});
+		},
+		onJobEnd: (job) => {
+			pendingActions.remove(agentConsultActionId(job.jobId));
+		},
+	});
+	if (registration) {
+		registerAgentCommunicationTools(pi, registration.tools);
+		agentCommunication = {
+			runtime: registration.runtime,
+			sender: registration.sender,
+		};
+	}
+	// A session that stops leaves no worker behind: a worker that runs on
+	// answers a question nobody asks any more.
+	pi.on("session_shutdown", () => {
+		void registration?.stop();
+	});
+
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
 
@@ -10256,6 +10402,96 @@ issue is not authorized work of the current request).
 			const ready = currentSession.graph.getReadyTasks();
 			lines.push(`${ready.length} tasks ready to execute.`);
 			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	// --- /harness-delegate — The delegations of the user ---------------
+	pi.registerCommand("harness-agent", {
+		description:
+			"Show the workers of another vendor that the harness can consult: Codex and Claude Code, their version, their sign-in and where their binary is",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			// The workers of the machine: what is installed, what version
+			// it is and whether it is signed in. The harness asks the
+			// worker itself, and it never reads a credential.
+			const presences = await detectWorkers();
+			ctx.ui.notify(
+				presences.map((presence) => presenceLine(presence)).join("\n"),
+				"info",
+			);
+		},
+	});
+
+	pi.registerCommand("harness-agent-write", {
+		description:
+			"Ask a worker (Codex or Claude Code) to write a plan into the files you name, and apply it into the workspace: /harness-agent-write --paths=wiki/plan.md --target=codex <the question>",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			// The write lane: the human names the files, the worker writes
+			// into a copy of the workspace, and the harness applies the
+			// named files. A worker that wrote anything else is refused.
+			if (!agentCommunication) {
+				ctx.ui.notify(
+					"The consultation is off. Switch it on with PI_AGENT_COMMUNICATION=1.",
+					"info",
+				);
+				return;
+			}
+			const text = (args ?? "").trim();
+			const paths = (text.match(/--paths=([^\s]+)/)?.[1] ?? "")
+				.split(",")
+				.map((path) => path.trim())
+				.filter((path) => path.length > 0);
+			const named = text.match(/--target=([^\s]+)/)?.[1];
+			const question = text
+				.replace(/--paths=[^\s]+/, "")
+				.replace(/--target=[^\s]+/, "")
+				.trim();
+			if (paths.length === 0) {
+				ctx.ui.notify(
+					"Name the files of the plan: --paths=wiki/plan.md",
+					"error",
+				);
+				return;
+			}
+			const outcome = await writeThroughWorker(agentCommunication.runtime, {
+				workspace: canonicalWorkspace(
+					activeExtensionContext?.cwd ?? process.cwd(),
+				),
+				target: named === "claude" ? "claude" : "codex",
+				paths,
+				prompt:
+					question.length > 0
+						? question
+						: "Write the plan into the named files.",
+				sender: agentCommunication.sender(),
+			});
+			const lines = [`[WRITE] ${outcome.status}`];
+			for (const file of outcome.applied) {
+				lines.push(`[WRITE] ${file.path} (${file.bytes} bytes)`);
+			}
+			if (outcome.diagnostic) lines.push(outcome.diagnostic);
+			if (outcome.answer) lines.push(outcome.answer.trim());
+			ctx.ui.notify(
+				lines.join("\n"),
+				outcome.status === "written" ? "info" : "error",
+			);
+		},
+	});
+
+	pi.registerCommand("harness-delegate", {
+		description:
+			"List, add or remove the delegations that let a deadline continue the work without your answer",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			// The delegations of the user: a deadline is not an answer, so
+			// the work continues at the deadline only when the user
+			// delegated that outcome in advance. This command is the way to
+			// record one, to see them and to end them.
+			const plan = parseDelegationCommand(args ?? "");
+			const result = applyDelegationCommand(plan, {
+				store: new DelegationStore(join(homedir(), ".pi-harness-runtime")),
+				workspace: delegationWorkspace(),
+				now: Date.now(),
+			});
+			ctx.ui.notify(result.message, result.failed ? "error" : "info");
 		},
 	});
 

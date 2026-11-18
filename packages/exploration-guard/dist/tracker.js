@@ -184,18 +184,40 @@ export class ExplorationTracker {
      * remembered as it was, not as the largest one ever seen: a request
      * that answered a budget warning with a checkpoint may run into a soft
      * warning again, and that warning has to be heard too.
+     *
+     * The memory of the guard is merged into the state that is current now,
+     * never into the snapshot the caller holds. The delivery of a warning
+     * takes time, and the request keeps moving while it does: a snapshot
+     * that was written back would undo the reads and the checkpoint of the
+     * agent that happened in the meantime.
      */
     markSpoken(state, severity) {
-        // The memory of the guard is part of the state of the request: it
-        // is durable, and it does not leak into the next request.
+        const key = keyOfState(state);
+        // The state of the request as it is now. The cache holds the
+        // newest one, and the file is the durable copy of it.
+        const current = this.state(key);
+        const currentRevision = current.spokenRevision ?? -1;
+        const deliveryRevision = state.checkpointRevision ?? -1;
         const next = {
-            ...state,
-            spokenRevision: state.checkpointRevision,
-            spokenSeverity: severity,
+            ...current,
             updatedAt: this.now(),
         };
-        this.cache.set(stateFileName(keyOfState(next)), next);
-        this.store.write(next);
+        if (deliveryRevision >= currentRevision) {
+            // The revision is the one the warning was about: a checkpoint
+            // that was recorded after the warning renews the speech, so
+            // the guard may speak again for the newer revision.
+            next.spokenRevision = deliveryRevision;
+            next.spokenSeverity = severity;
+        }
+        // A delivery about an older revision does not change the memory:
+        // the guard already spoke about a newer revision, and a warning
+        // that arrives late must not make the guard forget that.
+        //
+        // The file is written before the cache is filled, so the memory of
+        // the process and the durable memory of the request agree even
+        // when the write fails.
+        const written = this.store.write(next);
+        this.cache.set(stateFileName(key), written);
     }
     /**
      * The checkpoint of the agent, merged into the state.
@@ -203,9 +225,11 @@ export class ExplorationTracker {
     recordCheckpoint(key, input) {
         const state = this.state(key);
         const next = applyCheckpoint(state, input, this.now());
-        this.cache.set(stateFileName(key), next);
-        this.store.write(next);
-        return next;
+        // The file is written before the cache is filled: the memory of
+        // the process never runs ahead of the durable memory.
+        const written = this.store.write(next);
+        this.cache.set(stateFileName(key), written);
+        return written;
     }
     /**
      * The text that the agent receives after a compaction.
@@ -225,8 +249,9 @@ export class ExplorationTracker {
      * Persist the state of a request.
      */
     save(key, state) {
-        this.cache.set(stateFileName(key), state);
-        return this.store.write(state);
+        const written = this.store.write(state);
+        this.cache.set(stateFileName(key), written);
+        return written;
     }
     /**
      * The phase of a request.

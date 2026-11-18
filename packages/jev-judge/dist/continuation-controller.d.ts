@@ -96,6 +96,24 @@ export interface ContinuationState {
     continuationQueued: boolean;
     userPaused: boolean;
     explicitPause: boolean;
+    /**
+     * The number of pauses of this request.
+     *
+     * The epoch says which pause is the current one. A pause that belongs
+     * to a refusal of the judge is not the pause the user set afterwards,
+     * and only the epoch tells the two apart.
+     */
+    pauseEpoch: number;
+    /**
+     * The epoch of the explicit pause.
+     *
+     * The explicit pause and the temporary pause are two pauses, and each
+     * of them has its own epoch: a temporary pause that came after an
+     * explicit one is the newer pause, and it is the one that is active.
+     */
+    explicitPauseEpoch: number;
+    /** The epoch of the temporary pause. */
+    tempPauseEpoch: number;
     lastSteerMessage: string | null;
     steerAttemptsForCurrentItem: number;
     lastItemContinued: number | null;
@@ -158,6 +176,14 @@ export declare class TodoContinuationController {
     /** Delay before the guard is released after a dropped mid-dispatch release */
     private guardReleaseAfterDropMs;
     private state;
+    /**
+     * A fresh epoch for a pause.
+     *
+     * The counter belongs to the process, not to a controller: an epoch of
+     * one session must never be the epoch of another one, or a pause of
+     * the new session would look like the pause of an old refusal.
+     */
+    private _nextPauseEpoch;
     private _inFlightSeq;
     private _dispatchSeq;
     private _guardTimer;
@@ -259,6 +285,29 @@ export declare class TodoContinuationController {
      * resume that ignores a pause overrides the decision of the user.
      */
     isExplicitlyPaused(): boolean;
+    /**
+     * The epoch of the current pause.
+     *
+     * The epoch counts the pauses of the request. A caller that paused the
+     * work itself remembers the epoch it got, and it compares it later: a
+     * pause that came after is not the pause it set, and the approval of
+     * the human must not clear it.
+     *
+     * The current pause is the newest pause that is still active. A
+     * temporary pause is cleared by the next decision, and the explicit
+     * pause of a refusal is then the current one again.
+     */
+    pauseEpoch(): number;
+    /**
+     * The pause of the work and the epoch of that pause.
+     *
+     * The two flags are one pause for the caller: a temporary pause of the
+     * user is a pause too, and an approval of the human must not clear it.
+     */
+    pauseState(): {
+        paused: boolean;
+        pauseEpoch: number;
+    };
     /**
      * Resume from explicit pause
      */
@@ -413,6 +462,7 @@ export declare class TodoContinuationController {
         lastSteerMessage: string | null;
         explicitPause: boolean;
         userPaused: boolean;
+        pauseEpoch: number;
         pendingGuardRelease: string | null;
         lastDroppedGuardRelease: string | null;
         cancelRequested: boolean;

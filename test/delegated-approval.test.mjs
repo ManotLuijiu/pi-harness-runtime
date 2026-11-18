@@ -16,7 +16,11 @@ import { join } from "node:path";
 import { DelegationStore } from "../harness/delegation-store.ts";
 import { ApprovalDecisionStore } from "../harness/approval-decision-store.ts";
 import { DelegatedApprovalRuntime } from "../harness/delegated-approval-runtime.ts";
-import { delegationCovers } from "../harness/delegated-approval-types.ts";
+import {
+	delegationCoversAll,
+	operationKindsFor,
+	requiredOperations,
+} from "../harness/delegated-approval-types.ts";
 
 /** A temporary directory for a fixture. */
 function temporary() {
@@ -84,17 +88,17 @@ test("a delegation covers only the kinds it names", () => {
 		recordedAt: 1000,
 	};
 	assert.equal(
-		delegationCovers(delegation, "commit", "/home/frappe/project", 2000),
+		delegationCoversAll(delegation, ["commit"], "/home/frappe/project", 2000),
 		true,
 	);
 	// A delegation for a commit does not cover a push.
 	assert.equal(
-		delegationCovers(delegation, "push", "/home/frappe/project", 2000),
+		delegationCoversAll(delegation, ["push"], "/home/frappe/project", 2000),
 		false,
 	);
 	// A delegation of one workspace does not cover another one.
 	assert.equal(
-		delegationCovers(delegation, "commit", "/home/frappe/other", 2000),
+		delegationCoversAll(delegation, ["commit"], "/home/frappe/other", 2000),
 		false,
 	);
 });
@@ -109,11 +113,107 @@ test("an expired delegation covers nothing", () => {
 		expiresAt: 2000,
 	};
 	assert.equal(
-		delegationCovers(delegation, "commit", "/home/frappe/project", 1999),
+		delegationCoversAll(delegation, ["commit"], "/home/frappe/project", 1999),
 		true,
 	);
 	assert.equal(
-		delegationCovers(delegation, "commit", "/home/frappe/project", 2000),
+		delegationCoversAll(delegation, ["commit"], "/home/frappe/project", 2000),
+		false,
+	);
+});
+
+test("the classifier reads every clause of the ask", () => {
+	// The push is in the second clause. A clause that is not read is an
+	// operation nobody checked, so a delegation for the commit would
+	// cover a question that also proposes the push.
+	assert.deepEqual(
+		operationKindsFor("May I commit the change? Then push to origin."),
+		["commit", "push"],
+	);
+	assert.deepEqual(
+		operationKindsFor("May I commit the change and push to origin."),
+		["commit", "push"],
+	);
+	// A mention of the past names no operation.
+	assert.deepEqual(
+		operationKindsFor("Can you check the service I deployed yesterday?"),
+		[],
+	);
+});
+
+test("a message that leaves the machine is an external write", () => {
+	for (const text of [
+		"May I email the report to the customer?",
+		"May I send the report to the customer?",
+		"May I notify the customer about the release?",
+		"May I post the summary to the channel?",
+	]) {
+		assert.deepEqual(operationKindsFor(text), ["external-write"], text);
+	}
+});
+
+test("the required operations are the headline and the list together", () => {
+	// The headline is part of the ask: a request whose headline is a
+	// deploy asks for the deploy even when the list names it too.
+	assert.deepEqual(requiredOperations("deploy", ["commit", "deploy"]), [
+		"commit",
+		"deploy",
+	]);
+	// The compound headline stands for the two of them.
+	assert.deepEqual(requiredOperations("commit-and-push", undefined), [
+		"commit",
+		"push",
+	]);
+	// A request without an operation asks for nothing.
+	assert.deepEqual(requiredOperations(undefined, []), []);
+});
+
+test("a delegation covers every operation of a request", () => {
+	const commit = {
+		id: "d-1",
+		workspace: "/home/frappe/project",
+		kinds: ["commit"],
+		defaultOutcome: "continue",
+		recordedAt: 1000,
+	};
+	const both = {
+		id: "d-2",
+		workspace: "/home/frappe/project",
+		kinds: ["commit", "push"],
+		defaultOutcome: "continue",
+		recordedAt: 1000,
+	};
+	const compound = {
+		id: "d-3",
+		workspace: "/home/frappe/project",
+		kinds: ["commit-and-push"],
+		defaultOutcome: "continue",
+		recordedAt: 1000,
+	};
+	const now = 2000;
+	const workspace = "/home/frappe/project";
+	// A delegation for a commit covers a commit.
+	assert.equal(delegationCoversAll(commit, ["commit"], workspace, now), true);
+	// It does not cover a commit and a push: the push was not delegated.
+	assert.equal(
+		delegationCoversAll(commit, ["commit", "push"], workspace, now),
+		false,
+	);
+	// The two operations may be delegated one by one.
+	assert.equal(
+		delegationCoversAll(both, ["commit", "push"], workspace, now),
+		true,
+	);
+	// The compound kind stands for the two of them.
+	assert.equal(
+		delegationCoversAll(compound, ["commit", "push"], workspace, now),
+		true,
+	);
+	// A request without an operation is covered by nothing.
+	assert.equal(delegationCoversAll(both, [], workspace, now), false);
+	// A delegation of one workspace covers nothing in another one.
+	assert.equal(
+		delegationCoversAll(both, ["commit"], "/home/frappe/other", now),
 		false,
 	);
 });
@@ -220,6 +320,136 @@ test("the deadline keeps the operation blocked without a delegation", async () =
 		const answered = runtime.answer("q-1", "yes");
 		assert.ok(answered);
 		assert.equal(answered.source, "human");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the deadline keeps the operation blocked when the delegation is too narrow", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes } = makeRuntime(dir);
+		// The user delegated a commit. The request proposes a commit and a
+		// push, so the delegation does not cover it.
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["commit"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		await runtime.open(
+			requestInput({ kind: "commit-and-push", kinds: ["commit", "push"] }),
+		);
+		const decision = runtime.expire("q-1");
+		// The delegation does not cover every operation of the request, so
+		// the deadline decided nothing and the work stays blocked.
+		assert.equal(decision, null);
+		assert.equal(resumes.length, 0);
+		// The human may still answer: the deadline did not close the
+		// question.
+		const answered = runtime.answer("q-1", "yes");
+		assert.ok(answered);
+		assert.equal(answered.source, "human");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the headline of the request is part of its scope", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes } = makeRuntime(dir);
+		// The user delegated a deploy. The request proposes a commit and
+		// a deploy, so the delegation does not cover it.
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["deploy"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		await runtime.open(
+			requestInput({ kind: "deploy", kinds: ["commit", "deploy"] }),
+		);
+		const decision = runtime.expire("q-1");
+		// The delegation does not cover every operation of the request, so
+		// the deadline decided nothing and the work stays blocked.
+		assert.equal(decision, null);
+		assert.equal(resumes.length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the most recent delegation that covers the request wins", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes } = makeRuntime(dir);
+		// The user delegated a commit and a push, and continued by default.
+		delegations.record({
+			id: "d-1",
+			workspace: "/home/frappe/project",
+			kinds: ["commit", "push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		// Later the user delegated the same operations again and chose to
+		// stop by default.
+		delegations.record({
+			id: "d-2",
+			workspace: "/home/frappe/project",
+			kinds: ["commit", "push"],
+			defaultOutcome: "block",
+			recordedAt: 600,
+		});
+		await runtime.open(
+			requestInput({ kind: "commit-and-push", kinds: ["commit", "push"] }),
+		);
+		const decision = runtime.expire("q-1");
+		// The newest delegation that covers the request is the statement of
+		// the user, so its outcome is the one that counts.
+		assert.ok(decision);
+		assert.equal(decision.delegationId, "d-2");
+		assert.equal(decision.outcome, "no");
+		// The work stays blocked: the newest delegation blocks it.
+		assert.equal(resumes.length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a delegation that does not cover the request does not replace one that does", async () => {
+	const dir = temporary();
+	try {
+		const { runtime, delegations, resumes } = makeRuntime(dir);
+		// The user delegated a commit and a push.
+		delegations.record({
+			id: "d-both",
+			workspace: "/home/frappe/project",
+			kinds: ["commit", "push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		// Later the user delegated the commit alone and chose to stop.
+		delegations.record({
+			id: "d-commit",
+			workspace: "/home/frappe/project",
+			kinds: ["commit"],
+			defaultOutcome: "block",
+			recordedAt: 600,
+		});
+		await runtime.open(
+			requestInput({ kind: "commit-and-push", kinds: ["commit", "push"] }),
+		);
+		const decision = runtime.expire("q-1");
+		// The delegation of the two operations covers the request, and a
+		// delegation of a narrower scope never replaces one that covers it:
+		// the user ends a delegation with the command that removes it.
+		assert.ok(decision);
+		assert.equal(decision.delegationId, "d-both");
+		assert.equal(decision.outcome, "yes");
+		assert.equal(resumes.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

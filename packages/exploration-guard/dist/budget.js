@@ -130,38 +130,16 @@ export function repeatedPaths(state) {
  *
  * The decision is a pure function of the state and the budget, so it can be
  * tested without a session and without a model.
+ *
+ * The branches are ordered by seriousness, not by the order in which they
+ * were written. The guard says the strongest thing it knows: a request that
+ * reached the read budget must not be told about a stall instead, because
+ * the stall is the weaker warning and the agent would hear that the budget
+ * is still far away. The seriousness of an intervention is what the dedup
+ * of the guard compares, so the branch that decides has to be the one with
+ * the highest seriousness.
  */
 export function assessExploration(state, budget = DEFAULT_EXPLORATION_BUDGET) {
-    const repeated = repeatedPaths(state);
-    if (repeated.length > 0) {
-        const worst = state.files
-            .filter((file) => file.repeatCount > 0)
-            .sort((a, b) => b.repeatCount - a.repeatCount)[0];
-        if (worst && worst.repeatCount >= budget.repeatWarning) {
-            return {
-                kind: "repeat-read",
-                paths: repeated,
-                message: `${worst.path} was read ${worst.repeatCount} times without a new question. ` +
-                    "State the question that needs the reread, or use the recorded findings instead of reading it again. " +
-                    CHECKPOINT_REQUEST_TEXT,
-                requiresCheckpoint: true,
-                suggestsImplementation: false,
-            };
-        }
-    }
-    if (budget.stallWarning > 0 &&
-        readsSinceNarrowing(state) >= budget.stallWarning &&
-        !hasSubstantiveProgress(state)) {
-        return {
-            kind: "stall",
-            paths: [],
-            message: `${state.readCount} reads happened without a recorded narrowing of the problem. ` +
-                "State the findings, the questions that are still open, the next action and why more exploration is needed. " +
-                CHECKPOINT_REQUEST_TEXT,
-            requiresCheckpoint: true,
-            suggestsImplementation: false,
-        };
-    }
     if (budget.readBudget > 0 && state.readCount >= budget.readBudget) {
         return {
             kind: "read-budget",
@@ -195,6 +173,36 @@ export function assessExploration(state, budget = DEFAULT_EXPLORATION_BUDGET) {
                 CHECKPOINT_REQUEST_TEXT,
             requiresCheckpoint: true,
             suggestsImplementation: true,
+        };
+    }
+    const repeated = repeatedPaths(state);
+    if (repeated.length > 0) {
+        const worst = state.files
+            .filter((file) => file.repeatCount > 0)
+            .sort((a, b) => b.repeatCount - a.repeatCount)[0];
+        if (worst && worst.repeatCount >= budget.repeatWarning) {
+            return {
+                kind: "repeat-read",
+                paths: repeated,
+                message: `${worst.path} was read ${worst.repeatCount} times without a new question. ` +
+                    "State the question that needs the reread, or use the recorded findings instead of reading it again. " +
+                    CHECKPOINT_REQUEST_TEXT,
+                requiresCheckpoint: true,
+                suggestsImplementation: false,
+            };
+        }
+    }
+    if (budget.stallWarning > 0 &&
+        readsSinceNarrowing(state) >= budget.stallWarning &&
+        !hasSubstantiveProgress(state)) {
+        return {
+            kind: "stall",
+            paths: [],
+            message: `${state.readCount} reads happened without a recorded narrowing of the problem. ` +
+                "State the findings, the questions that are still open, the next action and why more exploration is needed. " +
+                CHECKPOINT_REQUEST_TEXT,
+            requiresCheckpoint: true,
+            suggestsImplementation: false,
         };
     }
     if (budget.readWarning > 0 && state.readCount >= budget.readWarning) {

@@ -275,6 +275,47 @@ test("a delivery that never settles does not block the receiver", async () => {
 	assert.equal(fixture.mailbox("agent-a").claimable().length, 1);
 });
 
+test("a plan whose delivery timed out is not delivered twice", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const mailbox = fixture.mailbox("agent-a");
+	const messageId = mailbox.claimable()[0].message.id;
+
+	let calls = 0;
+	let release;
+	const pending = new Promise((resolve) => {
+		release = resolve;
+	});
+	const { receiver } = receiverFor(fixture, reg, {
+		deliver: () => {
+			calls += 1;
+			return pending;
+		},
+		deliveryTimeoutMs: 50,
+	});
+
+	// The first round times out: the delivery is still running.
+	const handed = await receiver.poll();
+	assert.equal(handed, 0);
+	assert.equal(calls, 1);
+
+	// The next round must not hand the same plan over a second time: the
+	// first delivery may still reach the session.
+	const again = await receiver.poll();
+	assert.equal(again, 0);
+	assert.equal(calls, 1);
+
+	// The delivery settles late: the plan is acknowledged exactly once.
+	release();
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.equal(calls, 1);
+	assert.equal(mailbox.read(messageId).state, "delivered");
+});
+
 test("the acknowledgement of a delivered plan is retried while the session is busy", async () => {
 	const fixture = stores();
 	const workspace = temporary();
@@ -462,4 +503,43 @@ test("the delivery text names the plan and its reference", () => {
 
 	assert.match(text, /Codex finished a plan/);
 	assert.match(text, /\/tmp\/workspace\/plan\.md/);
+});
+
+test("a delivery that never settles is not delivered twice", async () => {
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const mailbox = fixture.mailbox("agent-a");
+	const messageId = mailbox.claimable()[0].message.id;
+
+	let calls = 0;
+	let clock = 1_000;
+	const receiver = startPlanReceiver({
+		registration: reg,
+		mailbox: fixture.mailbox(reg.agentId),
+		// The delivery never settles: it may still reach the session.
+		deliver: () => {
+			calls += 1;
+			return new Promise(() => {});
+		},
+		deliveryTimeoutMs: 50,
+		now: () => clock,
+		log: () => {},
+	});
+
+	// The first round times out: the delivery is still running.
+	const handed = await receiver.poll();
+	assert.equal(handed, 0);
+	assert.equal(calls, 1);
+
+	// The clock passes the bound of a stuck delivery (150 seconds): the
+	// plan waits for the delivery that may still reach the session.
+	clock += 200_000;
+	const again = await receiver.poll();
+	assert.equal(again, 0);
+	assert.equal(calls, 1);
+	assert.notEqual(mailbox.read(messageId).state, "delivered");
 });

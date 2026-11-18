@@ -29,7 +29,10 @@ import type {
 	DelegatedOperationKind,
 	Delegation,
 } from "./delegated-approval-types.ts";
-import { delegationCovers } from "./delegated-approval-types.ts";
+import {
+	delegationCoversAll,
+	requiredOperations,
+} from "./delegated-approval-types.ts";
 
 /**
  * The delay before a request whose deadline passed is tried again.
@@ -52,6 +55,14 @@ export interface OpenApprovalInput {
 	generation: number;
 	/** The kind of the operation. */
 	kind: DelegatedOperationKind;
+	/**
+	 * Every operation the request proposes.
+	 *
+	 * A request may name more than one operation. The delegation is
+	 * checked against all of them, so a delegation for a commit never
+	 * covers a request that also pushes.
+	 */
+	kinds?: DelegatedOperationKind[];
 	/** The exact operation, in the words of the human. */
 	operation: string;
 	/** What stays blocked while the request is open. */
@@ -239,6 +250,7 @@ export class DelegatedApprovalRuntime {
 			sessionId: input.sessionId,
 			generation: input.generation,
 			kind: input.kind,
+			kinds: requiredOperations(input.kind, input.kinds),
 			operation: input.operation,
 			blocked: input.blocked ?? [],
 			reason: input.reason,
@@ -447,27 +459,41 @@ export class DelegatedApprovalRuntime {
 	}
 
 	/**
-	 * The delegation that covers an operation of a workspace.
+	 * The delegation that covers every operation of a workspace.
 	 *
-	 * The most recent delegation wins: a delegation that was recorded
-	 * later replaces the one before it.
+	 * The most recent delegation that covers the request is the statement
+	 * of the user for it: a delegation that was recorded later replaces
+	 * the one before it, and its outcome is the one that counts.
+	 *
+	 * Every operation of the request has to be covered, and one delegation
+	 * has to name all of them. A delegation for a commit does not cover a
+	 * request that also pushes, and a delegation of one workspace does not
+	 * cover the operation of another one.
+	 *
+	 * A delegation that does not cover the request never replaces one that
+	 * does: a delegation of a narrower scope is a statement about its own
+	 * operations, and the delegation of the operations of the request stays
+	 * in force until the user ends it.
 	 */
 	delegationFor(input: {
-		kind: DelegatedOperationKind;
+		kinds: DelegatedOperationKind[];
 		workspace: string;
 	}): Delegation | undefined {
 		const now = this.deps.now();
-		return this.deps.delegations
+		const delegations = this.deps.delegations
 			.list(input.workspace)
-			.filter((delegation) =>
-				delegationCovers(
-					delegation,
-					input.kind,
-					input.workspace,
-					now,
-				),
-			)
-			.sort((a, b) => b.recordedAt - a.recordedAt)[0];
+			.sort((a, b) => b.recordedAt - a.recordedAt);
+		// The most recent delegation that covers every operation of the
+		// request. A delegation that covers only some of them never
+		// covers the request.
+		return delegations.find((delegation) =>
+			delegationCoversAll(
+				delegation,
+				input.kinds,
+				input.workspace,
+				now,
+			),
+		);
 	}
 
 	/**
@@ -475,7 +501,7 @@ export class DelegatedApprovalRuntime {
 	 */
 	private delegationForRequest(request: ApprovalRequest): Delegation | undefined {
 		return this.delegationFor({
-			kind: request.kind,
+			kinds: requiredOperations(request.kind, request.kinds),
 			workspace: request.workspace,
 		});
 	}

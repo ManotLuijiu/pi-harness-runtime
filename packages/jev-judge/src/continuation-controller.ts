@@ -52,6 +52,15 @@ function debugLog(component: string, ...args: unknown[]): void {
 const GUARD_RELEASE_AFTER_DROP_MS = 1000;
 
 /**
+ * The counter of the pauses of the process.
+ *
+ * The epoch of a pause is unique in the process: a pause of a new session
+ * never carries the epoch of a pause of an old one, so a caller that
+ * remembers an epoch can tell its own pause from every other one.
+ */
+let pauseEpochCounter = 0;
+
+/**
  * The context of an advisory message.
  *
  * The fields are known: they name the reason of the advisory and the
@@ -156,6 +165,24 @@ export interface ContinuationState {
 	continuationQueued: boolean;
 	userPaused: boolean;
 	explicitPause: boolean;  // True when user explicitly paused
+	/**
+	 * The number of pauses of this request.
+	 *
+	 * The epoch says which pause is the current one. A pause that belongs
+	 * to a refusal of the judge is not the pause the user set afterwards,
+	 * and only the epoch tells the two apart.
+	 */
+	pauseEpoch: number;
+	/**
+	 * The epoch of the explicit pause.
+	 *
+	 * The explicit pause and the temporary pause are two pauses, and each
+	 * of them has its own epoch: a temporary pause that came after an
+	 * explicit one is the newer pause, and it is the one that is active.
+	 */
+	explicitPauseEpoch: number;
+	/** The epoch of the temporary pause. */
+	tempPauseEpoch: number;
 	lastSteerMessage: string | null;
 	steerAttemptsForCurrentItem: number;
 	lastItemContinued: number | null;
@@ -233,11 +260,26 @@ export class TodoContinuationController {
 		continuationQueued: false,
 		userPaused: false,
 		explicitPause: false,
+		pauseEpoch: 0,
+		explicitPauseEpoch: 0,
+		tempPauseEpoch: 0,
 		lastSteerMessage: null,
 		steerAttemptsForCurrentItem: 0,
 		lastItemContinued: null,
 		lastEvaluationResult: null,
 	};
+
+	/**
+	 * A fresh epoch for a pause.
+	 *
+	 * The counter belongs to the process, not to a controller: an epoch of
+	 * one session must never be the epoch of another one, or a pause of
+	 * the new session would look like the pause of an old refusal.
+	 */
+	private _nextPauseEpoch(): number {
+		pauseEpochCounter += 1;
+		return pauseEpochCounter;
+	}
 
 	private _inFlightSeq: number | null = null;  // Sequence number of the active dispatch (null = idle)
 	private _dispatchSeq = 0;  // Monotonic counter for every dispatch attempt
@@ -426,6 +468,11 @@ export class TodoContinuationController {
 		debugLog("TodoContinuation", "Explicit pause requested");
 		this.state.explicitPause = true;
 		this.state.userPaused = true;
+		// Every pause has its own epoch: the owner of the current pause
+		// has to be able to tell it apart from the pause that was there
+		// before it.
+		this.state.explicitPauseEpoch = this._nextPauseEpoch();
+		this.state.pauseEpoch = this.state.explicitPauseEpoch;
 		// Disarm the guard completely: keeping continuationQueued set while the
 		// release timer is cancelled would block every later dispatch forever.
 		this.state.continuationQueued = false;
@@ -443,6 +490,41 @@ export class TodoContinuationController {
 	 */
 	isExplicitlyPaused(): boolean {
 		return this.state.explicitPause;
+	}
+
+	/**
+	 * The epoch of the current pause.
+	 *
+	 * The epoch counts the pauses of the request. A caller that paused the
+	 * work itself remembers the epoch it got, and it compares it later: a
+	 * pause that came after is not the pause it set, and the approval of
+	 * the human must not clear it.
+	 *
+	 * The current pause is the newest pause that is still active. A
+	 * temporary pause is cleared by the next decision, and the explicit
+	 * pause of a refusal is then the current one again.
+	 */
+	pauseEpoch(): number {
+		if (this.state.userPaused) {
+			// The temporary pause is the newer one while it is active.
+			return this.state.tempPauseEpoch > this.state.explicitPauseEpoch
+				? this.state.tempPauseEpoch
+				: this.state.explicitPauseEpoch;
+		}
+		return this.state.explicitPause ? this.state.explicitPauseEpoch : 0;
+	}
+
+	/**
+	 * The pause of the work and the epoch of that pause.
+	 *
+	 * The two flags are one pause for the caller: a temporary pause of the
+	 * user is a pause too, and an approval of the human must not clear it.
+	 */
+	pauseState(): { paused: boolean; pauseEpoch: number } {
+		return {
+			paused: this.state.explicitPause || this.state.userPaused,
+			pauseEpoch: this.pauseEpoch(),
+		};
 	}
 
 	/**
@@ -487,6 +569,11 @@ export class TodoContinuationController {
 	tempPause(): void {
 		debugLog("TodoContinuation", "Temporary pause for user input");
 		this.state.userPaused = true;
+		// The temporary pause is a pause of its own: the user said
+		// something, so the work waits for that message. An approval of an
+		// action must not undo it.
+		this.state.tempPauseEpoch = this._nextPauseEpoch();
+		this.state.pauseEpoch = this.state.tempPauseEpoch;
 		// Same as explicitPause(): the guard must be fully disarmed, otherwise
 		// the cancelled release timer leaves the queue flag stuck at true.
 		this.state.continuationQueued = false;
@@ -571,7 +658,14 @@ export class TodoContinuationController {
 		// A decision that runs WHILE a dispatch is in flight must not clear
 		// the pause: the pending dispatch would then send a message the user
 		// asked to hold back.
-		if (!this.inFlight) this.state.userPaused = false;
+		if (!this.inFlight) {
+			this.state.userPaused = false;
+			// The temporary pause is over: the explicit pause, when there is
+			// one, is the current pause again.
+			this.state.pauseEpoch = this.state.explicitPause
+				? this.state.explicitPauseEpoch
+				: 0;
+		}
 
 		// The ids describe the CURRENT decision: they are set on the continue
 		// paths and cleared here so a stop/blocked decision does not keep
@@ -1209,6 +1303,9 @@ export class TodoContinuationController {
 		this.state.userPaused = true;
 		// A user pause stops automatic continuations until resume() is called.
 		this.state.explicitPause = true;
+		// The epoch says that the pause of the user is a pause of its own.
+		this.state.explicitPauseEpoch = this._nextPauseEpoch();
+		this.state.pauseEpoch = this.state.explicitPauseEpoch;
 		this.state.continuationQueued = false;
 		this._pendingGuardRelease = null;
 		if (this.inFlight) this._cancelRequested = true;
@@ -1241,6 +1338,12 @@ export class TodoContinuationController {
 			continuationQueued: false,
 			userPaused: false,
 			explicitPause: false,
+			// The epochs of the session are not reset to zero: an epoch is
+			// unique in the process, and a caller that remembers one has to
+			// keep it apart from every pause of the new session.
+			pauseEpoch: this.state.pauseEpoch,
+			explicitPauseEpoch: this.state.explicitPauseEpoch,
+			tempPauseEpoch: this.state.tempPauseEpoch,
 			lastSteerMessage: null,
 			steerAttemptsForCurrentItem: 0,
 			lastItemContinued: null,
@@ -1313,6 +1416,7 @@ export class TodoContinuationController {
 		lastSteerMessage: string | null;
 		explicitPause: boolean;
 		userPaused: boolean;
+		pauseEpoch: number;
 		pendingGuardRelease: string | null;
 		lastDroppedGuardRelease: string | null;
 		cancelRequested: boolean;
@@ -1330,6 +1434,7 @@ export class TodoContinuationController {
 			lastSteerMessage: this.state.lastSteerMessage,
 			explicitPause: this.state.explicitPause,
 			userPaused: this.state.userPaused,
+			pauseEpoch: this.state.pauseEpoch,
 			pendingGuardRelease: this._pendingGuardRelease,
 			lastDroppedGuardRelease: this._lastDroppedGuardRelease,
 			cancelRequested: this._cancelRequested,
