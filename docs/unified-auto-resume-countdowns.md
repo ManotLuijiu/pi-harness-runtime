@@ -225,8 +225,13 @@ countdown leaves when the countdown ends: it never stays at `00:00`.
 - **The retries of Pi and of the provider SDK.** The core of Pi declares
   `auto_retry_start` and `auto_retry_end` for its own session
   (`core/agent-session.d.ts`), and the interactive mode consumes them: it
-  shows a retry indicator and restores the escape handler. The extension
-  API of the core does not expose them (`core/extensions/types.d.ts`), and
+  shows a retry indicator and restores the escape handler. The core
+  declares the events of its own retry of a summarization as well
+  (`summarization_retry_scheduled`,
+  `summarization_retry_attempt_start` and
+  `summarization_retry_finished`), and the recovery of a failed
+  compaction is additional to that retry in the same way. The extension
+  API of the core exposes none of them (`core/extensions/types.d.ts`), and
   the extension context carries no handle of the agent session, so an
   extension cannot subscribe to them. The `subscribe` of the SDK belongs to
   an application that embeds Pi, not to an extension.
@@ -240,6 +245,17 @@ countdown leaves when the countdown ends: it never stays at `00:00`.
   `test/pi-retry-visibility.test.mjs` reads the declarations of the
   installed core and fails on purpose when a newer core exposes the events
   to extensions. That is the moment to wire the bridge.
+- **The queue of the session.** The core of Pi clears the queue of the
+  session (`clearQueue()` on the agent session) and reports it
+  (`queue_update`), but the extension API exposes neither, and the
+  extension context carries no handle of the agent session. An extension
+  can therefore neither read nor empty the queue of the session: a message
+  that the session queued stays queued until the session delivers it.
+
+  The finding is checked the same way:
+  `test/pi-retry-visibility.test.mjs` fails on purpose when a newer core
+  exposes the queue to extensions. That is the moment to wire the removal
+  of a queued message.
 - **The restored state after a restart.** The job resume persists its
   `resumeAt` in the checkpoint, but a persisted timestamp does not recreate
   an in-memory timer. A restart therefore shows no countdown until the job
