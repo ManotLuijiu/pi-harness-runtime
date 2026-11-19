@@ -92,6 +92,21 @@ test("the validation of the work is read from the ledger", () => {
 	);
 });
 
+test("the readers of the runtime name the failure of a read", () => {
+	// The provider answers with an empty list when it could not read the
+	// list, so the readers must look at the error of the provider.
+	assert.match(
+		indexSource,
+		/const failure = todoReadFailure\(provider\.lastError\);/,
+		"the reader of the phase of the work names the failure",
+	);
+	assert.match(
+		indexSource,
+		/if \(todoReadFailure\(controller\.lastError\)\) return null;/,
+		"the reader of the scope names the failure",
+	);
+});
+
 test("the reminder checks the request and the session when its read returns", () => {
 	assert.match(
 		reminderSource,

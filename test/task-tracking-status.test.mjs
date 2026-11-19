@@ -13,6 +13,7 @@ import {
 	completedTodos,
 	openTodos,
 	taskTrackingStatus,
+	todoReadFailure,
 } from "../harness/task-tracking-status.ts";
 
 /**
@@ -100,6 +101,17 @@ test("a failed validation is named instead of a completion", () => {
 	assert.equal(status.key, "stopped-completed");
 	assert.match(status.text, /validation failed/);
 	assert.match(status.text, /completion unverified/);
+});
+
+test("a failed read is named instead of an empty list", () => {
+	assert.equal(todoReadFailure("branch unavailable"), "branch unavailable");
+	assert.equal(todoReadFailure("  "), undefined);
+	assert.equal(todoReadFailure(""), undefined);
+	assert.equal(todoReadFailure(null), undefined);
+	assert.equal(todoReadFailure(undefined), undefined);
+	// A read that failed leaves the list unknown, not empty.
+	const status = taskTrackingStatus({ running: false, todos: undefined });
+	assert.equal(status.key, "todos-unavailable");
 });
 
 test("the controller follows the agent and the list", () => {

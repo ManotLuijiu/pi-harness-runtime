@@ -109,6 +109,7 @@ import {
 import {
 	TaskTrackingStatusController,
 	type TaskTrackingTodo,
+	todoReadFailure,
 } from "./harness/task-tracking-status.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
@@ -1279,11 +1280,15 @@ const requestScopeTracker = new RequestScopeTracker({
 	readTodos: async () => {
 		const controller = sharedState.todoContinuationController as {
 			getSnapshot?: () => Promise<{ items?: TodoStateLike[] }>;
+			lastError?: string | null;
 		} | null;
 		if (!controller || typeof controller.getSnapshot !== "function") {
 			return null;
 		}
 		const snapshot = await controller.getSnapshot();
+		// A read that failed answers with an empty list, so the failure is
+		// the only evidence that the list is unknown rather than empty.
+		if (todoReadFailure(controller.lastError)) return null;
 		return snapshot?.items ?? null;
 	},
 	readHistory: async () => {
@@ -1787,6 +1792,14 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 				};
 			}
 			const snapshot = await provider.getSnapshot();
+			// The provider answers with an empty list when it could not
+			// read the list, and names the failure in its last error. An
+			// empty list that is really a failure must not look like a
+			// list without work.
+			const failure = todoReadFailure(provider.lastError);
+			if (failure) {
+				return { available: false, todos: [], reason: failure };
+			}
 			return { available: true, todos: (snapshot.items ?? []) as TwoPhaseTodoLike[] };
 		} catch (error) {
 			return { available: false, todos: [], reason: oneLineError(error) };

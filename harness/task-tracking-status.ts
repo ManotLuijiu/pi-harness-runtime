@@ -88,6 +88,20 @@ export function openTodos(
 }
 
 /**
+ * The failure of a read of the task list, when the read failed.
+ *
+ * The provider answers with an empty list when it could not read the
+ * list, and names the failure in its last error. An empty list that is
+ * really a failure must not look like a list without work: the row
+ * would say "no Todos" about a list that nobody ever saw.
+ */
+export function todoReadFailure(lastError: unknown): string | undefined {
+	if (typeof lastError !== "string") return undefined;
+	const trimmed = lastError.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
  * The todos of the request that are finished.
  *
  * A todo that was finished is not a todo that never existed: the row

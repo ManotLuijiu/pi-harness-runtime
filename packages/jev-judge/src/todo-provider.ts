@@ -87,6 +87,15 @@ export interface TodoProvider {
 	getSnapshot(): Promise<TodoSnapshot>;
 
 	/**
+	 * The error of the last read of the list, when the read failed.
+	 *
+	 * The provider answers with an empty list when it could not read the
+	 * list, so this error is the only evidence that the list is unknown
+	 * rather than empty.
+	 */
+	readonly lastError?: string | null;
+
+	/**
 	 * Get items by status
 	 */
 	getByStatus(status: TodoStatus): Promise<TodoItem[]>;

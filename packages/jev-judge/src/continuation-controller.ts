@@ -551,6 +551,16 @@ export class TodoContinuationController {
 	}
 
 	/**
+	 * The error of the last read of the list, when the read failed.
+	 *
+	 * A read that failed answers with an empty list, so the error is the
+	 * only evidence that the list is unknown rather than empty.
+	 */
+	get lastError(): string | null {
+		return this.todoProvider.lastError ?? null;
+	}
+
+	/**
 	 * The history of the todo list: the state after every change.
 	 *
 	 * The list says what the work is now. The history says what a request
