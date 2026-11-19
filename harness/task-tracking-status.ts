@@ -28,6 +28,11 @@ export interface TaskTrackingTodo {
 const OPEN_STATUSES = new Set(["pending", "in_progress"]);
 
 /**
+ * The state of a todo that is finished.
+ */
+const COMPLETED_STATUS = "completed";
+
+/**
  * What the status knows about the session.
  */
 export interface TaskTrackingFacts {
@@ -43,6 +48,8 @@ export interface TaskTrackingFacts {
 	todos: TaskTrackingTodo[] | undefined;
 	/** Is a required validation of the work still pending? */
 	validationPending?: boolean;
+	/** Did a required validation of the work fail? */
+	validationFailed?: boolean;
 }
 
 /**
@@ -53,7 +60,9 @@ export type TaskTrackingStatusKey =
 	| "stopped-no-todos"
 	| "todos-unavailable"
 	| "working-open"
-	| "stopped-open";
+	| "stopped-open"
+	| "working-completed"
+	| "stopped-completed";
 
 /**
  * The status of the task list.
@@ -79,6 +88,22 @@ export function openTodos(
 }
 
 /**
+ * The todos of the request that are finished.
+ *
+ * A todo that was finished is not a todo that never existed: the row
+ * must not say "no Todos" about a request that has them.
+ */
+export function completedTodos(
+	todos: TaskTrackingTodo[] | undefined,
+): TaskTrackingTodo[] {
+	if (!Array.isArray(todos)) return [];
+	return todos.filter((todo) => {
+		const status = typeof todo?.status === "string" ? todo.status : "";
+		return status === COMPLETED_STATUS;
+	});
+}
+
+/**
  * The status of the task list.
  */
 export function taskTrackingStatus(
@@ -90,13 +115,27 @@ export function taskTrackingStatus(
 			text: "[TASK] Todos unavailable - completion unverified",
 		};
 	}
+	const tracked = facts.todos.length;
 	const open = openTodos(facts.todos);
-	const pending = facts.validationPending === true;
+	const done = completedTodos(facts.todos).length;
+	// The validation of the work is named first: it says more about the
+	// completion than the count of the todos does.
+	const validation = facts.validationPending === true
+		? "validation pending; "
+		: facts.validationFailed === true
+			? "validation failed; "
+			: "";
 	if (facts.running) {
-		if (open.length === 0) {
+		if (tracked === 0) {
 			return {
 				key: "working-no-todos",
 				text: "[TASK] Working - no Todos yet",
+			};
+		}
+		if (open.length === 0) {
+			return {
+				key: "working-completed",
+				text: `[TASK] Working - ${done} Todos completed`,
 			};
 		}
 		return {
@@ -104,18 +143,26 @@ export function taskTrackingStatus(
 			text: `[TASK] Working - ${open.length} open Todos`,
 		};
 	}
-	if (open.length === 0) {
+	if (tracked === 0) {
 		return {
 			key: "stopped-no-todos",
-			text: pending
-				? "[TASK] Stopped - validation pending; completion unverified"
+			text: validation
+				? `[TASK] Stopped - ${validation}completion unverified; no Todos`
 				: "[TASK] Stopped - completion unverified; no Todos",
+		};
+	}
+	if (open.length === 0) {
+		return {
+			key: "stopped-completed",
+			text: validation
+				? `[TASK] Stopped - ${done} Todos completed; ${validation}completion unverified`
+				: `[TASK] Stopped - ${done} Todos completed; completion unverified`,
 		};
 	}
 	return {
 		key: "stopped-open",
-		text: pending
-			? `[TASK] Stopped - ${open.length} open Todos remain; validation pending`
+		text: validation
+			? `[TASK] Stopped - ${open.length} open Todos remain; ${validation}completion unverified`
 			: `[TASK] Stopped - ${open.length} open Todos remain`,
 	};
 }
@@ -132,10 +179,13 @@ export class TaskTrackingStatusController {
 	private running = false;
 	private todos: TaskTrackingTodo[] | undefined;
 	private validationPending = false;
+	private validationFailed = false;
 	/** Has the task list been read at all? */
 	private known = false;
 	/** The revision of the activity. Every event that changes the state bumps it. */
 	private revision = 0;
+	/** The number of the read that is in flight. The newest read wins. */
+	private refreshSeq = 0;
 
 	/** The agent started working. */
 	agentStarted(): void {
@@ -154,6 +204,7 @@ export class TaskTrackingStatusController {
 		this.running = false;
 		this.todos = undefined;
 		this.validationPending = false;
+		this.validationFailed = false;
 		this.known = false;
 		this.revision += 1;
 	}
@@ -172,8 +223,9 @@ export class TaskTrackingStatusController {
 	/**
 	 * The validation of the work changed.
 	 */
-	validationChanged(pending: boolean): void {
+	validationChanged(pending: boolean, failed = false): void {
 		this.validationPending = pending;
+		this.validationFailed = failed;
 		this.revision += 1;
 	}
 
@@ -185,18 +237,34 @@ export class TaskTrackingStatusController {
 	 * belongs to a moment that has passed.
 	 */
 	async refresh(
-		read: () => Promise<TaskTrackingTodo[] | undefined>,
+		read: () => Promise<{
+			todos: TaskTrackingTodo[] | undefined;
+			validationPending?: boolean;
+			validationFailed?: boolean;
+		}>,
 	): Promise<void> {
 		const revision = this.revision;
-		let todos: TaskTrackingTodo[] | undefined;
+		const seq = ++this.refreshSeq;
+		let state: {
+			todos: TaskTrackingTodo[] | undefined;
+			validationPending?: boolean;
+			validationFailed?: boolean;
+		};
 		try {
-			todos = await read();
+			state = await read();
 		} catch {
-			todos = undefined;
+			state = { todos: undefined };
 		}
 		if (revision !== this.revision) return;
-		this.todos = todos;
+		// Two reads can be in flight at the same time. The one that started
+		// last holds the newer state, so the older one is dropped instead
+		// of overwriting it.
+		if (seq !== this.refreshSeq) return;
+		this.revision += 1;
+		this.todos = state.todos;
 		this.known = true;
+		this.validationPending = state.validationPending === true;
+		this.validationFailed = state.validationFailed === true;
 	}
 
 	/**
@@ -213,6 +281,7 @@ export class TaskTrackingStatusController {
 			running: this.running,
 			todos: this.todos,
 			validationPending: this.validationPending,
+			validationFailed: this.validationFailed,
 		});
 	}
 }

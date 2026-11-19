@@ -20,6 +20,11 @@
  *
  * The harness has its own shape of a todo; this one is the part the
  * reminder needs, so the module can be tested without the session.
+ *
+ * The todos are the ones of the request that is running: the caller
+ * filters the list of the session through the scope of the request. A
+ * todo of an earlier request is not the work of this one, and it must
+ * not silence the reminder about the work that is missing.
  */
 export interface TodoReminderTodo {
 	/** The subject of the todo. */
@@ -47,7 +52,7 @@ export const TODO_REMINDER_COOLDOWN_MS = 3 * 60 * 1000;
  */
 export interface TodoReminderFacts {
 	/**
-	 * The todos of the session.
+	 * The todos of the request.
 	 *
 	 * `undefined` means that the list cannot be read: an agent that cannot
 	 * add a task cannot act on the nudge, so no nudge goes out.
@@ -89,7 +94,7 @@ export function openTodos(
 }
 
 /**
- * Is the work of the session in the task list?
+ * Is the work of the request in the task list?
  *
  * One open todo is enough: the agent has recorded something, and the
  * list is not empty because of a mistake.
@@ -146,7 +151,7 @@ export function decideTodoReminder(
 	}
 	return {
 		remind: true,
-		reason: `the work of the session is not in the task list (${facts.occasion})`,
+		reason: `the work of the request is not in the task list (${facts.occasion})`,
 		text: todoReminderText(),
 	};
 }

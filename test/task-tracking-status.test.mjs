@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 
 import {
 	TaskTrackingStatusController,
+	completedTodos,
 	openTodos,
 	taskTrackingStatus,
 } from "../harness/task-tracking-status.ts";
@@ -70,6 +71,37 @@ test("the finished todos of an earlier request are not open work", () => {
 	assert.deepEqual(openTodos(undefined), []);
 });
 
+test("finished todos are not reported as missing todos", () => {
+	const status = taskTrackingStatus({
+		running: false,
+		todos: [todo("one", "completed"), todo("two", "completed")],
+	});
+	assert.equal(status.key, "stopped-completed");
+	assert.equal(status.text, "[TASK] Stopped - 2 Todos completed; completion unverified");
+	assert.doesNotMatch(status.text, /no Todos/);
+	assert.equal(completedTodos([todo("one", "completed")]).length, 1);
+});
+
+test("a running agent with finished todos says that they are finished", () => {
+	const status = taskTrackingStatus({
+		running: true,
+		todos: [todo("one", "completed")],
+	});
+	assert.equal(status.key, "working-completed");
+	assert.equal(status.text, "[TASK] Working - 1 Todos completed");
+});
+
+test("a failed validation is named instead of a completion", () => {
+	const status = taskTrackingStatus({
+		running: false,
+		todos: [todo("one", "completed")],
+		validationFailed: true,
+	});
+	assert.equal(status.key, "stopped-completed");
+	assert.match(status.text, /validation failed/);
+	assert.match(status.text, /completion unverified/);
+});
+
 test("the controller follows the agent and the list", () => {
 	const controller = new TaskTrackingStatusController();
 	controller.agentStarted();
@@ -90,7 +122,7 @@ test("a late read does not overwrite a newer state", async () => {
 	});
 	const read = controller.refresh(async () => {
 		await gate;
-		return [todo("the work of the old request")];
+		return { todos: [todo("the work of the old request")] };
 	});
 	// The session moved on while the read was in flight.
 	controller.agentSettled();
@@ -107,6 +139,27 @@ test("a failed read leaves the list unavailable", async () => {
 		throw new Error("unreadable");
 	});
 	assert.equal(controller.status().key, "todos-unavailable");
+});
+
+test("the newest read wins when two reads overlap", async () => {
+	const controller = new TaskTrackingStatusController();
+	controller.agentStarted();
+	let release = () => {};
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	// The older read is slow and returns an empty list.
+	const older = controller.refresh(async () => {
+		await gate;
+		return { todos: [] };
+	});
+	// The newer read returns the pending work of the request.
+	const newer = controller.refresh(async () => ({ todos: [todo("the work")] }));
+	await newer;
+	release();
+	await older;
+	assert.equal(controller.status().key, "working-open");
+	assert.equal(controller.status().text, "[TASK] Working - 1 open Todos");
 });
 
 test("the controller forgets everything when the session is replaced", () => {

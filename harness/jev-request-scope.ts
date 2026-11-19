@@ -260,6 +260,19 @@ export class RequestScopeTracker {
 	}
 
 	/**
+	 * The scope of the request that is running.
+	 *
+	 * The scope tells which todos belong to the request. A reader of the
+	 * task list that wants to know the work of the request needs it, and
+	 * the scope of the running request is the only one that answers.
+	 */
+	async scope(): Promise<JevRequestScope | null> {
+		const pending = this._pending;
+		if (!pending) return null;
+		return await pending;
+	}
+
+	/**
 	 * A new request of the human begins.
 	 *
 	 * The list is read now, while the request has not touched it: this is

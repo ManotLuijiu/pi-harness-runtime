@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { EXPLORATION_CHECKPOINT_TOOL } from "./exploration-checkpoint-tool.ts";
 import {
 	decideTodoReminder,
 	type TodoReminderTodo,
@@ -19,9 +20,6 @@ export const TASK_MEMORY_REMINDER = [
 ].join("\n");
 
 type ReminderReason = "request-start" | "periodic" | "context-pressure" | "recovery";
-
-/** The tool that saves the findings of an exploration. */
-const CHECKPOINT_TOOL = "exploration_checkpoint";
 
 /** The tool that holds the task list of the session. */
 const TODO_TOOL = "todo";
@@ -50,6 +48,41 @@ function taskListAction(args: unknown): string {
 }
 
 /**
+ * The details of the result of a call.
+ */
+function resultDetails(result: unknown): Record<string, unknown> | undefined {
+	const details = (result as { details?: unknown } | undefined)?.details;
+	if (!details || typeof details !== "object") return undefined;
+	return details as Record<string, unknown>;
+}
+
+/**
+ * Did the tool of the checkpoint record the findings?
+ *
+ * The tool answers with the evidence in its details: a call that says
+ * `recorded: false` recorded nothing, however it ended. A call without
+ * that evidence is not a capture either - the counters of the activity
+ * must never rest on an assumption.
+ */
+function checkpointRecorded(result: unknown): boolean {
+	return resultDetails(result)?.recorded === true;
+}
+
+/**
+ * Did the call of the task list succeed?
+ *
+ * The list reports a failure in the details of its answer, and a failed
+ * write changes nothing: the counters of the activity stay where they
+ * are.
+ */
+function taskWriteSucceeded(result: unknown): boolean {
+	const details = resultDetails(result);
+	const error = details?.error;
+	if (typeof error === "string" && error.length > 0) return false;
+	return true;
+}
+
+/**
  * Is this call a capture of the work?
  *
  * A saved checkpoint and a written task are captures. The counters of
@@ -59,9 +92,11 @@ function taskListAction(args: unknown): string {
 function isCapture(
 	toolName: string,
 	args: unknown,
+	result: unknown,
 ): boolean {
-	if (toolName === CHECKPOINT_TOOL) return true;
+	if (toolName === EXPLORATION_CHECKPOINT_TOOL) return checkpointRecorded(result);
 	if (toolName !== TODO_TOOL) return false;
+	if (!taskWriteSucceeded(result)) return false;
 	return CAPTURE_ACTIONS.has(taskListAction(args));
 }
 
@@ -71,8 +106,10 @@ function isCapture(
 function recordsWork(
 	toolName: string,
 	args: unknown,
+	result: unknown,
 ): boolean {
 	if (toolName !== TODO_TOOL) return false;
+	if (!taskWriteSucceeded(result)) return false;
 	return RECORD_ACTIONS.has(taskListAction(args));
 }
 
@@ -92,6 +129,8 @@ export class TaskMemoryReminder {
 	}
 
 	private scope: string | undefined;
+	/** The generation of the request that the reminder belongs to. */
+	private generation = "";
 	private turns = 0;
 	private tools = 0;
 	private pressureTier = 0;
@@ -106,6 +145,7 @@ export class TaskMemoryReminder {
 
 	reset(): void {
 		this.scope = undefined;
+		this.generation = "";
 		this.turns = 0;
 		this.tools = 0;
 		this.pressureTier = 0;
@@ -155,13 +195,35 @@ export class TaskMemoryReminder {
 	}
 
 	/**
+	 * Is this still the request that the reminder belongs to?
+	 *
+	 * The read of the task list is asynchronous: the session can end,
+	 * and another request can begin, while the list is read. A reminder
+	 * that arrives afterwards belongs to a moment that has passed.
+	 *
+	 * The generation decides, not the scope that the reminder remembers:
+	 * the reminder only learns of the new request when it is asked again,
+	 * and a reminder that waits for that answer would answer a question
+	 * that is already old.
+	 */
+	isCurrentRequest(generation: string): boolean {
+		return !this.stopped && this.generation === generation;
+	}
+
+	/**
 	 * Is the nudge about the task list due?
 	 *
 	 * The nudge counts its own activity: an agent that saves findings
 	 * but never writes a task keeps the nudge alive, and an agent that
 	 * writes its tasks does not hear about it again.
+	 *
+	 * The counters of the reminder do not matter here. A saved finding
+	 * must never silence the nudge: the finding and the task are two
+	 * different records, and an agent that records only the first one
+	 * still loses its work when the context window fills.
 	 */
-	private todoNudgeDue(occasion: string): boolean {
+	todoDue(occasion?: string): boolean {
+		if (this.stopped) return false;
 		if (occasion === "request-start" || occasion === "recovery") return true;
 		return this.todoTurns >= 8 || this.todoTools >= 12;
 	}
@@ -188,7 +250,7 @@ export class TaskMemoryReminder {
 		occasion: string,
 	): string | undefined {
 		if (this.stopped) return undefined;
-		if (!this.todoNudgeDue(occasion)) return undefined;
+		if (!this.todoDue(occasion)) return undefined;
 		const decision = decideTodoReminder({
 			todos,
 			occasion,
@@ -202,9 +264,10 @@ export class TaskMemoryReminder {
 		return decision.text;
 	}
 
-	next(scope: string, usage?: { tokens: number | null; contextWindow: number }): ReminderReason | undefined {
+	next(scope: string, usage?: { tokens: number | null; contextWindow: number }, generation?: string): ReminderReason | undefined {
 		if (this.stopped) return undefined;
 		const newScope = scope !== this.scope;
+		if (generation !== undefined) this.generation = generation;
 		if (newScope) {
 			// A recovered checkpoint of the old request is not the new request's memory.
 			if (this.scope !== undefined) this.recoveryPending = false;
@@ -213,6 +276,10 @@ export class TaskMemoryReminder {
 			this.tools = 0;
 			this.todoTurns = 0;
 			this.todoTools = 0;
+			// The pause of the nudge belongs to the request that it went
+			// out for. A new request has not heard anything yet, so it
+			// must not wait for a pause that is not its own.
+			this.lastTodoNudgeAt = 0;
 			this.pressureTier = 0;
 		}
 		const ratio = usage && typeof usage.tokens === "number" && Number.isFinite(usage.tokens) &&
@@ -285,32 +352,56 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 		});
 	});
 	pi.on("tool_execution_end", (event) => {
-		const toolEvent = event as { toolCallId?: string; toolName?: string; isError?: boolean };
+		const toolEvent = event as {
+			toolCallId?: string;
+			toolName?: string;
+			isError?: boolean;
+			result?: unknown;
+		};
 		if (toolEvent.isError) return;
 		reminder.toolEnded();
 		const call = calls.get(String(toolEvent.toolCallId ?? ""));
 		const toolName = String(toolEvent.toolName ?? call?.toolName ?? "");
-		if (isCapture(toolName, call?.args)) {
+		if (isCapture(toolName, call?.args, toolEvent.result)) {
 			reminder.captured();
-			if (recordsWork(toolName, call?.args)) reminder.taskCaptured();
+			if (recordsWork(toolName, call?.args, toolEvent.result)) {
+				reminder.taskCaptured();
+			}
 		}
 		calls.delete(String(toolEvent.toolCallId ?? ""));
 	});
 	pi.on("context", async (event, ctx) => {
 		if (ctx.signal?.aborted) return undefined;
-		const scope = `${ctx.sessionManager.getSessionId()}:${options.requestGeneration()}`;
-		const reason = reminder.next(scope, ctx.getContextUsage());
-		if (!reason) return undefined;
+		// The generation names the request. The list is read afterwards, so
+		// the generation is read again when the answer arrives: a request
+		// that began in between owns the work now.
+		const generation = options.requestGeneration();
+		const scope = `${ctx.sessionManager.getSessionId()}:${generation}`;
+		const reason = reminder.next(scope, ctx.getContextUsage(), generation);
+		// The nudge about the task list has a cadence of its own. It does
+		// not wait for the reminder: a session that saves findings every
+		// few turns would otherwise never hear about the missing task.
+		const nudgeDue = reminder.todoDue(reason);
+		if (!reason && !nudgeDue) return undefined;
 		let recovery = "";
 		if (reason === "recovery") {
 			try { recovery = options.recoveryText()?.slice(0, 3000) ?? ""; }
 			catch { recovery = "The saved exploration checkpoint is unavailable; do not assume it was restored."; }
 		}
-		// The nudge about the task list rides along with the reminder. It
-		// is the part that asks for the work of the request as tasks, and
-		// it only goes out when the task list does not hold that work.
-		const nudge = await todoNudgeText(reminder, options.todoList, ctx, reason);
-		const parts = [TASK_MEMORY_REMINDER];
+		// The nudge goes out only when the task list does not hold the
+		// work of the request: a session that already tracks its work is
+		// never nudged about it.
+		const nudge = nudgeDue
+			? await todoNudgeText(reminder, options.todoList, ctx, reason ?? "periodic")
+			: "";
+		// The read was asynchronous. The session may have ended, and
+		// another request may have begun, while the list was read: a
+		// reminder that arrives now belongs to a moment that has passed.
+		if (!reminder.isCurrentRequest(generation)) return undefined;
+		if (options.requestGeneration() !== generation) return undefined;
+		if (!reason && !nudge) return undefined;
+		const parts: string[] = [];
+		if (reason) parts.push(TASK_MEMORY_REMINDER);
 		if (nudge) parts.push(nudge);
 		if (recovery) parts.push(recovery);
 		return {
@@ -318,7 +409,7 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 				role: "custom" as const,
 				customType: "harness:task-memory-reminder",
 				display: false,
-				content: `${parts.join("\n\n")}\nReason: ${reason}.`,
+				content: `${parts.join("\n\n")}\nReason: ${reason ?? "the work of the request is not in the task list"}.`,
 				timestamp: Date.now(),
 			}],
 		};

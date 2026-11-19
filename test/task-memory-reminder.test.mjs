@@ -191,21 +191,55 @@ test("a failed write and a read of the list are not a capture", async () => {
 	assert.match((await rt.context()).messages[1].content, /periodic/);
 });
 
-test("a saved checkpoint resets the counters but does not silence the nudge about the task list", async () => {
+test("a saved checkpoint resets the reminder but does not silence the nudge about the task list", async () => {
 	const rt = runtime({ todos: [] });
 	await rt.context();
 	for (let i = 0; i < 8; i++) rt.handlers.get("turn_end")();
 	rt.handlers.get("tool_execution_start")({ toolCallId: "1", toolName: "exploration_checkpoint", args: {} });
-	rt.handlers.get("tool_execution_end")({ toolCallId: "1", toolName: "exploration_checkpoint", isError: false });
-	// The checkpoint reset the counters of the reminder, so the next
-	// occasion is eight turns away.
-	assert.equal(await rt.context(), undefined);
-	for (let i = 0; i < 8; i++) rt.handlers.get("turn_end")();
+	rt.handlers.get("tool_execution_end")({
+		toolCallId: "1",
+		toolName: "exploration_checkpoint",
+		isError: false,
+		result: { details: { recorded: true } },
+	});
 	rt.advance(TODO_REMINDER_COOLDOWN_MS);
-	// The task list is still empty, so the request still needs its tasks.
+	// The checkpoint reset the counters of the reminder, so the reminder
+	// itself stays away.
 	const text = (await rt.context()).messages[1].content;
-	assert.match(text, /periodic/);
+	assert.doesNotMatch(text, /exploration_checkpoint/);
+	// The nudge about the task list counts its own activity: the task
+	// list is still empty, so the request still needs its tasks.
 	assert.match(text, /local Todos list/);
+});
+
+test("a checkpoint that failed to record is not a capture", async () => {
+	const rt = runtime({ todos: [] });
+	await rt.context();
+	for (let i = 0; i < 8; i++) rt.handlers.get("turn_end")();
+	rt.handlers.get("tool_execution_start")({ toolCallId: "1", toolName: "exploration_checkpoint", args: {} });
+	rt.handlers.get("tool_execution_end")({
+		toolCallId: "1",
+		toolName: "exploration_checkpoint",
+		isError: false,
+		result: { details: { recorded: false } },
+	});
+	// The checkpoint recorded nothing, so the counters of the reminder
+	// stay where they were.
+	assert.match((await rt.context()).messages[1].content, /periodic/);
+});
+
+test("a write of the task list that failed is not a capture", async () => {
+	const rt = runtime({ todos: [] });
+	await rt.context();
+	for (let i = 0; i < 8; i++) rt.handlers.get("turn_end")();
+	rt.handlers.get("tool_execution_start")({ toolCallId: "1", toolName: "todo", args: { action: "create" } });
+	rt.handlers.get("tool_execution_end")({
+		toolCallId: "1",
+		toolName: "todo",
+		isError: false,
+		result: { details: { error: "the task list is read only" } },
+	});
+	assert.match((await rt.context()).messages[1].content, /periodic/);
 });
 
 test("a written task resets the nudge, so the work is not asked for again", async () => {
@@ -235,14 +269,25 @@ test("a removed task does not silence the nudge about the missing task", async (
 	assert.match(text, /local Todos list/);
 });
 
-test("the nudge waits for its pause before it goes out again", async () => {
+test("a new request does not inherit the pause of the old one", async () => {
 	const rt = runtime({ todos: [] });
 	assert.match((await rt.context()).messages[1].content, /local Todos list/);
-	// A new request starts a new occasion, but the pause of the nudge
-	// still holds, so the nudge stays away.
+	// A new request has heard nothing yet: the pause of the nudge of the
+	// old request is not its own.
 	rt.generation("2");
-	assert.doesNotMatch((await rt.context()).messages[1].content, /local Todos list/);
-	rt.advance(TODO_REMINDER_COOLDOWN_MS);
-	for (let i = 0; i < 8; i++) rt.handlers.get("turn_end")();
 	assert.match((await rt.context()).messages[1].content, /local Todos list/);
+});
+
+test("a reminder that arrives after the session ended is dropped", async () => {
+	const rt = runtime({ todos: [] });
+	const pending = rt.context();
+	rt.handlers.get("session_shutdown")();
+	assert.equal(await pending, undefined);
+});
+
+test("a reminder that arrives after another request began is dropped", async () => {
+	const rt = runtime({ todos: [] });
+	const pending = rt.context();
+	rt.generation("2");
+	assert.equal(await pending, undefined);
 });

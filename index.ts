@@ -103,6 +103,7 @@ import {
 } from "./harness/jev-wait-eligibility.ts";
 import {
 	itemsOfRequest,
+	type RequestTodoLike,
 	RequestScopeTracker,
 } from "./harness/jev-request-scope.ts";
 import {
@@ -1094,6 +1095,13 @@ const sharedState = {
 	 * list that the phase of the work reads.
 	 */
 	todoReader: null as null | ((ctx: unknown) => Promise<TwoPhaseTodoLike[] | undefined>),
+	/**
+	 * Reads the state of the required validations of the work.
+	 *
+	 * The ledger is the source; the row of the footer only names what it
+	 * observed.
+	 */
+	validationReader: null as null | ((todos: TwoPhaseTodoLike[]) => Promise<{ pending: boolean; failed: boolean }>),
 	// The state of the work of the request that is running. The automatic
 	// resume reads it to know whether the work of the request remains.
 	workContext: null as unknown,
@@ -1205,25 +1213,53 @@ const taskTracking = new TaskTrackingStatusController();
  * the todos are unavailable instead of pretending that there is no work.
  */
 async function refreshTaskTracking(): Promise<void> {
-	try {
-		const read = await requestScopeTracker.read();
-		if (read.items === null) {
-			taskTracking.stateChanged(undefined);
-			return;
+	// The read happens inside the controller: a read that arrives after a
+	// newer event is dropped, so a slow read of an old request cannot
+	// replace the row of the current one.
+	await taskTracking.refresh(async () => {
+		try {
+			const read = await requestScopeTracker.read();
+			if (read.items === null) return { todos: undefined };
+			const items = itemsOfRequest(read.items, read.scope);
+			const todos: TaskTrackingTodo[] = items.map((item) => ({
+				subject: item.subject,
+				status: item.status,
+			}));
+			const validation = await readTaskValidation(items as unknown as TwoPhaseTodoLike[]);
+			return {
+				todos,
+				validationPending: validation.pending,
+				validationFailed: validation.failed,
+			};
+		} catch (error) {
+			logToFile(
+				"[task-tracking]",
+				"the task list could not be read:",
+				oneLineError(error),
+			);
+			return { todos: undefined };
 		}
-		const items = itemsOfRequest(read.items, read.scope);
-		const todos: TaskTrackingTodo[] = items.map((item) => ({
-			subject: item.subject,
-			status: item.status,
-		}));
-		taskTracking.stateChanged(todos);
-	} catch (error) {
-		logToFile(
-			"[task-tracking]",
-			"the task list could not be read:",
-			oneLineError(error),
-		);
-		taskTracking.stateChanged(undefined);
+	});
+}
+
+/**
+ * Read the state of the required validations of the work.
+ *
+ * The ledger is the only mechanical source for "did the final tier
+ * pass?". A test item whose validation has not passed yet is not a
+ * finished item, and the row must say so.
+ */
+async function readTaskValidation(
+	todos: TwoPhaseTodoLike[],
+): Promise<{ pending: boolean; failed: boolean }> {
+	const reader = sharedState.validationReader;
+	if (!reader) return { pending: false, failed: false };
+	try {
+		return await reader(todos);
+	} catch {
+		// The state of the validation is unknown: the row says nothing
+		// about it rather than guessing.
+		return { pending: false, failed: false };
 	}
 }
 
@@ -1286,6 +1322,11 @@ const requestScopeTracker = new RequestScopeTracker({
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// The row of the footer belongs to the request that is running. The
+	// work of the request that ended is history, and a row that names it
+	// would tell the human about a request that is not the one in front
+	// of them.
+	taskTracking.reset();
 	// A new request of the human has its own report: the completion of the
 	// previous one was already reported.
 	suppressedResumeReported = false;
@@ -1850,9 +1891,32 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 	// The reminder that asks the agent to record its work reads the same
 	// list. A session whose list cannot be read gets no reminder: an
 	// agent that cannot add a task cannot act on the nudge.
+	//
+	// The list is filtered through the scope of the running request. A
+	// todo of an earlier request says nothing about the work of this
+	// one, and an old open task must not silence the reminder about a
+	// request that has no task of its own.
 	sharedState.todoReader = async (ctx: unknown) => {
 		const snapshot = await readTodos(ctx);
-		return snapshot.available ? snapshot.todos : undefined;
+		if (!snapshot.available) return undefined;
+		const scope = await requestScopeTracker.scope();
+		return itemsOfRequest(
+			snapshot.todos as unknown as RequestTodoLike[],
+			scope,
+		) as unknown as TwoPhaseTodoLike[];
+	};
+
+	// The row of the footer names the validation of the work that has not
+	// passed yet. The ledger is the only source of that fact.
+	sharedState.validationReader = async (todos: TwoPhaseTodoLike[]) => {
+		const state = await readValidation(todos);
+		return {
+			pending:
+				state.pendingFinalTier > 0 ||
+				state.incompletePlan > 0 ||
+				state.missingPilot > 0,
+			failed: state.failedFinalTier > 0,
+		};
 	};
 	} catch (error) {
 		logToFile("[TwoPhase]", `runtime not registered: ${oneLineError(error)}`);
@@ -9086,6 +9150,13 @@ issue is not authorized work of the current request).
 			() => lastActiveProvider,
 		);
 	}
+
+	// The session was replaced: the row of the old session says nothing
+	// about the new one, and the state of the old request must not leak
+	// into it.
+	pi.on("session_start", () => {
+		taskTracking.reset();
+	});
 
 	pi.on("agent_start", async () => {
 		taskTracking.agentStarted();

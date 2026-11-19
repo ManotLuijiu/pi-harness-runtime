@@ -149,7 +149,10 @@ export function explorationCheckpointTool(
 							text: "There is no running request, so there is no exploration to record.",
 						},
 					],
-					details: {},
+					// The answer says in its details whether the findings
+					// were recorded. A reader of the result must not have
+					// to guess it from the text.
+					details: { recorded: false },
 				};
 			}
 			const recorded = recorder.recordCheckpoint({
@@ -167,7 +170,7 @@ export function explorationCheckpointTool(
 							text: "The checkpoint of the request could not be recorded.",
 						},
 					],
-					details: {},
+					details: { recorded: false },
 				};
 			}
 			// The answer names what was recorded: the agent must be able to
@@ -199,7 +202,7 @@ export function explorationCheckpointTool(
 								: "The checkpoint of the request was recorded, but it was empty.",
 					},
 				],
-				details: {},
+				details: { recorded: true },
 			};
 		},
 	});
