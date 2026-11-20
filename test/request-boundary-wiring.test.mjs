@@ -101,7 +101,7 @@ test("the decision of the human on a proposal begins a request", () => {
 	// The human answered a proposal of the harness, and the harness asks
 	// the agent to carry it out. The answer of the human reaches Pi as a
 	// message of the harness, so the boundary has to be here.
-	const region = around("mod.buildToolingImplementationPrompt(context, workspaceRoot)", 400);
+	const region = around("mod.buildToolingImplementationPrompt(", 400);
 	assert.ok(region, "the proposal of the tooling is carried out");
 	assert.match(region, /beginHumanRequest\(\)/, "the decision begins a request");
 	assert.ok(

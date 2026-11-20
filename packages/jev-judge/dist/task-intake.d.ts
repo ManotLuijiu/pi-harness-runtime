@@ -73,7 +73,11 @@ export declare class TaskIntakeController {
      */
     private hashMessage;
     /**
-     * Record a capture request to prevent re-triggering
+     * Record that a capture was requested, to prevent re-triggering.
+     *
+     * The record is the state of the attempt. It is not the state of the
+     * work: an item of the task list is what says that the work was
+     * recorded, and only a read of the list says that.
      */
     private _recordCapture;
     /**

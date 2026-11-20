@@ -55,6 +55,7 @@ import {
 	JevRejectionEscalationRuntime,
 } from "./harness/jev-rejection-escalation.ts";
 import { DelegatedApprovalRuntime } from "./harness/delegated-approval-runtime.ts";
+import { coveredBuildForm } from "./harness/build-authorization.ts";
 import { DelegationStore } from "./harness/delegation-store.ts";
 import {
 	applyDelegationCommand,
@@ -78,6 +79,7 @@ import {
 import type { NotificationResult } from "./packages/notification/src/types.ts";
 import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
 import { registerTaskMemoryReminders } from "./harness/task-memory-reminder.ts";
+import { stepsOfRequest } from "./harness/request-capture.ts";
 import { contextFillPercent } from "./harness/context-usage.ts";
 import {
 	describeCandidates,
@@ -1148,6 +1150,39 @@ const sharedState = {
  */
 let suppressedResumeReported = false;
 
+/**
+ * The messages that the harness sent.
+ *
+ * A message of the harness reaches the handler of the user messages like
+ * a request of the human would. The work of a request is read from its
+ * text, so the text of a message of the harness must not be read as the
+ * work of a request.
+ */
+const sentHarnessMessages = new Set<string>();
+
+/**
+ * Remember a message that the harness sends.
+ *
+ * The set is bounded: the old messages are dropped, because a message
+ * that is long past cannot be the text of a message that arrives now.
+ */
+function noteHarnessMessage(text: string): void {
+	sentHarnessMessages.add(text);
+	if (sentHarnessMessages.size > 50) {
+		const oldest = sentHarnessMessages.values().next();
+		if (!oldest.done) sentHarnessMessages.delete(oldest.value);
+	}
+}
+
+/**
+ * The text of the request that is running.
+ *
+ * The text is what the reminder of the task list names, and the steps of
+ * the request are read from it. A request that has no text yet has no
+ * known steps, and the list alone decides then.
+ */
+let currentRequestText = "";
+
 /** The number of the resumes that the harness queued in this session. */
 let resumeNonceCounter = 0;
 
@@ -1327,6 +1362,10 @@ const requestScopeTracker = new RequestScopeTracker({
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// The text of the new request is not known yet. The reminder asks the
+	// agent to record the work of the request, and the steps of a request
+	// are read from its text.
+	currentRequestText = "";
 	// The row of the footer belongs to the request that is running. The
 	// work of the request that ended is history, and a row that names it
 	// would tell the human about a request that is not the one in front
@@ -2090,10 +2129,12 @@ async function startBiomeImplementation(
 		// The prompt reaches Pi as a message of the harness, so the input
 		// event cannot begin the scope of the request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			mod.buildToolingImplementationPrompt(context, workspaceRoot),
-			{ deliverAs: "steer" },
+		const tooling = mod.buildToolingImplementationPrompt(
+			context,
+			workspaceRoot,
 		);
+		noteHarnessMessage(tooling);
+		await pi.sendUserMessage(tooling, { deliverAs: "steer" });
 		logToFile("[ToolingPreference]", `agent asked to implement Biome (${channel})`);
 	} catch (error) {
 		logToFile("[ToolingPreference]", `steer failed: ${oneLineError(error)}`);
@@ -3533,10 +3574,20 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					? sharedState.delegatedApproval?.delegationFor({
 							kinds: delegatedKinds,
 							workspace: delegationWorkspace(),
+							// The operation is read with the scope: a
+							// build is covered only when the workspace
+							// really has that build.
+							operation: delegatedOperation,
 						})
 					: undefined;
+				// A build names the build that continues: the human is
+				// told which build runs without their answer.
+				const delegatedBuild =
+					delegatedKinds.includes("build") && delegation
+						? coveredBuildForm(delegatedOperation, delegationWorkspace())
+						: undefined;
 				const delegatedNotice = delegation
-					? `If you do not answer within ${MIN_WAIT_MINUTES} minutes, I will continue under your configured authorization (${delegation.id}).`
+					? `If you do not answer within ${MIN_WAIT_MINUTES} minutes, I will continue under your configured authorization (${delegation.id}${delegatedBuild ? `: ${delegatedBuild}` : ""}).`
 					: undefined;
 				const requirement = delegatedNotice
 					? `${options}\n\n${delegatedNotice}`
@@ -3667,8 +3718,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					content = rawContent;
 				}
 
-				// Skip harness-generated follow-ups (not real user prompts)
-				if (!content.includes("Please add all tasks to task list todo")) {
+				// Skip harness-generated follow-ups (not real user prompts).
+				// A message of the harness is not a request of the human,
+				// and the work of a request is read from its text.
+				const fromHarness =
+					sentHarnessMessages.has(content) ||
+					content.includes(
+						"Please record the work of this request in the task list",
+					) ||
+					content.includes("Please add all tasks to task list todo");
+				if (!fromHarness) {
+					// The text of the request is what the reminder names,
+					// and the steps of the request are read from it. The
+					// request of the human is the work to record; a
+					// message of the harness is not.
+					currentRequestText = content;
 					const now = Date.now();
 					// Reset batch if window expired
 					if (now - lastPromptTime > PROMPT_WINDOW_MS) {
@@ -3694,8 +3758,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						const capturedContents = [...pendingPromptContents];
 
 						intakeTimer = setTimeout(async () => {
-							// Only trigger if multiple prompts arrived
-							if (capturedCount > 1) {
+							// The capture happens for a batch of prompts and for
+							// a single request that names more than one step.
+							// The work of a request is more than one prompt:
+							// a request that asks for two things asks for two
+							// items of the task list.
+							const steps = stepsOfRequest(
+								capturedContents.join("\n"),
+							);
+							if (capturedCount > 1 || steps.length > 1) {
 								pendingUserPromptCount = 0;
 								pendingPromptContents = [];
 								logToFile("[auto-continue]", "Multiple prompts in queue, evaluating for task capture");
@@ -4545,6 +4616,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						"Work on exactly these ids and stop when they are done:",
 						lines,
 					].join("\n");
+					noteHarnessMessage(message);
 					void (async () => {
 						try {
 							await pi.sendUserMessage(message, { deliverAs: "steer" });
@@ -4711,6 +4783,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				taskIntakeController = new TaskIntakeController({
 					providers: jevProviders,
 					dispatch: async (content: string) => {
+						// The message is the harness speaking, not a request
+						// of the human: it must not be read as one.
+						noteHarnessMessage(content);
 						// Queue for next turn so agent processes after current work completes
 						await pi.sendUserMessage(content, { deliverAs: "followUp" });
 					},
@@ -5327,19 +5402,17 @@ async function advanceCodexTask(
 		// The message reaches Pi as a message of the harness, so the input
 		// event cannot begin the scope of the request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			`Human approved. Proceed to implement: ${event.planPath}`,
-			{ deliverAs: "steer" }
-		);
+		const proceed = `Human approved. Proceed to implement: ${event.planPath}`;
+		noteHarnessMessage(proceed);
+		await pi.sendUserMessage(proceed, { deliverAs: "steer" });
 		event.status = "triggered";
 		logToFile("[codex-trigger]", `Advanced to code: ${event.planPath}`);
 	} else if (action === "review") {
 		// The decision of the human starts new work: it begins a request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			"Human requests a review of the implementation.",
-			{ deliverAs: "steer" }
-		);
+		const review = "Human requests a review of the implementation.";
+		noteHarnessMessage(review);
+		await pi.sendUserMessage(review, { deliverAs: "steer" });
 		logToFile("[codex-trigger]", "Advanced to review");
 	} else if (action === "done") {
 		event.status = "done";
@@ -8169,6 +8242,11 @@ export default async function (pi: ExtensionAPI) {
 			if (!reader) return undefined;
 			return reader(ctx);
 		},
+		// The steps of the request are read from its text. The list is
+		// reconciled with them, so one item of the list does not silence
+		// the reminder about the steps that have no item.
+		requestSteps: () => stepsOfRequest(currentRequestText),
+		requestText: () => currentRequestText,
 	});
 
 	// The guard watches the reads, but only the agent knows what it learned

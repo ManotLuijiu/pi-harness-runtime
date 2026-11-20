@@ -155,7 +155,11 @@ export class TaskIntakeController {
 	}
 
 	/**
-	 * Record a capture request to prevent re-triggering
+	 * Record that a capture was requested, to prevent re-triggering.
+	 *
+	 * The record is the state of the attempt. It is not the state of the
+	 * work: an item of the task list is what says that the work was
+	 * recorded, and only a read of the list says that.
 	 */
 	private _recordCapture(userMessage: string): void {
 		const hash = this.hashMessage(userMessage);
@@ -369,11 +373,24 @@ export class TaskIntakeController {
 			return;
 		}
 
-		// Record this capture to prevent re-triggering on the same input
+		// Record that a capture was requested. The record is the state of
+		// the attempt, not the state of the work: the work is captured
+		// when an item of the task list stands for it, and that is
+		// observed from the list, not from this record.
 		this._recordCapture(userMessage);
 
-		// Simple prompt to create todos
-		const message = "Please add all tasks to task list todo";
+		// The instruction names the request, so the agent knows what to
+		// record. An instruction that asks for "all tasks" leaves the
+		// agent to guess, and the work it leaves out is the work that is
+		// lost when the context window fills.
+		const message = [
+			`Please record the work of this request in the task list (todo): ${userMessage}`,
+			"Use todo (the local Todos list, not bd). Read the pending and the in_progress items first;",
+			"reuse the existing items and avoid duplicates. Add one item per step of the request, the",
+			"subject in the imperative, and the description with what the step is and how it is checked.",
+			"Update progress, blockers and the exact next action, and mark an item completed only when",
+			"its required validation has passed. Do not start unrelated backlog work.",
+		].join(" ");
 
 		await this.config.dispatch(message);
 	}

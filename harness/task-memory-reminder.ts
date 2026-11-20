@@ -248,12 +248,16 @@ export class TaskMemoryReminder {
 	todoNudge(
 		todos: TodoReminderTodo[] | undefined,
 		occasion: string,
+		requiredSteps?: string[],
+		requestText?: string,
 	): string | undefined {
 		if (this.stopped) return undefined;
 		if (!this.todoDue(occasion)) return undefined;
 		const decision = decideTodoReminder({
 			todos,
 			occasion,
+			requiredSteps,
+			requestText,
 			lastReminderAt: this.lastTodoNudgeAt || undefined,
 			now: this.clock(),
 		});
@@ -310,10 +314,14 @@ async function todoNudgeText(
 	todoList: ((ctx: unknown) => Promise<TodoReminderTodo[] | undefined>) | undefined,
 	ctx: unknown,
 	occasion: string,
+	requiredSteps?: string[],
+	requestText?: string,
 ): Promise<string> {
 	if (!todoList) return "";
 	try {
-		return reminder.todoNudge(await todoList(ctx), occasion) ?? "";
+		return (
+			reminder.todoNudge(await todoList(ctx), occasion, requiredSteps, requestText) ?? ""
+		);
 	} catch {
 		return "";
 	}
@@ -330,6 +338,21 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 	 * about the task list stays away.
 	 */
 	todoList?(ctx: unknown): Promise<TodoReminderTodo[] | undefined>;
+	/**
+	 * The steps of the request that is running.
+	 *
+	 * The steps are the work the request names. When they are known, the
+	 * task list is reconciled with them, so one item of the list does not
+	 * silence the reminder about the steps that have no item.
+	 */
+	requestSteps?(): string[];
+	/**
+	 * The request that is running.
+	 *
+	 * The text of the request is what the reminder names, so the agent
+	 * knows which work the items belong to.
+	 */
+	requestText?(): string | undefined;
 	/** The clock of the reminder. */
 	now?(): number;
 }): void {
@@ -392,7 +415,14 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 		// work of the request: a session that already tracks its work is
 		// never nudged about it.
 		const nudge = nudgeDue
-			? await todoNudgeText(reminder, options.todoList, ctx, reason ?? "periodic")
+			? await todoNudgeText(
+					reminder,
+					options.todoList,
+					ctx,
+					reason ?? "periodic",
+					options.requestSteps?.(),
+					options.requestText?.(),
+				)
 			: "";
 		// The read was asynchronous. The session may have ended, and
 		// another request may have begun, while the list was read: a

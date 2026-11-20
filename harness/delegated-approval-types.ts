@@ -28,6 +28,7 @@ export const DELEGATED_OPERATION_KINDS = [
 	"commit-and-push",
 	"deploy",
 	"external-write",
+	"build",
 ] as const;
 
 /** A kind of operation a delegation can cover. */
@@ -321,6 +322,131 @@ const OPERATION_WORDS: { kind: DelegatedOperationKind; words: string[] }[] = [
 ];
 
 /**
+ * The words that ask for something.
+ *
+ * A question does not name a command by itself: the words that ask for it
+ * are not part of the command, so they are taken off before the command
+ * is looked at.
+ */
+const QUESTION_WORDS = [
+	"may i",
+	"can i",
+	"could i",
+	"would you",
+	"can you",
+	"could you",
+	"will you",
+	"do you want me to",
+	"want me to",
+	"should i",
+	"shall i",
+	"is it ok if i",
+	"is it okay if i",
+	"please",
+	"go ahead and",
+	"i need to",
+	"i want to",
+	"i'd like to",
+	"i would like to",
+];
+
+/**
+ * The words that start the doing of a command.
+ */
+const ACTION_WORDS = ["run", "execute", "start", "perform", "do", "launch"];
+
+/**
+ * The forms of a build that a delegation may cover.
+ *
+ * The list is explicit. A command that is not in it is not a build, so a
+ * delegation for a build never covers an operation that only looks like
+ * one. The word "build" alone is not a build: "may I build the project?"
+ * asks for work, not for the build of the project.
+ */
+const BUILD_MENTION =
+	/\bbench\s+build\b|\b(?:yarn|npm|bun|pnpm)\s+(?:run\s+)?build\b/;
+
+const BUILD_FORMS: { form: string; pattern: RegExp }[] = [
+	// The build of a bench. The app of the bench is part of the command,
+	// and it changes nothing about the kind of the operation.
+	{ form: "bench build", pattern: /^bench\s+build(?:\s+--app\s+[\w.-]+)?$/ },
+	// The build script of the project. The runner is not part of the form:
+	// the script of the project is the same for every runner.
+	{
+		form: "package build",
+		pattern: /^(?:yarn|npm|bun|pnpm)\s+(?:run\s+)?build$/,
+	},
+];
+
+/**
+ * The build a proposal names, when it names exactly one.
+ *
+ * The proposal must be a standalone build. The words that ask for it and
+ * the words that start the doing are taken off, and what is left has to
+ * be a build command and nothing else. A proposal that names another
+ * operation beside the build names no build: a delegation for a build
+ * may not cover an operation the user never delegated.
+ */
+export function buildFormOf(text: string | undefined): string | undefined {
+	let rest = (text ?? "").trim();
+	if (rest.length === 0) return undefined;
+	// The trailing punctuation of the question.
+	rest = rest.replace(/[.!?]+$/, "").trim();
+	// The words that ask for something.
+	let changed = true;
+	while (changed) {
+		changed = false;
+		const lower = rest.toLowerCase();
+		for (const word of QUESTION_WORDS) {
+			if (lower.startsWith(word)) {
+				rest = rest.slice(word.length).replace(/^[\s,:-]+/, "").trim();
+				changed = true;
+				break;
+			}
+		}
+	}
+	// The words that ask for something, at the end of the question.
+	changed = true;
+	while (changed) {
+		changed = false;
+		const lowerEnd = rest.toLowerCase();
+		for (const word of QUESTION_WORDS) {
+			if (lowerEnd.endsWith(" " + word)) {
+				rest = rest.slice(0, rest.length - word.length).trim();
+				changed = true;
+				break;
+			}
+		}
+	}
+	// The words that start the doing.
+	const lower = rest.toLowerCase();
+	for (const word of ACTION_WORDS) {
+		if (lower === word || lower.startsWith(word + " ")) {
+			const next = rest.slice(word.length).trim();
+			if (next.length > 0) {
+				rest = next;
+				break;
+			}
+		}
+	}
+	for (const entry of BUILD_FORMS) {
+		if (entry.pattern.test(rest)) return entry.form;
+	}
+	return undefined;
+}
+
+/**
+ * Does the text name a build command?
+ *
+ * The mention is loose on purpose: a question that names a build beside
+ * another operation still names a build. Whether the operation may
+ * continue is a different question, and it is answered by the scope.
+ */
+function mentionsBuild(text: string | undefined): boolean {
+	return BUILD_MENTION.test((text ?? "").toLowerCase());
+}
+
+/**
  * The kind of operation a word names.
  */
 function operationKindOfWord(word: string): DelegatedOperationKind | undefined {
@@ -392,6 +518,13 @@ function operationKindsOfClause(clause: string): {
 	// A post to somebody else is an external write.
 	if (!denied && /\bpost(?:s|ing)?\s+to\b/.test(clause)) {
 		if (!kinds.includes("external-write")) kinds.push("external-write");
+	}
+	// A build command is a build. The word "build" alone is not: the
+	// command itself has to be named. A clause that names a build beside
+	// another operation names a build, and the check of the scope refuses
+	// the mixed operation later.
+	if (!denied && mentionsBuild(clause)) {
+		if (!kinds.includes("build")) kinds.push("build");
 	}
 	return { kinds, denied };
 }

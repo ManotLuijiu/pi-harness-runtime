@@ -15,6 +15,8 @@
  * decides whether the reminder is due.
  */
 
+import { captureInstruction, uncoveredSteps } from "./request-capture.ts";
+
 /**
  * The shape of a todo that the reminder reads.
  *
@@ -29,6 +31,8 @@
 export interface TodoReminderTodo {
 	/** The subject of the todo. */
 	subject?: string;
+	/** The description of the todo. */
+	description?: string;
 	/** The state of the todo. */
 	status?: string;
 }
@@ -60,6 +64,23 @@ export interface TodoReminderFacts {
 	todos: TodoReminderTodo[] | undefined;
 	/** The occasion of the check. */
 	occasion: string;
+	/**
+	 * The steps of the request that is running.
+	 *
+	 * The steps are the work the request names. When they are known, the
+	 * list is reconciled with them: an item that covers one of them
+	 * silences the reminder about that step, and the steps that no item
+	 * covers keep it alive. An empty list means that the steps of the
+	 * request are not known, and then the list alone decides.
+	 */
+	requiredSteps?: string[];
+	/**
+	 * The request that is running.
+	 *
+	 * The text of the request is what the reminder names, so the agent
+	 * knows which work the items belong to.
+	 */
+	requestText?: string;
 	/** When the last reminder went out. */
 	lastReminderAt?: number;
 	/** The pause between two reminders. */
@@ -98,9 +119,23 @@ export function openTodos(
  *
  * One open todo is enough: the agent has recorded something, and the
  * list is not empty because of a mistake.
+ *
+ * The check is only the fallback. When the steps of the request are
+ * known, the list is reconciled with them, because one item of the list
+ * does not stand for the work that the request asks for besides it.
  */
 export function workIsTracked(todos: TodoReminderTodo[] | undefined): boolean {
 	return openTodos(todos).length > 0;
+}
+
+/**
+ * The steps of the request that no item of the list covers.
+ */
+function missingSteps(
+	requiredSteps: string[] | undefined,
+	todos: TodoReminderTodo[] | undefined,
+): string[] {
+	return uncoveredSteps(requiredSteps ?? [], todos);
 }
 
 /**
@@ -109,19 +144,11 @@ export function workIsTracked(todos: TodoReminderTodo[] | undefined): boolean {
  * The text asks; it does not instruct. It names the reason the reminder
  * is there: the task list is what survives a full context window.
  */
-export function todoReminderText(): string {
-	return [
-		"The task list of this session does not hold the work of this request.",
-		"Use todo (the local Todos list, not bd). Read the pending and the",
-		"in_progress items before creating anything; reuse the existing items and",
-		"avoid duplicates. If this request has two or more steps, add the missing",
-		"steps now: one item per step, the subject in the imperative, and the",
-		"description with what the step is and how it is checked. Update progress,",
-		"blockers and the exact next action, and mark an item completed only when",
-		"its required validation has passed. Do not start unrelated backlog work.",
-		"The task list is what survives a full context window: without it the work",
-		"of this request is lost when the window fills.",
-	].join(" ");
+export function todoReminderText(
+	missing: string[] = [],
+	request?: string,
+): string {
+	return captureInstruction(request, missing);
 }
 
 /**
@@ -136,7 +163,20 @@ export function decideTodoReminder(
 			reason: "the task list of the session cannot be read",
 		};
 	}
-	if (workIsTracked(facts.todos)) {
+	// The steps of the request decide. When they are known, the list is
+	// reconciled with them: an item that covers one step does not cover
+	// the other steps, and the reminder stays alive for the ones that
+	// have no item.
+	const required = facts.requiredSteps ?? [];
+	const missing = missingSteps(required, facts.todos);
+	if (required.length > 0) {
+		if (missing.length === 0) {
+			return {
+				remind: false,
+				reason: "every step of the request is in the task list",
+			};
+		}
+	} else if (workIsTracked(facts.todos)) {
 		return { remind: false, reason: "the work is already in the task list" };
 	}
 	const cooldown = facts.cooldownMs ?? TODO_REMINDER_COOLDOWN_MS;
@@ -152,6 +192,6 @@ export function decideTodoReminder(
 	return {
 		remind: true,
 		reason: `the work of the request is not in the task list (${facts.occasion})`,
-		text: todoReminderText(),
+		text: todoReminderText(missing, facts.requestText),
 	};
 }

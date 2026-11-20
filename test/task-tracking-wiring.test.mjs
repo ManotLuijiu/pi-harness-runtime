@@ -103,6 +103,27 @@ test("the readers of the runtime name the failure of a read", () => {
 	);
 });
 
+test("the session gives the reminder the steps of the request", () => {
+	// The steps of the request are read from its text, and the list is
+	// reconciled with them: one item of the list must not silence the
+	// reminder about the steps that have no item.
+	assert.match(
+		indexSource,
+		/requestSteps: \(\) => stepsOfRequest\(currentRequestText\)/,
+		"the reminder knows the steps of the request",
+	);
+	assert.match(
+		indexSource,
+		/requestText: \(\) => currentRequestText/,
+		"the reminder names the request",
+	);
+	assert.match(
+		indexSource,
+		/currentRequestText = content;/,
+		"the session keeps the text of the request",
+	);
+});
+
 test("the reminder checks the request and the session when its read returns", () => {
 	assert.match(
 		reminderSource,

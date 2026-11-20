@@ -29,6 +29,7 @@ import type {
 	DelegatedOperationKind,
 	Delegation,
 } from "./delegated-approval-types.ts";
+import { coveredBuildForm } from "./build-authorization.ts";
 import {
 	delegationCoversAll,
 	requiredOperations,
@@ -478,6 +479,8 @@ export class DelegatedApprovalRuntime {
 	delegationFor(input: {
 		kinds: DelegatedOperationKind[];
 		workspace: string;
+		/** The operation the request proposes, when it is known. */
+		operation?: string;
 	}): Delegation | undefined {
 		const now = this.deps.now();
 		const delegations = this.deps.delegations
@@ -486,14 +489,29 @@ export class DelegatedApprovalRuntime {
 		// The most recent delegation that covers every operation of the
 		// request. A delegation that covers only some of them never
 		// covers the request.
-		return delegations.find((delegation) =>
-			delegationCoversAll(
-				delegation,
-				input.kinds,
-				input.workspace,
-				now,
-			),
-		);
+		return delegations.find((delegation) => {
+			if (
+				!delegationCoversAll(
+					delegation,
+					input.kinds,
+					input.workspace,
+					now,
+				)
+			) {
+				return false;
+			}
+			// A build is covered only when the workspace really has the
+			// build: the delegation of a build of another workspace, or of
+			// a script the project does not have, covers nothing.
+			if (input.kinds.includes("build")) {
+				const form = coveredBuildForm(
+					input.operation,
+					input.workspace,
+				);
+				if (!form) return false;
+			}
+			return true;
+		});
 	}
 
 	/**
@@ -503,6 +521,7 @@ export class DelegatedApprovalRuntime {
 		return this.delegationFor({
 			kinds: requiredOperations(request.kind, request.kinds),
 			workspace: request.workspace,
+			operation: request.operation,
 		});
 	}
 
