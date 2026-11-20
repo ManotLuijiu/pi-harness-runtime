@@ -24,25 +24,21 @@ const reminderSource = readFileSync(
 	new URL("../harness/task-memory-reminder.ts", import.meta.url),
 	"utf8",
 );
-const trackerSource = readFileSync(
-	new URL("../harness/jev-request-scope.ts", import.meta.url),
-	"utf8",
-);
 
 test("the reminder reads the todos of the request that is running", () => {
-	assert.match(indexSource, /todoReader = async \(ctx: unknown\) => \{/);
+	assert.match(indexSource, /todoReader = async \(_ctx: unknown\) => \{/);
 	// The list of the session is filtered through the scope of the
 	// request: an old task of an earlier request is not the work of this
 	// one.
 	assert.match(
 		indexSource,
-		/itemsOfRequest\(\s*snapshot\.todos[\s\S]*?scope,/,
+		/itemsOfRequest\([\s\S]{0,200}?read\.items[\s\S]{0,200}?read\.scope,/,
 		"the reader of the reminder filters the list through the scope",
 	);
 	assert.match(
-		trackerSource,
-		/async scope\(\): Promise<JevRequestScope \| null>/,
-		"the tracker hands out the scope of the running request",
+		indexSource,
+		/const read = await requestScopeTracker\.read\(\);[\s\S]*?itemsOfRequest\(/,
+		"the reader of the reminder reads the list and the scope together",
 	);
 });
 

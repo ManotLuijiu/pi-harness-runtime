@@ -1909,13 +1909,16 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 	// todo of an earlier request says nothing about the work of this
 	// one, and an old open task must not silence the reminder about a
 	// request that has no task of its own.
-	sharedState.todoReader = async (ctx: unknown) => {
-		const snapshot = await readTodos(ctx);
-		if (!snapshot.available) return undefined;
-		const scope = await requestScopeTracker.scope();
+	sharedState.todoReader = async (_ctx: unknown) => {
+		// The scope and the list come from one read, so the reminder and
+		// the row of the footer see the same moment of the same list. A
+		// read that failed is not an empty list: the scope of the request
+		// is unknown then, and the reminder stays away.
+		const read = await requestScopeTracker.read();
+		if (read.items === null) return undefined;
 		return itemsOfRequest(
-			snapshot.todos as unknown as RequestTodoLike[],
-			scope,
+			read.items as unknown as RequestTodoLike[],
+			read.scope,
 		) as unknown as TwoPhaseTodoLike[];
 	};
 
