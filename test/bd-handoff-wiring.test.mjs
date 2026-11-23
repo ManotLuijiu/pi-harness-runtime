@@ -33,6 +33,44 @@ import {
 const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
 
 /**
+ * A region of the source of the harness around a needle.
+ *
+ * A check of the whole file cannot show that a line belongs to a
+ * callback, and a check of a line cannot show that the callback around
+ * it does what it says. The region is the piece of the file that holds
+ * the callback.
+ */
+function around(needle, before = 0, after = 1600) {
+	const at = indexSource.indexOf(needle);
+	if (at === -1) return "";
+	return indexSource.slice(Math.max(0, at - before), at + after);
+}
+
+/**
+ * The body of a callback: from its head to its closing brace.
+ *
+ * A window of characters breaks when the body grows: the line the
+ * check is about leaves the window and the check fails for a reason
+ * that has nothing to do with the behaviour. The body of the callback
+ * ends where the callback ends.
+ */
+function callbackBody(needle) {
+	const at = indexSource.indexOf(needle);
+	if (at === -1) return "";
+	const lineStart = indexSource.lastIndexOf("\n", at) + 1;
+	const indent = /^\t*/.exec(indexSource.slice(lineStart))[0].length;
+	const lines = indexSource.slice(at).split("\n");
+	for (let i = 1; i < lines.length; i++) {
+		const line = lines[i];
+		const lineIndent = /^\t*/.exec(line)[0].length;
+		if (lineIndent === indent && line.trim() === "},") {
+			return lines.slice(0, i + 1).join("\n");
+		}
+	}
+	return lines.join("\n");
+}
+
+/**
  * A temporary directory for the state of the tests.
  */
 function tempRoot() {
@@ -227,9 +265,21 @@ test("the wiring answers the proposal with what the runtime answered", () => {
 	// made, or with null when the proposal reached nobody. The wiring
 	// must not answer with a promise that was made: a handoff that
 	// nobody was asked about stays in the queue.
-	assert.ok(
-		indexSource.includes("return proposal !== null;"),
-		"the wiring answers with the result of the proposal",
+	const region = callbackBody("proposeScope: async (handoff, generation) => {");
+	assert.ok(region, "the wiring proposes the scope of the handoff");
+	assert.match(region, /return proposal !== null;/, "the wiring answers with the result of the proposal");
+	assert.doesNotMatch(region, /return true;/, "the wiring never answers with a promise that was made");
+});
+
+test("the wiring owns the claim of a handoff under a name", () => {
+	// An empty id would make every session of the machine the owner of
+	// the same claim, and the claim would hold nobody.
+	const region = around("sessionId: () => activeSessionId", 0, 300);
+	assert.ok(region, "the wiring names the owner of the claim");
+	assert.match(
+		region,
+		/sessionId: \(\) => activeSessionId \|\| `pi-\$\{process\.pid\}`,/,
+		"the owner of the claim is never empty",
 	);
 });
 

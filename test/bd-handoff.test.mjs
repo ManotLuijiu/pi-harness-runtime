@@ -406,11 +406,12 @@ function runtimeOf(options = {}) {
 		store,
 		recipient: "pi",
 		now: options.now,
-		sessionId: () => options.sessionId ?? "session-a",
+		sessionId: options.sessionIdFn ?? (() => options.sessionId ?? "session-a"),
 		deliver: async (delivery) => {
 			if (options.deliver === false) {
 				return { delivered: false, reason: "the session is busy" };
 			}
+			options.onDeliver?.();
 			delivered.push(delivery.message);
 			return { delivered: true };
 		},
@@ -652,6 +653,21 @@ test("a session without an id still owns the claim of a handoff", async () => {
 	assert.equal(other.claim("h1").ok, false);
 });
 
+test("an empty owner falls back to the name of the process", async () => {
+	const { runtime, store } = runtimeOf({ sessionId: "" });
+	await runtime.check();
+	// An owner that is named but empty is not an owner: two sessions
+	// that both pass an empty owner would be one owner, and the claim
+	// would hold nobody.
+	assert.equal(runtime.claim("h1", "").ok, true);
+	assert.equal(store.read("pi", "h1").claimedBy, `pi-${process.pid}`);
+	// The claim is given back under the same rule: a release with an
+	// empty owner falls back too, or the claim stays held until the
+	// lease expires.
+	assert.equal(runtime.release("h1", undefined, ""), true);
+	assert.equal(store.read("pi", "h1").claimedBy, undefined);
+});
+
 test("a proposal that says nothing acknowledges nothing", async () => {
 	const { runtime, store, handoffs } = runtimeOf({
 		proposeScope: async () => undefined,
@@ -662,6 +678,24 @@ test("a proposal that says nothing acknowledges nothing", async () => {
 	// handoff stays in the queue.
 	assert.equal(proposed, false);
 	assert.equal(store.read("pi", "h1").acknowledgedRevision, undefined);
+});
+
+test("the session that took the claim gives it back", async () => {
+	// The session can be replaced while the message is on its way: the
+	// id of the session is a different one when the delivery is done.
+	let owner = "session-a";
+	const { runtime, store } = runtimeOf({
+		sessionIdFn: () => owner,
+		onDeliver: () => {
+			owner = "session-b";
+		},
+	});
+	await runtime.check();
+	await runtime.dispatch();
+	// The claim was given back by the owner that took it, so the handoff
+	// is not left in the state "claimed" until the lease expires.
+	assert.equal(store.read("pi", "h1").state, "received");
+	assert.equal(store.read("pi", "h1").claimedBy, undefined);
 });
 
 test("a file of the state that cannot be read is not a fresh handoff", () => {

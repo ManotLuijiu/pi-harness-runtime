@@ -313,7 +313,12 @@ export class BdHandoffRuntime {
 
 		// The claim of a handoff is taken before the delivery: two
 		// sessions of one machine must not deliver the same handoff.
-		const batch = this.claimBatch(ready.slice(0, BD_HANDOFF_MAX_PER_MESSAGE));
+		//
+		// The owner is resolved once: the session can be replaced while
+		// the message is on its way, and the claim then has to be given
+		// back by the owner that took it.
+		const owner = this.owner();
+		const batch = this.claimBatch(ready.slice(0, BD_HANDOFF_MAX_PER_MESSAGE), owner);
 		if (batch.length === 0) {
 			return this.report({
 				state: "queued",
@@ -337,7 +342,7 @@ export class BdHandoffRuntime {
 			// The claim is given back: the handoff waits for the next
 			// boundary, and it is not acknowledged by anybody.
 			for (const handoff of batch) {
-				this.release(handoff.envelope.handoffId, "queued");
+				this.release(handoff.envelope.handoffId, "queued", owner);
 			}
 			return this.report({
 				state: "queued",
@@ -356,7 +361,7 @@ export class BdHandoffRuntime {
 				correlationId: handoff.envelope.correlationId,
 			});
 			// The delivery is done: the claim is not needed any more.
-			this.release(handoff.envelope.handoffId);
+			this.release(handoff.envelope.handoffId, undefined, owner);
 		}
 		this.queue = this.queue.filter(
 			(entry) => !batch.some((sent) => sent.envelope.handoffId === entry.envelope.handoffId),
@@ -423,10 +428,10 @@ export class BdHandoffRuntime {
 	 * A handoff whose claim is held by another session is not delivered
 	 * by this session: the work of one handoff runs once.
 	 */
-	private claimBatch(ready: BdHandoffIssue[]): BdHandoffIssue[] {
+	private claimBatch(ready: BdHandoffIssue[], owner: string): BdHandoffIssue[] {
 		const batch: BdHandoffIssue[] = [];
 		for (const handoff of ready) {
-			const claim = this.claim(handoff.envelope.handoffId);
+			const claim = this.claim(handoff.envelope.handoffId, owner);
 			if (!claim.ok) {
 				// The claim is not taken: another session holds it, or the
 				// handoff is not claimable any more. The log names the
@@ -529,21 +534,38 @@ export class BdHandoffRuntime {
 	}
 
 	/**
+	 * The owner of the claims of this runtime.
+	 *
+	 * The owner names the session that holds a claim. It is never empty:
+	 * an empty owner would make every session of the machine the owner
+	 * of the same claim, and the claim would hold nobody. A runtime
+	 * without an id falls back to the name of its process, so two
+	 * processes of one machine are two owners.
+	 */
+	private owner(): string {
+		return this.deps.sessionId?.() || `pi-${process.pid}`;
+	}
+
+	/**
 	 * Take the claim of a handoff.
 	 *
 	 * The claim is the guard of the execution: the live path and the bd
 	 * path take the same claim, so the work of one handoff runs once.
+	 *
+	 * The owner may be given by the caller: a delivery that takes the
+	 * claim and gives it back has to be the owner of both, even if the
+	 * session changed while the message was on its way.
 	 */
-	claim(handoffId: string): {
+	claim(handoffId: string, owner?: string): {
 		ok: boolean;
 		reason?: string;
 		holder?: string;
 	} {
-		const owner = this.deps.sessionId?.() || "pi";
+		const holder = owner || this.owner();
 		const result = this.deps.store.claim({
 			handoffId,
 			recipient: this.recipient,
-			owner,
+			owner: holder,
 		});
 		if (result.ok === true) return { ok: true };
 		return {
@@ -558,13 +580,16 @@ export class BdHandoffRuntime {
 	 *
 	 * The state of the handoff is named: a handoff whose delivery failed
 	 * waits again ("queued"), and it is not acknowledged by anybody.
+	 *
+	 * Only the owner of the claim may give it back, so a delivery that
+	 * took the claim gives it back under the owner it took it with.
 	 */
-	release(handoffId: string, state?: BdHandoffLifecycle): boolean {
-		const owner = this.deps.sessionId?.() || "pi";
+	release(handoffId: string, state?: BdHandoffLifecycle, owner?: string): boolean {
+		const holder = owner || this.owner();
 		return this.deps.store.release({
 			handoffId,
 			recipient: this.recipient,
-			owner,
+			owner: holder,
 			state,
 		});
 	}
