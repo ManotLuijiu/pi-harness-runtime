@@ -57,6 +57,15 @@ export const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
  */
 export const HARNESS_TASK_STATUS_KEY = "harness-task";
 
+/**
+ * Status key that carries the state of the bd handoff watcher.
+ *
+ * The watcher of the issue tracker has its own row: a handoff that waits
+ * for a safe boundary is a fact of its own, and it must not hide behind
+ * the quota or the task list.
+ */
+export const HARNESS_BD_HANDOFF_STATUS_KEY = "harness-bd-handoff";
+
 export interface HarnessFooterOptions {
 	/** Status key holding the quota summary (own row). */
 	quotaStatusKey?: string;
@@ -68,6 +77,8 @@ export interface HarnessFooterOptions {
 	actionsStatusKey?: string;
 	/** Status key holding the state of the task list (own row). */
 	taskStatusKey?: string;
+	/** Status key holding the state of the bd handoff watcher (own row). */
+	bdHandoffStatusKey?: string;
 	/**
 	 * Supplies the live extension context. May throw when the session was
 	 * replaced — the footer degrades to status-only rows in that case.
@@ -665,6 +676,56 @@ export function renderFooterRows(
  * workspace summary are always rendered from the same source the built-in
  * footer would use.
  */
+/**
+ * The rows of the status values of the extensions.
+ *
+ * The rows are built in one place, so the order of the rows is the order
+ * of this list: the pending actions first, the dedicated rows next, and
+ * the statuses without a row at the end.
+ */
+function buildStatusRows(
+	statuses: ReadonlyMap<string, string>,
+	keys: {
+		quota: string;
+		workspace: string;
+		autoContinue: string;
+		actions: string;
+		task: string;
+		bdHandoff: string;
+	},
+): FooterRow[] {
+	const rows: FooterRow[] = [];
+	// The pending actions come first: a blocked provider has to stay
+	// visible even when another status has something to say.
+	const actions = statuses.get(keys.actions);
+	if (actions) rows.push({ label: "actions", text: actions, maxLines: 4 });
+	const quota = statuses.get(keys.quota);
+	if (quota) rows.push({ label: "quota", text: quota });
+	const workspace = statuses.get(keys.workspace);
+	// The workspace summary is long - it wraps over several lines
+	// instead of being truncated (a truncated summary hides the
+	// fields that do not fit).
+	if (workspace) rows.push({ label: "workspace", text: workspace, maxLines: 8 });
+	const autoContinue = statuses.get(keys.autoContinue);
+	if (autoContinue) rows.push({ label: "auto-continue", text: autoContinue });
+	const task = statuses.get(keys.task);
+	if (task) rows.push({ label: "task", text: task });
+	const bdHandoff = statuses.get(keys.bdHandoff);
+	if (bdHandoff) rows.push({ label: "bd", text: bdHandoff });
+
+	const own = new Set(Object.values(keys));
+	const otherStatuses = Array.from(statuses.entries())
+		.filter(([key]) => !own.has(key))
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([, text]) => sanitizeStatusText(text))
+		.filter(Boolean)
+		.join(" ");
+	if (otherStatuses) {
+		rows.push({ label: "extensions", text: otherStatuses });
+	}
+	return rows;
+}
+
 export function createHarnessFooter(
 	_tui: TUI,
 	theme: Theme,
@@ -677,6 +738,8 @@ export function createHarnessFooter(
 		options.autoContinueStatusKey ?? HARNESS_AUTO_CONTINUE_STATUS_KEY;
 	const actionsKey = options.actionsStatusKey ?? HARNESS_ACTIONS_STATUS_KEY;
 	const taskKey = options.taskStatusKey ?? HARNESS_TASK_STATUS_KEY;
+	const bdHandoffKey =
+		options.bdHandoffStatusKey ?? HARNESS_BD_HANDOFF_STATUS_KEY;
 	const getContext = options.getContext ?? (() => null);
 	const autoCompactEnabled = options.autoCompactEnabled ?? true;
 
@@ -706,39 +769,14 @@ export function createHarnessFooter(
 				info = lastGoodInfo;
 			}
 
-			const rows: FooterRow[] = [];
-			// The pending actions come first: a blocked provider has to stay
-			// visible even when another status has something to say.
-			const actions = statuses.get(actionsKey);
-			if (actions) rows.push({ label: "actions", text: actions, maxLines: 4 });
-			const quota = statuses.get(quotaKey);
-			if (quota) rows.push({ label: "quota", text: quota });
-			const workspace = statuses.get(workspaceKey);
-			// The workspace summary is long - it wraps over several lines
-			// instead of being truncated (a truncated summary hides the
-			// fields that do not fit).
-			if (workspace) rows.push({ label: "workspace", text: workspace, maxLines: 8 });
-			const autoContinue = statuses.get(autoContinueKey);
-			if (autoContinue) rows.push({ label: "auto-continue", text: autoContinue });
-			const task = statuses.get(taskKey);
-			if (task) rows.push({ label: "task", text: task });
-
-			const otherStatuses = Array.from(statuses.entries())
-				.filter(
-					([key]) =>
-						key !== quotaKey &&
-						key !== workspaceKey &&
-						key !== autoContinueKey &&
-						key !== actionsKey &&
-						key !== taskKey,
-				)
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([, text]) => sanitizeStatusText(text))
-				.filter(Boolean)
-				.join(" ");
-			if (otherStatuses) {
-				rows.push({ label: "extensions", text: otherStatuses });
-			}
+			const rows = buildStatusRows(statuses, {
+				quota: quotaKey,
+				workspace: workspaceKey,
+				autoContinue: autoContinueKey,
+				actions: actionsKey,
+				task: taskKey,
+				bdHandoff: bdHandoffKey,
+			});
 
 			try {
 				return renderFooterRows(info, rows, width, theme, autoCompactEnabled);

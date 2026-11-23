@@ -193,13 +193,20 @@ import {
 	type ScopeDecision,
 	type ScopeProposal,
 } from "./harness/scope-expansion.ts";
+import {
+	BdHandoffSession,
+	formatBdHandoffStatus,
+} from "./harness/bd-handoff-session.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
 	MAX_RECOVERY_ATTEMPTS,
 	type RecoveryResetEvidence,
 } from "./harness/provider-recovery.ts";
-import { HARNESS_ACTIONS_STATUS_KEY } from "./packages/tui/dist/harness-footer.js";
+import {
+	HARNESS_ACTIONS_STATUS_KEY,
+	HARNESS_BD_HANDOFF_STATUS_KEY,
+} from "./packages/tui/dist/harness-footer.js";
 import { endPendingWait, releaseWait } from "./harness/pending-wait.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 import {
@@ -710,6 +717,59 @@ let planReceiver: PlanReceiver | null = null;
  * countdown of the provider. It says what it saw, and the agent decides.
  */
 let explorationGuard: ExplorationGuardRuntime | null = null;
+
+/**
+ * The watcher of the handoffs of the issue tracker.
+ *
+ * The watcher belongs to the session: it starts with the session and stops
+ * with it. A watcher that outlives its session would deliver a handoff
+ * into a session that does not exist, and a replaced session would keep
+ * the reader of the workspace that is gone.
+ *
+ * The watcher itself lives in its own module. This variable is only the
+ * handle of the session that owns it.
+ */
+let bdHandoffSession: BdHandoffSession | null = null;
+
+/**
+ * The row of the watcher in the footer.
+ *
+ * The setter is resolved when the session starts and dropped when it ends.
+ * A setter of an ended session would write into a footer that belongs to
+ * another session, and the setter of a session without a user interface
+ * drops the row without a word.
+ */
+let bdHandoffStatusSetter: ((text: string | undefined) => void) | null = null;
+
+/**
+ * A check of the watcher is running.
+ *
+ * The runtime reads the store once for two checks that overlap, but both
+ * of them deliver the queue they found. One check at a time keeps a
+ * handoff from arriving twice.
+ */
+let bdHandoffCheckRunning = false;
+
+/**
+ * Look at the store of the handoffs and deliver what waits.
+ *
+ * The check is a safe boundary on its own: the runtime keeps a handoff in
+ * the queue while the session is busy, paused or busy with a question of
+ * the human. A watcher that interrupts a running tool call would steer a
+ * request that is not finished.
+ */
+function runBdHandoffCheck(): void {
+	if (bdHandoffCheckRunning) return;
+	const session = bdHandoffSession;
+	if (!session) return;
+	bdHandoffCheckRunning = true;
+	void session
+		.check()
+		.catch((error) => logToFile("[bd-handoff]", "the check failed:", oneLineError(error)))
+		.finally(() => {
+			bdHandoffCheckRunning = false;
+		});
+}
 
 /**
  * The phase of the request that is running, as the guard names it.
@@ -4683,6 +4743,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				sharedState.scopeRuntime?.dispose();
 				sharedState.scopeRuntime = createScopeExpansionRuntime();
 				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
+				const {
+					ADVISORY_SOURCE_EXPLORATION_GUARD,
+					ADVISORY_SOURCE_BD_HANDOFF,
+				} = await import("./packages/jev-judge/dist/continuation-controller.js");
 				const { ValidationLedger } = await import("./packages/jev-judge/dist/validation-ledger.js");
 				// The ledger records which validation tier ran. The controller
 				// uses it to tell the agent what already passed and whether the
@@ -4719,14 +4783,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// continues the request that is running, so it carries
 					// the generation of that request.
 					advisoryDispatch: async (content: string, meta) => {
+						// The custom type names the source of the traffic.
+						// A handoff of the store is not an exploration, and
+						// the two must not be mistaken for each other.
+						const source = meta?.source ?? ADVISORY_SOURCE_EXPLORATION_GUARD;
+						const customType =
+							source === ADVISORY_SOURCE_BD_HANDOFF
+								? "harness:bd-handoff"
+								: "harness:exploration-guard";
 						pi.sendMessage(
 							{
-								customType: "harness:exploration-guard",
+								customType,
 								content,
 								display: false,
 								details: {
 									reason: meta?.reason ?? "exploration-guard",
 									requestGeneration: meta?.requestGeneration,
+									source,
 								},
 							},
 							{ deliverAs: "followUp", triggerTurn: true },
@@ -4748,6 +4821,125 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// never stopped the work.
 				sharedState.todoContinuationController = todoContinuationController;
 				logToFile("[auto-continue]", "Todo continuation controller initialized");
+				// The watcher of the handoffs belongs to this session: it
+				// reads the store of the workspace and delivers what waits
+				// for this agent.
+				bdHandoffSession?.stop();
+				bdHandoffSession = new BdHandoffSession();
+				// The row of the watcher is passive and belongs to the
+				// session that is running. A session without a user
+				// interface has a setter that drops the row without a
+				// word, so it gets no setter at all.
+				bdHandoffStatusSetter = ctx.hasUI
+					? ctx.ui.setStatus.bind(ctx.ui, HARNESS_BD_HANDOFF_STATUS_KEY)
+					: null;
+				bdHandoffSession.start({
+					// The workspace of the store: the reader refuses a store
+					// that does not belong to it.
+					workspace: () => _piSessionCwd || process.cwd(),
+					// The id of the session owns the claim of a handoff.
+					// An empty id would make every session of the machine
+					// the same owner, and the claim would hold nobody.
+					sessionId: () => activeSessionId || `pi-${process.pid}`,
+					// A handoff arrives as an observation of the request that
+					// is running. The guards of the controller still hold
+					// and the attempt budget of a task is untouched.
+					deliver: async (message: string) => {
+						const controller = sharedState.todoContinuationController as {
+							dispatchAdvisory?: (
+								content: string,
+								options?: {
+									meta?: {
+										reason?: string;
+										requestGeneration?: string;
+										source?: string;
+									};
+								},
+							) => Promise<{ dispatched: boolean; reason?: string }>;
+						} | null;
+						if (!controller?.dispatchAdvisory) {
+							return {
+								delivered: false,
+								reason: "the continuation controller is not there",
+							};
+						}
+						try {
+							const result = await controller.dispatchAdvisory(message, {
+								meta: {
+									// The reason of the advisory is the source of
+									// the traffic: one constant names both, so
+									// the metadata cannot drift.
+									reason: ADVISORY_SOURCE_BD_HANDOFF,
+									requestGeneration: String(requestScopeTracker.generation),
+									source: ADVISORY_SOURCE_BD_HANDOFF,
+								},
+							});
+							return { delivered: result.dispatched, reason: result.reason };
+						} catch (error) {
+							return { delivered: false, reason: oneLineError(error) };
+						}
+					},
+					// A handoff never interrupts a running tool call: it waits
+					// for a boundary of the session.
+					isIdle: () => {
+						try {
+							return activeExtensionContext?.isIdle?.() ?? false;
+						} catch {
+							// A context of an ended session cannot answer:
+							// the session is not idle, so the handoff waits.
+							return false;
+						}
+					},
+					// The pause of the human holds the handoff back.
+					isPaused: () => todoContinuationHandle?.isExplicitlyPaused() ?? false,
+					// A question of the human is work in progress: the handoff
+					// waits for the answer.
+					hasOpenQuestion: () => hasOpenQuestion(),
+					// A handoff outside the authorized scope is proposed to
+					// the human. It never starts by itself.
+					proposeScope: async (handoff, generation) => {
+						const runtime = sharedState.scopeRuntime;
+						// Without the runtime of the scope there is nobody
+						// to ask: the handoff is not acknowledged, and it is
+						// proposed again with the next boundary.
+						if (!runtime) return false;
+						const proposal = await runtime.propose({
+							requestId: `bd-handoff-${handoff.issueId}`,
+							workspace: _piSessionCwd || process.cwd(),
+							generation,
+							candidates: [{ id: handoff.issueId, title: handoff.title }],
+							proposedIds: [handoff.issueId],
+							scope: `the work of the handoff ${handoff.issueId}`,
+							validation: "the tests of the repository and the closing of the issue",
+							risks: ["the work of the issue was not part of the request"],
+							choices: ["run the work of the issue", "leave the handoff closed"],
+						});
+						// A proposal that reached nobody is not a proposal:
+						// the handoff stays in the queue and is proposed
+						// again with the next boundary.
+						return proposal !== null;
+					},
+					// The row of the footer says what the watcher observed.
+					// It never steers the session.
+					onStatus: (status) => {
+						const setter = bdHandoffStatusSetter;
+						if (!setter) return;
+						try {
+							setter(formatBdHandoffStatus(status));
+						} catch (error) {
+							logToFile(
+								"[bd-handoff]",
+								"the status could not be published:",
+								oneLineError(error),
+							);
+						}
+					},
+					// The log of the watcher is the log of the harness.
+					log: (message: string) => logToFile("[bd-handoff]", message),
+				});
+				// The first look at the store happens now: a handoff that
+				// waits for this session should not wait for the next tick.
+				runBdHandoffCheck();
 			} catch (err) {
 				logToFile("[auto-continue]", "Failed to create todo continuation controller:", String(err));
 			}
@@ -4755,6 +4947,17 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Clean up controller on session shutdown
 		pi.on("session_shutdown", () => {
+			// The watcher of the handoffs belongs to the session that is
+			// ending: it must not deliver into a session that is gone.
+			bdHandoffSession?.stop();
+			bdHandoffSession = null;
+			// The row of the watcher leaves the footer with the session.
+			try {
+				bdHandoffStatusSetter?.(undefined);
+			} catch {
+				// The footer of an ended session is gone too.
+			}
+			bdHandoffStatusSetter = null;
 			// Release the guard timer and the queue: a stopped session must not
 			// keep a timer alive nor block a later continuation.
 			todoContinuationController?.dispose?.();
@@ -5001,6 +5204,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) {
 				return;
 			}
+
+			// The watcher of the handoffs looks at the store at a safe
+			// boundary: the turn is over and the session is idle. The check
+			// runs in the background, so a store that reads slowly never
+			// delays the work of the request.
+			runBdHandoffCheck();
 
 			// Use the retained controller (not a new one per event)
 			try {

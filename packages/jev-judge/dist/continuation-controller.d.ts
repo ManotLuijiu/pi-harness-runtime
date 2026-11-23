@@ -4,15 +4,42 @@ import type { ValidationLedger } from "./validation-ledger.js";
 /**
  * The context of an advisory message.
  *
- * The fields are known: they name the reason of the advisory and the
- * generation of the request it belongs to.
+ * The fields are known: they name the reason of the advisory, the
+ * generation of the request it belongs to and the source that produced
+ * it.
+ *
+ * The source names the subsystem the observation comes from. It does not
+ * change the guards: an advisory from the store and an advisory from the
+ * exploration are both observations, and both of them wait for the same
+ * safe boundary. The source only says which one it is, so the transport
+ * can tell the traffic of one subsystem from the traffic of another.
  */
 export interface AdvisoryMeta {
     /** The reason of the advisory, in the vocabulary of its source. */
     reason?: string;
     /** The generation of the request the advisory belongs to. */
     requestGeneration?: string;
+    /**
+     * The subsystem the advisory comes from.
+     *
+     * The default is the exploration guard, because that is the source
+     * that existed before the field did.
+     */
+    source?: string;
 }
+/**
+ * The source of an advisory that comes from the exploration guard.
+ */
+export declare const ADVISORY_SOURCE_EXPLORATION_GUARD = "exploration-guard";
+/**
+ * The source of an advisory that comes from the bd handoff watcher.
+ *
+ * The name is the identity of the traffic: the transport gives it a
+ * custom type of its own, so a handoff is never mistaken for an
+ * exploration, and neither of them is mistaken for a request of the
+ * human.
+ */
+export declare const ADVISORY_SOURCE_BD_HANDOFF = "bd-handoff";
 export interface ContinuationConfig {
     /** Dispatch function to send messages to the agent (required) */
     dispatch: (content: string) => Promise<void>;

@@ -44,6 +44,19 @@ const GUARD_RELEASE_AFTER_DROP_MS = 1000;
  */
 let pauseEpochCounter = 0;
 /**
+ * The source of an advisory that comes from the exploration guard.
+ */
+export const ADVISORY_SOURCE_EXPLORATION_GUARD = "exploration-guard";
+/**
+ * The source of an advisory that comes from the bd handoff watcher.
+ *
+ * The name is the identity of the traffic: the transport gives it a
+ * custom type of its own, so a handoff is never mistaken for an
+ * exploration, and neither of them is mistaken for a request of the
+ * human.
+ */
+export const ADVISORY_SOURCE_BD_HANDOFF = "bd-handoff";
+/**
  * Todo-Driven Continuation Controller
  *
  * Evaluates todo state on agent_settled and determines next action.
@@ -663,7 +676,7 @@ export class TodoContinuationController {
      * about to send, so the payload always reflects the state at that moment
      * (and the item comes from the snapshot read this dispatch already does).
      */
-    async guardedDispatch(itemId, buildMessage, send) {
+    async guardedDispatch(itemId, buildMessage, send, meta) {
         // 0. A disposed controller never dispatches.
         if (this._disposed) {
             debugLog("TodoContinuation", "Guarded dispatch: controller disposed, skipping");
@@ -818,7 +831,15 @@ export class TodoContinuationController {
                     return { dispatched: false, reason: payload.abort, blocked: true };
                 }
                 const message = payload.send;
-                await (send ?? this.config.dispatch)(message);
+                // The metadata of the message travels with it. A transport
+                // that has to tell one source of traffic from another can
+                // only do that when the source arrives with the message.
+                if (send) {
+                    await send(message, meta);
+                }
+                else {
+                    await this.config.dispatch(message);
+                }
                 this.state.lastSteerMessage = message;
                 // Only the dispatch that owns the guard may reset the
                 // breaker: a stale success must not close a breaker that is
@@ -1001,7 +1022,7 @@ export class TodoContinuationController {
     async dispatchAdvisory(message, options = {}) {
         const result = await this.guardedDispatch(options.itemId, () => ({ send: message }), this.config.advisoryDispatch
             ? (content, meta) => this.config.advisoryDispatch(content, meta ?? options.meta)
-            : undefined);
+            : undefined, options.meta);
         if (!result.dispatched) {
             debugLog("TodoContinuation", "Advisory not dispatched:", result.reason);
         }
