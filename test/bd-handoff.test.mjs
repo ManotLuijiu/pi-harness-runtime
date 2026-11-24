@@ -528,7 +528,7 @@ function runtimeOf(options = {}) {
 		show: options.show ?? ok(handoffs[0]?.issue ?? null),
 	});
 	const reader = new BdHandoffReader({ workspace, run });
-	const store = new BdHandoffStore(tempRoot(), { now: options.now });
+	const store = new BdHandoffStore(options.root ?? tempRoot(), { now: options.now });
 	const runtime = new BdHandoffRuntime({
 		reader,
 		store,
@@ -561,6 +561,67 @@ test("a handoff is delivered once", async () => {
 	await runtime.check();
 	await runtime.dispatch();
 	assert.equal(delivered.length, 1);
+});
+
+test("a new session picks the work up again", async () => {
+	const root = tempRoot();
+	// The first session is busy: the handoff stays in the queue of the
+	// store, and no cursor moves.
+	const first = runtimeOf({ root, isIdle: () => false });
+	await first.runtime.check();
+	await first.runtime.dispatch();
+	assert.equal(first.delivered.length, 0, "the busy session delivers nothing");
+	assert.equal(first.store.read("pi", "h1").deliveredRevision, undefined);
+	// The session is replaced. The new session reads the same state and
+	// finds the work that the old session did not deliver.
+	const second = runtimeOf({ root, sessionId: "session-b" });
+	await second.runtime.check();
+	await second.runtime.dispatch();
+	assert.equal(second.delivered.length, 1, "the new session delivers the handoff");
+	assert.equal(second.store.read("pi", "h1").deliveredRevision, 1);
+});
+
+test("a proposal that succeeded acknowledges the handoff", async () => {
+	const proposed = [];
+	const { runtime, store } = runtimeOf({
+		proposeScope: async (handoff) => {
+			proposed.push(handoff.envelope.handoffId);
+			return true;
+		},
+	});
+	await runtime.check();
+	const pending = runtime.pendingHandoffs();
+	assert.equal(pending.length, 1);
+	const acknowledged = await runtime.propose(pending[0]);
+	assert.equal(acknowledged, true);
+	assert.deepEqual(proposed, ["h1"]);
+	// The acknowledgement follows the success of the proposal: the handoff
+	// is acknowledged, and it is not completed.
+	const record = store.read("pi", "h1");
+	assert.equal(record.acknowledgedRevision, 1);
+	assert.equal(record.state, "acknowledged");
+	assert.equal(record.completedRevision, undefined);
+});
+
+test("a proposal that reached nobody leaves the handoff in the queue", async () => {
+	const { runtime, store } = runtimeOf({ proposeScope: async () => false });
+	await runtime.check();
+	const pending = runtime.pendingHandoffs();
+	assert.equal(pending.length, 1);
+	const acknowledged = await runtime.propose(pending[0]);
+	assert.equal(acknowledged, false);
+	// Nothing was acknowledged, so the handoff is proposed again with the
+	// next boundary.
+	const record = store.read("pi", "h1");
+	assert.equal(record.acknowledgedRevision, undefined);
+	assert.equal(record.state, "observed");
+	// The handoff waits in the queue of the runtime: a proposal that
+	// reached nobody drops nothing.
+	assert.equal(
+		runtime.pendingHandoffs().length,
+		1,
+		"the handoff waits in the queue",
+	);
 });
 
 test("the message names the exact issue and its revision", async () => {
