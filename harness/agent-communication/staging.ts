@@ -36,12 +36,9 @@
  */
 
 import { cpSync, lstatSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
-/**
- * The directories that are not part of the copy.
- */
-const IGNORED = new Set([".git", "node_modules"]);
+import { relativeTo, stagingPolicy } from "./staging-policy.ts";
 
 /**
  * A copy of the workspace that a worker may work in.
@@ -117,13 +114,19 @@ export function stageWorkspace(
 		// The root itself may be a link: the copy is made of the real
 		// path, so the copy holds no link to the workspace of the user.
 		const realRoot = realpathSync(root);
+		// The policy of the copy is shared with the write lane: the
+		// environment files, the credentials, the logs and the files that
+		// git ignores stay out of the copy. A worker of another vendor
+		// sees the work of the project and not the secrets of the machine.
+		const policy = stagingPolicy(realRoot, process.env);
 		cpSync(realRoot, path, {
 			recursive: true,
 			dereference: false,
 			force: true,
 			filter: (source) => {
-				const name = basename(source);
-				if (IGNORED.has(name) && source !== realRoot) return false;
+				if (source !== realRoot && !policy.allows(relativeTo(realRoot, source))) {
+					return false;
+				}
 				// A symlink does not go into the copy. A link that points
 				// out of the workspace would let the worker write into the
 				// workspace of the user, and the guard of the tree cannot

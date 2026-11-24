@@ -213,37 +213,75 @@ export async function detectWorkers(
  * `codex sandbox -- /bin/true` runs a command inside the sandbox and
  * fails when the sandbox cannot start.
  *
- * The probe runs in the background and the answer is remembered: a
+ * The probe runs once per binary and the answer is remembered: a
  * machine does not change its mind about its own sandbox between two
- * consultations. `undefined` means "nobody answered yet".
+ * consultations. The answer is waited for: a path of the consult is
+ * never chosen because nobody answered yet.
  */
 const sandboxAnswers = new Map<string, boolean>();
 const sandboxProbes = new Map<string, Promise<boolean>>();
 
-export function sandboxAvailable(
+/**
+ * Has the human asked for the mode without a sandbox?
+ *
+ * The sandbox of the operating system is the boundary that holds the
+ * worker of another vendor. A machine that cannot start it has no
+ * boundary, and the worker then reads and runs as the user does. That
+ * mode is a separate capability: the human asks for it by name, and the
+ * description of the job says what really holds.
+ */
+export function unsandboxedAuthorized(
+	env: Record<string, string | undefined> = process.env,
+): boolean {
+	const raw = env.PI_AGENT_COMMUNICATION_UNSANDBOXED ?? "";
+	return raw.trim() === "1" || raw.trim().toLowerCase() === "true";
+}
+
+/**
+ * The answer of the probe of the sandbox, waited for.
+ *
+ * The probe of the sandbox runs in the background, and a consult that
+ * starts before the probe answered used to take the contained arguments
+ * without knowing whether the sandbox was needed. The answer is waited
+ * for here: a path of the consult is never chosen because nobody
+ * answered yet.
+ */
+export async function sandboxAvailableAsync(
 	binary: string,
 	env: Record<string, string | undefined> = process.env,
-): boolean | undefined {
-	if (sandboxAnswers.has(binary)) return sandboxAnswers.get(binary);
+): Promise<boolean> {
+	if (sandboxAnswers.has(binary)) return sandboxAnswers.get(binary) === true;
 	if (!sandboxProbes.has(binary)) {
-		const probe = (async () => {
-			try {
-				await execFileAsync(binary, ["sandbox", "--", "/bin/true"], {
-					timeout: PROBE_TIMEOUT_MS,
-					encoding: "utf8",
-					env: env as NodeJS.ProcessEnv,
-				});
-				return true;
-			} catch {
-				return false;
-			}
-		})();
-		sandboxProbes.set(binary, probe);
-		void probe.then((works) => {
-			sandboxAnswers.set(binary, works);
-		});
+		sandboxProbes.set(binary, startSandboxProbe(binary, env));
 	}
-	return undefined;
+	return sandboxProbes.get(binary) === undefined
+		? false
+		: await sandboxProbes.get(binary)!;
+}
+
+/**
+ * The probe of the sandbox, started once per binary.
+ */
+function startSandboxProbe(
+	binary: string,
+	env: Record<string, string | undefined>,
+): Promise<boolean> {
+	const probe = (async () => {
+		try {
+			await execFileAsync(binary, ["sandbox", "--", "/bin/true"], {
+				timeout: PROBE_TIMEOUT_MS,
+				encoding: "utf8",
+				env: env as NodeJS.ProcessEnv,
+			});
+			return true;
+		} catch {
+			return false;
+		}
+	})();
+	void probe.then((works) => {
+		sandboxAnswers.set(binary, works);
+	});
+	return probe;
 }
 
 /**

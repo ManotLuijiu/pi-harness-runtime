@@ -67,6 +67,52 @@ function readCall(path, offset = 1, limit = 50) {
 	return { toolName: "read", input: { path, offset, limit } };
 }
 
+test("partial checkpoints preserve findings and next action across compaction", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir);
+		assert.equal(runtime.recordCheckpoint({
+			findings: [{ statement: "Cause at src/a.ts:12", locations: ["src/a.ts:12"] }],
+			openQuestions: ["Does the boundary case pass?"],
+			nextAction: "Todo 5: patch src/a.ts",
+		}), true);
+		assert.equal(runtime.recordCheckpoint({ nextAction: "Todo 5: run the focused regression" }), true);
+		runtime.saveCheckpoint();
+		const { runtime: restarted } = makeRuntime(dir);
+		assert.match(restarted.continuationAfterCompaction(), /Cause at src\/a.ts:12/);
+		assert.match(restarted.continuationAfterCompaction(), /Todo 5: run the focused regression/);
+		assert.match(restarted.continuationAfterCompaction(), /Does the boundary case pass/);
+		restarted.recordCheckpoint({ openQuestions: [] });
+		assert.doesNotMatch(restarted.continuationAfterCompaction(), /Does the boundary case pass/);
+		assert.match(restarted.continuationAfterCompaction(), /Cause at src\/a.ts:12/);
+		restarted.deactivate();
+		assert.equal(restarted.compactCheckpoint(), null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("context-mode output contributes cost without inventing file coverage", () => {
+	const dir = temporary();
+	try {
+		const { runtime } = makeRuntime(dir, { budget: { tokenWarning: 8000 } });
+		runtime.toolCall("ctx-1", {
+			toolName: "mcp__context_mode__ctx_execute_file",
+			input: { path: "src/a.ts", code: "derive a summary" },
+		});
+		const pending = runtime.toolCallEnd("ctx-1", {
+			toolName: "mcp__context_mode__ctx_execute_file",
+			result: { content: [{ type: "text", text: "x".repeat(32000) }] },
+		});
+		assert.equal(pending.kind, "token-budget");
+		assert.equal(runtime.compactCheckpoint().estimatedTokens, 8000);
+		assert.equal(runtime.compactCheckpoint().readCount, 0);
+		assert.deepEqual(runtime.compactCheckpoint().references, []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("a read is observed and the guard speaks once", () => {
 	const dir = temporary();
 	try {

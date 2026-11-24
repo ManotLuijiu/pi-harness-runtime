@@ -16,6 +16,8 @@ import { classifyProviderFailure } from "../harness/provider-failure.ts";
 import { createProviderRecoveryController } from "../harness/provider-recovery.ts";
 import { ProviderRecoveryRuntime } from "../harness/provider-recovery-runtime.ts";
 import { createPendingActionRegistry } from "../harness/pending-actions.ts";
+import { confirmedQuotaReset } from "../harness/provider-quota-reset.ts";
+import { weeklyQuotaExhausted } from "../harness/weekly-quota-exhaustion.ts";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -121,6 +123,84 @@ function exhaustionAt(clock, offset = 2 * DAY) {
 		source: "scrape",
 	};
 }
+
+function automaticQuotaRuntime(clock, fields) {
+	const row = {
+		provider: "minimax", source: "scrape", synced_at: new Date(clock.now()).toISOString(),
+		h5_used_pct: 21, weekly_used_pct: 25, ...fields,
+	};
+	const scheduled = [];
+	const humanQuestions = [];
+	return {
+		...createRuntime(clock, {
+			automaticWeeklyReset: true,
+			quotaResetBufferMs: 0,
+			weeklyExhaustionEvidence: (failure, provider) => weeklyQuotaExhausted({ failure, provider, mirror: row, now: clock.now() }),
+			quotaResetEvidence: (failure, provider) => confirmedQuotaReset(failure, provider, row, clock.now()),
+			onWeeklyExhaustion: (value) => humanQuestions.push(value),
+			onQuotaResetScheduled: (evidence, dueAt) => scheduled.push({ evidence, dueAt }),
+		}),
+		scheduled, humanQuestions,
+	};
+}
+
+test("captured weekly 0% schedules the reported reset without a human answer or short retry", () => {
+	const clock = createFakeClock();
+	const resetAt = clock.now() + DAY + 28 * MINUTE;
+	const { runtime, actions, dispatched, humanQuestions, scheduled } = automaticQuotaRuntime(clock, {
+		weekly_used_pct: 100, weekly_resets_at_epoch: resetAt,
+	});
+	runtime.noteFailure(classifyProviderFailure('Error: 429 "The Token Plan Usage limit has been reached."'), "weekly-429", { provider: "minimax", boundedEligible: true });
+	runtime.noteSettled();
+	assert.equal(actions.get("provider-recovery")?.dueAt, resetAt);
+	assert.equal(actions.get("provider-blocked"), null);
+	assert.equal(clock.pendingTimers, 1);
+	assert.equal(humanQuestions.length, 0);
+	assert.equal(scheduled.length, 1);
+	clock.advance(DAY + 27 * MINUTE); clock.runDue();
+	assert.deepEqual(dispatched, []);
+	clock.advance(MINUTE); clock.runDue();
+	assert.deepEqual(dispatched, ["provider-recovery"]);
+});
+
+test("captured five-hour 0% counts down exactly to its reset", () => {
+	const clock = createFakeClock();
+	const resetAt = clock.now() + 28 * MINUTE;
+	const { runtime, actions, dispatched } = automaticQuotaRuntime(clock, { h5_used_pct: 100, h5_resets_at_epoch: resetAt });
+	runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "h5", { provider: "minimax", boundedEligible: true });
+	runtime.noteSettled();
+	assert.equal(actions.get("provider-recovery")?.dueAt, resetAt);
+	clock.advance(27 * MINUTE); clock.runDue(); assert.deepEqual(dispatched, []);
+	clock.advance(MINUTE); clock.runDue(); assert.deepEqual(dispatched, ["provider-recovery"]);
+});
+
+test("both exhausted windows wait for the later reset and duplicate errors keep one countdown", () => {
+	const clock = createFakeClock();
+	const resetAt = clock.now() + DAY;
+	const { runtime, actions, scheduled } = automaticQuotaRuntime(clock, {
+		h5_used_pct: 100, h5_resets_at_epoch: resetAt,
+		weekly_used_pct: 100, weekly_resets_at_epoch: clock.now() + 10 * MINUTE,
+	});
+	for (const id of ["first", "second"]) {
+		runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), id, { provider: "minimax", boundedEligible: true });
+		runtime.noteSettled();
+	}
+	assert.equal(actions.get("provider-recovery")?.dueAt, resetAt);
+	assert.equal(clock.pendingTimers, 1);
+	assert.equal(scheduled.length, 1);
+});
+
+test("automatic quota countdown still respects a pause and a pending human question", () => {
+	for (const guard of ["explicitlyPaused", "questionPending"]) {
+		const clock = createFakeClock();
+		const { runtime, session, dispatched } = automaticQuotaRuntime(clock, { h5_used_pct: 100, h5_resets_at_epoch: clock.now() + 5 * MINUTE });
+		runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "quota", { provider: "minimax", boundedEligible: true });
+		runtime.noteSettled();
+		session[guard] = true;
+		clock.advance(5 * MINUTE); clock.runDue();
+		assert.deepEqual(dispatched, []);
+	}
+});
 
 test("an empty weekly allowance blocks the work and waits for the human", () => {
 	const clock = createFakeClock();

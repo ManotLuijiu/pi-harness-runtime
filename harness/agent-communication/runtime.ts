@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { filteredEnv, runCli } from "./cli-runner.ts";
 import { claudeAdapter } from "./claude.ts";
 import { codexAdapter } from "./codex.ts";
-import { resolveBinary, sandboxAvailable } from "./detect.ts";
+import { resolveBinary, sandboxAvailableAsync, unsandboxedAuthorized } from "./detect.ts";
 import { stageWorkspace } from "./staging.ts";
 import type { StagedWorkspace } from "./staging.ts";
 import { changesSince, snapshotWorkspace } from "./workspace-guard.ts";
@@ -157,6 +157,14 @@ export interface ConsultInput {
 	 * copy into the workspace itself.
 	 */
 	keepStaging?: boolean;
+	/**
+	 * May the worker write into the copy?
+	 *
+	 * A consult may not write, and the worker of a consult gets the
+	 * read-only arguments. The write lane is the other way: the human
+	 * named the files, and the worker writes them into the copy.
+	 */
+	mode?: "read" | "write";
 }
 
 /**
@@ -289,38 +297,78 @@ export class AgentCommunicationRuntime {
 	 * The arguments of a consultation.
 	 *
 	 * The strict arguments ask the worker for nothing, and the tools of
-	 * the worker need the sandbox of the operating system. A machine that
-	 * cannot start that sandbox would make the worker blind, so the
-	 * contained arguments are used there and the copy of the workspace is
-	 * the boundary. The harness says so in the record of the job.
+	 * the worker need the sandbox of the operating system. A machine
+	 * without that sandbox has no boundary for the worker: the copy of
+	 * the workspace keeps the work of the project apart, and it does not
+	 * stop a command of the worker that names an absolute path. The
+	 * consult is refused on such a machine, unless the human asked for
+	 * the mode without a sandbox.
 	 *
-	 * The probe of the sandbox runs in the background, so the first
-	 * consultation of a machine uses the contained arguments and the next
-	 * ones the strict ones.
+	 * The probe of the sandbox is waited for: a path of the consult is
+	 * never chosen because nobody answered yet.
 	 */
-	private argvFor(adapter: ConsultAdapter): {
+	private async argvFor(
+		adapter: ConsultAdapter,
+		request: ConsultRequest,
+	): Promise<{
 		argv: readonly string[];
 		note?: string;
-	} {
-		if (!adapter.fallbackArgv) return { argv: adapter.argv };
+		blocked?: string;
+	}> {
+		const strictArgv = adapter.argv;
+		if (request.mode === "write") {
+			return this.writeArgvFor(adapter, strictArgv);
+		}
+		const fallbackArgv = adapter.fallbackArgv;
+		if (!fallbackArgv) return { argv: strictArgv };
 		// The probe measures the machine with the CLI of the vendor, the
 		// one the machine itself has. A stand-in of a test is not asked:
 		// the question is about the machine, not about a program that
 		// pretends to be the worker.
-		const vendorBinary = resolveBinary(adapter.target, process.env);
+		const vendorBinary = resolveBinary(adapter.target, this.envSource);
 		const sandbox = vendorBinary
-			? sandboxAvailable(vendorBinary, process.env)
+			? await sandboxAvailableAsync(vendorBinary, this.envSource)
 			: false;
-		if (sandbox === true) return { argv: adapter.argv };
-		if (sandbox === false) {
+		if (sandbox) return { argv: strictArgv };
+		// The machine has no sandbox for the worker. The contained
+		// arguments keep the restrictions of the strict ones, so the
+		// worker of a consult may not write, but the machine does not
+		// hold the worker either: it reads and runs as the user does.
+		// The human has to ask for that mode.
+		if (!unsandboxedAuthorized(this.envSource)) {
 			return {
-				argv: adapter.fallbackArgv,
-				note: "the sandbox of the machine cannot start; the worker ran with the rights of the user, and the copy of the workspace was the boundary",
+				argv: strictArgv,
+				blocked:
+					"the sandbox of the machine cannot start, so the worker would run with the rights of the user; the mode without a sandbox has to be asked for",
 			};
 		}
 		return {
-			argv: adapter.fallbackArgv,
-			note: "the sandbox of the machine was not measured yet; the copy of the workspace was the boundary",
+			argv: fallbackArgv,
+			note: "the sandbox of the machine cannot start; the worker may not ask for an approval and may not write, but it reads the machine as the user does",
+		};
+	}
+
+	/**
+	 * The arguments of the write lane.
+	 *
+	 * The write lane is a write that the human asked for: the worker
+	 * writes into the copy, and the harness applies the files that the
+	 * human named.
+	 */
+	private writeArgvFor(
+		adapter: ConsultAdapter,
+		strictArgv: readonly string[],
+	): { argv: readonly string[]; note?: string; blocked?: string } {
+		const writeArgv = adapter.writeArgv;
+		if (!writeArgv) {
+			return {
+				argv: strictArgv,
+				blocked: `the worker ${adapter.target} may not write into the copy of the workspace`,
+			};
+		}
+		return {
+			argv: writeArgv,
+			note: "the worker writes into the copy of the workspace; the harness applies the files that the human named",
 		};
 	}
 
@@ -403,6 +451,7 @@ export class AgentCommunicationRuntime {
 			startedAt: this.now(),
 			sender: input.sender,
 			keepStaging: input.keepStaging,
+			mode: input.mode ?? "read",
 		};
 		const abort = new AbortController();
 		const record: JobRecord = {
@@ -544,7 +593,25 @@ export class AgentCommunicationRuntime {
 		const stagedBefore = snapshotWorkspace(staged.path);
 		let run: Awaited<ReturnType<typeof runCli>>;
 		let read: ReturnType<ConsultAdapter["read"]>;
-		const argv = this.argvFor(adapter);
+		const argv = await this.argvFor(adapter, request);
+		if (argv.blocked) {
+			// The worker was never started: the machine has no boundary
+			// for it and the human did not ask for that mode.
+			if (!request.keepStaging) staged.dispose();
+			return this.finish(request, {
+				jobId: request.jobId,
+				correlationId: request.correlationId,
+				target: request.target,
+				workspace: request.workspace,
+				status: "blocked-approval",
+				answer: "",
+				diagnostic: argv.blocked,
+				durationMs: this.now() - request.startedAt,
+				changedFiles: [],
+				// The worker never ran: the job was refused.
+				refused: true,
+			});
+		}
 		try {
 			run = await runCli({
 				binary: adapter.binary,

@@ -25,12 +25,14 @@
  */
 
 import {
+	chmodSync,
 	lstatSync,
 	mkdirSync,
 	readFileSync,
 	realpathSync,
 	renameSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -189,22 +191,341 @@ function writePrompt(request: WriteLaneRequest): string {
 }
 
 /**
- * Write a file into the workspace, atomically.
+ * A file that the lane is going to write.
  *
- * The content is written next to the file and moved over it, so a reader
- * of the workspace never sees half a file.
+ * The lane is a transaction, so everything about a file is known before
+ * the first file is touched: the temporary file holds the new content,
+ * the original is kept for the rollback, and the mode of the file is
+ * remembered.
  */
-function applyFile(workspace: string, path: string, content: string): number {
-	const target = join(workspace, path);
-	// A symlinked target is not written through.
-	if (isLink(target)) {
-		throw new Error(`"${path}" is a symlink`);
+export interface PreparedFile {
+	/** The path of the file, relative to the workspace. */
+	path: string;
+	/** The content of the worker, as bytes. */
+	content: Buffer;
+	/** The temporary file next to the destination. */
+	temporary: string;
+	/** The mode of the destination before the write. */
+	mode: number | undefined;
+	/** The content of the destination before the write. */
+	original: Buffer | undefined;
+	/** Did the destination exist before the write? */
+	existed: boolean;
+}
+
+/**
+ * The locks of the applies.
+ *
+ * Two lanes that write into the same workspace at the same time would
+ * read and write the same files. The lock is per workspace, and the
+ * applies of one process wait for each other. A second process has its
+ * own lock: the check of the conflict of a file is the guard of the
+ * tree, and the copy of the workspace is what the worker sees.
+ */
+const applyLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Do the work with the lock of the workspace.
+ */
+async function withApplyLock<T>(workspace: string, work: () => T): Promise<T> {
+	const key = realPathOf(workspace);
+	const previous = applyLocks.get(key) ?? Promise.resolve();
+	let release = (): void => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const tail = previous.then(() => gate);
+	applyLocks.set(key, tail);
+	await previous;
+	try {
+		return work();
+	} finally {
+		release();
+		if (applyLocks.get(key) === tail) applyLocks.delete(key);
 	}
-	mkdirSync(dirname(target), { recursive: true });
-	const temporary = `${target}.pi-write-${process.pid}`;
-	writeFileSync(temporary, content, "utf8");
-	renameSync(temporary, target);
-	return Buffer.byteLength(content, "utf8");
+}
+
+/**
+ * The result of the check of the destinations.
+ */
+interface PreflightOutcome {
+	ok: boolean;
+	prepared?: PreparedFile[];
+	diagnostic?: string;
+}
+
+/**
+ * Check every destination before the first file is touched.
+ *
+ * A destination that is a link, a directory or something else than a
+ * file is refused: the lane is a transaction, and a destination that
+ * cannot hold a file is known before anything is written.
+ */
+export function preflightFiles(
+	workspace: string,
+	files: { path: string; content: Buffer }[],
+): PreflightOutcome {
+	const prepared: PreparedFile[] = [];
+	for (const file of files) {
+		const target = join(workspace, file.path);
+		if (isLink(target)) {
+			return { ok: false, diagnostic: `"${file.path}" is a link and may not be written` };
+		}
+		let mode: number | undefined;
+		let original: Buffer | undefined;
+		let existed = false;
+		try {
+			const stats = statSync(target);
+			if (!stats.isFile()) {
+				return {
+					ok: false,
+					diagnostic: `"${file.path}" is not a file and may not be written`,
+				};
+			}
+			mode = stats.mode & 0o777;
+			original = readFileSync(target);
+			existed = true;
+		} catch {
+			// The file is not there: the lane writes a new one.
+		}
+		prepared.push({
+			path: file.path,
+			content: file.content,
+			temporary: `${target}.pi-write-${process.pid}-${prepared.length}`,
+			mode,
+			original,
+			existed,
+		});
+	}
+	return { ok: true, prepared };
+}
+
+/**
+ * Write the new content next to every destination.
+ *
+ * Nothing of the workspace is touched yet: the temporaries hold the new
+ * content, and a failure here leaves the workspace as it was.
+ */
+export function prepareFiles(
+	workspace: string,
+	prepared: PreparedFile[],
+): { ok: boolean; diagnostic?: string } {
+	for (const file of prepared) {
+		const target = join(workspace, file.path);
+		try {
+			mkdirSync(dirname(target), { recursive: true });
+			writeFileSync(file.temporary, file.content);
+			// The file keeps the mode it had: a file of the user does not
+			// become readable by everybody because a worker wrote it.
+			if (file.mode !== undefined) chmodSync(file.temporary, file.mode);
+		} catch (error) {
+			discardTemporaries(prepared);
+			return {
+				ok: false,
+				diagnostic: `"${file.path}" could not be prepared: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			};
+		}
+	}
+	return { ok: true };
+}
+
+/**
+ * The temporaries of a preparation, away.
+ */
+function discardTemporaries(prepared: PreparedFile[]): void {
+	for (const file of prepared) {
+		try {
+			rmSync(file.temporary, { force: true });
+		} catch {
+			// A temporary that stays is a file in the workspace with a name
+			// of the harness. The workspace itself is untouched.
+		}
+	}
+}
+
+/**
+ * Put the original of a file back.
+ *
+ * The reason of the failure is returned, so the caller can name the
+ * files that could not be restored.
+ */
+function restoreOriginal(workspace: string, file: PreparedFile): string | undefined {
+	const target = join(workspace, file.path);
+	try {
+		if (!file.existed) {
+			rmSync(target, { force: true });
+			return undefined;
+		}
+		const temporary = `${target}.pi-restore-${process.pid}`;
+		writeFileSync(temporary, file.original ?? Buffer.alloc(0));
+		if (file.mode !== undefined) chmodSync(temporary, file.mode);
+		renameSync(temporary, target);
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+/**
+ * Move every prepared file over its destination.
+ *
+ * The files are moved one after the other, and the original of every one
+ * of them is kept. A failure rolls the files that were already moved
+ * back, and the reason is named when the rollback fails too.
+ */
+export function commitFiles(
+	workspace: string,
+	prepared: PreparedFile[],
+	move: (from: string, to: string) => void = renameSync,
+): { ok: boolean; bytes?: number[]; diagnostic?: string; rolledBack?: boolean } {
+	const moved: PreparedFile[] = [];
+	for (const file of prepared) {
+		const target = join(workspace, file.path);
+		try {
+			move(file.temporary, target);
+			moved.push(file);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			// The files that were moved are put back: the lane is a
+			// transaction, and a half written plan is no plan.
+			const failures: string[] = [];
+			for (let index = moved.length - 1; index >= 0; index -= 1) {
+				const done = moved[index];
+				const failure = restoreOriginal(workspace, done);
+				if (failure) failures.push(`${done.path} (${failure})`);
+			}
+			if (failures.length > 0) {
+				return {
+					ok: false,
+					rolledBack: false,
+					diagnostic: `"${file.path}" was not written (${reason}); the files that were written before it could not be restored: ${failures.join(", ")}`,
+				};
+			}
+			return {
+				ok: false,
+				rolledBack: true,
+				diagnostic: `"${file.path}" was not written (${reason}); the files that were written before it were put back`,
+			};
+		}
+	}
+	return { ok: true, bytes: prepared.map((file) => file.content.byteLength) };
+}
+
+/**
+ * The files of the copy that the lane is going to write.
+ */
+interface PendingFiles {
+	pending: { path: string; content: string }[];
+	/** The reason the write is refused, if it is refused. */
+	conflict?: string;
+}
+
+/**
+ * The files of the copy that the lane is going to write.
+ *
+ * A file that the worker did not write, or that is the same as the file
+ * of the user, is not written. A file that the user edited while the
+ * worker ran refuses the whole write: the lane is a transaction.
+ */
+function collectPending(
+	workspace: string,
+	staged: string,
+	paths: string[],
+	before: Map<string, string | undefined>,
+): PendingFiles {
+	const pending: { path: string; content: string }[] = [];
+	for (const path of paths) {
+		const content = readFileOrUndefined(join(staged, path));
+		if (content === undefined) continue;
+		const current = readFileOrUndefined(join(workspace, path));
+		if (current === content) continue;
+		// The file of the user may not change under the worker: a file
+		// that was edited while the worker runs is not overwritten.
+		if (current !== before.get(path)) {
+			return {
+				pending: [],
+				conflict: `"${path}" changed in the workspace while the worker was running`,
+			};
+		}
+		pending.push({ path, content });
+	}
+	return { pending };
+}
+
+/**
+ * The result of the transaction of the lane.
+ */
+interface ApplyOutcome {
+	ok: boolean;
+	applied?: { path: string; bytes: number }[];
+	status?: "refused" | "failed";
+	diagnostic?: string;
+}
+
+/**
+ * The transaction of the lane.
+ *
+ * Every destination is checked, every new content is written next to its
+ * destination, and only then the files are moved over the workspace. A
+ * failure puts the files that were moved back, and a rollback that
+ * fails is reported as a failure of the lane.
+ */
+async function applyTransaction(
+	workspace: string,
+	pending: { path: string; content: string }[],
+): Promise<ApplyOutcome> {
+	const wanted = pending.map((file) => ({
+		path: file.path,
+		content: Buffer.from(file.content, "utf8"),
+	}));
+	const preflight = preflightFiles(workspace, wanted);
+	const checked = preflight.prepared ?? [];
+	if (!preflight.ok) {
+		return {
+			ok: false,
+			status: "refused",
+			diagnostic: preflight.diagnostic ?? "the destinations were not checked",
+		};
+	}
+	if (checked.length === 0) {
+		// Nothing to write: the worker wrote nothing that was named.
+		return { ok: true, applied: [] };
+	}
+	const committed = await withApplyLock(
+		workspace,
+		(): {
+			ok: boolean;
+			bytes?: number[];
+			diagnostic?: string;
+			rolledBack?: boolean;
+		} => {
+			const preparation = prepareFiles(workspace, checked);
+			if (!preparation.ok) {
+				// Nothing was moved over the workspace: it is as it was.
+				return { ok: false, rolledBack: true, diagnostic: preparation.diagnostic };
+			}
+			return commitFiles(workspace, checked);
+		},
+	);
+	if (!committed.ok) {
+		return {
+			ok: false,
+			// A rollback that failed leaves the workspace in a state that
+			// nobody asked for: the human has to know that.
+			status: committed.rolledBack === false ? "failed" : "refused",
+			diagnostic: committed.diagnostic ?? "the files were not written",
+		};
+	}
+	const bytes = committed.bytes ?? [];
+	return {
+		ok: true,
+		applied: checked.map((file, index) => ({
+			path: file.path,
+			bytes: bytes[index] ?? file.content.byteLength,
+		})),
+	};
 }
 
 /**
@@ -265,6 +586,9 @@ export async function writeThroughWorker(
 		workspace,
 		sender: request.sender,
 		keepStaging: true,
+		// The worker of the write lane writes into the copy: the human
+		// named the files, and the harness applies them.
+		mode: "write",
 		...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
 	});
 	if (started.status === "failed" && started.durationMs === 0) {
@@ -362,61 +686,32 @@ export async function writeThroughWorker(
 		// harness. The check comes first: the lane is a transaction, so a
 		// file that changed in the meantime refuses the whole write and
 		// nothing is written.
-		const pending: { path: string; content: string }[] = [];
-		for (const path of paths) {
-			const content = readFileOrUndefined(join(staged, path));
-			if (content === undefined) continue;
-			const current = readFileOrUndefined(join(workspace, path));
-			if (current === content) continue;
-			// The file of the user may not change under the worker: a file
-			// that was edited while the worker ran is not overwritten.
-			if (current !== before.get(path)) {
-				return {
-					status: "refused",
-					applied: [],
-					touched,
-					answer: result.answer,
-					diagnostic: `"${path}" changed in the workspace while the worker was running`,
-				};
-			}
-			pending.push({ path, content });
+		const collected = collectPending(workspace, staged, paths, before);
+		if (collected.conflict) {
+			return {
+				status: "refused",
+				applied: [],
+				touched,
+				answer: result.answer,
+				diagnostic: collected.conflict,
+			};
 		}
-		// A named path that is a link is refused before the first file is
-		// written: the lane is a transaction, and a link is a file the
-		// harness may not write through.
-		for (const file of pending) {
-			if (isLink(join(workspace, file.path))) {
-				return {
-					status: "refused",
-					applied: [],
-					touched,
-					answer: result.answer,
-					diagnostic: `"${file.path}" is a link and may not be written`,
-				};
-			}
+		const pending = collected.pending;
+		// The lane is a transaction: every destination is checked, every
+		// new content is written next to its destination, and only then
+		// the files are moved over the workspace. A failure puts the
+		// files that were moved back.
+		const outcome = await applyTransaction(workspace, pending);
+		if (!outcome.ok) {
+			return {
+				status: outcome.status ?? "refused",
+				applied: [],
+				touched,
+				answer: result.answer,
+				diagnostic: outcome.diagnostic,
+			};
 		}
-		const applied: { path: string; bytes: number }[] = [];
-		for (const file of pending) {
-			try {
-				applied.push({
-					path: file.path,
-					bytes: applyFile(workspace, file.path, file.content),
-				});
-			} catch (error) {
-				// The file is a symlink, or it cannot be written. Nothing is
-				// applied then: the files that were applied before stay,
-				// and the reason is named.
-				return {
-					status: "refused",
-					applied,
-					touched,
-					answer: result.answer,
-					diagnostic: `"${file.path}" was not written: ${
-						error instanceof Error ? error.message : String(error)
-					}`,
-				};
-			}
-		}
+		const applied = outcome.applied ?? [];
 		if (applied.length === 0) {
 			return {
 				status: "nothing",

@@ -75,15 +75,71 @@ export const CODEX_ARGV = [
  * The tools of the worker need the sandbox of the operating system, and
  * a container does not always give the rights that the sandbox needs. On
  * such a machine the strict arguments make the worker blind: it cannot
- * read anything. The contained arguments let the worker work, and the
- * copy of the workspace is then the boundary. The harness measures the
- * tree itself, so a change is named and not hidden.
+ * read anything. The contained arguments let the worker work.
+ *
+ * The contained arguments keep the restrictions of the strict ones. The
+ * review of the implementation found the opposite: the fallback left the
+ * approval policy and the reviewer of the user out, so the automatic
+ * reviewer of the user answered for the worker and a write was approved
+ * that the read-only sandbox had refused. No path of the consult may
+ * weaken the approvals: a path that cannot hold them is a path that is
+ * refused.
+ *
+ * The copy of the workspace is not a boundary of the machine. It keeps
+ * the work of the project out of the reach of the worker, and it does
+ * not stop a command of the worker that names an absolute path. The
+ * harness measures the tree itself, so a change is named and not hidden,
+ * and the description of the job says what really holds.
  */
 export const CODEX_ARGV_CONTAINED = [
 	"exec",
 	"--sandbox",
 	"read-only",
 	"--skip-git-repo-check",
+	// The worker may not ask for anything, on this path as on the strict
+	// one: the approval policy "never" and the reviewer "user" mean that
+	// nobody answers for the worker and no write is approved.
+	"-c",
+	'approval_policy="never"',
+	"-c",
+	'approvals_reviewer="user"',
+	// The hooks of the user do not run for the worker.
+	"-c",
+	"features.hooks=false",
+	// The MCP servers of the worker are off: the worker may not call the
+	// harness again.
+	"-c",
+	"mcp_servers={}",
+	"--json",
+	"-",
+] as const;
+
+/**
+ * The arguments of the write lane of Codex.
+ *
+ * The write lane is a write that the human asked for: the human named
+ * the files, and the harness applies them. The worker needs to write
+ * into the copy of the workspace, so the sandbox of the worker is
+ * `workspace-write`.
+ *
+ * The approvals of the write lane are the automatic ones, because there
+ * is no human at the keyboard of the worker: the model asks, and the
+ * automatic reviewer answers. The scope of that write is the copy of the
+ * workspace and the files that the human named: the harness checks the
+ * files that the worker touched and refuses the lane when the worker
+ * touched another one.
+ */
+export const CODEX_ARGV_WRITE = [
+	"exec",
+	"--sandbox",
+	"workspace-write",
+	"--skip-git-repo-check",
+	// The model asks and the automatic reviewer answers: there is no
+	// human at the keyboard of the worker.
+	"-c",
+	'approval_policy="on-request"',
+	"-c",
+	'approvals_reviewer="auto_review"',
 	// The hooks of the user do not run for the worker.
 	"-c",
 	"features.hooks=false",
@@ -182,6 +238,7 @@ export function codexAdapter(env: Record<string, string>): ConsultAdapter {
 		binary: CODEX_BINARY,
 		argv: CODEX_ARGV,
 		fallbackArgv: CODEX_ARGV_CONTAINED,
+		writeArgv: CODEX_ARGV_WRITE,
 		env,
 		read: readCodexAnswer,
 	};

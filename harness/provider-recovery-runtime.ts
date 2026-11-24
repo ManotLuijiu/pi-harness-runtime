@@ -163,6 +163,12 @@ export interface ProviderRecoveryRuntimeOptions {
 	resetEvidence?: (failure: ProviderFailure) => RecoveryResetEvidence | undefined;
 	/** Fresh evidence that quota is fully consumed, including for generic 2067 errors. */
 	quotaResetEvidence?: (failure: ProviderFailure, provider: string) => RecoveryResetEvidence | undefined;
+	/** Count down automatically when fresh weekly exhaustion has a usable reset. */
+	automaticWeeklyReset?: boolean;
+	/** Additional reset delay; omit to retain the legacy ten-minute buffer. */
+	quotaResetBufferMs?: number;
+	/** Informational notification after a distinct quota countdown is scheduled. */
+	onQuotaResetScheduled?: (evidence: RecoveryResetEvidence, dueAt: number) => void;
 	/**
 	 * The evidence of an empty weekly allowance.
 	 *
@@ -465,6 +471,12 @@ export class ProviderRecoveryRuntime {
 			provider,
 		);
 		if (!exhaustion) return false;
+		// The caller can authorize automatic reset waits. Use the combined
+		// selector so another exhausted window with a later reset still wins.
+		if (this.options.automaticWeeklyReset && this.scheduleQuotaReset(candidate, sessionId)) {
+			this.cancelOverloadResume();
+			return true;
+		}
 		// Every pending resume of the provider dies: a resume that runs
 		// while the weekly allowance is empty continues work that the
 		// account cannot pay for.
@@ -553,8 +565,14 @@ export class ProviderRecoveryRuntime {
 			!Number.isFinite(evidence.resetAt) || evidence.resetAt <= now ||
 			!Number.isFinite(evidence.observedAt) || evidence.observedAt > now ||
 			now - evidence.observedAt > MAX_RESET_EVIDENCE_AGE_MS) return false;
-		const dueAt = Math.max(evidence.resetAt + QUOTA_RESET_BUFFER_MS, now + (failure.retryAfterMs ?? 0));
+		const configuredBuffer = this.options.quotaResetBufferMs;
+		const buffer = typeof configuredBuffer === "number" && Number.isFinite(configuredBuffer)
+			? Math.max(0, configuredBuffer) : QUOTA_RESET_BUFFER_MS;
+		const dueAt = Math.max(evidence.resetAt + buffer, now + (failure.retryAfterMs ?? 0));
+		const existing = this.options.actions.get(this.options.recoveryActionId);
+		if (this.recoveryTimer !== null && existing?.dueAt === dueAt && existing.provider === provider) return true;
 		this.cancelRecoveryAttempt();
+		this.cancelOverloadResume();
 		this.options.controller.invalidatePending({ sessionId });
 		this.options.actions.remove(this.options.blockedActionId);
 		this.options.actions.register({
@@ -566,7 +584,9 @@ export class ProviderRecoveryRuntime {
 			dueAt,
 			provider,
 			...(failure.code ? { code: failure.code } : {}),
-			reason: `${evidence.window} quota exhausted; waiting for reset + 10m`,
+			reason: buffer === 0
+				? `${evidence.window} quota exhausted; waiting for reset`
+				: `${evidence.window} quota exhausted; waiting for reset + ${Math.round(buffer / 60_000)}m`,
 		});
 		this.log(`Provider quota reset wait until ${new Date(dueAt).toISOString()} (${evidence.window})`);
 		const arm = () => {
@@ -585,6 +605,7 @@ export class ProviderRecoveryRuntime {
 			}, Math.min(2_147_483_647, Math.max(0, dueAt - this.now())));
 		};
 		arm();
+		this.options.onQuotaResetScheduled?.(evidence, dueAt);
 		return true;
 	}
 

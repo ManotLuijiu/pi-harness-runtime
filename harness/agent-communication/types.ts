@@ -126,6 +126,14 @@ export interface ConsultRequest {
 	 * copy into the workspace itself.
 	 */
 	keepStaging?: boolean;
+	/**
+	 * May the worker write into the copy?
+	 *
+	 * A consult may not write, and the worker of a consult gets the
+	 * read-only arguments. The write lane is the other way: the human
+	 * named the files, and the worker writes them into the copy.
+	 */
+	mode?: "read" | "write";
 }
 
 /**
@@ -245,10 +253,22 @@ export interface ConsultAdapter {
 	 * The strict arguments ask the worker for nothing, and the tools of
 	 * the worker need the sandbox of the operating system. A machine that
 	 * cannot start that sandbox would make the worker blind with the
-	 * strict arguments; the contained arguments let the worker work, and
-	 * the copy of the workspace is the boundary.
+	 * strict arguments; the contained arguments let the worker work.
+	 *
+	 * The contained arguments keep the restrictions of the strict ones.
+	 * A path of the consult that weakens the approvals is a path that
+	 * lets the worker write, and a consult may not write.
 	 */
 	readonly fallbackArgv?: readonly string[];
+	/**
+	 * The arguments of a consultation that may write into the copy.
+	 *
+	 * The write lane is a write that the human asked for, so the worker
+	 * needs to write into the copy of the workspace. The scope of the
+	 * write is the copy and the files that the human named: the harness
+	 * checks the files that the worker touched.
+	 */
+	readonly writeArgv?: readonly string[];
 	/**
 	 * The environment of the worker.
 	 *

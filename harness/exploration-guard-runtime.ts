@@ -157,7 +157,13 @@ export class ExplorationGuardRuntime {
 
 		let result: { shouldSpeak: boolean; intervention: Intervention; state: ExplorationState };
 		try {
-			result = this.tracker.observe(this.key(), call, end);
+			// Context-mode execution may return source-derived output, but its
+			// code is not evidence that a particular file/range was read. Count
+			// the returned bytes without inventing coverage for those tools.
+			const observationCall = /(?:^|__)ctx_(?:batch_execute|execute(?:_file)?|search)$/.test(call.toolName)
+				? { toolName: "bash", input: { command: "" } }
+				: call;
+			result = this.tracker.observe(this.key(), observationCall, end);
 		} catch {
 			// The state could not be read or written: the guard stays quiet
 			// instead of guessing what was read.
@@ -308,6 +314,7 @@ export class ExplorationGuardRuntime {
 	 * The compact checkpoint of the request, for a durable copy.
 	 */
 	compactCheckpoint(): ReturnType<typeof toCompactCheckpoint> | null {
+		if (this.inactive) return null;
 		try {
 			return toCompactCheckpoint(this.tracker.state(this.key()), this.now());
 		} catch {
@@ -339,7 +346,17 @@ export class ExplorationGuardRuntime {
 	recordCheckpoint(input: CheckpointInput): boolean {
 		if (this.inactive) return false;
 		try {
-			this.tracker.recordCheckpoint(this.key(), input);
+			// A partial checkpoint must not erase earlier findings merely
+			// because the agent only supplied the next chunk's action. An
+			// explicit empty array still clears a resolved set of questions.
+			const previous = this.tracker.state(this.key()).checkpoint;
+			this.tracker.recordCheckpoint(this.key(), {
+				...input,
+				findings: input.findings ?? previous.findings,
+				hypotheses: input.hypotheses ?? previous.hypotheses,
+				openQuestions: input.openQuestions ?? previous.openQuestions,
+				nextAction: input.nextAction ?? previous.nextAction,
+			});
 			return true;
 		} catch {
 			// The checkpoint could not be written: the agent continues

@@ -149,6 +149,7 @@ import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts"
 import { confirmedQuotaReset } from "./harness/provider-quota-reset.ts";
 import { mergeMirrorRecord } from "./harness/mirror-record-merge.ts";
 import { onOptionalEvent } from "./harness/optional-event.ts";
+import { registerExplorationContext } from "./harness/exploration-context.ts";
 import {
 	providerDisplayName,
 	weeklyExhaustionMessage,
@@ -6453,12 +6454,12 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				parsed.action === PING_PONG_ACTIONS.CODE_AGAIN ||
 				parsed.action === PING_PONG_ACTIONS.DONE) {
 				// Map action string to internal action type
-				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+				const actionMap = {
 					[PING_PONG_ACTIONS.CODE]: "code",
 					[PING_PONG_ACTIONS.REVIEW]: "review",
 					[PING_PONG_ACTIONS.CODE_AGAIN]: "code_again",
 					[PING_PONG_ACTIONS.DONE]: "done",
-				};
+				} satisfies Record<string, "code" | "review" | "code_again" | "done">;
 				const internalAction = actionMap[parsed.action];
 				
 				const result = await advanceCodexTask(parsed.targetId, internalAction, pi);
@@ -6573,7 +6574,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					const isEnabled = action === "on";
 					const targetChannels = channel === "all" ? ["telegram", "line"] : [channel];
 					for (const ch of targetChannels) {
-						(center as any).setChannelEnabled?.(ch, isEnabled);
+						center.setChannelEnabled?.(ch, isEnabled);
 						// The decision must survive a restart.
 						persistChannelDecision(ch, isEnabled);
 						logToFile("[NotifySettings]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
@@ -6585,8 +6586,8 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				}
 
 				// Show current status
-				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
-				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
+				const telegramStatus = center.isChannelEnabled?.("telegram") ? "ON" : "OFF";
+				const lineStatus = center.isChannelEnabled?.("line") ? "ON" : "OFF";
 				logToFile("[NotifySettings]", `Current: Telegram=${telegramStatus}, LINE=${lineStatus}`);
 				logToFile("[NotifySettings]", `Commands: /notify-settings telegram on|off, /notify-settings line on|off, /notify-settings all on|off`);
 				return;
@@ -6598,11 +6599,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				const [, sessionId, action] = taskCommandMatch;
 				
 				// Map action string to internal type
-				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+				const actionMap = {
 					code: "code",
 					review: "review",
 					done: "done",
-				};
+				} satisfies Record<string, "code" | "review" | "code_again" | "done">;
 				const internalAction = actionMap[action.toLowerCase()];
 				if (!internalAction) {
 					logToFile("[codex-trigger]", `Unknown /task action: ${action}`);
@@ -6989,6 +6990,126 @@ function hasAnyRelayKeyFile(): boolean {
 }
 
 /**
+ * Handle one callback that arrived over the relay stream.
+ *
+ * The handler lives outside of the initializer: the initializer opens a
+ * connection, and the decisions that a callback carries are a different
+ * concern. One resolver answers every channel, so a LINE postback and a
+ * Telegram button click reach the same decision.
+ */
+async function handleRelayCallback(callback: CallbackPayload): Promise<void> {
+	logToFile(
+		"[RelayStream]",
+		callback.type === "telegram_message"
+			? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
+			: `Callback: ${callback.action} ${callback.targetId}`,
+	);
+
+	// A LINE postback is the same decision as a Telegram button
+	// click: one resolver, the same canonical request ID.
+	if (callback.type === "line_callback") {
+		if (
+			callback.action === "biome" ||
+			callback.action.startsWith("biome_")
+		) {
+			// The tooling proposal is a decision of its own: it never
+			// resolves a pending question and it never pauses the
+			// work. The postback data may arrive split or as one
+			// string - both carry the choice and the request ID.
+			const raw = callback.action.startsWith("biome_")
+				? callback.action.slice("biome_".length)
+				: callback.targetId;
+			await resolveToolingPreference(raw, "line", _extensionApi);
+		} else if (
+			callback.action === "weekcountdown" ||
+			callback.action === "weekmanual" ||
+			callback.action.startsWith("weekcountdown_") ||
+			callback.action.startsWith("weekmanual_")
+		) {
+			// The decision about the weekly allowance is the same
+			// decision as in Telegram: one resolver, the first
+			// answer wins. The postback data arrives split into
+			// the action and the request ID, and it may arrive as
+			// one string.
+			const separator = callback.action.indexOf("_");
+			const raw =
+				separator === -1
+					? callback.targetId
+					: callback.action.slice(separator + 1);
+			const decision: WeeklyDecision =
+				callback.action.startsWith("weekcountdown")
+					? "countdown"
+					: "manual";
+			await resolveWeeklyDecision(raw, decision, "line");
+		} else if (
+			callback.action === "planpick" ||
+			callback.action.startsWith("planpick_")
+		) {
+			// The choice of the recipient of a plan is the same
+			// choice as in Telegram: one resolver, the first
+			// answer wins. The postback data arrives split into
+			// the action and the token of the candidate, and it may
+			// arrive as one string.
+			const separator = callback.action.indexOf("_");
+			const raw =
+				separator === -1
+					? callback.targetId
+					: callback.action.slice(separator + 1);
+			await resolvePlanRecipient(raw, "line");
+		} else {
+			applyChannelApproval(callback.action, callback.targetId, "line");
+		}
+	}
+
+	// Forward Telegram callbacks to the adapter
+	if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
+		// The mapping is a pure function (harness/telegram-update.ts) so
+		// that it can be tested without the harness.
+		const update = buildTelegramCallbackUpdate({
+			id: callback.id,
+			action: callback.action,
+			targetId: callback.targetId,
+			callbackQueryId: callback.callbackQueryId,
+			userId: callback.userId,
+			username: callback.username,
+			messageId: callback.messageId,
+			chatId: callback.chatId,
+			isBot: callback.isBot,
+		});
+		if (update) {
+			try {
+				await _relayTelegramAdapter.handleWebhookUpdate(update);
+				logToFile("[RelayStream]", "Callback processed by Telegram adapter");
+			} catch (err) {
+				logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+			}
+		}
+	}
+
+	// Forward a Telegram TEXT message (the user typed it) to the adapter
+	if (callback.type === "telegram_message" && _relayTelegramAdapter) {
+		// The mapping is a pure function (harness/telegram-update.ts) so
+		// that it can be tested without the harness.
+		const update = buildTelegramMessageUpdate({
+			userId: callback.userId,
+			username: callback.username,
+			messageId: callback.messageId,
+			chatId: callback.chatId,
+			text: callback.text,
+			isBot: callback.isBot,
+		});
+		if (update) {
+			try {
+				await _relayTelegramAdapter.handleWebhookUpdate(update);
+				logToFile("[RelayStream]", "Message processed by Telegram adapter");
+			} catch (err) {
+				logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+			}
+		}
+	}
+}
+
+/**
  * Initialize relay streaming for real-time callback delivery.
  * Connects to the relay WebSocket server and forwards Telegram callbacks
  * to the adapter for proper greeting verification and handling.
@@ -7041,115 +7162,7 @@ async function initRelayStream(): Promise<void> {
 				logToFile("[RelayStream]", "Synchronized - receiving live events");
 			},
 			onCallback: async (callback: CallbackPayload) => {
-				logToFile(
-					"[RelayStream]",
-					callback.type === "telegram_message"
-						? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
-						: `Callback: ${callback.action} ${callback.targetId}`,
-				);
-
-				// A LINE postback is the same decision as a Telegram button
-				// click: one resolver, the same canonical request ID.
-				if (callback.type === "line_callback") {
-					if (
-						callback.action === "biome" ||
-						callback.action.startsWith("biome_")
-					) {
-						// The tooling proposal is a decision of its own: it never
-						// resolves a pending question and it never pauses the
-						// work. The postback data may arrive split or as one
-						// string - both carry the choice and the request ID.
-						const raw = callback.action.startsWith("biome_")
-							? callback.action.slice("biome_".length)
-							: callback.targetId;
-						await resolveToolingPreference(raw, "line", _extensionApi);
-					} else if (
-						callback.action === "weekcountdown" ||
-						callback.action === "weekmanual" ||
-						callback.action.startsWith("weekcountdown_") ||
-						callback.action.startsWith("weekmanual_")
-					) {
-						// The decision about the weekly allowance is the same
-						// decision as in Telegram: one resolver, the first
-						// answer wins. The postback data arrives split into
-						// the action and the request ID, and it may arrive as
-						// one string.
-						const separator = callback.action.indexOf("_");
-						const raw =
-							separator === -1
-								? callback.targetId
-								: callback.action.slice(separator + 1);
-						const decision: WeeklyDecision =
-							callback.action.startsWith("weekcountdown")
-								? "countdown"
-								: "manual";
-						await resolveWeeklyDecision(raw, decision, "line");
-					} else if (
-						callback.action === "planpick" ||
-						callback.action.startsWith("planpick_")
-					) {
-						// The choice of the recipient of a plan is the same
-						// choice as in Telegram: one resolver, the first
-						// answer wins. The postback data arrives split into the
-						// action and the token of the candidate, and it may
-						// arrive as one string.
-						const separator = callback.action.indexOf("_");
-						const raw =
-							separator === -1
-								? callback.targetId
-								: callback.action.slice(separator + 1);
-						await resolvePlanRecipient(raw, "line");
-					} else {
-						applyChannelApproval(callback.action, callback.targetId, "line");
-					}
-				}
-
-				// Forward Telegram callbacks to the adapter
-				if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
-					// The mapping is a pure function (harness/telegram-update.ts) so
-					// that it can be tested without the harness.
-					const update = buildTelegramCallbackUpdate({
-						id: callback.id,
-						action: callback.action,
-						targetId: callback.targetId,
-						callbackQueryId: callback.callbackQueryId,
-						userId: callback.userId,
-						username: callback.username,
-						messageId: callback.messageId,
-						chatId: callback.chatId,
-						isBot: callback.isBot,
-					});
-					if (update) {
-						try {
-							await _relayTelegramAdapter.handleWebhookUpdate(update);
-							logToFile("[RelayStream]", "Callback processed by Telegram adapter");
-						} catch (err) {
-							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
-						}
-					}
-				}
-
-				// Forward a Telegram TEXT message (the user typed it) to the adapter
-				if (callback.type === "telegram_message" && _relayTelegramAdapter) {
-					// The mapping is a pure function (harness/telegram-update.ts) so
-					// that it can be tested without the harness.
-					const update = buildTelegramMessageUpdate({
-						userId: callback.userId,
-						username: callback.username,
-						messageId: callback.messageId,
-						chatId: callback.chatId,
-						text: callback.text,
-						isBot: callback.isBot,
-					});
-					if (update) {
-						try {
-							await _relayTelegramAdapter.handleWebhookUpdate(update);
-							logToFile("[RelayStream]", "Message processed by Telegram adapter");
-						} catch (err) {
-							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
-						}
-					}
-				}
+				await handleRelayCallback(callback);
 			},
 			onError: (error) => {
 				logToFile("[RelayStream]", `Error: ${oneLineError(error)}`);
@@ -8517,6 +8530,10 @@ type NcCenter = {
 	notifyWithApproval: Function;
 	notify: Function;
 	notifyWithButtons?: Function;
+	/** Is the channel turned on? */
+	isChannelEnabled?: (channelId: string) => boolean;
+	/** Turn the channel on or off. */
+	setChannelEnabled?: (channelId: string, enabled: boolean) => void;
 };
 
 /**
@@ -9105,6 +9122,15 @@ export default async function (pi: ExtensionAPI) {
 	initConsoleGuard(pi);
 
 	// --- exploration-checkpoint: let the agent record what it found ---
+	registerExplorationContext(pi, {
+		current: () => explorationGuard,
+		workState: currentRequestWorkState,
+		paused: () =>
+			(sharedState.todoContinuationController as {
+				isExplicitlyPaused?: () => boolean;
+			} | null)?.isExplicitlyPaused?.() === true ||
+			isQuestionOpen(sharedState.pqController?.getCurrentQuestion?.()),
+	});
 	registerTaskMemoryReminders(pi, {
 		requestGeneration: () => String(requestScopeTracker.generation),
 		recoveryText: () => explorationGuard?.continuationAfterCompaction(),
@@ -10123,30 +10149,41 @@ issue is not authorized work of the current request).
 		}),
 		resetEvidence: (failure) => applicableResetEvidence(failure),
 		quotaResetEvidence: (failure, provider) => {
-			// A capture that failed means that the row of the mirror is the
-			// old one, and an old row cannot prove a deadline.
-			if (quotaCaptureController.failed(provider)) return undefined;
+			// A failed refresh does not invalidate a still-fresh observation.
+			// The selector validates age, provider and reset on the row itself.
+			const mirror = mirrorStore.readProvider(provider.toLowerCase());
+			if (!quotaCaptureController.allowsEvidence(provider, mirror?.synced_at)) return undefined;
 			return confirmedQuotaReset(
 				failure,
 				provider,
-				mirrorStore.readProvider(provider.toLowerCase()),
+				mirror,
 				Date.now(),
 			);
 		},
 		weeklyExhaustionEvidence: (failure, provider) => {
-			// The same rule as for the deadline: a capture that failed
-			// leaves the old row of the mirror, and an old row cannot prove
-			// an empty week.
-			if (quotaCaptureController.failed(provider)) return undefined;
+			// Reuse valid recent evidence even if this refresh failed; stale
+			// or incomplete rows are rejected by the selector, never guessed.
+			const mirror = mirrorStore.readProvider(provider.toLowerCase());
+			if (!quotaCaptureController.allowsEvidence(provider, mirror?.synced_at)) return undefined;
 			return weeklyQuotaExhausted({
 				failure,
 				provider,
-				mirror: mirrorStore.readProvider(provider.toLowerCase()),
+				mirror,
 				now: Date.now(),
 			});
 		},
 		onWeeklyExhaustion: (exhaustion) => {
 			void notifyWeeklyExhaustion(exhaustion);
+		},
+		// Exhausted five-hour/weekly windows wait for the captured reset,
+		// rather than spending the short retry budget or asking again.
+		automaticWeeklyReset: true,
+		quotaResetBufferMs: 0,
+		onQuotaResetScheduled: (evidence, dueAt) => {
+			void nc("Info", {
+				jobId: `quota-reset:${evidence.provider}:${evidence.window}:${dueAt}`,
+				requirement: `${providerDisplayName(evidence.provider)} ${evidence.window === "h5" ? "5h" : evidence.window} quota reset countdown started. Work waits until ${new Date(dueAt).toISOString()}.`,
+			});
 		},
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
 		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,

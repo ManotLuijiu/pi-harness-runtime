@@ -21,12 +21,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { runCli, filteredEnv } from "../harness/agent-communication/cli-runner.ts";
-import { CODEX_ARGV, readCodexAnswer } from "../harness/agent-communication/codex.ts";
+import { CODEX_ARGV, CODEX_ARGV_CONTAINED, readCodexAnswer } from "../harness/agent-communication/codex.ts";
 import { CLAUDE_ARGV } from "../harness/agent-communication/claude.ts";
 import { readClaudeAnswer } from "../harness/agent-communication/claude.ts";
 import { classifyWorkerFailure } from "../harness/agent-communication/diagnose.ts";
@@ -48,6 +48,11 @@ import {
 } from "../harness/agent-communication/workspace-guard.ts";
 import { canonicalWorkspace, registerAgentCommunication } from "../harness/agent-communication/registration.ts";
 import { writeThroughWorker } from "../harness/agent-communication/write-lane.ts";
+import {
+	commitFiles,
+	prepareFiles,
+	preflightFiles,
+} from "../harness/agent-communication/write-lane.ts";
 import { registerAgentCommunicationTools } from "../harness/agent-communication/tools.ts";
 
 /**
@@ -65,11 +70,33 @@ function temporary() {
  * A stand-in of a vendored CLI.
  *
  * The program is what the worker would do: it writes to stdout, to
- * stderr, or it waits for ever.
+ * stderr, or it waits for ever. It also answers the probe of the
+ * sandbox, so the stand-in stands for a machine whose sandbox starts.
  */
 function standIn(dir, name, body) {
 	const path = join(dir, name);
-	writeFileSync(path, `#!/usr/bin/env node\n${body}\n`, "utf8");
+	writeFileSync(
+		path,
+		`#!/usr/bin/env node\nif (process.argv[2] === "sandbox") { process.exit(0); }\n${body}\n`,
+		"utf8",
+	);
+	chmodSync(path, 0o755);
+	return path;
+}
+
+/**
+ * A stand-in of a vendored CLI whose sandbox cannot start.
+ *
+ * The probe of the sandbox fails, so the machine has no boundary for the
+ * worker of the vendor.
+ */
+function standInWithoutSandbox(dir, name, body) {
+	const path = join(dir, name);
+	writeFileSync(
+		path,
+		`#!/usr/bin/env node\nif (process.argv[2] === "sandbox") { process.exit(1); }\n${body}\n`,
+		"utf8",
+	);
 	chmodSync(path, 0o755);
 	return path;
 }
@@ -879,6 +906,101 @@ test("the consult of Claude offers the read tools and nothing else", () => {
 	assert.ok(!argv.includes("acceptEdits"));
 });
 
+/**
+ * The contained arguments of the consult.
+ *
+ * The review of the implementation found that the path without a sandbox
+ * left the approval policy and the reviewer of the user out. The worker
+ * of another vendor then had the answer of the user, and a write was
+ * approved that the read-only sandbox had refused. No path of the
+ * consult may weaken the approvals.
+ */
+test("the contained arguments of Codex keep the restrictions of the strict ones", () => {
+	const argv = CODEX_ARGV_CONTAINED.join(" ");
+	assert.match(argv, /--sandbox read-only/);
+	assert.match(argv, /approval_policy="never"/);
+	assert.match(argv, /approvals_reviewer="user"/);
+	assert.match(argv, /features\.hooks=false/);
+	assert.match(argv, /mcp_servers=\{\}/);
+	assert.ok(!argv.includes("workspace-write"));
+	assert.ok(!argv.includes("auto_review"));
+});
+
+/**
+ * A machine without a sandbox has no boundary for the worker.
+ *
+ * The copy of the workspace keeps the work of the project apart, and it
+ * does not stop a command that names an absolute path. The consult is
+ * refused on such a machine, unless the human asked for the mode without
+ * a sandbox.
+ */
+test("a machine without a sandbox refuses the consult", async () => {
+	const dir = temporary();
+	const { runtime, cleanup } = makeRuntime({ env: pathWith(dir.dir) });
+	try {
+		standInWithoutSandbox(
+			dir.dir,
+			"codex",
+			`let data = "";
+process.stdin.on("data", (chunk) => { data += chunk; });
+process.stdin.on("end", () => {
+	process.stdout.write(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "the answer" } }));
+});`,
+		);
+		const started = runtime.start({
+			target: "codex",
+			prompt: "the question",
+			workspace: dir.dir,
+			sender: SENDER,
+		});
+		const result = await runtime.wait(started.jobId, 20_000);
+		assert.ok(result);
+		assert.equal(result.status, "blocked-approval");
+		assert.match(result.diagnostic, /sandbox of the machine cannot start/);
+		assert.equal(result.answer, "");
+	} finally {
+		await runtime.stop();
+		cleanup();
+		dir.cleanup();
+	}
+});
+
+test("the mode without a sandbox runs the worker when the human asks for it", async () => {
+	const dir = temporary();
+	const { runtime, cleanup } = makeRuntime({
+		env: {
+			...pathWith(dir.dir),
+			PI_AGENT_COMMUNICATION_UNSANDBOXED: "1",
+		},
+	});
+	try {
+		standInWithoutSandbox(
+			dir.dir,
+			"codex",
+			`let data = "";
+process.stdin.on("data", (chunk) => { data += chunk; });
+process.stdin.on("end", () => {
+	process.stdout.write(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "the answer" } }));
+});`,
+		);
+		const started = runtime.start({
+			target: "codex",
+			prompt: "the question",
+			workspace: dir.dir,
+			sender: SENDER,
+		});
+		const result = await runtime.wait(started.jobId, 20_000);
+		assert.ok(result);
+		assert.equal(result.status, "completed");
+		assert.equal(result.answer, "the answer");
+		// The description of the job says what really holds.
+		assert.match(result.diagnostic, /sandbox of the machine cannot start/);
+	} finally {
+		await runtime.stop();
+		cleanup();
+		dir.cleanup();
+	}
+});
 test("the guard of the workspace names what changed in the tree", () => {
 	const dir = temporary();
 	try {
@@ -1000,6 +1122,105 @@ test("the write lane applies the file that the human named", async () => {
 		);
 		await runtime.stop();
 		cleanup();
+	} finally {
+		dir.cleanup();
+	}
+});
+
+test("the write lane keeps the mode of the file it replaces", async () => {
+	const dir = temporary();
+	try {
+		const workspace = join(dir.dir, "workspace");
+		mkdirSync(join(workspace, "wiki"), { recursive: true });
+		writeFileSync(join(workspace, "wiki/plan.md"), "# the old plan\n", "utf8");
+		chmodSync(join(workspace, "wiki/plan.md"), 0o640);
+		writingWorker(dir.dir, [
+			{ path: "wiki/plan.md", content: "# the new plan\n" },
+		]);
+		const { runtime, cleanup } = makeRuntime({ env: pathWith(dir.dir) });
+		const outcome = await writeThroughWorker(runtime, {
+			workspace,
+			target: "codex",
+			paths: ["wiki/plan.md"],
+			prompt: "write the plan",
+			sender: SENDER,
+		});
+		assert.equal(outcome.status, "written");
+		assert.equal(
+			readFileSync(join(workspace, "wiki/plan.md"), "utf8"),
+			"# the new plan\n",
+		);
+		// The file of the user keeps its mode: a worker does not make a
+		// file readable by everybody.
+		assert.equal(statSync(join(workspace, "wiki/plan.md")).mode & 0o777, 0o640);
+		await runtime.stop();
+		cleanup();
+	} finally {
+		dir.cleanup();
+	}
+});
+
+test("the write lane refuses the whole write when a destination is a directory", async () => {
+	const dir = temporary();
+	try {
+		const workspace = join(dir.dir, "workspace");
+		mkdirSync(join(workspace, "wiki", "notes.md"), { recursive: true });
+		// The worker turns the directory of the copy into a file.
+		standIn(
+			dir.dir,
+			"codex",
+			`const fs = require("fs");
+fs.rmSync("wiki/notes.md", { recursive: true, force: true });
+fs.writeFileSync("wiki/notes.md", "the note\\n");
+fs.writeFileSync("wiki/plan.md", "# the plan\\n");
+process.stdout.write(JSON.stringify({ item: { type: "agent_message", text: "written" } }) + "\\n");`,
+		);
+		const { runtime, cleanup } = makeRuntime({ env: pathWith(dir.dir) });
+		const outcome = await writeThroughWorker(runtime, {
+			workspace,
+			target: "codex",
+			paths: ["wiki/notes.md", "wiki/plan.md"],
+			prompt: "write the plan",
+			sender: SENDER,
+		});
+		assert.equal(outcome.status, "refused");
+		assert.match(outcome.diagnostic ?? "", /is not a file/);
+		// Nothing was applied: the other named file stayed unwritten.
+		assert.equal(existsSync(join(workspace, "wiki/plan.md")), false);
+		await runtime.stop();
+		cleanup();
+	} finally {
+		dir.cleanup();
+	}
+});
+
+test("a file that cannot be moved over its place is put back", () => {
+	const dir = temporary();
+	try {
+		const workspace = join(dir.dir, "workspace");
+		mkdirSync(join(workspace, "wiki"), { recursive: true });
+		writeFileSync(join(workspace, "wiki/plan.md"), "# the old plan\n", "utf8");
+		const preflight = preflightFiles(workspace, [
+			{ path: "wiki/plan.md", content: Buffer.from("# the new plan\n", "utf8") },
+			{ path: "wiki/second.md", content: Buffer.from("# the second\n", "utf8") },
+		]);
+		const prepared = preflight.prepared ?? [];
+		assert.equal(preflight.ok, true);
+		assert.equal(prepareFiles(workspace, prepared).ok, true);
+		// The second file cannot be moved: the disk says no.
+		let moves = 0;
+		const outcome = commitFiles(workspace, prepared, () => {
+			moves += 1;
+			if (moves === 2) throw new Error("the disk says no");
+			renameSync(prepared[0].temporary, join(workspace, "wiki/plan.md"));
+		});
+		assert.equal(outcome.ok, false);
+		assert.equal(outcome.rolledBack, true);
+		// The file that was moved is back with its old content.
+		assert.equal(
+			readFileSync(join(workspace, "wiki/plan.md"), "utf8"),
+			"# the old plan\n",
+		);
 	} finally {
 		dir.cleanup();
 	}
@@ -1732,6 +1953,8 @@ test("a job that fails after the copy keeps the path of the copy", async () => {
 	try {
 		const stagedPath = join(dir.dir, "the-copy");
 		mkdirSync(stagedPath, { recursive: true });
+		// The worker of the machine answers the probe of the sandbox.
+		standIn(dir.dir, "codex", "process.stdout.write('ok');");
 		const { runtime, cleanup } = makeRuntime({
 			env: pathWith(dir.dir),
 			// The copy is made, and then the job fails.

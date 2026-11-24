@@ -162,6 +162,31 @@ test("the last resume is the one that is consumed", () => {
 	assert.equal(findAutoResumeIndex(null), -1);
 });
 
+test("an answered resume in history is not consumed again on the next inference", () => {
+	const resume = buildAutoResumeMessage({ content: "resume", reason: "post-compact", scope: "request", nonce: "old", requestGeneration: 1 });
+	assert.equal(findAutoResumeIndex([userMessage, resume, assistantMessage]), -1);
+	assert.equal(findAutoResumeIndex([
+		userMessage, resume,
+		{ ...assistantMessage, content: [{ type: "toolCall", id: "read-1", name: "read", arguments: {} }] },
+		{ role: "toolResult", toolCallId: "read-1", content: [] },
+		{ role: "custom", customType: "harness:observation", content: "checkpoint" },
+	]), -1, "tool-loop context must not reprocess the control message");
+});
+
+test("a newer human prompt takes precedence over a historical resume", () => {
+	const resume = buildAutoResumeMessage({ content: "resume", reason: "post-compact", scope: "request", nonce: "old", requestGeneration: 1 });
+	assert.equal(findAutoResumeIndex([userMessage, resume, { ...userMessage, content: "Now review the fix" }]), -1);
+	assert.equal(findAutoResumeIndex([userMessage, assistantMessage, resume]), 2, "a genuinely pending resume still reaches the completion guard");
+	assert.equal(findAutoResumeIndex([userMessage, assistantMessage, resume, { role: "custom", customType: "harness:observation", content: "status" }]), 2);
+});
+
+test("obsolete resume text does not request another user-facing completion slogan", () => {
+	assert.doesNotMatch(NEUTRALIZED_STALE_RESUME_TEXT, /Answer with one short sentence|newer request is the one that counts/);
+	assert.doesNotMatch(NEUTRALIZED_RESUME_TEXT, /Answer with one short sentence/);
+	assert.match(NEUTRALIZED_STALE_RESUME_TEXT, /Do not continue, resume or expand/);
+	assert.match(NEUTRALIZED_RESUME_TEXT, /Do not start, resume or expand/);
+});
+
 test("the neutralization replaces the resume and keeps the ending valid", () => {
 	const resume = buildAutoResumeMessage({
 		content: "resume",

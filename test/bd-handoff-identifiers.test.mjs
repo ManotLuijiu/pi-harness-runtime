@@ -1449,12 +1449,19 @@ test("the work of a handoff that was recorded is not named any more", () => {
 
 test("the leases that ran out do not stay in the directory for ever", () => {
 	const root = tempRoot();
-	const store = new HandoffLeaseStore(root);
+	// The clock is the clock of the test: a lease of one millisecond only
+	// runs out when the clock has passed it. A test that waits for the
+	// machine to be slow enough fails by chance, and it failed in the CI
+	// of a fast runner.
+	let clock = 1_000;
+	const store = new HandoffLeaseStore(root, { now: () => clock });
 	const keys = handoffLeaseKeys({ handoffId: "h1" });
 	assert.equal(store.claim({ keys, owner: "session-a", leaseMs: 1 }).ok, true);
 	// The lease of another owner that ran out is rubbish too.
-	const other = new HandoffLeaseStore(root);
+	const other = new HandoffLeaseStore(root, { now: () => clock });
 	assert.equal(other.claim({ keys: handoffLeaseKeys({ handoffId: "h2" }), owner: "session-b", leaseMs: 1 }).ok, true);
+	// The clock passes the leases.
+	clock += 10;
 	// The cleanup removes the leases that ran out.
 	const removed = store.cleanup();
 	assert.ok(removed >= 2);
