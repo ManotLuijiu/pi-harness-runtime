@@ -170,6 +170,13 @@ import {
 	type ResumeWorkState,
 } from "./harness/resume-scope.ts";
 import {
+	classifyRunStop,
+	textDeltaOf,
+	type ContextMessage,
+} from "./harness/repetition-guard.ts";
+import { RepetitionGuardRuntime } from "./harness/repetition-guard-runtime.ts";
+import { decideRepetitionRecovery } from "./harness/repetition-recovery.ts";
+import {
 	buildAutoResumeMessage,
 	autoResumeDetails,
 	findAutoResumeIndex,
@@ -1851,6 +1858,81 @@ const requestScopeTracker = new RequestScopeTracker({
 });
 
 /**
+ * The guard of an output that repeats itself.
+ *
+ * The guard belongs to the session: a new session starts with a clean
+ * guard, and the state of the run that repeated itself does not leak into
+ * it. The identity of the run is read when the guard needs it, so a
+ * request that replaces another one is told apart from the run it
+ * replaced.
+ */
+const repetitionGuard = new RepetitionGuardRuntime({
+	identity: {
+		sessionId: () => activeSessionId,
+		requestGeneration: () => requestScopeTracker.generation,
+	},
+});
+
+/**
+ * The identity of the row of the guard of the repetition.
+ *
+ * The row names the request the repetition belongs to: two requests of one
+ * session have two rows, and the row of a request that is over leaves
+ * with it.
+ */
+function repetitionGuardActionId(generation: number): string {
+	return `repetition-guard:${activeSessionId}:${generation}`;
+}
+
+/**
+ * The text of the recovery of a repetition.
+ *
+ * The text asks the agent to continue the request. It does not tell the
+ * agent to repeat the answer that repeated itself, and it authorises
+ * nothing.
+ */
+const REPETITION_RESUME_PROMPT =
+	"resume\n\nThe output of the request repeated itself and the run was stopped. Continue the request from where it stopped, and do not repeat the answer that repeated itself.";
+
+/**
+ * Is the budget of the work of the request spent?
+ *
+ * Only a declared budget counts: the harness never invents a budget,
+ * because an invented budget could stop work that is allowed to run. The
+ * budget of an item is the one its plan declares.
+ *
+ * A list or a budget that cannot be read says nothing: the work is not
+ * stopped for a budget that nobody could read.
+ */
+async function repetitionBudgetSpent(): Promise<boolean> {
+	// The budget belongs to the controller of the todos: the controller of
+	// the questions of the notification does not know it.
+	const controller = sharedState.todoContinuationController as {
+		budgetStatusOfItem?: (
+			itemId: number,
+		) => Promise<{ exhausted?: boolean } | undefined>;
+	} | null;
+	if (!controller?.budgetStatusOfItem) return false;
+	let todos: TwoPhaseTodoLike[] | undefined;
+	try {
+		todos = await sharedState.todoReader?.(undefined);
+	} catch {
+		return false;
+	}
+	for (const todo of todos ?? []) {
+		if (todo.id === undefined) continue;
+		if (todo.status === "completed") continue;
+		try {
+			const budget = await controller.budgetStatusOfItem(todo.id);
+			if (budget?.exhausted === true) return true;
+		} catch {
+			continue;
+		}
+	}
+	return false;
+}
+
+/**
  * A request of the human begins.
  *
  * Every path that carries the words or the decision of the human into Pi
@@ -1888,6 +1970,11 @@ function beginHumanRequest(): void {
 	// The guard of the exploration is active again. The state of the new
 	// request is its own: the counters of the old request do not carry over.
 	explorationGuard?.activate();
+	// The guard of a repeated output starts with the new request as well: a
+	// run that repeated itself belongs to the request that is over. The
+	// noise of that run stays in the transcript, and it stays out of the
+	// context of the next call of the model.
+	repetitionGuard.resetRun();
 }
 
 /**
@@ -10122,6 +10209,10 @@ issue is not authorized work of the current request).
 	// into it.
 	pi.on("session_start", () => {
 		taskTracking.reset();
+		// The session was replaced: the guard of a repeated output starts
+		// clean, and the run that repeated itself does not follow the human
+		// into the new session.
+		repetitionGuard.reset();
 	});
 
 	pi.on("agent_start", async () => {
@@ -10183,6 +10274,101 @@ issue is not authorized work of the current request).
 		providerFailureAttemptsInRun = 0;
 	});
 
+	// --- The guard of an output that repeats itself ------------------------
+	//
+	// A model that repeats one symbol fills the context of the session with
+	// noise and stops. The guard sees the output while it streams, marks the
+	// repetition before it stops the run, and stops the run before the
+	// budget of the response is spent.
+	//
+	// The mark comes first: the stop of the guard is not the stop of the
+	// human, and only the stop of the guard may be recovered.
+	pi.on("message_update", (event, ctx) => {
+		const delta = textDeltaOf(event.assistantMessageEvent);
+		if (!delta) return;
+		const state = repetitionGuard.observeDelta(delta, () => {
+			// The runtime marked the guard before it called this: the state
+			// of the run is known before the run is stopped.
+			ctx.abort();
+		});
+		if (!state) return;
+		const repeats = state.finding.repeats;
+		logToFile(
+			"[repetition-guard]",
+			`the output repeated itself (${repeats} times) - the run was stopped`,
+		);
+		pendingActions.register({
+			id: repetitionGuardActionId(state.requestGeneration),
+			sessionId: activeSessionId,
+			owner: "repetition-guard",
+			kind: "resume",
+			state: "queued",
+			reason: `the output of the request repeated itself (${repeats} times) - the run was stopped and one recovery is allowed`,
+		});
+		void nc("Info", {
+			jobId: "repetition-guard",
+			requirement: `the output of the request repeated itself (${repeats} times); the run was stopped and one recovery is allowed`,
+		});
+	});
+
+	// The stream of a new message begins: the guard of the repetition starts
+	// with a clean tail and may fire again. The claim of the recovery
+	// survives it.
+	pi.on("message_start", () => {
+		repetitionGuard.newMessage();
+	});
+
+	// The run settled: the repetition that the guard stopped is decided
+	// here. The recovery waits for the boundary of the run, so the run that
+	// repeated itself is over before the work starts again.
+	pi.on("agent_settled", async () => {
+		// The live repetition is consumed: the decision sees it once. A
+		// continuation that Pi queued before the run settled starts its own
+		// message, and the live repetition must survive that start.
+		const state = repetitionGuard.takeState();
+		if (!state) return;
+		const decision = decideRepetitionRecovery({
+			detected: true,
+			recoveryTried: repetitionGuard.recoveryTried(),
+			requestMatches:
+				state.requestGeneration === requestScopeTracker.generation,
+			work: await currentRequestWorkState(),
+			paused: todoContinuationHandle?.isExplicitlyPaused() === true,
+			questionOpen: isQuestionOpen(
+				sharedState.pqController?.getCurrentQuestion?.(),
+			),
+			budgetSpent: await repetitionBudgetSpent(),
+		});
+		if (decision.action !== "recover") {
+			// The row leaves with the decision: the run repeated itself and
+			// the harness does not recover it again.
+			pendingActions.remove(repetitionGuardActionId(state.requestGeneration));
+			if (decision.action === "block") {
+				logToFile(
+					"[repetition-guard]",
+					`the repetition came back after the recovery: ${decision.reason}`,
+				);
+				void nc("Error", {
+					jobId: "repetition-guard",
+					requirement: `the output of the request repeated itself again and the recovery was refused: ${decision.reason}`,
+				});
+			}
+			return;
+		}
+		// One recovery per run: a repetition that survives its recovery is
+		// not recovered a second time.
+		if (!repetitionGuard.claimRecovery()) return;
+		// The row leaves with the recovery: the session keeps the promise
+		// of one recovery, and the recovery is on its way.
+		pendingActions.remove(repetitionGuardActionId(state.requestGeneration));
+		await queueAutoResume("repetition-guard", REPETITION_RESUME_PROMPT, "steer", {
+			// The recovery continues the request that repeated itself. The
+			// guard of a stale resume reads that scope and neutralizes the
+			// recovery when the human replaced the request in the meantime.
+			scope: "request",
+		});
+	});
+
 	/**
 	 * The guard of a resume that is consumed too late.
 	 *
@@ -10200,15 +10386,22 @@ issue is not authorized work of the current request).
 	 * the resume itself is neutralized.
 	 */
 	pi.on("context", async (event) => {
-		const index = findAutoResumeIndex(event.messages);
+		// The noise of a repetition is kept out of the context of the next
+		// call of the model. The transcript of the session keeps it: the
+		// handler replaces the messages it returns, it does not change the
+		// transcript of the session.
+		const messages = repetitionGuard.quarantine(
+			event.messages as unknown as ContextMessage[],
+		) as unknown as typeof event.messages;
+		const index = findAutoResumeIndex(messages);
 		const details =
-			index === -1 ? undefined : autoResumeDetails(event.messages[index]);
+			index === -1 ? undefined : autoResumeDetails(messages[index]);
 		// A resume of a cut turn continues a turn that was cut off: it is
 		// unfinished by definition and the guard does not apply. A resume
 		// whose scope cannot be read is not known to be a resume of the
 		// request, and the guard does not apply either.
 		if (index === -1 || details?.scope !== "request") {
-			return { messages: event.messages };
+			return { messages };
 		}
 		// The resume belongs to a request. When the human replaced that
 		// request, the resume is stale: it must not continue the old work
@@ -10223,7 +10416,7 @@ issue is not authorized work of the current request).
 			reportSuppressedResume(report);
 			return {
 				messages: neutralizeAutoResume(
-					event.messages,
+					messages,
 					index,
 					NEUTRALIZED_STALE_RESUME_TEXT,
 				) as typeof event.messages,
@@ -10248,7 +10441,7 @@ issue is not authorized work of the current request).
 					`The work of the request is finished elsewhere; the automatic resume (${details?.reason ?? "auto-resume"}) is not sent.`,
 				);
 				return {
-					messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
+					messages: neutralizeAutoResume(messages, index) as typeof event.messages,
 				};
 			}
 			if (closure.action === "unknown") {
@@ -10268,13 +10461,13 @@ issue is not authorized work of the current request).
 				);
 				return {
 					messages: neutralizeAutoResume(
-						event.messages,
+						messages,
 						index,
 						NEUTRALIZED_UNKNOWN_WORK_TEXT,
 					) as typeof event.messages,
 				};
 			}
-			return { messages: event.messages };
+			return { messages };
 		}
 		logToFile(
 			"[resume-scope]",
@@ -10282,7 +10475,7 @@ issue is not authorized work of the current request).
 		);
 		reportSuppressedResume(decision.report);
 		return {
-			messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
+			messages: neutralizeAutoResume(messages, index) as typeof event.messages,
 		};
 	});
 
@@ -10323,10 +10516,32 @@ issue is not authorized work of the current request).
 			};
 		};
 
-		// An aborted turn is a decision of the user, not a failure of the
-		// provider. The candidate of an earlier failure dies with it: an
-		// automatic resume would fight the decision of the user.
-		if (m.stopReason === "aborted" || ctx.signal?.aborted === true) {
+		// The stop of the guard and the stop of the human are two different
+		// things. The guard stops a run that repeats itself, and that stop
+		// may be recovered; the human stops a run, and that stop may not.
+		const stop = classifyRunStop({
+			// The fact is taken by the boundary of the run: the next run of
+			// the model does not inherit it.
+			stoppedByGuard: repetitionGuard.takeStoppedByGuard(),
+			stopReason: m.stopReason,
+			signalAborted: ctx.signal?.aborted === true,
+		});
+		if (stop === "guard") {
+			// The guard stopped the run: the provider is not at fault, so
+			// the recovery of the provider does not start. The recovery of
+			// the repetition is decided at the boundary of the run.
+			providerRecoveryRuntime?.cancel();
+			providerFailureAttemptsInRun = 0;
+			logToFile(
+				"[repetition-guard]",
+				"the run was stopped by the guard of the repetition",
+			);
+			return;
+		}
+		if (stop === "human") {
+			// An aborted turn is a decision of the user, not a failure of the
+			// provider. The candidate of an earlier failure dies with it: an
+			// automatic resume would fight the decision of the user.
 			providerRecoveryRuntime?.cancel();
 			providerFailureAttemptsInRun = 0;
 			return;

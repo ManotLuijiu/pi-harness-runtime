@@ -274,7 +274,11 @@ test("the wiring answers the proposal with what the runtime answered", () => {
 test("the wiring owns the claim of a handoff under a name", () => {
 	// An empty id would make every session of the machine the owner of
 	// the same claim, and the claim would hold nobody.
-	const region = around("sessionId: () => activeSessionId", 0, 300);
+	const region = around(
+		"sessionId: () => activeSessionId || `pi-${process.pid}`",
+		0,
+		300,
+	);
 	assert.ok(region, "the wiring names the owner of the claim");
 	assert.match(
 		region,

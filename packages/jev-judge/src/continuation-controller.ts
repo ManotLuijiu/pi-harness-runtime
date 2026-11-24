@@ -580,6 +580,26 @@ export class TodoContinuationController {
 	}
 
 	/**
+	 * The budget of the work of an item, when the item declares one.
+	 *
+	 * Only a declared `budgetMinutes` arms a budget - the harness never
+	 * invents one, because an invented budget could pause legitimate work.
+	 * The accessor is narrow on purpose: the recovery of a repeated output
+	 * has to know that the budget of the work is spent, and nothing else.
+	 *
+	 * An item that is not in the list has no budget: the work of an item
+	 * that the harness cannot see is not a work it may stop.
+	 */
+	async budgetStatusOfItem(
+		itemId: number,
+	): Promise<ValidationBudgetStatus | undefined> {
+		const snapshot = await this.todoProvider.getSnapshot();
+		const item = snapshot.items.find((candidate) => candidate.id === itemId);
+		if (!item) return undefined;
+		return this.budgetStatusFor(item);
+	}
+
+	/**
 	 * The error of the last read of the list, when the read failed.
 	 *
 	 * A read that failed answers with an empty list, so the error is the
