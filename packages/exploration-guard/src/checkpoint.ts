@@ -63,6 +63,17 @@ export interface CompactCheckpoint {
 	/** The revision of the checkpoint. */
 	revision: number;
 	/**
+	 * The issue of the store that the work belongs to.
+	 *
+	 * The identifiers survive the compaction: a checkpoint that lost the
+	 * handoff it belongs to would not say any more which work it was.
+	 */
+	bdIssueId?: string;
+	/** The handoff that the work belongs to. */
+	handoffId?: string;
+	/** The correlation of the request the work belongs to. */
+	correlationId?: string;
+	/**
 	 * The files the findings refer to, with the hash that was observed.
 	 *
 	 * The references let the agent check whether a file still holds what it
@@ -96,6 +107,9 @@ export function toCompactCheckpoint(
 		openQuestions: state.checkpoint.openQuestions,
 		nextAction: state.checkpoint.nextAction,
 		revision: state.checkpointRevision,
+		bdIssueId: state.checkpoint.bdIssueId,
+		handoffId: state.checkpoint.handoffId,
+		correlationId: state.checkpoint.correlationId,
 		references: state.files.map((file) => ({
 			path: file.path,
 			contentHash: file.contentHash,
@@ -133,6 +147,9 @@ export function fromCompactCheckpoint(
 			openQuestions: checkpoint.openQuestions,
 			nextAction: checkpoint.nextAction,
 			revision: checkpoint.revision,
+			bdIssueId: checkpoint.bdIssueId,
+			handoffId: checkpoint.handoffId,
+			correlationId: checkpoint.correlationId,
 		},
 		checkpointRevision: checkpoint.revision,
 		// The checkpoint of the previous compaction was consumed by the
@@ -161,6 +178,17 @@ export interface CheckpointInput {
 	 * so the coverage that was recorded for it is void.
 	 */
 	references?: { path: string; contentHash?: string; version?: string }[];
+	/**
+	 * The issue of the store that the work belongs to.
+	 *
+	 * The identifiers are evidence: they name the handoff the checkpoint
+	 * belongs to. They never take part in the identity of the request.
+	 */
+	bdIssueId?: string;
+	/** The handoff that the work belongs to. */
+	handoffId?: string;
+	/** The correlation of the request the work belongs to. */
+	correlationId?: string;
 }
 
 /**
@@ -197,6 +225,9 @@ export function applyCheckpoint(
 		openQuestions,
 		nextAction: input.nextAction ? sanitizeText(input.nextAction) : undefined,
 		revision,
+		bdIssueId: input.bdIssueId ? sanitizeText(input.bdIssueId) : undefined,
+		handoffId: input.handoffId ? sanitizeText(input.handoffId) : undefined,
+		correlationId: input.correlationId ? sanitizeText(input.correlationId) : undefined,
 	};
 	return {
 		...state,

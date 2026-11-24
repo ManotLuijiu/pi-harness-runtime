@@ -684,6 +684,44 @@ export class BdHandoffReader {
 	}
 
 	/**
+	 * Does the failure mean that the issue is not there?
+	 *
+	 * A failed read is only a missing issue when the CLI says that the
+	 * issue itself is not there. The message has to name the issue that
+	 * was asked for, and it has to talk about that issue: a message
+	 * about something else - "the tracker was not found", "the database
+	 * was not found" - is a broken read, and the work of the issue waits
+	 * for a read that works.
+	 *
+	 * The wording of the CLI is read as well: "no such issue" and
+	 * "unknown id" say the same as "no issue" and "not found".
+	 *
+	 * The difference matters: a missing issue is a finished work, and a
+	 * broken read that is read as a missing issue declares the work of an
+	 * open issue finished elsewhere.
+	 */
+	private static isMissingIssue(message: string, id: string): boolean {
+		const text = message.toLowerCase();
+		const wanted = id.trim().toLowerCase();
+		if (wanted.length === 0) return false;
+		// The message has to name the issue that was asked for: a failure
+		// about something else says nothing about that issue.
+		if (!text.includes(wanted)) return false;
+		// A failure of the tracker itself is a broken read: the store, the
+		// database and the binary are not the issue.
+		if (
+			/\b(trackers?|stores?|databases?|sqlite|binar(?:y|ies)|executables?|commands?)\b/.test(
+				text,
+			)
+		) {
+			return false;
+		}
+		return /\bno issue\b|\bnot found\b|\bdoes not exist\b|\bunknown issue\b|\bno such issue\b|\bunknown id\b|\bno such id\b|\bnot a known id\b/i.test(
+			text,
+		);
+	}
+
+	/**
 	 * One issue of the store, read again by its id.
 	 *
 	 * The read of one issue is what a handoff is checked against before
@@ -695,7 +733,10 @@ export class BdHandoffReader {
 		if (run.ok === false) {
 			// An issue that is not there is not a broken read: the CLI
 			// answers with an error and no issue.
-			if (run.failure.kind === "read-failed" && /no issue|not found/i.test(run.failure.message)) {
+			if (
+				run.failure.kind === "read-failed" &&
+				BdHandoffReader.isMissingIssue(run.failure.message, id)
+			) {
 				return { ok: true, value: null, warnings: [] };
 			}
 			return run;

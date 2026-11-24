@@ -305,9 +305,16 @@ export class TaskIntakeController {
         // record. An instruction that asks for "all tasks" leaves the
         // agent to guess, and the work it leaves out is the work that is
         // lost when the context window fills.
+        //
+        // The name of the tool is the one the harness names: a request
+        // that belongs to a handoff is recorded with the tool of the
+        // handoff, so the todo of the work names the issue it belongs
+        // to. Two names in one message would leave the agent to choose,
+        // and the plain one writes a todo without the link.
+        const tool = this.config.todoToolName?.(userMessage) || "todo";
         const message = [
-            `Please record the work of this request in the task list (todo): ${userMessage}`,
-            "Use todo (the local Todos list, not bd). Read the pending and the in_progress items first;",
+            `Please record the work of this request in the task list (${tool}): ${userMessage}`,
+            `Use ${tool} (the local Todos list, not bd). Read the pending and the in_progress items first;`,
             "reuse the existing items and avoid duplicates. Add one item per step of the request, the",
             "subject in the imperative, and the description with what the step is and how it is checked.",
             "Update progress, blockers and the exact next action, and mark an item completed only when",

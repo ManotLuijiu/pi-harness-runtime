@@ -36,6 +36,9 @@ export function toCompactCheckpoint(state, savedAt = Date.now()) {
         openQuestions: state.checkpoint.openQuestions,
         nextAction: state.checkpoint.nextAction,
         revision: state.checkpointRevision,
+        bdIssueId: state.checkpoint.bdIssueId,
+        handoffId: state.checkpoint.handoffId,
+        correlationId: state.checkpoint.correlationId,
         references: state.files.map((file) => ({
             path: file.path,
             contentHash: file.contentHash,
@@ -69,6 +72,9 @@ export function fromCompactCheckpoint(checkpoint, base) {
             openQuestions: checkpoint.openQuestions,
             nextAction: checkpoint.nextAction,
             revision: checkpoint.revision,
+            bdIssueId: checkpoint.bdIssueId,
+            handoffId: checkpoint.handoffId,
+            correlationId: checkpoint.correlationId,
         },
         checkpointRevision: checkpoint.revision,
         // The checkpoint of the previous compaction was consumed by the
@@ -103,6 +109,9 @@ export function applyCheckpoint(state, input, now = Date.now()) {
         openQuestions,
         nextAction: input.nextAction ? sanitizeText(input.nextAction) : undefined,
         revision,
+        bdIssueId: input.bdIssueId ? sanitizeText(input.bdIssueId) : undefined,
+        handoffId: input.handoffId ? sanitizeText(input.handoffId) : undefined,
+        correlationId: input.correlationId ? sanitizeText(input.correlationId) : undefined,
     };
     return {
         ...state,

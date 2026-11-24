@@ -483,7 +483,9 @@ export class BdHandoffRuntime {
 	 * A handoff whose issue was closed by somebody else is finished: a
 	 * pending resume of that work must not start it again. An issue that
 	 * could not be read is unknown and not closed, so the work waits for a
-	 * read that works.
+	 * read that works. An issue that does not exist any more is a third
+	 * fact: it will never be read again, so the work of it is not started
+	 * again either.
 	 */
 	async closureOf(links: readonly BdTodoLink[]): Promise<BdClosureDecision> {
 		const issues = [
@@ -493,15 +495,21 @@ export class BdHandoffRuntime {
 					.filter((id): id is string => typeof id === "string"),
 			),
 		];
-		const states = new Map<string, { readable: boolean; status?: string }>();
+		const states = new Map<
+			string,
+			{ readable: boolean; missing?: boolean; status?: string }
+		>();
 		for (const issueId of issues) {
 			const read = await this.deps.reader.issue(issueId);
 			if (read.ok === false) {
+				// The read failed: the issue may be there and the store
+				// may be busy. The work waits for a read that works.
 				states.set(issueId, { readable: false });
 				continue;
 			}
 			if (!read.value) {
-				states.set(issueId, { readable: false });
+				// The issue does not exist: it is not a read that failed.
+				states.set(issueId, { readable: false, missing: true });
 				continue;
 			}
 			states.set(issueId, { readable: true, status: read.value.status });
@@ -606,6 +614,21 @@ export class BdHandoffRuntime {
 	 */
 	record(handoffId: string): BdHandoffRecord | null {
 		return this.deps.store.read(this.recipient, handoffId);
+	}
+
+	/**
+	 * Link the todos of a handoff to the record of the store.
+	 *
+	 * The record keeps the todos that belong to a handoff, so a reader of
+	 * the store can see which work of the session belonged to it.
+	 */
+	linkTodos(handoffId: string, todoIds: readonly number[]): BdHandoffRecord | null {
+		if (todoIds.length === 0) return this.record(handoffId);
+		return this.deps.store.linkTodos({
+			handoffId,
+			recipient: this.recipient,
+			todoIds: [...todoIds],
+		});
 	}
 
 	/**

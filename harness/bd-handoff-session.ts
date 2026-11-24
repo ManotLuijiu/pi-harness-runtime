@@ -27,6 +27,7 @@ import {
 import type { BdCommandRunner } from "./bd-handoff-reader.ts";
 import type { BdHandoffIssue } from "./bd-handoff-reader.ts";
 import type {
+	BdHandoffDelivery,
 	BdHandoffRuntime,
 	BdHandoffStatus,
 } from "./bd-handoff-runtime.ts";
@@ -53,11 +54,15 @@ export interface BdHandoffSessionOptions {
 	/**
 	 * Deliver the observation to the session.
 	 *
+	 * The delivery carries the handoffs it names: the session has to know
+	 * which issues arrived, because the todos of that work are linked to
+	 * them.
+	 *
 	 * The result says whether the session received the message: a delivery
 	 * that did not happen does not move the cursor of the store.
 	 */
 	deliver: (
-		message: string,
+		delivery: BdHandoffDelivery,
 	) => Promise<{ delivered: boolean; reason?: string }>;
 	/** Is the session able to receive a message? */
 	isIdle?: () => boolean;

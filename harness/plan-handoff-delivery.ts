@@ -89,6 +89,22 @@ export interface PlanDeliveryOptions {
 	mailbox?: (agentId: string) => Mailbox;
 	/** The store of the retained handoffs. The store of the user by default. */
 	retained?: PendingHandoffStore;
+	/**
+	 * The correlation of the work of the plan.
+	 *
+	 * The correlation names the work of the plan. A producer that writes the
+	 * same correlation into the envelope of a handoff of the issue tracker
+	 * joins the two paths: both of them lease the work under that name, and
+	 * the second one waits for the first one.
+	 *
+	 * Only the producer of the plan may set it. The path of the repository
+	 * that hands a finished plan of one agent to the instance of another
+	 * (the plan of Codex that Pi picks up) has no handoff of the issue
+	 * tracker behind it, so it has no correlation to give: that path
+	 * joins the path of the tracker on the name of the message, and only
+	 * when the envelope of the handoff names the live job of the plan.
+	 */
+	correlationId?: string;
 	/** The clock of the delivery. */
 	now?: () => number;
 }
@@ -119,6 +135,11 @@ export function deliverPlanToWorkspace(
 	const publication = publishPlan({
 		plan: {
 			action: "inform",
+			// The correlation names the work of the plan. A producer that
+			// writes the same correlation into the envelope of a handoff of
+			// the issue tracker joins the two paths: both of them lease the
+			// work under that name.
+			...(options.correlationId ? { correlationId: options.correlationId } : {}),
 			plan: {
 				revision: "1",
 				summary: options.summary,

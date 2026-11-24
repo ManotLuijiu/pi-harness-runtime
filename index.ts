@@ -176,6 +176,7 @@ import {
 	isAutoResumeMessage,
 	neutralizeAutoResume,
 	NEUTRALIZED_STALE_RESUME_TEXT,
+	NEUTRALIZED_UNKNOWN_WORK_TEXT,
 } from "./harness/auto-resume-marker.ts";
 import {
 	buildLocalRefusalMessage,
@@ -197,6 +198,31 @@ import {
 	BdHandoffSession,
 	formatBdHandoffStatus,
 } from "./harness/bd-handoff-session.ts";
+import type { BdHandoffDelivery } from "./harness/bd-handoff-runtime.ts";
+import type { BdHandoffIssue } from "./harness/bd-handoff-reader.ts";
+import { BdHandoffContext } from "./harness/bd-handoff-todo.ts";
+import {
+	BD_HANDOFF_TODO_TOOL,
+	registerBdHandoffTodoTool,
+} from "./harness/bd-handoff-todo-tool.ts";
+import {
+	linksOfTodos,
+	type BdClosureDecision,
+	type BdHandoffIdentity,
+	type BdTodoLink,
+} from "./harness/bd-handoff-link.ts";
+import {
+	handoffLinkOfRequest,
+	handoffWorkGeneration,
+	openHandoffsOfRequest,
+	todoToolOf,
+} from "./harness/bd-handoff-request.ts";
+import {
+	HandoffLeaseStore,
+	HANDOFF_LEASE_RENEW_MS,
+	handoffLeaseKeys,
+	handoffLeaseOwner,
+} from "./harness/handoff-lease.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
@@ -772,6 +798,408 @@ function runBdHandoffCheck(): void {
 }
 
 /**
+ * The handoffs that this session received.
+ *
+ * The context holds the links of the handoffs that the watcher delivered
+ * into the running request. The todos of that work are linked to them:
+ * the context is what says which handoff a todo belongs to, so the todo
+ * of one handoff never gets the link of another one.
+ */
+const bdHandoffContext = new BdHandoffContext();
+
+/**
+ * The root of the state of the harness.
+ *
+ * Every part of the harness that keeps a durable state keeps it here:
+ * the leases of the handoffs, the records of the handoffs, the logs.
+ * The root is named once, so two parts of the harness cannot write to
+ * two different places.
+ */
+const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
+
+/**
+ * The durable lease of the handoffs.
+ *
+ * The lease is taken before a handoff is delivered and it is held while
+ * the work runs. The live path of the plan handoff and the path of the
+ * issue tracker lease the same handoff, so the two paths cannot execute
+ * one handoff at once.
+ */
+const handoffLeaseStore = new HandoffLeaseStore(HARNESS_ROOT_DIR);
+
+/**
+ * The leases that this session holds.
+ *
+ * Every name is kept with the owner that took it, and the owner is part
+ * of the key: the two paths of a session have an owner each, and the
+ * release of one path must not give back the lease of the other path.
+ * A lease that is given back by the wrong owner is a lease that the
+ * other path believes it holds, and the work of the handoff runs twice.
+ */
+const heldHandoffLeases = new Map<string, string>();
+
+/**
+ * The owners of the leases of the live path, by the id of the plan.
+ *
+ * The owner is resolved once per claim: the release of the lease gives
+ * it back under the owner that took it, even when the session of the
+ * plan changed in the meantime.
+ *
+ * The names that the claim created are kept with it: a name that the
+ * owner held already belongs to a work that runs already, and giving it
+ * back would let the other path run the same handoff at the same time.
+ */
+const planLeaseClaims = new Map<string, { owner: string; created: string[] }>();
+
+/**
+ * The key of a held lease.
+ *
+ * The owner is part of the key: the two paths of a session have an owner
+ * each, and the release of one path must not give back the lease of the
+ * other path.
+ */
+function leaseMapKey(owner: string, key: string): string {
+	return `${owner}\u0000${key}`;
+}
+
+/**
+ * The owner of the leases of this session.
+ *
+ * The owner is resolved once per claim and it is the owner that gives
+ * the lease back: the session id may change while a delivery is in
+ * flight, and a lease that is given back under a new owner is a lease
+ * that nobody gives back.
+ */
+function leaseOwnerOf(path: "store" | "plan"): string {
+	return handoffLeaseOwner(activeSessionId, path);
+}
+
+/**
+ * Take the lease of the handoffs of a delivery.
+ *
+ * The lease is taken before the delivery: the work of a handoff runs
+ * once, whichever path delivers it. Every name of the handoff is leased,
+ * so the two paths meet on the same lease.
+ */
+function claimHandoffLease(handoffs: readonly BdHandoffIssue[]): {
+	ok: boolean;
+	reason?: string;
+	keys: string[];
+	/**
+	 * The names that this claim created.
+	 *
+	 * A name that the owner held already belongs to a work that runs
+	 * already: it is not given back when a delivery fails, because the
+	 * other path would be free to run the same handoff while the first
+	 * work is still running.
+	 */
+	created: string[];
+	owner: string;
+} {
+	const keys = [
+		...new Set(
+			handoffs.flatMap((handoff) =>
+				handoffLeaseKeys({
+					handoffId: handoff.envelope.handoffId,
+					correlationId: handoff.envelope.correlationId,
+					// The name of the message is the name of the live
+					// message of the work. The envelope names it as the live
+					// job of the handoff, and the live path knows the same
+					// message under its own id: the two paths meet on this
+					// name when the producer wrote the id of that message
+					// into the envelope. An envelope that names no live job
+					// falls back to the id of the handoff, so the two paths
+					// meet when the producer gave both the same id.
+					messageId: handoff.envelope.liveJobId ?? handoff.envelope.handoffId,
+				}),
+			),
+		),
+	];
+	const owner = leaseOwnerOf("store");
+	if (keys.length === 0) return { ok: true, keys, created: [], owner };
+	const claim = handoffLeaseStore.claim({
+		keys,
+		owner,
+	});
+	if (claim.ok === false) {
+		return {
+			ok: false,
+			reason: `the handoff is leased by ${claim.holder || "another session"}`,
+			keys,
+			created: [],
+			owner,
+		};
+	}
+	for (const key of keys) heldHandoffLeases.set(leaseMapKey(owner, key), key);
+	return { ok: true, keys, created: claim.created, owner };
+}
+
+/**
+ * Take the lease of the handoff of a plan of the live path.
+ *
+ * The live path and the path of the store lease the same handoff: they
+ * meet on the correlation of the request. A plan whose handoff runs in
+ * the other path waits in the mailbox.
+ */
+function claimPlanHandoffLease(message: {
+	id: string;
+	correlationId: string;
+}): string | null {
+	const keys = handoffLeaseKeys({
+		correlationId: message.correlationId,
+		// The name of the message is the id of the live message itself:
+		// the path of the tracker knows the same message as the live job
+		// of the envelope of the handoff.
+		messageId: message.id,
+	});
+	const owner = leaseOwnerOf("plan");
+	if (keys.length === 0) return owner;
+	const claim = handoffLeaseStore.claim({ keys, owner });
+	if (claim.ok === false) {
+		logToFile(
+			"[plan-handoff]",
+			`the handoff of the plan ${message.id} is leased by ${
+				claim.holder || "another session"
+			}, so the plan waits.`,
+		);
+		return null;
+	}
+	for (const key of keys) heldHandoffLeases.set(leaseMapKey(owner, key), key);
+	// The owner of the lease is kept with the message: the release gives
+	// the lease back under the owner that took it, even when the session
+	// of the plan changed in the meantime. The names that the claim
+	// created are kept with it: a name that the owner held already
+	// belongs to a work that runs already.
+	planLeaseClaims.set(message.id, { owner, created: claim.created });
+	return owner;
+}
+
+/**
+ * Give the lease of the handoff of a plan back.
+ *
+ * The lease is given back when the plan was not handed over: nobody runs
+ * the work, so the other path may run it.
+ *
+ * Only the names that the claim created are given back: a name that the
+ * owner held already belongs to a work that runs already, and giving it
+ * back would let the other path run the same handoff at the same time.
+ */
+function releasePlanHandoffLease(message: {
+	id: string;
+	correlationId: string;
+}): void {
+	const claim = planLeaseClaims.get(message.id);
+	if (claim === undefined) return;
+	planLeaseClaims.delete(message.id);
+	releaseHandoffLease(claim.created, claim.owner);
+}
+
+/**
+ * Does the text of a request name the issue of a handoff?
+ *
+ * The name of the issue is looked for in the text of the request. A
+ * request that names no issue is a request that is not about a handoff.
+ */
+/**
+ * The handoffs whose work the running request has still to record.
+ *
+ * The selection is the one of the whole session: the intake, the
+ * reminder and the checkpoint ask the same question, and they get the
+ * same answer. A request that names the plain tool while the advisory of
+ * the same request names the tool of the handoff would leave the choice
+ * to the agent, and the todo of the work of the handoff would be written
+ * without its link.
+ *
+ * A handoff whose todo is in the list is work that the list holds: it
+ * needs no instruction any more.
+ */
+function openHandoffsOfRunningRequest(
+	context: BdHandoffContext,
+	text: string,
+): BdHandoffIdentity[] {
+	return openHandoffsOfRequest(
+		context,
+		text,
+		handoffGenerationOfRunningRequest(),
+	);
+}
+
+/**
+ * The generation of the request that the work of a handoff runs in.
+ *
+ * The selection of the handoff of a request asks the question the
+ * delivery asked: the work of a handoff that arrives after the agent
+ * answered runs in the request that follows. A selection that asked the
+ * generation of the answered request would not see that handoff, and the
+ * intake would name the plain tool while the advisory of the same turn
+ * names the tool of the handoff.
+ */
+function handoffGenerationOfRunningRequest(): number {
+	return handoffWorkGeneration({
+		generation: requestScopeTracker.generation,
+		requestBegan: humanRequestBegan,
+		requestAnswered: humanRequestAnswered,
+	});
+}
+
+/**
+ * The instruction that tells the agent how to record the work of a
+ * handoff.
+ *
+ * The agent names the issue of the handoff and the harness writes the
+ * link into the todo, so the todo of the work names the issue it belongs
+ * to.
+ */
+function handoffTodoInstruction(links: readonly BdHandoffIdentity[]): string {
+	if (links.length === 0) return "";
+	const ids = links
+		.map((link) => link.bdIssueId)
+		.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+		.join(", ");
+	if (ids.length === 0) return "";
+	return `Record the work of a handoff in the task list with the tool ${BD_HANDOFF_TODO_TOOL}, and give it the exact issue id of the handoff (${ids}). The tool adds the identifiers of the handoff to the todo, so the todo stays linked to the issue.`;
+}
+
+/**
+ * Give a lease of a handoff back.
+ *
+ * The lease is given back by the owner that took it: a name that another
+ * path holds is not this path's to give back. The owner is named by the
+ * caller, because the owner is resolved once per claim and the session
+ * may have changed since then.
+ */
+function releaseHandoffLease(
+	keys: readonly string[],
+	owner: string,
+): void {
+	if (keys.length === 0) return;
+	for (const key of keys) {
+		const held = heldHandoffLeases.get(leaseMapKey(owner, key));
+		if (held === undefined) continue;
+		handoffLeaseStore.release({ keys: [key], owner });
+		heldHandoffLeases.delete(leaseMapKey(owner, key));
+	}
+}
+
+/**
+ * Give every lease of this session back.
+ *
+ * The session ends: the work that held the lease is over, and nobody
+ * may wait for it any more. The lease of a handoff is not given back at
+ * the boundary of a request: a handoff arrives between two requests, and
+ * the work of it runs in the request that follows.
+ */
+function releaseHandoffLeases(): void {
+	const owners = new Set<string>();
+	for (const [held, key] of heldHandoffLeases.entries()) {
+		const owner = held.slice(0, held.indexOf("\u0000"));
+		owners.add(owner);
+		handoffLeaseStore.release({ keys: [key], owner });
+	}
+	heldHandoffLeases.clear();
+	planLeaseClaims.clear();
+	// The memory of the session is not the truth: the store is. A lease
+	// that this session took before a restart of the extension is not in
+	// the map any more, and it would hold its handoff until it runs out.
+	// Every lease of the owners of this session is given back.
+	for (const path of ["store", "plan"] as const) {
+		owners.add(leaseOwnerOf(path));
+	}
+	for (const owner of owners) {
+		for (const lease of handoffLeaseStore.leasesOf(owner)) {
+			handoffLeaseStore.release({ keys: [lease.key], owner });
+		}
+	}
+}
+
+/**
+ * Extend the leases of this session.
+ *
+ * The work of a handoff can run longer than the bound of a lease. The
+ * lease is extended while the session works on the handoff, so the other
+ * path cannot start the same work while this one is running it.
+ *
+ * The leases are extended by their owner: a lease of another owner is
+ * never touched, and a lease that ran out is not extended. It is free
+ * again, and the owner has to take it again.
+ */
+function renewHandoffLeases(): void {
+	if (heldHandoffLeases.size === 0) return;
+	const byOwner = new Map<string, string[]>();
+	for (const [held, key] of heldHandoffLeases.entries()) {
+		const owner = held.slice(0, held.indexOf("\u0000"));
+		const keys = byOwner.get(owner);
+		if (keys) keys.push(key);
+		else byOwner.set(owner, [key]);
+	}
+	for (const [owner, keys] of byOwner.entries()) {
+		handoffLeaseStore.renew({
+			keys,
+			owner,
+			leaseMs: HANDOFF_LEASE_RENEW_MS,
+		});
+	}
+}
+
+/**
+ * The links of the todos of the running request.
+ *
+ * The todos of the running request are the evidence of its work: a todo
+ * that names a handoff says which handoff the request works on, even
+ * when the todo was linked in an earlier request.
+ */
+async function linksOfRunningRequest(): Promise<BdTodoLink[]> {
+	const read = await requestScopeTracker.read();
+	const items = read.items ? itemsOfRequest(read.items, read.scope) : [];
+	return linksOfTodos(
+		items
+			.filter(
+				(item): item is RequestTodoLike & { id: number } =>
+					typeof item.id === "number",
+			)
+			.map((item) => ({
+				id: item.id,
+				status: item.status,
+				metadata: item.metadata,
+			})),
+	);
+}
+
+/**
+ * The closure of the work that the running request points at.
+ *
+ * A handoff whose issue was closed by somebody else is finished: a
+ * pending resume of that work must not start it again. An issue that
+ * could not be read is unknown and not closed, so the work waits for a
+ * read that works. A request that points at no issue of the store is not
+ * a request of a handoff, and its work goes on.
+ */
+async function currentHandoffClosure(): Promise<BdClosureDecision> {
+	const runtime = bdHandoffSession?.runtime;
+	if (!runtime) {
+		return {
+			action: "continue",
+			reason: "the watcher of the handoffs is not running",
+		};
+	}
+	const links = await linksOfRunningRequest();
+	// A todo that was linked to a handoff during the running request is
+	// work of that request, even when the link was the only thing that
+	// changed about it: the scope of a request is decided by the status
+	// and the subject of its todos, and the link is the evidence that the
+	// todo belongs to a handoff.
+	const generation = requestScopeTracker.generation;
+	links.push(...bdHandoffContext.linksOfGeneration(generation));
+	if (links.length === 0) {
+		return {
+			action: "continue",
+			reason: "the request points at no issue of the store",
+		};
+	}
+	return runtime.closureOf(links);
+}
+
+/**
  * The phase of the request that is running, as the guard names it.
  *
  * The phase is the phase of the two-phase review when it is known, and
@@ -1243,6 +1671,25 @@ function noteHarnessMessage(text: string): void {
  */
 let currentRequestText = "";
 
+/**
+ * Did a request of the human begin in this session?
+ *
+ * The state decides where the work of a handoff runs: the advisory of a
+ * handoff continues the request that is running, and a handoff that
+ * arrives after the agent answered belongs to the request that follows.
+ */
+let humanRequestBegan = false;
+
+/**
+ * Did the agent answer the request that is running?
+ *
+ * The run of the agent settles when the work of the request is over: no
+ * retry, no compaction and no queued continuation will follow. The
+ * advisory of a handoff that arrives after that point starts a turn of
+ * its own, and the work of that handoff runs in the request that follows.
+ */
+let humanRequestAnswered = false;
+
 /** The number of the resumes that the harness queued in this session. */
 let resumeNonceCounter = 0;
 
@@ -1422,6 +1869,10 @@ const requestScopeTracker = new RequestScopeTracker({
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// A request of the human began: the work of a handoff that arrives
+	// now belongs to this request, until the agent answers it.
+	humanRequestBegan = true;
+	humanRequestAnswered = false;
 	// The text of the new request is not known yet. The reminder asks the
 	// agent to record the work of the request, and the steps of a request
 	// are read from its text.
@@ -1437,6 +1888,23 @@ function beginHumanRequest(): void {
 	// The guard of the exploration is active again. The state of the new
 	// request is its own: the counters of the old request do not carry over.
 	explorationGuard?.activate();
+}
+
+/**
+ * The handoffs of the session that ended.
+ *
+ * The leases are given back: the work that held them is over, and a
+ * handoff that waits for another session must not stay leased by this
+ * one. The links are forgotten: they belong to the work of this
+ * session, and the todos of another session are not linked to them.
+ */
+function endHandoffSession(): void {
+	releaseHandoffLeases();
+	bdHandoffContext.clear();
+	// The leases that ran out hold nothing, and the files that were kept
+	// aside are rubbish: the directory of the leases does not grow for
+	// ever.
+	handoffLeaseStore.cleanup();
 }
 
 /**
@@ -3237,6 +3705,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								?.isExplicitlyPaused?.() === true ||
 							!ctx.isIdle() ||
 							ctx.hasPendingMessages(),
+						// The lease of the handoff is shared with the path of
+						// the store: the work of one handoff runs once, and
+						// the two paths meet on the correlation of the
+						// request.
+						lease: {
+							claim: (message) => claimPlanHandoffLease(message) !== null,
+							release: (message) => releasePlanHandoffLease(message),
+						},
 					});
 					planReceiver.start();
 				} catch (error) {
@@ -4737,6 +5213,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		pi.on("session_start", async (_event, ctx) => {
 			try {
+				// The handoffs of the session belong to the session: a new
+				// session starts with none of them, and the leases of the
+				// session that ended are given back. A handoff that was
+				// delivered to the session before is not a handoff of this
+				// one, so its todo may not be linked here.
+				endHandoffSession();
 				// The runtime of the scope expansion belongs to the session:
 				// a session that starts has no open proposal, and a session
 				// that ends leaves none behind.
@@ -4844,7 +5326,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// A handoff arrives as an observation of the request that
 					// is running. The guards of the controller still hold
 					// and the attempt budget of a task is untouched.
-					deliver: async (message: string) => {
+					deliver: async (delivery: BdHandoffDelivery) => {
 						const controller = sharedState.todoContinuationController as {
 							dispatchAdvisory?: (
 								content: string,
@@ -4863,6 +5345,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								reason: "the continuation controller is not there",
 							};
 						}
+						// The lease of the handoff is taken before the
+						// delivery: the work of one handoff runs once,
+						// whichever path delivers it.
+						const lease = claimHandoffLease(delivery.handoffs);
+						if (!lease.ok) {
+							return {
+								delivered: false,
+								reason: lease.reason ?? "the handoff is leased",
+							};
+						}
+						const message = `${delivery.message}\n${handoffTodoInstruction(
+							delivery.handoffs.map((handoff) => ({
+								bdIssueId: handoff.issue.id,
+								handoffId: handoff.envelope.handoffId,
+								correlationId: handoff.envelope.correlationId,
+							})),
+						)}`;
 						try {
 							const result = await controller.dispatchAdvisory(message, {
 								meta: {
@@ -4874,8 +5373,49 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 									source: ADVISORY_SOURCE_BD_HANDOFF,
 								},
 							});
-							return { delivered: result.dispatched, reason: result.reason };
+							if (!result.dispatched) {
+								// The message did not reach the session: the
+								// lease is given back and the handoff waits
+								// for the next boundary.
+								//
+								// Only the names that the claim created are
+								// given back. A name that this owner held
+								// already belongs to a work that runs
+								// already, and giving it back would let
+								// the other path run the same handoff
+								// while that work is still running.
+								releaseHandoffLease(lease.created, lease.owner);
+								return { delivered: false, reason: result.reason };
+							}
+							// The session knows which handoffs arrived: the
+							// todos of that work are linked to them. A
+							// handoff that did not arrive is not linked.
+							//
+							// The handoff belongs to the session and not to
+							// the request that was running when it
+							// arrived: it can arrive between two
+							// requests, and the work of it runs in the
+							// request that follows. The generation of
+							// that request is the one the work runs in:
+							// the advisory of a handoff that arrives
+							// during a request continues that request,
+							// and the advisory of a handoff that arrives
+							// after the answer of the agent belongs to
+							// the request that follows.
+							const generation = handoffGenerationOfRunningRequest();
+							for (const handoff of delivery.handoffs) {
+								bdHandoffContext.add(
+									{
+										bdIssueId: handoff.issue.id,
+										handoffId: handoff.envelope.handoffId,
+										correlationId: handoff.envelope.correlationId,
+									},
+									generation,
+								);
+							}
+							return { delivered: true, reason: result.reason };
 						} catch (error) {
+							releaseHandoffLease(lease.created, lease.owner);
 							return { delivered: false, reason: oneLineError(error) };
 						}
 					},
@@ -4951,6 +5491,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			// ending: it must not deliver into a session that is gone.
 			bdHandoffSession?.stop();
 			bdHandoffSession = null;
+			// The handoffs of the session are over with the session.
+			endHandoffSession();
 			// The row of the watcher leaves the footer with the session.
 			try {
 				bdHandoffStatusSetter?.(undefined);
@@ -4971,6 +5513,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			sharedState.scopeRuntime = null;
 			// The scope belongs to the session that is ending.
 			requestScopeTracker.reset();
+			// The request of the session that is ending is over: a handoff
+			// that arrives now belongs to no request of this session.
+			humanRequestBegan = false;
+			humanRequestAnswered = false;
 			// The pending actions of the guard belong to the session that
 			// is ending: a completed request is not continued by the guard.
 			explorationGuard?.deactivate();
@@ -4985,12 +5531,46 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const { TaskIntakeController } = await import("./packages/jev-judge/dist/task-intake.js");
 				taskIntakeController = new TaskIntakeController({
 					providers: jevProviders,
+					// The name of the tool that records the work is asked
+					// for when the instruction is written: a request that
+					// works on a handoff is recorded with the tool of the
+					// handoff, and the plain todo tool writes a todo
+					// that names no issue at all.
+					//
+					// The tool of the handoff is named for the request that
+					// is captured: a request that works on a handoff whose
+					// work was not recorded yet is recorded with the tool
+					// of the handoff, and every other request is recorded
+					// with the plain tool. The selection is the one of the
+					// whole session, so the intake and the advisory of a
+					// handoff of the same request never name two tools.
+					todoToolName: (message: string) =>
+						todoToolOf(
+							openHandoffsOfRunningRequest(bdHandoffContext, message),
+							BD_HANDOFF_TODO_TOOL,
+						),
 					dispatch: async (content: string) => {
 						// The message is the harness speaking, not a request
 						// of the human: it must not be read as one.
 						noteHarnessMessage(content);
+						// The work of a handoff is recorded with the tool of
+						// the handoff, so the todo of the work names the
+						// issue it belongs to. The plain todo tool knows
+						// nothing of the handoff, and the todo of the work
+						// would name no issue at all.
+						//
+						// Only the handoff that this request works on is
+						// named: a handoff whose todo is in the list needs
+						// no instruction any more, and a handoff of another
+						// request does not belong to this one.
+						const handoff = handoffTodoInstruction(
+							openHandoffsOfRunningRequest(bdHandoffContext, content),
+						);
 						// Queue for next turn so agent processes after current work completes
-						await pi.sendUserMessage(content, { deliverAs: "followUp" });
+						await pi.sendUserMessage(
+							handoff ? `${content}\n${handoff}` : content,
+							{ deliverAs: "followUp" },
+						);
 					},
 				});
 				logToFile("[auto-continue]", "Task intake controller initialized");
@@ -7728,7 +8308,6 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 // --- Harness Runtime State --------------------------------------------
-const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 
 /** Startup messages collected during init — shown on session_start via ctx.ui.notify */
 const startupMessages: string[] = [];
@@ -8456,6 +9035,29 @@ export default async function (pi: ExtensionAPI) {
 		// the reminder about the steps that have no item.
 		requestSteps: () => stepsOfRequest(currentRequestText),
 		requestText: () => currentRequestText,
+		// The work of a handoff is recorded with the tool of the handoff:
+		// the plain todo tool knows nothing of the handoff, and the item
+		// of the work would name no issue at all.
+		//
+		// Only the handoff that the running request names is named: a
+		// request that works on something else is not the work of a
+		// handoff, and its todo must not name an issue of the store. A
+		// handoff that arrived in this request is the work of this
+		// request, and the request does not have to name its issue.
+		todoInstruction: () =>
+			handoffTodoInstruction(
+				openHandoffsOfRunningRequest(bdHandoffContext, currentRequestText),
+			) || undefined,
+		// The nudge names one tool: the tool of the handoff when the
+		// running request works on a handoff whose work was not recorded
+		// yet, and the plain tool otherwise. Two names in one message
+		// leave the agent to choose, and the plain one writes a todo
+		// without the link.
+		todoToolName: () =>
+			todoToolOf(
+				openHandoffsOfRunningRequest(bdHandoffContext, currentRequestText),
+				BD_HANDOFF_TODO_TOOL,
+			),
 	});
 
 	// The guard watches the reads, but only the agent knows what it learned
@@ -8464,11 +9066,72 @@ export default async function (pi: ExtensionAPI) {
 	try {
 		registerExplorationCheckpointTool(pi, {
 			current: () => explorationGuard,
+			// The checkpoint of a request that works on a handoff names the
+			// handoff: the identifiers are evidence, and they never change
+			// the identity of the request.
+			//
+			// The handoff of the running request is the one whose todo was
+			// linked in it. A request that records the work of a handoff
+			// that has no todo yet is named by the handoffs whose work is
+			// still open.
+			link: async () => {
+				// The handoff of the running request: the todos of the
+				// request are the evidence of its work, and the handoff
+				// the request was told about is the work it does.
+				//
+				// A handoff of another request is not named here: the
+				// identifiers of a checkpoint are evidence, and false
+				// evidence survives the compaction and sends the resumed
+				// agent back to a handoff that this request never
+				// touched.
+				const link = handoffLinkOfRequest(
+					bdHandoffContext,
+					currentRequestText,
+					handoffGenerationOfRunningRequest(),
+					await linksOfRunningRequest(),
+				);
+				if (!link) return null;
+				return {
+					bdIssueId: link.bdIssueId,
+					handoffId: link.handoffId,
+					correlationId: link.correlationId,
+				};
+			},
 		});
 	} catch (error) {
 		logToFile(
 			"[exploration-guard]",
 			"the tool of the checkpoint could not be registered:",
+			oneLineError(error),
+		);
+	}
+
+	// --- bd-handoff-todo: the todo that names the handoff it belongs to ---
+	// The list of the session is the list of the steps of the request. A
+	// step of a handoff names that handoff, so the step is still linked to
+	// the issue of the store after a restart of the session.
+	try {
+		registerBdHandoffTodoTool(pi, {
+			context: () => bdHandoffContext,
+			// The durable record of the handoff keeps the todos that belong
+			// to it.
+			onLinked: (link, todoIds) => {
+				// The todo of a handoff is the evidence that the work
+				// belongs to it. The request is remembered with it: only
+				// the todos of the running request are the work of the
+				// running request.
+				const generation = requestScopeTracker.generation;
+				for (const todoId of todoIds) {
+					bdHandoffContext.noteTodo(todoId, link, generation);
+				}
+				if (!link.handoffId || todoIds.length === 0) return;
+				bdHandoffSession?.runtime?.linkTodos(link.handoffId, todoIds);
+			},
+		});
+	} catch (error) {
+		logToFile(
+			"[bd-handoff]",
+			"the tool of the handoff todo could not be registered:",
 			oneLineError(error),
 		);
 	}
@@ -9469,6 +10132,11 @@ issue is not authorized work of the current request).
 
 	pi.on("agent_settled", async () => {
 		taskTracking.agentSettled();
+		// The run of the agent is over: the work of the request is done
+		// until the human asks for more. The advisory of a handoff that
+		// arrives now starts a turn of its own, so the work of that
+		// handoff runs in the request that follows.
+		humanRequestAnswered = true;
 		await refreshTaskTracking();
 		refreshTaskTrackingFooter();
 	});
@@ -9566,6 +10234,46 @@ issue is not authorized work of the current request).
 			reason: details?.reason ?? "auto-resume",
 		});
 		if (decision.action !== "suppress") {
+			// The closure of the work is read before the resume runs: a
+			// handoff whose issue was closed elsewhere is finished, and a
+			// work whose issue cannot be read is unresolved. Both stop the
+			// resume, and both wait for a read that works.
+			const closure = await currentHandoffClosure();
+			if (closure.action === "suppress") {
+				logToFile(
+					"[resume-scope]",
+					`Resume neutralized: ${closure.reason} (${details?.nonce || "no nonce"})`,
+				);
+				reportSuppressedResume(
+					`The work of the request is finished elsewhere; the automatic resume (${details?.reason ?? "auto-resume"}) is not sent.`,
+				);
+				return {
+					messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
+				};
+			}
+			if (closure.action === "unknown") {
+				// The state of the issue is unknown: the work is neither
+				// finished nor unfinished. The resume waits for a read that
+				// works instead of starting the work twice.
+				//
+				// The agent is told the truth as well: the work of the
+				// handoff is not done, and its todos are not closed as
+				// finished.
+				logToFile(
+					"[resume-scope]",
+					`Resume not started: ${closure.reason} (${details?.nonce || "no nonce"})`,
+				);
+				reportSuppressedResume(
+					`The state of the issue of the work is unknown, so the automatic resume (${details?.reason ?? "auto-resume"}) is not sent; the work waits for a read that works.`,
+				);
+				return {
+					messages: neutralizeAutoResume(
+						event.messages,
+						index,
+						NEUTRALIZED_UNKNOWN_WORK_TEXT,
+					) as typeof event.messages,
+				};
+			}
 			return { messages: event.messages };
 		}
 		logToFile(
@@ -11351,6 +12059,13 @@ issue is not authorized work of the current request).
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
+		// The lease of a handoff is held while the work of the handoff
+		// runs. A work that runs longer than the bound of the lease is
+		// renewed at the end of every turn, so the lease of the session
+		// is held at least as often as the boundary of a request, and the
+		// other path cannot start the same work while this session is
+		// working on it.
+		renewHandoffLeases();
 		noteActiveProvider(ctx.model?.id ?? null);
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);

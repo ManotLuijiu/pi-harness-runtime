@@ -22,7 +22,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BdHandoffReader, type BdCommandRunner } from "./bd-handoff-reader.ts";
-import { BdHandoffRuntime, type BdHandoffStatus } from "./bd-handoff-runtime.ts";
+import {
+	BdHandoffRuntime,
+	type BdHandoffDelivery,
+	type BdHandoffStatus,
+} from "./bd-handoff-runtime.ts";
 import { BdHandoffStore } from "./bd-handoff-state.ts";
 
 /**
@@ -108,10 +112,16 @@ export interface BdHandoffRegistrationOptions {
 	/**
 	 * Deliver the observation to the session.
 	 *
+	 * The delivery carries the handoffs it names: the session has to know
+	 * which issues arrived, because the todos of that work are linked to
+	 * them.
+	 *
 	 * The result says whether the session received the message: a
 	 * delivery that did not happen does not move the cursor.
 	 */
-	deliver: (message: string) => Promise<{ delivered: boolean; reason?: string }>;
+	deliver: (
+		delivery: BdHandoffDelivery,
+	) => Promise<{ delivered: boolean; reason?: string }>;
 	/** Is the session able to receive a message? */
 	isIdle?: () => boolean;
 	/** Is the human holding the session back? */
@@ -180,7 +190,7 @@ export function registerBdHandoff(
 		recipient: bdHandoffRecipient(env),
 		now: options.now,
 		sessionId: options.sessionId,
-		deliver: async (delivery) => options.deliver(delivery.message),
+		deliver: async (delivery) => options.deliver(delivery),
 		isIdle: options.isIdle,
 		isPaused: options.isPaused,
 		hasOpenQuestion: options.hasOpenQuestion,

@@ -38,13 +38,13 @@ test("the scope of a request is begun in one place only", () => {
 	);
 	assert.match(
 		indexSource,
-		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);[\s\S]{0,900}?\n\}/,
+		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);[\s\S]{0,1400}?\n\}/,
 		"the helper begins the scope of the request",
 	);
 	// The row of the footer follows the request: it is reset with it.
 	assert.match(
 		indexSource,
-		/function beginHumanRequest\(\): void \{[\s\S]{0,900}?taskTracking\.reset\(\)/,
+		/function beginHumanRequest\(\): void \{[\s\S]{0,1400}?taskTracking\.reset\(\)/,
 		"the helper resets the row of the task list",
 	);
 });

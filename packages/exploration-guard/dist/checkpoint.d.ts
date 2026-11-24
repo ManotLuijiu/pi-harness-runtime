@@ -54,6 +54,17 @@ export interface CompactCheckpoint {
     /** The revision of the checkpoint. */
     revision: number;
     /**
+     * The issue of the store that the work belongs to.
+     *
+     * The identifiers survive the compaction: a checkpoint that lost the
+     * handoff it belongs to would not say any more which work it was.
+     */
+    bdIssueId?: string;
+    /** The handoff that the work belongs to. */
+    handoffId?: string;
+    /** The correlation of the request the work belongs to. */
+    correlationId?: string;
+    /**
      * The files the findings refer to, with the hash that was observed.
      *
      * The references let the agent check whether a file still holds what it
@@ -107,6 +118,17 @@ export interface CheckpointInput {
         contentHash?: string;
         version?: string;
     }[];
+    /**
+     * The issue of the store that the work belongs to.
+     *
+     * The identifiers are evidence: they name the handoff the checkpoint
+     * belongs to. They never take part in the identity of the request.
+     */
+    bdIssueId?: string;
+    /** The handoff that the work belongs to. */
+    handoffId?: string;
+    /** The correlation of the request the work belongs to. */
+    correlationId?: string;
 }
 /**
  * Merge the checkpoint of the agent into the state.

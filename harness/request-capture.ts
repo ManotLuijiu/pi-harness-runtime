@@ -248,6 +248,7 @@ export function uncoveredSteps(
 export function captureInstruction(
 	request: string | undefined,
 	missing: string[],
+	todoToolName = "todo",
 ): string {
 	const lines: string[] = [
 		"The task list of this session does not hold the work of this request.",
@@ -263,7 +264,7 @@ export function captureInstruction(
 		);
 	}
 	lines.push(
-		"Use todo (the local Todos list, not bd). Read the pending and the in_progress",
+		`Use ${todoToolName} (the local Todos list, not bd). Read the pending and the in_progress`,
 		"items first; reuse the existing items and avoid duplicates. Add one item per",
 		"missing step, the subject in the imperative, and the description with what the",
 		"step is and how it is checked. Update progress, blockers and the exact next",

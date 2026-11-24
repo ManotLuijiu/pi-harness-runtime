@@ -92,7 +92,10 @@ function route(fixture, { workspace, registrations, pairing }) {
 /**
  * A receiver of an instance, with the plans it was given.
  */
-function receiverFor(fixture, reg, { hold, defer, deliver, deliveryTimeoutMs } = {}) {
+function receiverFor(
+	fixture,
+	reg,
+	{ hold, defer, deliver, deliveryTimeoutMs, lease } = {}) {
 	const delivered = [];
 	const receiver = startPlanReceiver({
 		registration: reg,
@@ -103,6 +106,7 @@ function receiverFor(fixture, reg, { hold, defer, deliver, deliveryTimeoutMs } =
 		...(hold ? { hold } : {}),
 		...(defer ? { defer } : {}),
 		...(deliveryTimeoutMs ? { deliveryTimeoutMs } : {}),
+		...(lease ? { lease } : {}),
 	});
 	return { receiver, delivered };
 }
@@ -542,4 +546,106 @@ test("a delivery that never settles is not delivered twice", async () => {
 	assert.equal(again, 0);
 	assert.equal(calls, 1);
 	assert.notEqual(mailbox.read(messageId).state, "delivered");
+});
+
+// ---------------------------------------------------------------------------
+// The shared lease of a handoff
+// ---------------------------------------------------------------------------
+
+test("a plan whose handoff is leased by the other path waits in the mailbox", async () => {
+	// The other path runs the work of the handoff: the plan is not
+	// claimed and not delivered, and it waits in the mailbox.
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const claimed = [];
+	const lease = {
+		claim: () => false,
+		release: () => {},
+	};
+	const { receiver, delivered } = receiverFor(fixture, reg, { lease });
+	const handed = await receiver.poll();
+
+	assert.equal(handed, 0);
+	assert.equal(delivered.length, 0);
+	assert.deepEqual(claimed, []);
+	// The plan is still waiting: it was never claimed and never
+	// delivered.
+	const mailbox = fixture.mailbox("agent-a");
+	assert.equal(mailbox.claimable().length, 1);
+});
+
+test("the lease of a handoff is taken before the plan is claimed", async () => {
+	// The order matters: the lease is taken first, so two paths cannot
+	// claim the same plan at the same time.
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const order = [];
+	const lease = {
+		claim: () => {
+			order.push("lease");
+			return true;
+		},
+		release: () => {
+			order.push("release");
+		},
+	};
+	const bridge = {
+		receive: (options) => receivePlans(options),
+		claim: (agentId, messageId, mailbox) => {
+			order.push("claim");
+			return claimPlan(agentId, messageId, mailbox);
+		},
+		acknowledge: (agentId, messageId, mailbox) =>
+			acknowledgePlan(agentId, messageId, mailbox),
+	};
+	const receiver = startPlanReceiver({
+		registration: reg,
+		mailbox: fixture.mailbox(reg.agentId),
+		bridge,
+		deliver: (_message) => {
+			order.push("deliver");
+			return Promise.resolve();
+		},
+		lease,
+	});
+
+	await receiver.poll();
+
+	assert.equal(order[0], "lease");
+	assert.equal(order[1], "claim");
+	assert.ok(order.indexOf("lease") < order.indexOf("claim"));
+});
+
+test("the lease of a handoff is given back when the plan was not handed over", async () => {
+	// Nobody runs the work of the plan, so the other path may run it.
+	const fixture = stores();
+	const workspace = temporary();
+	const reg = registration("agent-a", "session-a", workspace);
+
+	route(fixture, { workspace, registrations: [reg] });
+
+	const released = [];
+	const lease = {
+		claim: () => true,
+		release: () => {
+			released.push("released");
+		},
+	};
+	const { receiver } = receiverFor(fixture, reg, {
+		lease,
+		deliver: () => Promise.reject(new Error("the session did not take the plan")),
+	});
+
+	const handed = await receiver.poll();
+
+	assert.equal(handed, 0);
+	assert.deepEqual(released, ["released"]);
 });

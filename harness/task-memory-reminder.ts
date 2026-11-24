@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { EXPLORATION_CHECKPOINT_TOOL } from "./exploration-checkpoint-tool.ts";
+import { BD_HANDOFF_TODO_TOOL } from "./bd-handoff-todo-tool.ts";
 import {
 	decideTodoReminder,
 	type TodoReminderTodo,
@@ -95,6 +96,9 @@ function isCapture(
 	result: unknown,
 ): boolean {
 	if (toolName === EXPLORATION_CHECKPOINT_TOOL) return checkpointRecorded(result);
+	// The tool of the handoff records the work of the handoff in the same
+	// list, so it is a capture like the plain tool of the list.
+	if (toolName === BD_HANDOFF_TODO_TOOL) return handoffTodoRecorded(result);
 	if (toolName !== TODO_TOOL) return false;
 	if (!taskWriteSucceeded(result)) return false;
 	return CAPTURE_ACTIONS.has(taskListAction(args));
@@ -108,9 +112,21 @@ function recordsWork(
 	args: unknown,
 	result: unknown,
 ): boolean {
+	if (toolName === BD_HANDOFF_TODO_TOOL) return handoffTodoRecorded(result);
 	if (toolName !== TODO_TOOL) return false;
 	if (!taskWriteSucceeded(result)) return false;
 	return RECORD_ACTIONS.has(taskListAction(args));
+}
+
+/**
+ * Did the tool of the handoff record a todo?
+ *
+ * The tool of the handoff says what it did: it names the id of the todo it
+ * wrote, and it refuses to say so when it cannot prove it.
+ */
+function handoffTodoRecorded(result: unknown): boolean {
+	const details = resultDetails(result);
+	return details?.recorded === true;
 }
 
 /** Counts work, never wall-clock time: an idle session cannot trigger a turn. */
@@ -250,6 +266,7 @@ export class TaskMemoryReminder {
 		occasion: string,
 		requiredSteps?: string[],
 		requestText?: string,
+		todoToolName?: string,
 	): string | undefined {
 		if (this.stopped) return undefined;
 		if (!this.todoDue(occasion)) return undefined;
@@ -258,6 +275,7 @@ export class TaskMemoryReminder {
 			occasion,
 			requiredSteps,
 			requestText,
+			todoToolName,
 			lastReminderAt: this.lastTodoNudgeAt || undefined,
 			now: this.clock(),
 		});
@@ -316,12 +334,22 @@ async function todoNudgeText(
 	occasion: string,
 	requiredSteps?: string[],
 	requestText?: string,
+	todoInstruction?: string,
+	todoToolName?: string,
 ): Promise<string> {
 	if (!todoList) return "";
 	try {
-		return (
-			reminder.todoNudge(await todoList(ctx), occasion, requiredSteps, requestText) ?? ""
-		);
+		const nudge =
+			reminder.todoNudge(
+				await todoList(ctx),
+				occasion,
+				requiredSteps,
+				requestText,
+				todoToolName,
+			) ?? "";
+		const instruction = todoInstruction?.trim() ?? "";
+		if (instruction.length === 0) return nudge;
+		return nudge ? `${nudge}\n${instruction}` : instruction;
 	} catch {
 		return "";
 	}
@@ -353,6 +381,22 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 	 * knows which work the items belong to.
 	 */
 	requestText?(): string | undefined;
+	/**
+	 * The way to record the work of a handoff.
+	 *
+	 * A handoff of the issue tracker is recorded with the tool of the
+	 * handoff, so the item names the issue it belongs to. The instruction
+	 * is empty when the session received no handoff.
+	 */
+	todoInstruction?(): string | undefined;
+	/**
+	 * The name of the tool that records the work.
+	 *
+	 * The nudge names one tool. The tool of the handoff when the work of a
+	 * handoff was not recorded yet, and the plain tool of the task list
+	 * otherwise.
+	 */
+	todoToolName?(): string | undefined;
 	/** The clock of the reminder. */
 	now?(): number;
 }): void {
@@ -422,6 +466,8 @@ export function registerTaskMemoryReminders(pi: ExtensionAPI, options: {
 					reason ?? "periodic",
 					options.requestSteps?.(),
 					options.requestText?.(),
+					options.todoInstruction?.(),
+					options.todoToolName?.(),
 				)
 			: "";
 		// The read was asynchronous. The session may have ended, and

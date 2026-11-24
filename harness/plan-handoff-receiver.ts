@@ -46,6 +46,30 @@ export interface PlanReceiverBridge {
 }
 
 /**
+ * The shared lease of a handoff.
+ *
+ * The path of the store and the path of the live plan lease the same
+ * handoff, so the work of one handoff runs once: the lease is taken
+ * before the plan is claimed, and it is held while the work runs.
+ */
+export interface PlanReceiverLease {
+	/**
+	 * Take the lease of the handoff of the plan.
+	 *
+	 * The lease is refused when the other path already runs the handoff:
+	 * the plan then waits in the mailbox, unclaimed and undelivered.
+	 */
+	claim: (message: PlanHandoffMessage) => boolean;
+	/**
+	 * Give the lease of the handoff back.
+	 *
+	 * The lease is given back when the plan was not handed over: nobody
+	 * runs the work, so the other path may run it.
+	 */
+	release: (message: PlanHandoffMessage) => void;
+}
+
+/**
  * The options of the receiver.
  */
 export interface PlanReceiverOptions {
@@ -110,6 +134,15 @@ export interface PlanReceiverOptions {
 	 * The log of the receiver.
 	 */
 	log?: (message: string) => void;
+	/**
+	 * The shared lease of the handoffs.
+	 *
+	 * The lease is taken before the plan is claimed: a plan whose handoff
+	 * is leased by the other path waits in the mailbox. The lease is held
+	 * while the work runs, and it is given back when the plan was not
+	 * handed over.
+	 */
+	lease?: PlanReceiverLease;
 }
 
 /**
@@ -309,6 +342,37 @@ export function startPlanReceiver(
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let stopped = false;
 
+	/**
+	 * Take the lease of the handoff of a plan.
+	 *
+	 * The lease is taken before the plan is claimed: a plan whose handoff
+	 * runs in the other path waits in the mailbox, unclaimed and
+	 * undelivered.
+	 */
+	const takeLease = (message: PlanHandoffMessage): boolean => {
+		if (!options.lease) return true;
+		try {
+			return options.lease.claim(message) === true;
+		} catch {
+			return false;
+		}
+	};
+
+	/**
+	 * Give the lease of the handoff of a plan back.
+	 *
+	 * The lease runs out on its own, so a failure to give it back is not
+	 * a failure of the round.
+	 */
+	const dropLease = (message: PlanHandoffMessage): void => {
+		if (!options.lease) return;
+		try {
+			options.lease.release(message);
+		} catch {
+			// The lease of the handoff stays until it runs out.
+		}
+	};
+
 	const poll = async (): Promise<number> => {
 		if (stopped) return 0;
 		if (polling) {
@@ -416,6 +480,13 @@ export function startPlanReceiver(
 				}
 				continue;
 			}
+			// The lease of the handoff is taken before the plan is claimed:
+			// a plan whose handoff runs in the other path waits in the
+			// mailbox, unclaimed and undelivered.
+			const leased = takeLease(message);
+			if (!leased) {
+				continue;
+			}
 			try {
 				if (
 					!bridge.claim(
@@ -425,9 +496,11 @@ export function startPlanReceiver(
 					)
 				) {
 					// The plan was delivered by somebody else or cancelled.
+					if (leased) dropLease(message);
 					continue;
 				}
 			} catch {
+				if (leased) dropLease(message);
 				continue;
 			}
 			inFlight.set(message.id, now());
@@ -446,7 +519,12 @@ export function startPlanReceiver(
 				if (settled) return;
 				settled = true;
 				inFlight.delete(message.id);
-				if (!handedOver) return;
+				if (!handedOver) {
+					// The plan was not handed over: nobody runs the work, so
+					// the lease is given back and the other path may run it.
+					if (leased) dropLease(message);
+					return;
+				}
 				delivered.add(message.id);
 				handoverCount += 1;
 				try {

@@ -44,17 +44,26 @@ export interface LinkableTodo {
 }
 
 /**
- * The link of one todo.
+ * The identity of a handoff.
+ *
+ * The identity names the handoff itself. It is written into the metadata
+ * of a todo, and it is what a todo of a handoff carries.
  */
-export interface BdTodoLink {
-	/** The id of the todo. */
-	todoId: number;
+export interface BdHandoffIdentity {
 	/** The issue of the store. */
 	bdIssueId?: string;
 	/** The handoff. */
 	handoffId?: string;
 	/** The correlation of the request. */
 	correlationId?: string;
+}
+
+/**
+ * The link of one todo.
+ */
+export interface BdTodoLink extends BdHandoffIdentity {
+	/** The id of the todo. */
+	todoId: number;
 }
 
 /**
@@ -195,7 +204,7 @@ export function decideRequestClosure(input: {
 	/** The links of the todos of the request. */
 	links: readonly BdTodoLink[];
 	/** The state of every issue of the store that was read. */
-	states: ReadonlyMap<string, { readable: boolean; status?: string }>;
+	states: ReadonlyMap<string, { readable: boolean; missing?: boolean; status?: string }>;
 }): BdClosureDecision {
 	const issues = [
 		...new Set(
@@ -207,9 +216,21 @@ export function decideRequestClosure(input: {
 	if (issues.length === 0) {
 		return { action: "continue", reason: "the request points at no issue of the store" };
 	}
+	// The issues that do not exist any more. They are finished, so they do
+	// not keep the work of the request alive.
+	const missing: string[] = [];
 	for (const issueId of issues) {
 		const state = input.states.get(issueId);
 		if (!state || !state.readable) {
+			if (state?.missing) {
+				// The issue does not exist any more. It is finished: it
+				// will never be read again, and the work of the handoff is
+				// not started again either. It is not the end of the whole
+				// request: the other issues of the request still decide, and
+				// an issue that is still open is work that waits.
+				missing.push(issueId);
+				continue;
+			}
 			return {
 				action: "unknown",
 				reason: `the issue ${issueId} could not be read`,
@@ -228,7 +249,10 @@ export function decideRequestClosure(input: {
 		.map((link) => link.todoId);
 	return {
 		action: "suppress",
-		reason: `every issue of the request was closed: ${issues.join(", ")}`,
+		reason:
+			missing.length > 0
+				? `every issue of the request was closed or does not exist any more: ${issues.join(", ")}`
+				: `every issue of the request was closed: ${issues.join(", ")}`,
 		bdIssueId: issues[0],
 		todoIds,
 	};

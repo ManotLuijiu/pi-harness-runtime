@@ -196,6 +196,20 @@ export const NEUTRALIZED_STALE_RESUME_TEXT = [
 ].join(" ");
 
 /**
+ * The text that replaces a resume of a handoff whose state is unknown.
+ *
+ * The issue of the work could not be read: the work is neither finished
+ * nor unfinished. The text says so, and it asks for nothing: the turn
+ * ends, the work waits for a read that works, and no todo of the handoff
+ * is closed as finished.
+ */
+export const NEUTRALIZED_UNKNOWN_WORK_TEXT = [
+	"The state of the work of the handoff could not be read.",
+	"It is unknown whether that work is finished, so it is not continued now.",
+	"Do not close its todos as finished and do not look for other tasks.",
+].join(" ");
+
+/**
  * Replace a resume of a completed request with a message that stops the turn.
  *
  * The array keeps a valid ending: the message that replaces the resume is

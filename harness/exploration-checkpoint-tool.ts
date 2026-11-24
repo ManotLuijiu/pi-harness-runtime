@@ -48,6 +48,20 @@ export interface ExplorationCheckpointToolOptions {
 	 * so instead of pretending that it recorded something.
 	 */
 	current: () => ExplorationCheckpointRecorder | null;
+	/**
+	 * The handoff that the running request works on.
+	 *
+	 * The identifiers of the handoff are written into the checkpoint, so
+	 * the checkpoint says which work it belongs to. They are evidence:
+	 * they never change the identity of the request.
+	 *
+	 * The callback may be asynchronous: the todos of the request are read
+	 * from the list of the session, and the list is read asynchronously.
+	 */
+	link?: () =>
+		| { bdIssueId?: string; handoffId?: string; correlationId?: string }
+		| null
+		| Promise<{ bdIssueId?: string; handoffId?: string; correlationId?: string } | null>;
 }
 
 /**
@@ -155,12 +169,16 @@ export function explorationCheckpointTool(
 					details: { recorded: false },
 				};
 			}
+			const link = (await options.link?.()) ?? null;
 			const recorded = recorder.recordCheckpoint({
 				findings: params.findings,
 				hypotheses: params.hypotheses,
 				openQuestions: params.openQuestions,
 				nextAction: params.nextAction,
 				references: params.references,
+				bdIssueId: link?.bdIssueId,
+				handoffId: link?.handoffId,
+				correlationId: link?.correlationId,
 			});
 			if (!recorded) {
 				return {
@@ -192,6 +210,18 @@ export function explorationCheckpointTool(
 			if (params.nextAction) {
 				parts.push("a next action");
 			}
+			// The result carries the identifiers of the handoff: the
+			// checkpoint and the result of a work of a handoff name the
+			// same issue.
+			const outcome: {
+				recorded: boolean;
+				bdIssueId?: string;
+				handoffId?: string;
+				correlationId?: string;
+			} = { recorded: true };
+			if (link?.bdIssueId) outcome.bdIssueId = link.bdIssueId;
+			if (link?.handoffId) outcome.handoffId = link.handoffId;
+			if (link?.correlationId) outcome.correlationId = link.correlationId;
 			return {
 				content: [
 					{
@@ -202,7 +232,7 @@ export function explorationCheckpointTool(
 								: "The checkpoint of the request was recorded, but it was empty.",
 					},
 				],
-				details: { recorded: true },
+				details: outcome,
 			};
 		},
 	});

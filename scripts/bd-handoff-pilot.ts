@@ -32,6 +32,7 @@ import {
 	formatBdHandoffStatus,
 } from "../harness/bd-handoff-session.ts";
 import { BdHandoffStore } from "../harness/bd-handoff-state.ts";
+import type { BdHandoffDelivery } from "../harness/bd-handoff-runtime.ts";
 
 /**
  * What the pilot runs against.
@@ -273,8 +274,8 @@ const session = new BdHandoffSession();
 const registration = session.start({
 	workspace: () => store,
 	sessionId: () => "bd-handoff-pilot",
-	deliver: async (message: string) => {
-		delivered.push(message);
+	deliver: async (delivery: BdHandoffDelivery) => {
+		delivered.push(delivery.message);
 		return { delivered: true };
 	},
 	isIdle: () => true,

@@ -270,6 +270,134 @@ test("an empty list of the CLI is an issue that is not there", async () => {
 	assert.equal(read.value, null);
 });
 
+test("a failed read that names the issue is a missing issue", async () => {
+	// The CLI says that the issue itself is not there: the work of that
+	// issue is finished, and the handoff of it is not delivered again.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "issue bd-1 not found",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, true);
+	assert.equal(read.value, null);
+});
+
+test("a failed read that names another issue is a broken read", async () => {
+	// The CLI says that another issue is not there. The issue that was
+	// asked for may be there, and its work waits for a read that works.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "issue bd-2 not found",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, false);
+	assert.equal(read.failure.kind, "read-failed");
+});
+
+test("a failed read that names no issue is a broken read", async () => {
+	// The store was not found: the issue may be there. A broken read that
+	// is read as a missing issue declares the work of an open issue
+	// finished, and the handoff of it is never delivered again.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "database not found",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, false);
+	assert.equal(read.failure.kind, "read-failed");
+});
+
+test("a failed read that says that there is no such issue is a missing issue", async () => {
+	// The wording of the CLI is read as well: "no such issue" says the
+	// same as "no issue". The work of that issue is finished, and the
+	// handoff of it is not delivered again.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "bd-1: no such issue",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, true);
+	assert.equal(read.value, null);
+});
+
+test("a failed read that says that the id is unknown is a missing issue", async () => {
+	// The wording of the CLI names the id and not the word "issue": the
+	// issue that was asked for is not there.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "unknown id bd-1",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, true);
+	assert.equal(read.value, null);
+});
+
+test("a failed read that names the tracker is a broken read", async () => {
+	// The tracker itself was not found: the issue may be there, and its
+	// work waits for a read that works.
+	const workspace = workspaceWithStore();
+	const { run } = runner({
+		where: whereOf(workspace),
+		"list --help": CAPABILITIES,
+		show: {
+			stdout: "",
+			stderr: "bd-1: the tracker was not found",
+			exitCode: 1,
+			timedOut: false,
+			truncated: false,
+		},
+	});
+	const reader = new BdHandoffReader({ workspace, run });
+	const read = await reader.issue("bd-1");
+	assert.equal(read.ok, false);
+	assert.equal(read.failure.kind, "read-failed");
+});
+
 test("an issue without a handoff is a candidate and not work", async () => {
 	const workspace = workspaceWithStore();
 	const { run } = runner({

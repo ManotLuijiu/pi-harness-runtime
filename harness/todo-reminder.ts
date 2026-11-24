@@ -81,6 +81,15 @@ export interface TodoReminderFacts {
 	 * knows which work the items belong to.
 	 */
 	requestText?: string;
+	/**
+	 * The tool that records the work.
+	 *
+	 * The nudge names one tool: the tool of the handoff when the work of a
+	 * handoff was not recorded yet, and the plain tool of the task list
+	 * otherwise. Two names in one message leave the agent to choose, and
+	 * the plain one writes a todo without the link.
+	 */
+	todoToolName?: string;
 	/** When the last reminder went out. */
 	lastReminderAt?: number;
 	/** The pause between two reminders. */
@@ -147,8 +156,9 @@ function missingSteps(
 export function todoReminderText(
 	missing: string[] = [],
 	request?: string,
+	todoToolName?: string,
 ): string {
-	return captureInstruction(request, missing);
+	return captureInstruction(request, missing, todoToolName);
 }
 
 /**
@@ -192,6 +202,6 @@ export function decideTodoReminder(
 	return {
 		remind: true,
 		reason: `the work of the request is not in the task list (${facts.occasion})`,
-		text: todoReminderText(missing, facts.requestText),
+		text: todoReminderText(missing, facts.requestText, facts.todoToolName),
 	};
 }
