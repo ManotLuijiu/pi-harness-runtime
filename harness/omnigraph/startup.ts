@@ -303,9 +303,7 @@ function offRow(
 	}
 	const details = [
 		"The OmniGraph is a shared graph of skills that every machine of the team can read.",
-		"A skill of the graph is found with the command /skill:<name>",
-		"A skill of the graph is read with the tool remote_skill_load",
-		"The skills of the graph are listed with the command /remote-skills",
+		"The graph is not configured on this machine, so it is not read and its tools are not registered.",
 	];
 	// The row names the part that is missing: a machine that has the
 	// endpoint must not be told to set it again.
@@ -331,6 +329,12 @@ function offRow(
 		);
 	}
 	details.push("Then reload Pi so the graph is read");
+	// The usage of the graph belongs to the row of a machine that reads
+	// it: on this machine the tools of the graph are not registered, so
+	// the row must not promise them.
+	details.push(
+		"When the graph is read: a skill of it is found with the command /skill:<name>, read with the tool remote_skill_load, and listed with the command /remote-skills",
+	);
 	return {
 		text: "not configured; the shared skill graph is optional",
 		status: "info",

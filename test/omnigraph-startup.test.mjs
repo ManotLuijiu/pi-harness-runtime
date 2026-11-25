@@ -156,6 +156,10 @@ test("a machine without the graph gets the row that says how to configure it", (
 	assert.match(details, /OMNIGRAPH_URL/);
 	assert.match(details, /OMNIGRAPH_SKILLS_TOKEN/);
 	assert.match(details, /omnigraph-skills-token\.txt/);
+	// The row does not promise the tools of the graph: they are not
+	// registered on a machine that does not read the graph.
+	assert.match(details, /its tools are not registered/);
+	assert.equal(pi.commands.length, 0);
 	// The graph is not the source of this machine: no tool, no command.
 	assert.equal(pi.tools.length, 0);
 });
