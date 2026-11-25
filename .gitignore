@@ -106,3 +106,7 @@ packages/two-phase-review/.test-*
 
 # generated code-graph output (a tool snapshot, not source)
 /graphify-out/
+
+# Private local test data; sanitized tests and fixtures remain tracked for CI.
+/test/.private/
+/test/.captures/

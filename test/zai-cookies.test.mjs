@@ -63,9 +63,7 @@ function loadNetscapeCookies(path) {
 const cookies = loadNetscapeCookies(COOKIE_FILE);
 console.log(`Loaded ${cookies.length} cookies\n`);
 
-// Print cookie names
-console.log("Cookie names:");
-cookies.forEach(c => console.log(`  - ${c.name}`));
+// Cookie contents and names stay local; the count is sufficient here.
 
 // Test with Playwright
 async function testZaiPage() {
@@ -97,7 +95,6 @@ async function testZaiPage() {
 		const url = resp.url();
 		if (apiTerms.some(term => url.toLowerCase().includes(term))) {
 			capturedResponses.push({
-				url,
 				status: resp.status(),
 				ok: resp.ok()
 			});
@@ -112,20 +109,16 @@ async function testZaiPage() {
 		});
 		await page.waitForTimeout(3000);
 
-		console.log("URL:", page.url());
-		console.log("Title:", await page.title());
+		console.log("Page navigation complete");
 		
 		// Get visible text
 		const bodyText = await page.locator("body").innerText({ timeout: 10000 });
-		console.log("\nVisible text (first 1000 chars):");
-		console.log("---");
-		console.log(bodyText.substring(0, 1000));
-		console.log("---");
+		console.log("Visible text captured (characters):", bodyText.length);
 		
 		// Check for API responses
 		console.log(`\nCaptured ${capturedResponses.length} API responses:`);
 		capturedResponses.forEach(r => {
-			console.log(`  ${r.status} ${r.ok ? "✓" : "✗"} ${r.url}`);
+			console.log(`  ${r.status} ${r.ok ? "OK" : "FAILED"}`);
 		});
 
 		// Try usage page
@@ -136,17 +129,14 @@ async function testZaiPage() {
 		});
 		await page.waitForTimeout(3000);
 		
-		console.log("URL:", page.url());
-		console.log("Title:", await page.title());
+		console.log("Usage page navigation complete");
 		
 		const usageText = await page.locator("body").innerText({ timeout: 10000 });
-		console.log("\nUsage page text (first 1000 chars):");
-		console.log("---");
-		console.log(usageText.substring(0, 1000));
-		console.log("---");
+		console.log("Usage text captured (characters):", usageText.length);
 
 	} catch (error) {
-		console.error("\nError:", error.message);
+		// Browser errors can contain private URLs or response fragments.
+		console.error("\nBrowser diagnostic failed; details withheld from shared output.");
 	} finally {
 		await browser.close();
 	}
