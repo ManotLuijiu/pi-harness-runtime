@@ -9,12 +9,21 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
-    # Open PRs against develop branch so auto-merge-develop workflow picks them up
-    open-pull-request-strategy: auto
+    # Dependency PRs are reviewed on develop; release automation merges
+    # only develop -> main after the required checks pass.
     target-branch: "develop"
-    # Auto-merge when CI passes (no review needed for dep bumps)
-    automerge: true
-    # Only auto-merge minor/patch updates, not major
+    open-pull-requests-limit: 5
+    groups:
+      compatible-updates:
+        update-types: [minor, patch]
+    # These old major upgrades are tracked as explicit migrations.
+    ignore:
+      - dependency-name: openai
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@commitlint/cli"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore"
       include: scope

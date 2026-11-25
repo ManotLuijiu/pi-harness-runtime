@@ -1,0 +1,47 @@
+name: Tag the merged release
+
+on:
+  workflow_run:
+    workflows: [Auto merge]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: tag-main-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      # No PR checkout, artifacts, caches, or dependency install. Only
+      # trusted main code reads the merged PR and its exact head checks.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/create-github-app-token@v3
+        id: tag-app
+        with:
+          client-id: ${{ secrets.RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      # An App-created tag starts release.yml. A GITHUB_TOKEN-created
+      # tag would suppress the downstream push workflow.
+      - name: Tag the verified main release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG_TOKEN: ${{ steps.tag-app.outputs.token }}
+        run: node scripts/tag-main-release.mjs
