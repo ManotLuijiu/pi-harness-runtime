@@ -154,7 +154,7 @@ export function initOmnigraphSkills(
 					"The shared skill graph is not configured on this machine",
 					"How to configure it: set OMNIGRAPH_URL to the address of the graph and OMNIGRAPH_SKILLS_TOKEN to the credential of the reader",
 					"Or write the credential into ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt",
-					"The graph does not take the place of the service: set OMNIGRAPH_SOURCE_MODE=omnigraph to read the graph instead",
+					"The graph does not take the place of the service: set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader, to read the graph instead",
 				],
 			});
 		}

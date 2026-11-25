@@ -335,7 +335,15 @@ test("the skill service of the harness keeps the place when the graph is not con
 	assert.equal(row.status, "info");
 	assert.doesNotMatch(row.text, /endpoint or the credential is missing/);
 	assert.match(row.text, /skill service of the harness/);
-	assert.match(row.details.join("\n"), /OMNIGRAPH_URL/);
+	const details = row.details.join("\n");
+	assert.match(details, /OMNIGRAPH_URL/);
+	assert.match(details, /OMNIGRAPH_SKILLS_TOKEN/);
+	// The advice to make the graph the source is complete: the mode
+	// alone cannot work without the endpoint and the credential.
+	assert.match(
+		details,
+		/set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader/,
+	);
 	assert.equal(pi.tools.length, 0);
 });
 
