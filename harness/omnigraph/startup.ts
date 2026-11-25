@@ -8,7 +8,6 @@
  * when it is not - so the user sees both which graph the machine reads
  * from and how the graph is turned on.
  *
- *
  * The registration is synchronous and does not wait for the network: the
  * discovery of the skills of the graph must not depend on the state of
  * another service. The row is placed later, next to the row of Qdrant,
@@ -141,6 +140,24 @@ export function initOmnigraphSkills(
 
 	const config = readOmnigraphConfig(withToken);
 	if (!config) {
+		// The mode decides what a missing configuration means. When the
+		// graph is the source on purpose, the row is a warning: the
+		// operator asked for the graph and it cannot be read. When the
+		// skill service of the harness is the source, the graph is
+		// optional and the row is an information.
+		if (mode === "saas") {
+			return staticRow(options, {
+				text: "not configured; the skill service of the harness is the source",
+				status: "info",
+				details: [
+					"The skill service of the harness holds the skills",
+					"The shared skill graph is not configured on this machine",
+					"How to configure it: set OMNIGRAPH_URL to the address of the graph and OMNIGRAPH_SKILLS_TOKEN to the credential of the reader",
+					"Or write the credential into ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt",
+					"The graph does not take the place of the service: set OMNIGRAPH_SOURCE_MODE=omnigraph to read the graph instead",
+				],
+			});
+		}
 		return staticRow(options, {
 			text: "on, but the endpoint or the credential is missing",
 			status: "warn",
@@ -262,15 +279,24 @@ function offRow(
 	saasConfigured: boolean,
 ): { text: string; status: HarnessStatus; details: string[] } {
 	const explicit = env.OMNIGRAPH_SOURCE_MODE?.trim().toLowerCase();
+	const url = env.OMNIGRAPH_URL?.trim();
+	const token = env.OMNIGRAPH_SKILLS_TOKEN?.trim();
 	if (explicit === "off") {
 		// The user turned the source off on purpose. The row says so, and
-		// it names the way back.
+		// it names the way back - without asking for a value that is
+		// already set.
 		return {
 			text: "disabled; the shared skill graph is not read",
 			status: "info",
 			details: [
 				"The OmniGraph source is turned off in the configuration",
-				"How to turn it on again: remove OMNIGRAPH_SOURCE_MODE=off and set OMNIGRAPH_URL and OMNIGRAPH_SKILLS_TOKEN",
+				url
+					? `The endpoint of the graph is set at ${url}`
+					: "How to configure it: set OMNIGRAPH_URL to the address of the graph",
+				token
+					? "The credential of the reader is set"
+					: "How to configure it: set OMNIGRAPH_SKILLS_TOKEN to the credential of the reader",
+				"How to turn it on again: remove OMNIGRAPH_SOURCE_MODE=off",
 				"Then reload Pi so the graph is read",
 			],
 		};
@@ -283,8 +309,6 @@ function offRow(
 	];
 	// The row names the part that is missing: a machine that has the
 	// endpoint must not be told to set it again.
-	const url = env.OMNIGRAPH_URL?.trim();
-	const token = env.OMNIGRAPH_SKILLS_TOKEN?.trim();
 	if (url) {
 		details.push(`The endpoint of the graph is set at ${url}`);
 	} else {
@@ -299,9 +323,11 @@ function offRow(
 		);
 	}
 	if (saasConfigured) {
+		details.push("The skill service of the harness holds the skills meanwhile");
 		details.push(
-			"The skill service of the harness holds the skills meanwhile",
-			"How to change that: set OMNIGRAPH_SOURCE_MODE=omnigraph",
+			url && token
+				? "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph"
+				: "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader",
 		);
 	}
 	details.push("Then reload Pi so the graph is read");

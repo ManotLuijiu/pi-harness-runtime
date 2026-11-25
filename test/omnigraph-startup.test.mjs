@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -312,5 +312,73 @@ test("a graph that cannot be reached is reported, and is not ready", async () =>
 		assert.match(row.text, /not ready/);
 	} finally {
 		rmSync(cacheDir, { recursive: true, force: true });
+	}
+});
+
+test("the skill service of the harness keeps the place when the graph is not configured", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: true,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "saas" },
+	});
+	const row = sink.rows[0];
+	assert.equal(row.label, "Omnigraph");
+	// The graph is not the source of this machine and it is optional: the
+	// row is an information, not a warning about a source that is on.
+	assert.equal(row.status, "info");
+	assert.doesNotMatch(row.text, /endpoint or the credential is missing/);
+	assert.match(row.text, /skill service of the harness/);
+	assert.match(row.details.join("\n"), /OMNIGRAPH_URL/);
+	assert.equal(pi.tools.length, 0);
+});
+
+test("a turned-off row names what is missing and the way back", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "off" },
+	});
+	const details = sink.rows[0].details.join("\n");
+	assert.match(details, /set OMNIGRAPH_URL/);
+	assert.match(details, /set OMNIGRAPH_SKILLS_TOKEN/);
+	assert.match(details, /remove OMNIGRAPH_SOURCE_MODE=off/);
+});
+
+test("a turned-off row does not ask for what is already set", () => {
+	const home = mkdtempSync(join(tmpdir(), "omnigraph-home-"));
+	try {
+		// The credential of the reader is in the key file of the machine:
+		// the row must not ask for it again.
+		const keyDir = join(home, ".pi-harness-runtime", "keys");
+		mkdirSync(keyDir, { recursive: true });
+		writeFileSync(join(keyDir, "omnigraph-skills-token.txt"), "the-token\n");
+		const pi = fakePi();
+		const sink = recorder();
+		initOmnigraphSkills(pi, {
+			insert: sink.insert,
+			log: () => {},
+			saasConfigured: false,
+			env: {
+				HOME: home,
+				OMNIGRAPH_URL: "https://graph.example",
+				OMNIGRAPH_SOURCE_MODE: "off",
+			},
+		});
+		const details = sink.rows[0].details.join("\n");
+		assert.match(
+			details,
+			/The endpoint of the graph is set at https:\/\/graph\.example/,
+		);
+		assert.match(details, /The credential of the reader is set/);
+		assert.doesNotMatch(details, /set OMNIGRAPH_URL/);
+		assert.doesNotMatch(details, /set OMNIGRAPH_SKILLS_TOKEN/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
 	}
 });
