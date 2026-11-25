@@ -187,6 +187,36 @@ The graph is read-only for the runtime: the agent never writes a skill,
 never publishes one, and never changes the schema of the graph. The
 credential of the reader is not the credential of the publisher.
 
+## The Reverse Bridge (a worker of another vendor)
+
+The reverse bridge lets a worker of another vendor - Codex or Claude Code -
+address a live Pi session of the same workspace. It is opt-in: the human
+asks for it by name with `PI_AGENT_COMMUNICATION_BRIDGE=1`, and without
+that the worker gets the MCP servers of the machine as usual.
+
+With the bridge on, the worker gets four tools:
+
+| Tool | Description |
+| --------- | ------------- |
+| `agent_list` | The live Pi instances and their identity |
+| `agent_send` | A message for one instance (`inform`, `review`, `implement`) |
+| `agent_result` | The replies of an exchange: accepted, completed, blocked, question |
+| `agent_cancel` | A message that shall not be delivered |
+
+A message names the instance it is for, and the identity is checked
+against the live registration: a session that ended, another generation,
+another workspace or another host is refused. The routing only decides
+when exactly one instance of the workspace is live - several instances
+are a question for the caller, never a guess.
+
+A message is accepted, not completed: the answer of the session comes
+later, as a reply of the exchange. The worker reads it with
+`agent_result`.
+
+The store of the replies and the mailboxes is never read or written
+outside of itself: an id is a name, never a path. A reply of another
+exchange is never the answer of this one.
+
 ## Job State Machine
 
 ```

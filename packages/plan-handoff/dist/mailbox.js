@@ -14,7 +14,44 @@
  * conversation transcripts.
  */
 import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
+/**
+ * The longest name a store may hold.
+ */
+const MAX_NAME_LENGTH = 128;
+/**
+ * Is the value a name that may name a file or a folder of a store?
+ *
+ * A name is never a path. A separator, a null byte and the two names of
+ * a folder of the parent would let a caller of the store reach outside
+ * of it, so an identity that is not a name is refused before it is used.
+ */
+export function isStoreName(value) {
+    return (typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= MAX_NAME_LENGTH &&
+        value !== "." &&
+        value !== ".." &&
+        !value.includes("/") &&
+        !value.includes("\\") &&
+        !value.includes("\0"));
+}
+/**
+ * The path of a name inside a store, when the name stays inside it.
+ *
+ * The name is checked twice: once as a name, and once as a path that
+ * resolves under the root of the store. The second check holds even when
+ * the root of the store is a link.
+ */
+function storePath(root, name) {
+    if (!isStoreName(name))
+        return null;
+    const base = resolve(root);
+    const target = resolve(join(root, name));
+    if (target !== base && !target.startsWith(`${base}${sep}`))
+        return null;
+    return target;
+}
 /**
  * The store of the replies.
  *
@@ -28,9 +65,15 @@ export class ReplyStore {
     }
     /**
      * Write a reply.
+     *
+     * A reply that carries an identity that is not a name is refused: the
+     * store holds a name, never a path.
      */
     write(reply) {
-        const target = join(this.directory, reply.correlationId);
+        const target = storePath(this.directory, reply.correlationId);
+        if (!target || !isStoreName(reply.id)) {
+            throw new Error("the reply carries an identity that is not a name: it cannot be written into the store");
+        }
         mkdirSync(target, { recursive: true });
         const file = join(target, `${reply.id}.json`);
         const temporary = `${file}.${process.pid}.tmp`;
@@ -41,11 +84,18 @@ export class ReplyStore {
     }
     /**
      * The replies of an exchange, oldest first.
+     *
+     * An exchange that is not named by a name has no replies: the store
+     * is never read outside of itself. A reply that belongs to another
+     * exchange is not the answer of this one, and it is not read.
      */
     read(correlationId) {
+        const target = storePath(this.directory, correlationId);
+        if (!target)
+            return [];
         let names;
         try {
-            names = readdirSync(join(this.directory, correlationId));
+            names = readdirSync(target);
         }
         catch {
             return [];
@@ -55,8 +105,10 @@ export class ReplyStore {
             if (!name.endsWith(".json"))
                 continue;
             try {
-                const parsed = JSON.parse(readFileSync(join(this.directory, correlationId, name), "utf8"));
+                const parsed = JSON.parse(readFileSync(join(target, name), "utf8"));
                 if (!isHandoffReply(parsed))
+                    continue;
+                if (parsed.correlationId !== correlationId)
                     continue;
                 replies.push(parsed);
             }
@@ -116,10 +168,16 @@ export class Mailbox {
     }
     /**
      * The message that is already claimed or delivered.
+     *
+     * A message that is not named by a name is not read: the mailbox is
+     * never read outside of itself.
      */
     read(id) {
+        const file = storePath(this.directory, `${id}.json`);
+        if (!file)
+            return undefined;
         try {
-            const parsed = JSON.parse(readFileSync(join(this.directory, `${id}.json`), "utf8"));
+            const parsed = JSON.parse(readFileSync(file, "utf8"));
             return isMailboxEntry(parsed) ? parsed : undefined;
         }
         catch {
@@ -202,8 +260,11 @@ export class Mailbox {
         for (const entry of this.entries()) {
             if (entry.state !== "delivered" && entry.state !== "cancelled")
                 continue;
+            const file = storePath(this.directory, `${entry.message.id}.json`);
+            if (!file)
+                continue;
             try {
-                unlinkSync(join(this.directory, `${entry.message.id}.json`));
+                unlinkSync(file);
                 removed += 1;
             }
             catch {
@@ -214,8 +275,14 @@ export class Mailbox {
     }
     /**
      * Write one message.
+     *
+     * A message that carries an identity that is not a name is refused:
+     * the mailbox holds a name, never a path.
      */
     write(entry) {
+        if (!isStoreName(entry.message.id)) {
+            throw new Error("the message carries an identity that is not a name: it cannot be written into the mailbox");
+        }
         mkdirSync(this.directory, { recursive: true });
         const file = join(this.directory, `${entry.message.id}.json`);
         const temporary = `${file}.${process.pid}.tmp`;

@@ -22,7 +22,7 @@ export { awaitingInWorkspace, DEFAULT_HANDOFF_RETENTION_MS, PendingHandoffStore,
 export type { HandoffState, PendingHandoff } from "./retention.js";
 export { describeCandidates, publishPlan, recipientIdentity } from "./publish.js";
 export type { PublicationOutcome, PublicationResult, PublishPlanContent, PublishPlanOptions, } from "./publish.js";
-export { Mailbox, ReplyStore } from "./mailbox.js";
+export { Mailbox, ReplyStore, isStoreName } from "./mailbox.js";
 export type { HandoffReply, MailboxEntry, MailboxState } from "./mailbox.js";
 export { PairingStore } from "./pairing.js";
 export type { Pairing } from "./pairing.js";

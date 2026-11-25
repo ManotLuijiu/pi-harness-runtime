@@ -13,6 +13,11 @@
  */
 
 /**
+ * The configuration of the reverse bridge.
+ */
+import type { BridgeConfig } from "./bridge-config.ts";
+
+/**
  * The workers the harness can consult.
  *
  * The vocabulary is closed. A caller names a target of this list, never a
@@ -269,6 +274,14 @@ export interface ConsultAdapter {
 	 * checks the files that the worker touched.
 	 */
 	readonly writeArgv?: readonly string[];
+	/**
+	 * The arguments of a consultation with the reverse bridge.
+	 *
+	 * The reverse bridge lets the worker address a live Pi session. The
+	 * human asks for it by name, and the arguments of the worker carry
+	 * the server of the bridge.
+	 */
+	readonly bridgeArgv?: (config: BridgeConfig) => readonly string[];
 	/**
 	 * The environment of the worker.
 	 *

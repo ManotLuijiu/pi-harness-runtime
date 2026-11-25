@@ -15,6 +15,14 @@
  */
 import type { PlanHandoffMessage } from "./message.js";
 /**
+ * Is the value a name that may name a file or a folder of a store?
+ *
+ * A name is never a path. A separator, a null byte and the two names of
+ * a folder of the parent would let a caller of the store reach outside
+ * of it, so an identity that is not a name is refused before it is used.
+ */
+export declare function isStoreName(value: unknown): value is string;
+/**
  * The state of a message in the mailbox.
  */
 export type MailboxState = 
@@ -67,10 +75,17 @@ export declare class ReplyStore {
     constructor(directory: string);
     /**
      * Write a reply.
+     *
+     * A reply that carries an identity that is not a name is refused: the
+     * store holds a name, never a path.
      */
     write(reply: HandoffReply): void;
     /**
      * The replies of an exchange, oldest first.
+     *
+     * An exchange that is not named by a name has no replies: the store
+     * is never read outside of itself. A reply that belongs to another
+     * exchange is not the answer of this one, and it is not read.
      */
     read(correlationId: string): HandoffReply[];
 }
@@ -107,6 +122,9 @@ export declare class Mailbox {
     claimable(): MailboxEntry[];
     /**
      * The message that is already claimed or delivered.
+     *
+     * A message that is not named by a name is not read: the mailbox is
+     * never read outside of itself.
      */
     read(id: string): MailboxEntry | undefined;
     /**
@@ -135,6 +153,9 @@ export declare class Mailbox {
     prune(): number;
     /**
      * Write one message.
+     *
+     * A message that carries an identity that is not a name is refused:
+     * the mailbox holds a name, never a path.
      */
     private write;
 }

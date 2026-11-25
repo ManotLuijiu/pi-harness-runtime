@@ -1,0 +1,22 @@
+{
+  "name": "@pi-harness/agent-bridge",
+  "version": "1.1.519",
+  "description": "The reverse bridge: a worker of another vendor may address a live Pi session",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test"
+  },
+  "dependencies": {}
+}
