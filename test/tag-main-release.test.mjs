@@ -117,6 +117,7 @@ test("the release script dispatches GitHub rather than opening a PR with local c
 test("Dependabot groups compatible updates and defers the tracked major migrations", () => {
 	const config = parse(readFileSync(new URL("../.github/dependabot.yml", import.meta.url), "utf8"));
 	const update = config.updates[0];
+	assert.equal(update["package-ecosystem"], "bun");
 	assert.equal(update["target-branch"], "develop");
 	assert.equal(update.automerge, undefined);
 	assert.equal(update["open-pull-request-strategy"], undefined);
