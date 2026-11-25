@@ -47,13 +47,13 @@ git push origin develop
 # 3. the version of the release, prepared and pushed on develop
 bun scripts/release-all.ts --release-as patch
 
-# 4. the workflow opens the pull request into main with its own token
-gh workflow run auto-merge.yml --ref develop -f open_release_pr=true
+# 4. the release script dispatches the App-authenticated workflow above
+# Recovery only, if a prepared release needs another handoff:
+# gh workflow run auto-merge.yml --ref develop -f open_release_pr=true
 
 # 5. the workflow merges the pull request when the gates are green
 
-# 6. the tag, on the commit that is on main
-bun scripts/release-all.ts --tag
+# 6. tag-release.yml runs after Auto merge and tags the verified main commit
 
 # 7. the tag publishes the package to npm through OIDC
 ```

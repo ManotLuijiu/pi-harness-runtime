@@ -144,8 +144,8 @@ bun scripts/release-all.ts --release-as patch
 #    The workflow merges the pull request itself, with the commit that
 #    was checked. A pull request that is not green waits for a human.
 
-# 4. After the merge, the tag is created on the tip of main.
-bun scripts/release-all.ts --tag
+# 4. After the gated merge, tag-release.yml automatically tags main.
+# The App-created tag triggers the publish workflow without a local tag command.
 
 # 5. The tag triggers release.yml, which publishes to npm through OIDC
 #    and creates the GitHub release.

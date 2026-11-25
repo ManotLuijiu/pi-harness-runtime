@@ -21,10 +21,8 @@ import {
 	existsSync,
 	readdirSync,
 	readFileSync,
-	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -184,59 +182,12 @@ async function setWorkspaceVersion(
 	console.log(`  Updated ${name}`);
 }
 
-/**
- * Open the pull request from `develop` into `main`.
- *
- * `main` is the branch npm publishes, so a release reaches it through a
- * pull request. The auto merge workflow merges that request once the
- * sensitive terms check and the tests pass.
- *
- * The pull request is a convenience, not a gate: when it cannot be
- * opened the command says so and the release continues. A release that
- * is prepared but not merged publishes nothing, because the tag is only
- * created on `main`.
- *
- * @param {string} version
- */
-function openReleasePullRequest(version: string): void {
-	const title = `Release ${version}`;
-	const body = [
-		`The release ${version} is prepared on \`develop\`.`,
-		"",
-		"This pull request is merged by the auto merge workflow once the",
-		"required checks pass. The tag is created on `main` after the",
-		"merge, and the tag is what publishes to npm.",
-	].join("\n");
-	try {
-		// The body is written to a file. A body that carries a backtick
-		// is otherwise read by the shell, and the shell runs what is
-		// between the backticks.
-		const bodyFile = join(tmpdir(), `pi-harness-release-${version}.md`);
-		writeFileSync(bodyFile, `${body}\n`);
-		try {
-			const output = execSync(
-				`gh pr create --base main --head develop --title ` +
-					JSON.stringify(title) +
-					` --body-file ` +
-					JSON.stringify(bodyFile),
-				{ cwd: ROOT, encoding: "utf-8" },
-			);
-			console.log(`   ${output.trim()}`);
-		} finally {
-			rmSync(bodyFile, { force: true });
-		}
-	} catch (err) {
-		const detail =
-			err && typeof err === "object" && "stderr" in err
-				? String((err as { stderr?: unknown }).stderr ?? "").trim()
-				: "";
-		console.log("   The pull request was not opened automatically.");
-		if (detail) console.log(`   ${detail.split("\n")[0]}`);
-		console.log("   Open it by hand:");
-		console.log(
-			`     gh pr create --base main --head develop --title "${title}"`,
-		);
-	}
+/** Hand the prepared develop release to GitHub's App-authenticated workflow. */
+function dispatchReleaseWorkflow(): void {
+	execSync(
+		"gh workflow run auto-merge.yml --ref develop -f open_release_pr=true",
+		{ cwd: ROOT, stdio: "inherit" },
+	);
 }
 
 /**
@@ -393,7 +344,7 @@ async function main(): Promise<void> {
 	const cmdParts = releaseArgs.filter((a) => !a.startsWith("--dry-run"));
 	// The tag is not created here. A tag names a release, and a release
 	// is a version of `main` - the branch npm publishes. The tag is
-	// created on the tip of `main`, after the merge, by `--tag`.
+	// created on main by tag-release.yml after the gated merge.
 	const stdCmd =
 		cmdParts.length > 0
 			? `npx standard-version ${cmdParts.join(" ")} --skip.tag`
@@ -493,16 +444,16 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Step 7: Open the pull request into the release branch.
+	// Step 7: Start the automated PR, merge and tag handoff.
 	//
 	// `main` is the branch npm publishes, so a change reaches it
 	// through a pull request. The auto merge workflow merges that
 	// request once the sensitive terms check and the tests pass.
 	if (!isDryRun) {
 		console.log(
-			"\n🚀 Step 7: Opening the pull request from develop into main...",
+			"\nStep 7: Dispatching the release workflow on develop...",
 		);
-		openReleasePullRequest(newVersion);
+		dispatchReleaseWorkflow();
 	}
 
 	console.log(`\n✅ Release ${newVersion} is prepared on develop.\n`);
@@ -511,7 +462,7 @@ async function main(): Promise<void> {
 		"   1. The pull request into main is merged once the gates pass.",
 	);
 	console.log(
-		`   2. After the merge: bun scripts/release-all.ts --tag  (tags v${newVersion} on main)`,
+		`   2. GitHub tags v${newVersion} on main after the gated merge.`,
 	);
 	console.log(
 		"      The tag triggers the release workflow, which publishes to",
