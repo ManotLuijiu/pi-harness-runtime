@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -137,7 +137,7 @@ test("the skills of the graph are discovered natively, as stubs", async () => {
 	}
 });
 
-test("a machine without the graph gets no row and no tool", () => {
+test("a machine without the graph gets the row that says how to configure it", () => {
 	const pi = fakePi();
 	const sink = recorder();
 	initOmnigraphSkills(pi, {
@@ -146,8 +146,108 @@ test("a machine without the graph gets no row and no tool", () => {
 		saasConfigured: false,
 		env: { HOME: "/home/tester" },
 	});
-	assert.equal(sink.rows.length, 0);
+	assert.equal(sink.rows.length, 1);
+	const row = sink.rows[0];
+	assert.equal(row.label, "Omnigraph");
+	assert.equal(row.status, "info");
+	assert.equal(row.anchor, "Qdrant");
+	assert.match(row.text, /not configured/);
+	const details = row.details.join("\n");
+	assert.match(details, /OMNIGRAPH_URL/);
+	assert.match(details, /OMNIGRAPH_SKILLS_TOKEN/);
+	assert.match(details, /omnigraph-skills-token\.txt/);
+	// The row does not promise the tools of the graph: they are not
+	// registered on a machine that does not read the graph.
+	assert.match(details, /its tools are not registered/);
+	assert.equal(pi.commands.length, 0);
+	// The graph is not the source of this machine: no tool, no command.
 	assert.equal(pi.tools.length, 0);
+});
+
+test("a graph that is turned off on purpose says so, and names the way back", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "off" },
+	});
+	assert.equal(sink.rows.length, 1);
+	const row = sink.rows[0];
+	assert.equal(row.status, "info");
+	assert.match(row.text, /disabled/);
+	assert.match(row.details.join("\n"), /OMNIGRAPH_SOURCE_MODE=off/);
+	assert.equal(pi.tools.length, 0);
+});
+
+test("a source that is on, but not configured, is reported and stays next to Qdrant", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	const startup = initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "omnigraph" },
+	});
+	const row = sink.rows[0];
+	assert.equal(row.label, "Omnigraph");
+	assert.equal(row.status, "warn");
+	assert.match(row.text, /endpoint or the credential is missing/);
+	assert.match(row.details.join("\n"), /OMNIGRAPH_URL/);
+	assert.match(row.details.join("\n"), /OMNIGRAPH_SKILLS_TOKEN/);
+	// The row is placed again when the row of Qdrant appears.
+	startup.placeRow("Qdrant");
+	const last = sink.rows[sink.rows.length - 1];
+	assert.equal(last.anchor, "Qdrant");
+	assert.equal(last.status, "warn");
+	// The graph is not read: no tool, no command.
+	assert.equal(pi.tools.length, 0);
+});
+
+test("the row names the part of the configuration that is missing", () => {
+	const withoutEndpoint = fakePi();
+	const endpointSink = recorder();
+	initOmnigraphSkills(withoutEndpoint, {
+		insert: endpointSink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_SKILLS_TOKEN: "the-token" },
+	});
+	const endpointDetails = endpointSink.rows[0].details.join("\n");
+	assert.match(endpointDetails, /set OMNIGRAPH_URL/);
+	assert.doesNotMatch(endpointDetails, /set OMNIGRAPH_SKILLS_TOKEN/);
+
+	const withoutCredential = fakePi();
+	const credentialSink = recorder();
+	initOmnigraphSkills(withoutCredential, {
+		insert: credentialSink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_URL: "https://graph.example" },
+	});
+	const credentialDetails = credentialSink.rows[0].details.join("\n");
+	assert.match(credentialDetails, /set OMNIGRAPH_SKILLS_TOKEN/);
+	assert.doesNotMatch(credentialDetails, /set OMNIGRAPH_URL/);
+	// The endpoint that is already there is named, not asked for.
+	assert.match(credentialDetails, /The endpoint of the graph is set at https:\/\/graph\.example/);
+});
+
+test("the row of a machine without the graph stays next to the row of Qdrant", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	const startup = initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester" },
+	});
+	// The row of Qdrant appears later: the row of the graph is placed
+	// next to it, not at the end of the summary.
+	startup.placeRow("Qdrant");
+	const last = sink.rows[sink.rows.length - 1];
+	assert.equal(last.anchor, "Qdrant");
+	assert.equal(last.label, "Omnigraph");
 });
 
 test("the skill service of the harness keeps the place, and the row says so", () => {
@@ -162,6 +262,7 @@ test("the skill service of the harness keeps the place, and the row says so", ()
 	const row = sink.rows.find((entry) => entry.label === "Omnigraph");
 	assert.ok(row);
 	assert.equal(row.status, "info");
+	assert.equal(row.anchor, "Qdrant");
 	assert.match(row.text, /the skill service of the harness/);
 	assert.equal(pi.tools.length, 0);
 });
@@ -215,5 +316,81 @@ test("a graph that cannot be reached is reported, and is not ready", async () =>
 		assert.match(row.text, /not ready/);
 	} finally {
 		rmSync(cacheDir, { recursive: true, force: true });
+	}
+});
+
+test("the skill service of the harness keeps the place when the graph is not configured", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: true,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "saas" },
+	});
+	const row = sink.rows[0];
+	assert.equal(row.label, "Omnigraph");
+	// The graph is not the source of this machine and it is optional: the
+	// row is an information, not a warning about a source that is on.
+	assert.equal(row.status, "info");
+	assert.doesNotMatch(row.text, /endpoint or the credential is missing/);
+	assert.match(row.text, /skill service of the harness/);
+	const details = row.details.join("\n");
+	assert.match(details, /OMNIGRAPH_URL/);
+	assert.match(details, /OMNIGRAPH_SKILLS_TOKEN/);
+	// The advice to make the graph the source is complete: the mode
+	// alone cannot work without the endpoint and the credential.
+	assert.match(
+		details,
+		/set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader/,
+	);
+	assert.equal(pi.tools.length, 0);
+});
+
+test("a turned-off row names what is missing and the way back", () => {
+	const pi = fakePi();
+	const sink = recorder();
+	initOmnigraphSkills(pi, {
+		insert: sink.insert,
+		log: () => {},
+		saasConfigured: false,
+		env: { HOME: "/home/tester", OMNIGRAPH_SOURCE_MODE: "off" },
+	});
+	const details = sink.rows[0].details.join("\n");
+	assert.match(details, /set OMNIGRAPH_URL/);
+	assert.match(details, /set OMNIGRAPH_SKILLS_TOKEN/);
+	assert.match(details, /remove OMNIGRAPH_SOURCE_MODE=off/);
+});
+
+test("a turned-off row does not ask for what is already set", () => {
+	const home = mkdtempSync(join(tmpdir(), "omnigraph-home-"));
+	try {
+		// The credential of the reader is in the key file of the machine:
+		// the row must not ask for it again.
+		const keyDir = join(home, ".pi-harness-runtime", "keys");
+		mkdirSync(keyDir, { recursive: true });
+		writeFileSync(join(keyDir, "omnigraph-skills-token.txt"), "the-token\n");
+		const pi = fakePi();
+		const sink = recorder();
+		initOmnigraphSkills(pi, {
+			insert: sink.insert,
+			log: () => {},
+			saasConfigured: false,
+			env: {
+				HOME: home,
+				OMNIGRAPH_URL: "https://graph.example",
+				OMNIGRAPH_SOURCE_MODE: "off",
+			},
+		});
+		const details = sink.rows[0].details.join("\n");
+		assert.match(
+			details,
+			/The endpoint of the graph is set at https:\/\/graph\.example/,
+		);
+		assert.match(details, /The credential of the reader is set/);
+		assert.doesNotMatch(details, /set OMNIGRAPH_URL/);
+		assert.doesNotMatch(details, /set OMNIGRAPH_SKILLS_TOKEN/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
 	}
 });

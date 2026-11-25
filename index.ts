@@ -6139,9 +6139,10 @@ async function initQdrant(): Promise<void> {
  * The shared skill graph (OmniGraph).
  *
  * The source is optional: a machine without it behaves exactly as before.
- * When it is configured, the row of the graph sits next to the row of
- * Qdrant and names the endpoint that is read - so the user sees which
- * graph the machine uses.
+ * Every machine gets the row of the graph in the startup summary, next to
+ * the row of Qdrant: the row names the endpoint that is read when the
+ * graph is read, and the way to configure the graph when it is not - so
+ * the user sees which graph the machine uses and how it is turned on.
  */
 async function initOmnigraph(
 	pi: ExtensionAPI,
