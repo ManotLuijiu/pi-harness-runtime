@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-runtime",
-  "version": "1.1.524",
+  "version": "1.1.525",
   "description": "[BETA] Codex-style /usage status + autonomous coding harness for pi. Not production ready — expect breaking changes.",
   "type": "module",
   "scripts": {
@@ -35,6 +35,9 @@
     "/scripts/sync-skills.ts",
     "/scripts/sync-to-qdrant.ts",
     "/scripts/gist-poll.sh",
+    "/packages/agent-bridge/src",
+    "/packages/agent-bridge/dist",
+    "/packages/agent-bridge/package.json",
     "/packages/agent-policy/src",
     "/packages/agent-policy/dist",
     "/packages/agent-policy/package.json",

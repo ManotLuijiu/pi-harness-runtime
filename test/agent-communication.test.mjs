@@ -26,7 +26,11 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { runCli, filteredEnv } from "../harness/agent-communication/cli-runner.ts";
-import { CODEX_ARGV, CODEX_ARGV_CONTAINED, readCodexAnswer } from "../harness/agent-communication/codex.ts";
+import { CODEX_ARGV, CODEX_ARGV_CONTAINED, codexBridgeArgv, readCodexAnswer } from "../harness/agent-communication/codex.ts";
+import {
+	bridgeConfig,
+	bridgeRequested,
+} from "../harness/agent-communication/bridge-config.ts";
 import { CLAUDE_ARGV } from "../harness/agent-communication/claude.ts";
 import { readClaudeAnswer } from "../harness/agent-communication/claude.ts";
 import { classifyWorkerFailure } from "../harness/agent-communication/diagnose.ts";
@@ -54,6 +58,33 @@ import {
 	preflightFiles,
 } from "../harness/agent-communication/write-lane.ts";
 import { registerAgentCommunicationTools } from "../harness/agent-communication/tools.ts";
+
+/**
+ * The reverse bridge.
+ *
+ * The bridge lets a worker of another vendor address a live Pi session.
+ * It is not a part of every consultation: the human asks for it by name.
+ */
+test("the bridge is not part of a consultation without the human", () => {
+	const argv = CODEX_ARGV.join(" ");
+	assert.ok(!argv.includes("pi_bridge"));
+	const withBridge = codexBridgeArgv(
+		bridgeConfig("/home/frappe/pi-harness-runtime", {
+			command: "/usr/bin/node",
+			serverPath: "/tmp/cli.js",
+		}),
+	).join(" ");
+	assert.match(withBridge, /mcp_servers\.pi_bridge\.command="\/usr\/bin\/node"/);
+	assert.match(withBridge, /PI_AGENT_BRIDGE_WORKSPACE/);
+	// The bridge replaces the switch off of the MCP servers.
+	assert.ok(!withBridge.includes("mcp_servers={}"));
+});
+
+test("the bridge is asked for by name", () => {
+	assert.equal(bridgeRequested({}), false);
+	assert.equal(bridgeRequested({ PI_AGENT_COMMUNICATION_BRIDGE: "0" }), false);
+	assert.equal(bridgeRequested({ PI_AGENT_COMMUNICATION_BRIDGE: "1" }), true);
+});
 
 /**
  * A temporary directory that goes away with the test.

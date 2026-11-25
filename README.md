@@ -266,6 +266,56 @@ instruction-only**: the instructions of a skill load, and its files do not.
   the approved one.
 - It never follows a link out of its cache.
 
+## The reverse bridge: a worker of another vendor, a live Pi session
+
+The reverse bridge lets Codex or Claude Code address a live Pi session of
+the same workspace. The worker sends a message into the mailbox of the
+session and reads the answer as the replies of the exchange.
+
+**The bridge is not a part of every consultation.** The human asks for it
+by name:
+
+```bash
+PI_AGENT_COMMUNICATION_BRIDGE=1 pi
+```
+
+With the bridge on, the worker gets the MCP server of the bridge instead
+of the MCP servers of the machine. The server speaks MCP over stdio
+(`packages/agent-bridge/dist/cli.js`).
+
+### The four tools
+
+| Tool | What it does |
+|---|---|
+| `agent_list` | the live instances and their identity (agent id, session, generation, workspace, host, busy) |
+| `agent_send` | a message for one instance (`inform`, `review` or `implement`) |
+| `agent_result` | the replies of an exchange: accepted, completed, blocked or question |
+| `agent_cancel` | a message that shall not be delivered |
+
+### The rules
+
+- A message names the instance it is for: the agent id, the session, the
+  generation and the workspace. The identity is checked against the live
+  registration, and a session that ended is refused.
+- The routing only decides when **exactly one** instance of the workspace
+  is live. Several instances are a question to the caller, not a guess.
+- An instance of another workspace, another host or another generation
+  never receives a message.
+- A message is accepted, not completed: the answer of the session comes
+  later, as a reply of the exchange.
+- The workspace of the user is given to the bridge, not the copy of the
+  workspace that the worker runs in.
+
+### What it does not do
+
+- It never reads or writes outside the store of the replies and the
+  mailboxes: an id is a name, never a path, and the id of an exchange
+  that is not a name is refused.
+- It never reads a reply of another exchange as the answer of this one.
+- It never gives a message of one instance to another instance.
+- It never exposes the credentials of the harness to the worker: the
+  environment of the server carries the workspace and nothing else.
+
 ## Example Session
 
 ```

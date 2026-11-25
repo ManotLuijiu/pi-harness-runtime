@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -170,5 +170,59 @@ describe("the replies of an exchange", () => {
 	it("returns nothing for an exchange without replies", () => {
 		const store = new ReplyStore(join(temporary("plan-handoff-replies-"), "replies"));
 		expect(store.read("correlation-unknown")).toHaveLength(0);
+	});
+
+	it("never reads outside of the store", () => {
+		const root = temporary("plan-handoff-replies-");
+		const store = new ReplyStore(join(root, "replies"));
+		// A folder that is a sibling of the store, with a reply in it.
+		mkdirSync(join(root, "outside"), { recursive: true });
+		writeFileSync(
+			join(root, "outside", "r1.json"),
+			JSON.stringify({
+				id: "r1",
+				correlationId: "../outside",
+				event: "result",
+				createdAt: 1,
+			}),
+			"utf8",
+		);
+		// The id of an exchange is a name, never a path.
+		expect(store.read("../outside")).toHaveLength(0);
+		expect(store.read("..")).toHaveLength(0);
+		expect(store.read("replies/../outside")).toHaveLength(0);
+	});
+
+	it("never writes outside of the store", () => {
+		const root = temporary("plan-handoff-replies-");
+		const store = new ReplyStore(join(root, "replies"));
+		// A reply that carries an identity that is not a name is refused.
+		expect(() =>
+			store.write({
+				id: "r1",
+				correlationId: "../outside",
+				event: "result",
+				createdAt: 1,
+			}),
+		).toThrow();
+		expect(existsSync(join(root, "outside"))).toBe(false);
+	});
+
+	it("does not read a reply of another exchange", () => {
+		const root = temporary("plan-handoff-replies-");
+		const store = new ReplyStore(join(root, "replies"));
+		// A reply that lies about the exchange it belongs to.
+		mkdirSync(join(root, "replies", "correlation-1"), { recursive: true });
+		writeFileSync(
+			join(root, "replies", "correlation-1", "r1.json"),
+			JSON.stringify({
+				id: "r1",
+				correlationId: "correlation-2",
+				event: "completed",
+				createdAt: 1,
+			}),
+			"utf8",
+		);
+		expect(store.read("correlation-1")).toHaveLength(0);
 	});
 });

@@ -48,7 +48,7 @@ export type {
 	PublishPlanOptions,
 } from "./publish.js";
 
-export { Mailbox, ReplyStore } from "./mailbox.js";
+export { Mailbox, ReplyStore, isStoreName } from "./mailbox.js";
 export type { HandoffReply, MailboxEntry, MailboxState } from "./mailbox.js";
 
 export { PairingStore } from "./pairing.js";

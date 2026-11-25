@@ -17,7 +17,7 @@ export { DEFAULT_HEARTBEAT_TTL_MS, RegistrationStore } from "./registry.js";
 export { matchingRegistrations, resolveRecipient } from "./routing.js";
 export { awaitingInWorkspace, DEFAULT_HANDOFF_RETENTION_MS, PendingHandoffStore, } from "./retention.js";
 export { describeCandidates, publishPlan, recipientIdentity } from "./publish.js";
-export { Mailbox, ReplyStore } from "./mailbox.js";
+export { Mailbox, ReplyStore, isStoreName } from "./mailbox.js";
 export { PairingStore } from "./pairing.js";
 export { createPlanHandoffMessage, hashPlanPayload, MAX_PLAN_PAYLOAD_BYTES, MAX_PLAN_SUMMARY_LENGTH, PLAN_HANDOFF_SCHEMA_VERSION, validatePlanHandoffMessage, validateRecipientIdentity, } from "./message.js";
 //# sourceMappingURL=index.js.map

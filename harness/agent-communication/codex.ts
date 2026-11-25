@@ -16,6 +16,7 @@
  */
 
 import { classifyWorkerFailure, firstLine } from "./diagnose.ts";
+import { codexBridgeArgs, type BridgeConfig } from "./bridge-config.ts";
 import type {
 	ConsultAdapter,
 	ConsultStatus,
@@ -230,15 +231,44 @@ export function readCodexAnswer(run: WorkerRun): {
 }
 
 /**
+ * The arguments of a consultation with the reverse bridge.
+ *
+ * The MCP servers of the worker are switched off by the other arguments,
+ * and the bridge is the one server that is switched on. The human asks
+ * for the bridge by name, with `PI_AGENT_COMMUNICATION_BRIDGE=1`.
+ */
+export function codexBridgeArgv(config: BridgeConfig): string[] {
+	return [
+		"exec",
+		"--sandbox",
+		"read-only",
+		"--skip-git-repo-check",
+		"-c",
+		'approval_policy="never"',
+		"-c",
+		'approvals_reviewer="user"',
+		"-c",
+		"features.hooks=false",
+		...codexBridgeArgs(config),
+		"--json",
+		"-",
+	];
+}
+
+/**
  * The adapter of Codex.
  */
-export function codexAdapter(env: Record<string, string>): ConsultAdapter {
+export function codexAdapter(
+	env: Record<string, string>,
+	bridge?: BridgeConfig,
+): ConsultAdapter {
 	return {
 		target: CODEX_TARGET,
 		binary: CODEX_BINARY,
-		argv: CODEX_ARGV,
+		argv: bridge ? codexBridgeArgv(bridge) : CODEX_ARGV,
 		fallbackArgv: CODEX_ARGV_CONTAINED,
 		writeArgv: CODEX_ARGV_WRITE,
+		bridgeArgv: codexBridgeArgv,
 		env,
 		read: readCodexAnswer,
 	};

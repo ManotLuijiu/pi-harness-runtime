@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/tui",
-  "version": "1.1.524",
+  "version": "1.1.525",
   "description": "pi-harness-runtime — tui",
   "type": "module",
   "main": "./dist/index.js",

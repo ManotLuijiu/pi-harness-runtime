@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { filteredEnv, runCli } from "./cli-runner.ts";
 import { claudeAdapter } from "./claude.ts";
+import { bridgeConfig, bridgeRequested } from "./bridge-config.ts";
 import { codexAdapter } from "./codex.ts";
 import { resolveBinary, sandboxAvailableAsync, unsandboxedAuthorized } from "./detect.ts";
 import { stageWorkspace } from "./staging.ts";
@@ -315,7 +316,15 @@ export class AgentCommunicationRuntime {
 		note?: string;
 		blocked?: string;
 	}> {
-		const strictArgv = adapter.argv;
+		// The reverse bridge lets the worker address a live Pi session. The
+		// human asks for it by name, and the workspace of the user is
+		// given to the bridge: the worker works in a copy, and the copy is
+		// not the workspace of the user.
+		const bridge = bridgeRequested(this.envSource)
+			? bridgeConfig(request.workspace, { env: this.envSource })
+			: undefined;
+		const strictArgv =
+			bridge && adapter.bridgeArgv ? adapter.bridgeArgv(bridge) : adapter.argv;
 		if (request.mode === "write") {
 			return this.writeArgvFor(adapter, strictArgv);
 		}

@@ -14,6 +14,7 @@
  */
 
 import { classifyWorkerFailure, firstLine } from "./diagnose.ts";
+import { claudeBridgeArgs, type BridgeConfig } from "./bridge-config.ts";
 import type {
 	ConsultAdapter,
 	ConsultStatus,
@@ -151,13 +152,41 @@ export function readClaudeAnswer(run: WorkerRun): {
 }
 
 /**
+ * The arguments of a consultation with the reverse bridge.
+ *
+ * The MCP servers of the machine are off by the other arguments
+ * (`--strict-mcp-config`), and the bridge is the one server that is
+ * there. The human asks for the bridge by name, with
+ * `PI_AGENT_COMMUNICATION_BRIDGE=1`.
+ */
+export function claudeBridgeArgv(config: BridgeConfig): string[] {
+	return [
+		"-p",
+		"--output-format",
+		"json",
+		"--permission-mode",
+		"dontAsk",
+		"--permission-prommts",
+		"none",
+		"--tools",
+		"Read,Glob,Grep",
+		...claudeBridgeArgs(config),
+		"--strict-mcp-config",
+	];
+}
+
+/**
  * The adapter of Claude Code.
  */
-export function claudeAdapter(env: Record<string, string>): ConsultAdapter {
+export function claudeAdapter(
+	env: Record<string, string>,
+	bridge?: BridgeConfig,
+): ConsultAdapter {
 	return {
 		target: CLAUDE_TARGET,
 		binary: CLAUDE_BINARY,
-		argv: CLAUDE_ARGV,
+		argv: bridge ? claudeBridgeArgv(bridge) : CLAUDE_ARGV,
+		bridgeArgv: claudeBridgeArgv,
 		env,
 		read: readClaudeAnswer,
 	};
