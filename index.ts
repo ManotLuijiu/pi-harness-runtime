@@ -311,6 +311,7 @@ import { describeRelayEndpoint, resolveRelayEndpoint } from "./packages/relay/di
 import { renderStatus } from "./renderer.ts";
 import {
 	JobStateMachine,
+	FileCheckpointManager,
 	type CheckpointManager,
 } from "./harness/job-state-machine.ts";
 import { TaskGraphManager } from "./harness/task-graph.js";
@@ -8775,13 +8776,7 @@ export function getTrajectoryDir(): string {
 }
 
 async function getCheckpointManager(): Promise<CheckpointManager> {
-	const { JsonCheckpointManager } = await import(
-		"./packages/checkpoint/src/checkpoint-manager.ts"
-	);
-	// SAFETY: JsonCheckpointManager implements CheckpointManager via structural typing
-	return new JsonCheckpointManager(
-		HARNESS_ROOT_DIR,
-	) as unknown as CheckpointManager;
+	return new FileCheckpointManager(HARNESS_ROOT_DIR);
 }
 
 function isOutputLimitResumePromptMessage(message: {
