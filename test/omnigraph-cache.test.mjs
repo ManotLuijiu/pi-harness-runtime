@@ -126,6 +126,16 @@ test("the name of a directory of the graph cannot become a path", () => {
 	assert.equal(safeSegment(""), "_");
 });
 
+test("two skills of the graph do not share one folder of the cache", () => {
+	// Two ids that the cleaning maps to the same name would share the
+	// folder of their stub and the folder of their body.
+	assert.notEqual(safeSegment("team/skill"), safeSegment("team_skill"));
+	// Two ids that differ after the character that the segment keeps
+	// would share the same folder as well.
+	const long = "a".repeat(200);
+	assert.notEqual(safeSegment(`${long}one`), safeSegment(`${long}two`));
+});
+
 // --- the hydrated skills ----------------------------------------------------
 
 test("a body that does not match the hash of the publication is not written", () => {

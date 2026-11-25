@@ -255,7 +255,13 @@ test("a source that refuses the credential advertises no skill", async () => {
 			}),
 		});
 		await secondStartup.ready;
-		assert.equal(secondStartup.ready ? "ok" : "ok", "ok");
+		const report = await secondStartup.ready;
+		assert.equal(
+			report.state,
+			"denied",
+			"the refused source is not reported as denied",
+		);
+		assert.equal(report.count, 0, "the refused source reports a skill");
 
 		const discovery = second.handlers.get("resources_discover");
 		assert.ok(discovery, "the discovery of the source is not registered");

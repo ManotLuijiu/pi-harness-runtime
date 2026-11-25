@@ -6,8 +6,9 @@
  *
  * - The human names the files. The worker may not write anything else.
  * - The worker writes into the copy of the workspace, never into the
- *   workspace itself. The copy is the sandbox that works on every
- *   machine, also where the sandbox of the operating system cannot start.
+ *   workspace itself. The copy holds the worker only when the machine can
+ *   hold it: a machine whose sandbox cannot start refuses the write
+ *   unless the human asked for the mode without a sandbox.
  * - The harness watches the copy. A file outside the named files is a
  *   refusal: nothing is applied.
  * - The harness applies the files itself, and it writes them atomically.
@@ -389,6 +390,14 @@ function removeCreatedFolders(folders: string[]): void {
 }
 
 /**
+ * The count of the rollbacks.
+ *
+ * Every rollback of a file gets a name of its own, so two rollbacks of
+ * the same file do not write into the same temporary.
+ */
+let restoreCounter = 0;
+
+/**
  * Put the original of a file back.
  *
  * The reason of the failure is returned, so the caller can name the
@@ -396,17 +405,30 @@ function removeCreatedFolders(folders: string[]): void {
  */
 function restoreOriginal(workspace: string, file: PreparedFile): string | undefined {
 	const target = join(workspace, file.path);
+	restoreCounter += 1;
+	const temporary = `${target}.pi-restore-${process.pid}-${restoreCounter}`;
 	try {
 		if (!file.existed) {
 			rmSync(target, { force: true });
 			return undefined;
 		}
-		const temporary = `${target}.pi-restore-${process.pid}`;
-		writeFileSync(temporary, file.original ?? Buffer.alloc(0));
-		if (file.mode !== undefined) chmodSync(temporary, file.mode);
+		// The file of the rollback holds the content that the user had:
+		// it is created with the mode of that file, so the content of a
+		// private file is not readable by the other accounts of the
+		// machine while the rollback runs.
+		writeFileSync(temporary, file.original ?? Buffer.alloc(0), {
+			mode: file.mode ?? 0o600,
+		});
 		renameSync(temporary, target);
 		return undefined;
 	} catch (error) {
+		// The file of the rollback does not stay behind: the tree of the
+		// user holds the files that the user has.
+		try {
+			rmSync(temporary, { force: true });
+		} catch {
+			// The file stays: the rollback already failed.
+		}
 		return error instanceof Error ? error.message : String(error);
 	}
 }
@@ -498,7 +520,18 @@ function collectPending(
 ): PendingFiles {
 	const pending: { path: string; content: string }[] = [];
 	for (const path of paths) {
-		const content = readFileOrUndefined(join(staged, path));
+		const source = join(staged, path);
+		// The worker may write a link into the copy, and a read that
+		// follows a link would copy the content of a file of the user
+		// into the workspace. The copy holds no link that the lane
+		// reads.
+		if (isLink(source)) {
+			return {
+				pending: [],
+				conflict: `"${path}" is a link in the copy of the workspace and may not be read`,
+			};
+		}
+		const content = readFileOrUndefined(source);
 		if (content === undefined) continue;
 		const current = readFileOrUndefined(join(workspace, path));
 		if (current === content) continue;

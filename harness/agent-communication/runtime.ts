@@ -355,10 +355,10 @@ export class AgentCommunicationRuntime {
 	 * writes into the copy, and the harness applies the files that the
 	 * human named.
 	 */
-	private writeArgvFor(
+	private async writeArgvFor(
 		adapter: ConsultAdapter,
 		strictArgv: readonly string[],
-	): { argv: readonly string[]; note?: string; blocked?: string } {
+	): Promise<{ argv: readonly string[]; note?: string; blocked?: string }> {
 		const writeArgv = adapter.writeArgv;
 		if (!writeArgv) {
 			return {
@@ -366,9 +366,27 @@ export class AgentCommunicationRuntime {
 				blocked: `the worker ${adapter.target} may not write into the copy of the workspace`,
 			};
 		}
+		// The worker of a write has write rights, so the machine has to
+		// hold it: without the sandbox of the operating system the worker
+		// runs with the rights of the user, and the copy of the workspace
+		// is no boundary for it. The read path asks the same question and
+		// holds the same gate.
+		const vendorBinary = resolveBinary(adapter.target, this.envSource);
+		const sandbox = vendorBinary
+			? await sandboxAvailableAsync(vendorBinary, this.envSource)
+			: false;
+		if (!sandbox && !unsandboxedAuthorized(this.envSource)) {
+			return {
+				argv: strictArgv,
+				blocked:
+					"the sandbox of the machine cannot start, so the worker of the write would run with the rights of the user and may write outside of the copy of the workspace; the mode without a sandbox has to be asked for",
+			};
+		}
 		return {
 			argv: writeArgv,
-			note: "the worker writes into the copy of the workspace; the harness applies the files that the human named",
+			note: sandbox
+				? "the worker writes into the copy of the workspace; the harness applies the files that the human named"
+				: "the worker writes into the copy of the workspace; the harness applies the files that the human named; the sandbox of the machine cannot start, so the worker runs with the rights of the user",
 		};
 	}
 

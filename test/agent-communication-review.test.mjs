@@ -67,6 +67,23 @@ function standIn(dir, name, body) {
 }
 
 /**
+ * A stand-in of a vendored CLI whose sandbox cannot start.
+ *
+ * The probe of the sandbox fails, so the machine has no boundary for the
+ * worker of the vendor.
+ */
+function standInWithoutSandbox(dir, name, body) {
+	const path = join(dir, name);
+	writeFileSync(
+		path,
+		`#!/usr/bin/env node\nif (process.argv[2] === "sandbox") { process.exit(1); }\n${body}\n`,
+		"utf8",
+	);
+	chmodSync(path, 0o755);
+	return path;
+}
+
+/**
  * A worker that writes the files it is given into the copy.
  */
 function writingWorker(dir, files) {
@@ -274,6 +291,79 @@ process.stdout.write(JSON.stringify({ item: { type: "agent_message", text: "writ
 			name.includes(".pi-write-"),
 		);
 		assert.deepEqual(leftovers, []);
+		await runtime.stop();
+		cleanup();
+	} finally {
+		dir.cleanup();
+	}
+});
+
+test("the write lane refuses a machine whose sandbox cannot start", async () => {
+	const dir = temporary();
+	try {
+		const workspace = join(dir.dir, "workspace");
+		mkdirSync(workspace, { recursive: true });
+		// The stand-in answers the probe of the sandbox with a failure:
+		// the machine has no boundary for the worker, and the worker of a
+		// write has write rights.
+		standInWithoutSandbox(
+			dir.dir,
+			"codex",
+			`const fs = require("fs");
+fs.writeFileSync("plan.md", "# the plan\\n");
+process.stdout.write(JSON.stringify({ item: { type: "agent_message", text: "written" } }) + "\\n");`,
+		);
+		const { runtime, cleanup } = makeRuntime({
+			env: { ...pathWith(dir.dir), PI_AGENT_COMMUNICATION_UNSANDBOXED: "" },
+		});
+		const outcome = await writeThroughWorker(runtime, {
+			workspace,
+			target: "codex",
+			paths: ["plan.md"],
+			prompt: "write the plan",
+			sender: SENDER,
+		});
+		// The worker of the write is not started: it would run with the
+		// rights of the user, and the copy is no boundary for it.
+		assert.equal(outcome.status, "refused");
+		assert.match(outcome.diagnostic, /sandbox/);
+		assert.equal(existsSync(join(workspace, "plan.md")), false);
+		await runtime.stop();
+		cleanup();
+	} finally {
+		dir.cleanup();
+	}
+});
+
+test("the write lane refuses a named path that is a link in the copy", async () => {
+	const dir = temporary();
+	try {
+		const workspace = join(dir.dir, "workspace");
+		mkdirSync(workspace, { recursive: true });
+		const secret = join(dir.dir, "secret.txt");
+		writeFileSync(secret, "the secret of the user\n", "utf8");
+		// The worker replaces the named file with a link to a file of the
+		// user: a read that follows the link would copy the content of
+		// that file into the workspace.
+		standIn(
+			dir.dir,
+			"codex",
+			`const fs = require("fs");
+fs.symlinkSync(${JSON.stringify(secret)}, "plan.md");
+process.stdout.write(JSON.stringify({ item: { type: "agent_message", text: "written" } }) + "\\n");`,
+		);
+		const { runtime, cleanup } = makeRuntime({ env: pathWith(dir.dir) });
+		const outcome = await writeThroughWorker(runtime, {
+			workspace,
+			target: "codex",
+			paths: ["plan.md"],
+			prompt: "write the plan",
+			sender: SENDER,
+		});
+		assert.equal(outcome.status, "refused");
+		assert.match(outcome.diagnostic, /link/);
+		// The content of the file of the user is not in the workspace.
+		assert.equal(existsSync(join(workspace, "plan.md")), false);
 		await runtime.stop();
 		cleanup();
 	} finally {
