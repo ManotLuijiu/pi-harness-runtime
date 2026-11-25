@@ -173,9 +173,12 @@ function ignoredPaths(root: string): string[] {
 		);
 		return output
 			.split("\n")
-			.map((entry) => entry.trim())
+			.map((entry) => entry.replace(/\r/g, "").trim())
 			.filter((entry) => entry.length > 0)
-			.map((entry) => entry.split("/").join(sep));
+			// git names a folder that it ignores with a slash at the end.
+			// The slash is the difference between a folder that is out of
+			// the copy and a file inside a folder that belongs to it.
+			.map((entry) => entry.replace(/\/$/, "").split("/").join(sep));
 	} catch {
 		// A workspace without git, or without the git of the user, has no
 		// ignored files. The name rules still hold.
@@ -227,10 +230,12 @@ export function stagingPolicy(
 		// A file that git ignores is private by the decision of the
 		// project.
 		for (const entry of ignoredSet) {
+			// A file that git ignores is out of the copy, and so is a
+			// folder that git ignores with everything it holds. A file
+			// that git ignores inside a folder does not take the folder
+			// with it: the folder holds other files that belong to the
+			// copy, and the worker has to see them.
 			if (normalized === entry || normalized.startsWith(`${entry}${sep}`)) return false;
-			// The listing of git may name a file inside an ignored
-			// directory.
-			if (entry.startsWith(`${normalized}${sep}`)) return false;
 		}
 		return true;
 	};

@@ -65,7 +65,12 @@ export class QuotaCaptureController {
 		provider: string;
 		promise: Promise<boolean>;
 		startedAt: number;
+		/** Whether the capture has ended. */
+		state: { settled: boolean };
 	} | null = null;
+	/** The outcome of the last capture of every provider. */
+	private readonly outcomes = new Map<string, QuotaCaptureOutcome>();
+	/** The outcome of the capture that ended last. */
 	private last: QuotaCaptureOutcome | null = null;
 
 	constructor(options: QuotaCaptureOptions) {
@@ -84,19 +89,21 @@ export class QuotaCaptureController {
 	 * Did the last capture of this provider fail?
 	 *
 	 * A failed capture means that the row of the mirror is the old one, so
-	 * it cannot prove a deadline.
+	 * it cannot prove a deadline. Every provider keeps its own outcome: a
+	 * capture of one provider says nothing about another one.
 	 */
 	failed(provider: string): boolean {
-		const outcome = this.last;
+		const outcome = this.outcomes.get(provider.toLowerCase());
 		if (!outcome) return false;
-		return outcome.provider === provider.toLowerCase() && !outcome.ok;
+		return !outcome.ok;
 	}
 
 	/** A failed refresh must not erase a prior observation or certify its own partial write. */
 	allowsEvidence(provider: string, syncedAt: string | undefined): boolean {
-		if (!this.failed(provider)) return true;
+		const outcome = this.outcomes.get(provider.toLowerCase());
+		if (!outcome || outcome.ok) return true;
 		const observedAt = Date.parse(syncedAt ?? "");
-		return Number.isFinite(observedAt) && observedAt < (this.last?.startedAt ?? -Infinity);
+		return Number.isFinite(observedAt) && observedAt < outcome.startedAt;
 	}
 
 	/**
@@ -109,18 +116,21 @@ export class QuotaCaptureController {
 	begin(provider: string): void {
 		const key = provider.toLowerCase();
 		const current = this.pending;
-		if (
-			current &&
-			current.provider === key &&
-			current.startedAt > this.now() - this.reuseMs
-		) {
-			return;
+		if (current && current.provider === key) {
+			// A capture that is still running is not started again: the
+			// browser of the harness is not a resource that is spent twice
+			// for one failure.
+			if (!current.state.settled) return;
+			// A capture that ended recently is not repeated: its row is
+			// fresh enough for the decision.
+			if (current.startedAt > this.now() - this.reuseMs) return;
 		}
 		const startedAt = this.now();
+		const state = { settled: false };
 		const promise = (async () => {
 			try {
 				const ok = await this.options.capture(key);
-				this.last = { provider: key, ok, at: this.now(), startedAt };
+				this.record(key, ok, startedAt);
 				return ok;
 			} catch (error) {
 				this.options.log?.(
@@ -128,11 +138,25 @@ export class QuotaCaptureController {
 						error instanceof Error ? error.message : String(error)
 					}`,
 				);
-				this.last = { provider: key, ok: false, at: this.now(), startedAt };
+				this.record(key, false, startedAt);
 				return false;
+			} finally {
+				state.settled = true;
 			}
 		})();
-		this.pending = { provider: key, promise, startedAt };
+		this.pending = { provider: key, promise, startedAt, state };
+	}
+
+	/**
+	 * Remember the outcome of a capture.
+	 *
+	 * The outcome belongs to the provider of the capture: a capture of one
+	 * provider must not answer for another one.
+	 */
+	private record(provider: string, ok: boolean, startedAt: number): void {
+		const outcome: QuotaCaptureOutcome = { provider, ok, at: this.now(), startedAt };
+		this.outcomes.set(provider, outcome);
+		this.last = outcome;
 	}
 
 	/**

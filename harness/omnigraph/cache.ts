@@ -114,13 +114,25 @@ export function skillVersionDir(
  * An id or a revision of the graph is a name of a directory, so it may
  * not be a path. A name with a slash, a dot or a separator in it is
  * replaced: the tree it belongs to is the boundary.
+ *
+ * The segment names one value and only one. Two values that the
+ * cleaning maps to the same name (`team/skill` and `team_skill`), or
+ * that differ after the character that the segment keeps, would share
+ * the folder of the stub and the folder of the body, and one skill would
+ * overwrite the other. A value that the cleaning changes therefore
+ * carries the fingerprint of its own, and the tilde keeps it apart from
+ * a value that was already a name.
  */
 export function safeSegment(value: string): string {
-	const cleaned = value
-		.trim()
+	const trimmed = value.trim();
+	if (trimmed.length === 0) return "_";
+	const cleaned = trimmed
 		.replace(/[^A-Za-z0-9._-]/g, "_")
 		.replace(/^\.+/, "_");
-	return cleaned.length ? cleaned.slice(0, 120) : "_";
+	const base = cleaned.length ? cleaned.slice(0, 120) : "_";
+	if (base === trimmed && trimmed.length <= 120) return base;
+	const fingerprint = createHash("sha256").update(trimmed).digest("hex").slice(0, 16);
+	return `${base.slice(0, 100)}~${fingerprint}`;
 }
 
 /**

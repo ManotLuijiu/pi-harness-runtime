@@ -95,3 +95,59 @@ test("waiting without a capture returns at once", async () => {
 	await controller.wait();
 	assert.equal(controller.outcome, null);
 });
+
+test("the outcome of one provider does not answer for another one", async () => {
+	const controller = new QuotaCaptureController({
+		capture: async (provider) => provider !== "minimax",
+		now: () => now,
+	});
+	controller.begin("minimax");
+	await controller.wait();
+	// The capture of another provider ends after the failed one.
+	controller.begin("openai");
+	await controller.wait();
+	// The failure of the first provider is still known: every provider
+	// keeps its own outcome.
+	assert.equal(controller.failed("minimax"), true);
+	assert.equal(controller.failed("openai"), false);
+});
+
+test("the evidence of a provider is judged with the outcome of that provider", async () => {
+	const controller = new QuotaCaptureController({
+		capture: async (provider) => provider !== "minimax",
+		now: () => now,
+	});
+	controller.begin("minimax");
+	await controller.wait();
+	controller.begin("openai");
+	await controller.wait();
+	// The row of the mirror of the failed provider cannot prove a
+	// deadline, and the row of the other provider can.
+	const later = new Date(now + 1000).toISOString();
+	assert.equal(controller.allowsEvidence("minimax", later), false);
+	assert.equal(controller.allowsEvidence("openai", later), true);
+});
+
+test("a capture that is still running is not started again", async () => {
+	let calls = 0;
+	let clock = now;
+	const controller = new QuotaCaptureController({
+		capture: async () => {
+			calls += 1;
+			// The capture of the browser takes longer than the window of
+			// the reuse.
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			return true;
+		},
+		now: () => clock,
+		reuseMs: 1,
+	});
+	controller.begin("minimax");
+	// The window of the reuse is over while the capture is still running.
+	clock = now + 1000;
+	controller.begin("minimax");
+	await controller.wait();
+	// The browser of the harness is not a resource that is spent twice
+	// for one failure.
+	assert.equal(calls, 1);
+});

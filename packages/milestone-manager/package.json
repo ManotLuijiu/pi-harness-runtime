@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/milestone-manager",
-  "version": "1.1.521",
+  "version": "1.1.523",
   "description": "Track milestones and alerts when items are at risk",
   "type": "module",
   "main": "./dist/index.js",

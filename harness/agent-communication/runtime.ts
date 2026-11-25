@@ -355,10 +355,10 @@ export class AgentCommunicationRuntime {
 	 * writes into the copy, and the harness applies the files that the
 	 * human named.
 	 */
-	private writeArgvFor(
+	private async writeArgvFor(
 		adapter: ConsultAdapter,
 		strictArgv: readonly string[],
-	): { argv: readonly string[]; note?: string; blocked?: string } {
+	): Promise<{ argv: readonly string[]; note?: string; blocked?: string }> {
 		const writeArgv = adapter.writeArgv;
 		if (!writeArgv) {
 			return {
@@ -366,9 +366,27 @@ export class AgentCommunicationRuntime {
 				blocked: `the worker ${adapter.target} may not write into the copy of the workspace`,
 			};
 		}
+		// The worker of a write has write rights, so the machine has to
+		// hold it: without the sandbox of the operating system the worker
+		// runs with the rights of the user, and the copy of the workspace
+		// is no boundary for it. The read path asks the same question and
+		// holds the same gate.
+		const vendorBinary = resolveBinary(adapter.target, this.envSource);
+		const sandbox = vendorBinary
+			? await sandboxAvailableAsync(vendorBinary, this.envSource)
+			: false;
+		if (!sandbox && !unsandboxedAuthorized(this.envSource)) {
+			return {
+				argv: strictArgv,
+				blocked:
+					"the sandbox of the machine cannot start, so the worker of the write would run with the rights of the user and may write outside of the copy of the workspace; the mode without a sandbox has to be asked for",
+			};
+		}
 		return {
 			argv: writeArgv,
-			note: "the worker writes into the copy of the workspace; the harness applies the files that the human named",
+			note: sandbox
+				? "the worker writes into the copy of the workspace; the harness applies the files that the human named"
+				: "the worker writes into the copy of the workspace; the harness applies the files that the human named; the sandbox of the machine cannot start, so the worker runs with the rights of the user",
 		};
 	}
 
@@ -593,26 +611,30 @@ export class AgentCommunicationRuntime {
 		const stagedBefore = snapshotWorkspace(staged.path);
 		let run: Awaited<ReturnType<typeof runCli>>;
 		let read: ReturnType<ConsultAdapter["read"]>;
-		const argv = await this.argvFor(adapter, request);
-		if (argv.blocked) {
-			// The worker was never started: the machine has no boundary
-			// for it and the human did not ask for that mode.
-			if (!request.keepStaging) staged.dispose();
-			return this.finish(request, {
-				jobId: request.jobId,
-				correlationId: request.correlationId,
-				target: request.target,
-				workspace: request.workspace,
-				status: "blocked-approval",
-				answer: "",
-				diagnostic: argv.blocked,
-				durationMs: this.now() - request.startedAt,
-				changedFiles: [],
-				// The worker never ran: the job was refused.
-				refused: true,
-			});
-		}
+		let note: string | undefined;
 		try {
+			// The arguments are read inside the block that throws the copy
+			// away: a probe that fails must not leave a copy of the
+			// project of the user in the temporary directory.
+			const argv = await this.argvFor(adapter, request);
+			note = argv.note;
+			if (argv.blocked) {
+				// The worker was never started: the machine has no boundary
+				// for it and the human did not ask for that mode.
+				return this.finish(request, {
+					jobId: request.jobId,
+					correlationId: request.correlationId,
+					target: request.target,
+					workspace: request.workspace,
+					status: "blocked-approval",
+					answer: "",
+					diagnostic: argv.blocked,
+					durationMs: this.now() - request.startedAt,
+					changedFiles: [],
+					// The worker never ran: the job was refused.
+					refused: true,
+				});
+			}
 			run = await runCli({
 				binary: adapter.binary,
 				argv: argv.argv,
@@ -641,7 +663,7 @@ export class AgentCommunicationRuntime {
 			changedFiles.length > 0
 				? `the worker changed ${changedFiles.length} file(s) of the workspace: ${changedFiles.slice(0, 5).join(", ")}`
 				: undefined;
-		const diagnostic = [read.diagnostic, argv.note, changedNote]
+		const diagnostic = [read.diagnostic, note, changedNote]
 			.filter((part): part is string => typeof part === "string" && part.length > 0)
 			.join("; ");
 		const result: ConsultResult = {
