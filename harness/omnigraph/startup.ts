@@ -6,6 +6,11 @@
  * services (Qdrant, Honcho), and the row names the endpoint of the
  * graph - so the user can see which graph the machine reads from.
  *
+ * The registration is synchronous and does not wait for the network: the
+ * discovery of the skills of the graph must not depend on the state of
+ * another service. The row is placed later, next to the row of Qdrant,
+ * so the two stay together in the panel.
+ *
  * The row never claims more than it knows: it says "ready" only after the
  * graph answered, and it never prints the credential.
  */
@@ -22,9 +27,14 @@ import {
 	type OmnigraphConfig,
 	type OmnigraphEnv,
 } from "./config.ts";
-import type { OmnigraphResourceFetcher } from "./resources.ts";
-import { GitCheckoutResourceFetcher } from "./resources.ts";
-import { registerOmnigraphSkills } from "./registration.ts";
+import {
+	GitCheckoutResourceFetcher,
+	type OmnigraphResourceFetcher,
+} from "./resources.ts";
+import {
+	registerOmnigraphSkills,
+	type OmnigraphCatalogReport,
+} from "./registration.ts";
 import { OmnigraphSkillSource } from "./source.ts";
 
 /** The options of the startup of the source. */
@@ -34,7 +44,8 @@ export interface OmnigraphStartupOptions {
 	 *
 	 * The anchor is a row that exists ("Qdrant", "Honcho"). A row that
 	 * does not exist yet is not waited for: the row of the source goes to
-	 * the end of the summary.
+	 * the end of the summary, and it is moved next to the anchor as soon
+	 * as the anchor is there.
 	 */
 	insert: (
 		anchor: string,
@@ -58,6 +69,20 @@ export interface OmnigraphStartupOptions {
 }
 
 /**
+ * The startup of the source.
+ *
+ * The handle is what the caller keeps: it places the row of the graph
+ * next to the row of another service, and it holds the first read of
+ * the catalog.
+ */
+export interface OmnigraphStartup {
+	/** Put (or move) the row of the graph next to the row of a service. */
+	placeRow: (anchor?: string) => void;
+	/** The first read of the catalog of the graph. */
+	ready: Promise<OmnigraphCatalogReport>;
+}
+
+/**
  * The credential of the reader.
  *
  * The environment wins over the key file: the environment is the explicit
@@ -71,7 +96,12 @@ export function loadOmnigraphToken(
 	if (fromEnv) return fromEnv;
 	const home = env.HOME ?? process.env.HOME;
 	if (!home) return undefined;
-	const file = join(home, ".pi-harness-runtime", "keys", "omnigraph-skills-token.txt");
+	const file = join(
+		home,
+		".pi-harness-runtime",
+		"keys",
+		"omnigraph-skills-token.txt",
+	);
 	if (!existsSync(file)) return undefined;
 	try {
 		return readFileSync(file, "utf8").trim() || undefined;
@@ -82,11 +112,14 @@ export function loadOmnigraphToken(
 
 /**
  * Start the source of the graph and report it in the startup summary.
+ *
+ * The function does not wait for the network: the tools and the discovery
+ * of the graph are registered before it returns.
  */
-export async function initOmnigraphSkills(
+export function initOmnigraphSkills(
 	pi: ExtensionAPI,
 	options: OmnigraphStartupOptions,
-): Promise<void> {
+): OmnigraphStartup {
 	const env = options.env ?? process.env;
 	const token = loadOmnigraphToken(env);
 	const withToken: OmnigraphEnv = { ...env };
@@ -95,7 +128,7 @@ export async function initOmnigraphSkills(
 	const mode = readOmnigraphSourceMode(withToken, {
 		saasConfigured: options.saasConfigured,
 	});
-	if (mode === "off") return;
+	if (mode === "off") return inactive();
 
 	const config = readOmnigraphConfig(withToken);
 	if (!config) {
@@ -108,7 +141,7 @@ export async function initOmnigraphSkills(
 				"How to fix: set OMNIGRAPH_URL (the address of the graph) and OMNIGRAPH_SKILLS_TOKEN (the credential of the reader), or write the credential into ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt.",
 			],
 		);
-		return;
+		return inactive();
 	}
 
 	if (mode === "saas") {
@@ -125,7 +158,7 @@ export async function initOmnigraphSkills(
 				`How to change it: set OMNIGRAPH_SOURCE_MODE=omnigraph (the graph "${config.graph}" at ${config.url} becomes the source).`,
 			],
 		);
-		return;
+		return inactive();
 	}
 
 	const sourceOptions: {
@@ -139,34 +172,27 @@ export async function initOmnigraphSkills(
 	if (options.fetchImpl) sourceOptions.fetchImpl = options.fetchImpl;
 	const source = new OmnigraphSkillSource(sourceOptions);
 
+	/** The last known state of the source. */
+	let report: OmnigraphCatalogReport | undefined;
+
+	/**
+	 * The row of the graph.
+	 *
+	 * The row is placed next to the row of Qdrant, and it is moved there
+	 * again when the state of the source changes.
+	 */
+	const placeRow = (anchor = "Qdrant"): void => {
+		const row = rowOf(report, config);
+		options.insert(anchor, "Omnigraph", row.text, row.status, row.details);
+	};
+
 	const registrationOptions: Parameters<typeof registerOmnigraphSkills>[1] = {
 		config,
 		source,
 		log: options.log,
 		onCatalog: (state) => {
-			if (state.error) {
-				options.insert(
-					"Qdrant",
-					"Omnigraph",
-					`not ready (${config.url})`,
-					"warn",
-					[
-						`The graph "${config.graph}" could not be read: ${state.error}`,
-						"How to fix: check that the endpoint is reachable and that the credential of the reader is valid.",
-					],
-				);
-				return;
-			}
-			options.insert(
-				"Qdrant",
-				"Omnigraph",
-				`ready (${config.url})`,
-				"ok",
-				[
-					`The graph "${config.graph}" holds ${state.count} skill(s).`,
-					"The skills of the graph are found with /skill:<name>, read with the tool remote_skill_load, and listed with /remote-skills.",
-				],
-			);
+			report = state;
+			placeRow();
 		},
 	};
 	if (options.fetcher) registrationOptions.fetcher = options.fetcher;
@@ -179,19 +205,71 @@ export async function initOmnigraphSkills(
 			registrationOptions.fetcher = new GitCheckoutResourceFetcher(checkout);
 		}
 	}
-	registerOmnigraphSkills(pi, registrationOptions);
+	const registration = registerOmnigraphSkills(pi, registrationOptions);
+
+	return { placeRow, ready: registration.ready };
 }
 
 /**
- * The row of the source, as a test reads it.
+ * The row of a source that is not there.
  */
-export function omnigraphStartupRow(
+function inactive(): OmnigraphStartup {
+	return {
+		placeRow: () => {},
+		ready: Promise.resolve({ state: "unknown", count: 0 }),
+	};
+}
+
+/**
+ * The row of the source, in the state it is in.
+ */
+export function rowOf(
+	report: OmnigraphCatalogReport | undefined,
 	config: OmnigraphConfig,
-	count: number,
 ): { text: string; status: HarnessStatus; details: string[] } {
+	if (!report || report.state === "unknown") {
+		return {
+			text: `connecting (${config.url})`,
+			status: "wait",
+			details: [`The graph "${config.graph}" is read for the first time.`],
+		};
+	}
+	if (report.state === "denied") {
+		return {
+			text: `not ready (${config.url})`,
+			status: "warn",
+			details: [
+				`The graph "${config.graph}" refused the read: ${report.error ?? "the credential was refused"}.`,
+				"How to fix: check that the credential of the reader is valid for this graph.",
+			],
+		};
+	}
+	if (report.state === "unavailable") {
+		return {
+			text: `not ready (${config.url})`,
+			status: "warn",
+			details: [
+				`The graph "${config.graph}" could not be reached: ${report.error ?? "unknown reason"}.`,
+				report.count
+					? `The catalog of the last verified read is used (${report.count} skill(s)).`
+					: "There is no verified catalog on this machine yet.",
+				"How to fix: check that the endpoint is reachable, then reload Pi.",
+			],
+		};
+	}
+	if (report.state === "empty") {
+		return {
+			text: `ready (${config.url})`,
+			status: "ok",
+			details: [`The graph "${config.graph}" holds no skill.`],
+		};
+	}
 	return {
 		text: `ready (${config.url})`,
 		status: "ok",
-		details: [`The graph "${config.graph}" holds ${count} skill(s).`],
+		details: [
+			`The graph "${config.graph}" holds ${report.count} skill(s).`,
+			"The skills of the graph are found with /skill:<name>, read with the tool remote_skill_load, and listed with /remote-skills.",
+		],
 	};
 }

@@ -16,6 +16,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { isPublicationHash } from "./cache.ts";
 
 import type {
 	RemoteSkill,
@@ -69,6 +70,19 @@ export interface OmnigraphSourceOptions {
 	approvedRevision?: string;
 	/** The function that performs the request. A test injects one. */
 	fetchImpl?: typeof fetch;
+}
+
+/**
+ * The publication a caller expects.
+ *
+ * A caller that pinned a publication asks for that one: a record of
+ * another publication is refused, even when it is a valid one.
+ */
+export interface OmnigraphPublicationExpectation {
+	/** The revision that is expected. */
+	revision?: string;
+	/** The hash that is expected. */
+	sha256?: string;
 }
 
 /**
@@ -154,10 +168,18 @@ export class OmnigraphSkillSource implements RemoteSkillSource {
 	 * The body is only complete when its hash matches the hash of the
 	 * publication. A body that does not match is refused: a client that
 	 * hands a changed body to a model teaches it something the graph did
-	 * not publish.
+	 * not publish. A body whose publication carries no hash is refused
+	 * as well: a body that cannot be checked is not a verified body.
+	 *
+	 * @param id The id of the skill.
+	 * @param expectation The publication the caller expects. A record of
+	 *   another publication is refused, even when it is a valid one.
 	 */
-	async get(id: string): Promise<RemoteSkill | null> {
-		const record = await this.record(id);
+	async get(
+		id: string,
+		expectation?: OmnigraphPublicationExpectation,
+	): Promise<RemoteSkill | null> {
+		const record = await this.record(id, expectation);
 		if (!record) return null;
 		return {
 			id: record.id,
@@ -173,8 +195,14 @@ export class OmnigraphSkillSource implements RemoteSkillSource {
 	/**
 	 * The full record of one skill, with the instructions and the
 	 * manifest of the supporting files.
+	 *
+	 * @param id The id of the skill.
+	 * @param expectation The publication the caller expects.
 	 */
-	async record(id: string): Promise<OmnigraphSkillRecord | null> {
+	async record(
+		id: string,
+		expectation?: OmnigraphPublicationExpectation,
+	): Promise<OmnigraphSkillRecord | null> {
 		const trimmed = id?.trim();
 		if (!trimmed) return null;
 		const result = await this.query(OMNIGRAPH_LOOKUP_QUERY, { id: trimmed });
@@ -187,9 +215,49 @@ export class OmnigraphSkillSource implements RemoteSkillSource {
 				"invalid",
 			);
 		}
+		// The record must be the record of the skill that was asked for:
+		// a graph that answers another skill is not trusted.
+		if (record.id !== trimmed) {
+			throw new OmnigraphError(
+				`the graph answered the skill "${record.id}" for the request of "${trimmed}"`,
+				"invalid",
+			);
+		}
+		// The revision is the identity of the publication: a record
+		// without one cannot be pinned, so it cannot be used.
+		if (!record.revision) {
+			throw new OmnigraphError(
+				`the publication of the skill "${record.id}" carries no revision`,
+				"invalid",
+			);
+		}
 		this.checkApproved(record);
+		this.checkExpectation(record, expectation);
 		this.checkHash(record);
 		return record;
+	}
+
+	/**
+	 * A record of another publication than the one that was expected is
+	 * refused.
+	 */
+	private checkExpectation(
+		record: OmnigraphSkillRecord,
+		expectation?: OmnigraphPublicationExpectation,
+	): void {
+		if (!expectation) return;
+		if (expectation.revision && expectation.revision !== record.revision) {
+			throw new OmnigraphError(
+				`the skill "${record.id}" is at the revision "${record.revision}", and the revision "${expectation.revision}" was expected`,
+				"invalid",
+			);
+		}
+		if (expectation.sha256 && expectation.sha256 !== record.sha256) {
+			throw new OmnigraphError(
+				`the skill "${record.id}" carries a hash that is not the hash of the expected publication`,
+				"invalid",
+			);
+		}
 	}
 
 	/** The record of a publication that is not approved is refused. */
@@ -202,9 +270,20 @@ export class OmnigraphSkillSource implements RemoteSkillSource {
 		);
 	}
 
-	/** Instructions whose hash does not match are refused. */
+	/**
+	 * Instructions whose hash does not match are refused.
+	 *
+	 * A publication without a hash is refused as well: the check of a
+	 * body that has no hash is not a check, and it must never be
+	 * reported as one.
+	 */
 	private checkHash(record: OmnigraphSkillRecord): void {
-		if (!record.sha256) return;
+		if (!isPublicationHash(record.sha256)) {
+			throw new OmnigraphError(
+				`the publication of the skill "${record.id}" carries no usable hash, so the instructions cannot be checked`,
+				"invalid",
+			);
+		}
 		const computed = omnigraphInstructionsHash(record.instructions);
 		if (computed === record.sha256.toLowerCase()) return;
 		throw new OmnigraphError(

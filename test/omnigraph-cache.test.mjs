@@ -95,7 +95,7 @@ test("a stub is a SKILL.md that points at the real instructions", () => {
 		const written = writeStubs(dir, [entry({ sha256: "a".repeat(64) })]);
 		assert.equal(written.length, 1);
 		const markdown = readCachedSkillStub(dir, "the-skill");
-		assert.match(markdown, /^---\nname: the-skill/);
+		assert.match(markdown, /^---\nname: "the-skill"/);
 		assert.match(markdown, /remote_skill_load/);
 		assert.match(markdown, /abc123/);
 	} finally {

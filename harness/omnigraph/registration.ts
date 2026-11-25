@@ -13,9 +13,13 @@
  * - the command: `/remote-skills` shows the state of the source, searches
  *   the catalog, refreshes it and clears the cache.
  *
- * The startup must not wait for the network. The discovery answers with
- * the stubs of the last verified catalog, and the catalog is refreshed
- * in the background.
+ * The startup must not wait for the network, and the discovery must not
+ * race the catalog: the stubs of the last verified catalog are written
+ * right away, and the discovery waits for the first read with a bound.
+ *
+ * The states of the source stay apart. A graph that refuses the
+ * credential is not a graph that cannot be reached, and a refused graph
+ * never falls back to the catalog of another read.
  */
 
 import { Type } from "typebox";
@@ -25,10 +29,13 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import {
-	cacheUsage,
 	clearCache,
-	readCatalog,
+	isPublicationHash,
+	makeRoomInCache,
 	readCachedSkill,
+	readCatalog,
+	sha256Of,
+	skillVersionDir,
 	stubRoot,
 	writeCachedResource,
 	writeCachedSkill,
@@ -36,9 +43,7 @@ import {
 	writeStubs,
 	type CachedCatalogEntry,
 } from "./cache.ts";
-import {
-	type OmnigraphConfig,
-} from "./config.ts";
+import type { OmnigraphConfig } from "./config.ts";
 import {
 	parseResourceManifest,
 	type OmnigraphResourceFetcher,
@@ -46,8 +51,36 @@ import {
 import {
 	OmnigraphSkillSource,
 	type OmnigraphCatalogEntry,
+	type OmnigraphPublicationExpectation,
+	type OmnigraphSkillRecord,
 } from "./source.ts";
 import { OmnigraphError } from "./transport.ts";
+
+/**
+ * The state of the catalog of the source.
+ *
+ * - `unknown`: the catalog was not read yet,
+ * - `ok`: the catalog was read and verified,
+ * - `empty`: the graph holds no skill,
+ * - `denied`: the graph refused the credential,
+ * - `unavailable`: the graph could not be reached.
+ */
+export type OmnigraphCatalogState =
+	| "unknown"
+	| "ok"
+	| "empty"
+	| "denied"
+	| "unavailable";
+
+/** The report of the state of the catalog. */
+export interface OmnigraphCatalogReport {
+	/** The state of the source. */
+	state: OmnigraphCatalogState;
+	/** The number of the skills of the last verified catalog. */
+	count: number;
+	/** The reason of the failure, if there was one. */
+	error?: string;
+}
 
 /** The options of the registration. */
 export interface OmnigraphRegistrationOptions {
@@ -66,25 +99,22 @@ export interface OmnigraphRegistrationOptions {
 	 *
 	 * The report is written once the catalog was read, or once the read
 	 * failed. A machine that is offline reports the failure and keeps the
-	 * catalog of the last verified read.
+	 * catalog of the last verified read of the same authority.
 	 */
-	onCatalog?: (state: { count: number; error?: string }) => void;
+	onCatalog?: (report: OmnigraphCatalogReport) => void;
 }
 
-/** The state of the source, as the command shows it. */
-export interface OmnigraphStatus {
-	/** Whether the source is configured. */
-	configured: boolean;
-	/** The graph that holds the skills. */
-	graph: string;
-	/** The number of the skills of the last verified catalog. */
-	catalogCount: number;
-	/** The size of the local cache, in bytes. */
-	cacheBytes: number;
-	/** The budget of the local cache, in bytes. */
-	cacheBudgetBytes: number;
-	/** The reason the source cannot be used, if it cannot. */
-	error?: string;
+/**
+ * The handle of the registration.
+ *
+ * The caller keeps it to learn when the first read of the catalog is
+ * done, and what the state of the source is.
+ */
+export interface OmnigraphRegistration {
+	/** The first read of the catalog of the graph. */
+	ready: Promise<OmnigraphCatalogReport>;
+	/** The state of the catalog, as it is known now. */
+	report: () => OmnigraphCatalogReport;
 }
 
 /** The details of the tool that loads a skill. */
@@ -95,6 +125,8 @@ interface LoadDetails {
 	revision: string;
 	/** The directory of the skill on this machine. */
 	directory: string;
+	/** Whether the body came from the local cache. */
+	offline: boolean;
 }
 
 /** The details of the tool that fetches a file of a skill. */
@@ -104,25 +136,78 @@ interface ResourceDetails {
 }
 
 /**
+ * The context of the tools.
+ *
+ * The tools share the state of the source: the catalog, the last known
+ * report and the configuration of the client.
+ */
+interface OmnigraphContext {
+	/** The configuration of the client. */
+	config: OmnigraphConfig;
+	/** The source of the skills of the graph. */
+	source: OmnigraphSkillSource;
+	/** The mechanism that reads the supporting files. */
+	fetcher?: OmnigraphResourceFetcher;
+	/** The function that writes a line of the report. */
+	log: (message: string) => void;
+	/** The catalog of the graph. */
+	catalog: () => Promise<OmnigraphCatalogReport>;
+	/** The state of the catalog, as it is known now. */
+	report: () => OmnigraphCatalogReport;
+	/** Read the catalog again. */
+	refresh: () => void;
+	/** Empty the cache and forget the state of the source. */
+	reset: () => void;
+}
+
+/**
  * Register the tools, the command and the discovery of the source.
  *
  * The registration is synchronous: pi must be able to start even when the
- * graph cannot be reached. The first catalog is read in the background.
+ * graph cannot be reached, and the discovery of the skills must not wait
+ * for another service.
  */
 export function registerOmnigraphSkills(
 	pi: ExtensionAPI,
 	options: OmnigraphRegistrationOptions,
-): void {
+): OmnigraphRegistration {
 	const { config, source } = options;
 	const log = options.log ?? (() => {});
 
+	/** The state of the catalog. */
+	let report: OmnigraphCatalogReport = { state: "unknown", count: 0 };
+	/** The read of the catalog. There is one read, not one per caller. */
+	let catalogPromise: Promise<OmnigraphCatalogReport> | undefined;
+
 	/**
-	 * The catalog of the source.
+	 * Write the stubs of the last verified catalog.
 	 *
-	 * The last verified catalog is used when the graph cannot be read:
-	 * a machine that is offline still knows the skills of the graph.
+	 * The write happens before the network is touched, so a machine that
+	 * starts while the graph is down still finds the skills it knows.
 	 */
-	const readCatalogEntries = async (): Promise<CachedCatalogEntry[]> => {
+	const hydrateStubs = (): CachedCatalogEntry[] => {
+		const cached = readCatalog(config.cacheDir);
+		if (!cached.length) return cached;
+		try {
+			writeStubs(config.cacheDir, cached, config.maxAdvertisedSkills);
+		} catch (error) {
+			log(
+				`[pi-harness] The stubs of the graph could not be written: ${messageOf(error)}`,
+			);
+		}
+		return cached;
+	};
+
+	/**
+	 * Read the catalog of the graph.
+	 *
+	 * A refusal is not an outage: a graph that denies the credential
+	 * never falls back to a catalog, because that catalog would be the
+	 * answer of another authority. An outage may fall back to the
+	 * catalog of the last verified read - the cache of the source, in
+	 * the namespace of the source.
+	 */
+	const readCatalogState = async (): Promise<OmnigraphCatalogReport> => {
 		try {
 			const entries = await source.catalog();
 			const cached: CachedCatalogEntry[] = entries.map((entry) => ({
@@ -133,31 +218,174 @@ export function registerOmnigraphSkills(
 				sha256: entry.sha256,
 			}));
 			writeCatalog(config.cacheDir, cached);
-			writeStubs(config.cacheDir, cached);
-			options.onCatalog?.({ count: cached.length });
-			return cached;
+			writeStubs(config.cacheDir, cached, config.maxAdvertisedSkills);
+			report = {
+				state: cached.length ? "ok" : "empty",
+				count: cached.length,
+			};
 		} catch (error) {
 			const reason = messageOf(error);
-			log(`[pi-harness] The catalog of the graph could not be read: ${reason}`);
-			const cached = readCatalog(config.cacheDir);
-			options.onCatalog?.({ count: cached.length, error: reason });
-			return cached;
+			const denied = error instanceof OmnigraphError && error.code === "denied";
+			if (denied) {
+				report = { state: "denied", count: 0, error: reason };
+				log(`[pi-harness] The graph refused the read: ${reason}`);
+			} else {
+				const cached = hydrateStubs();
+				report = {
+					state: "unavailable",
+					count: cached.length,
+					error: reason,
+				};
+				log(
+					`[pi-harness] The catalog of the graph could not be read: ${reason}`,
+				);
+			}
 		}
+		options.onCatalog?.(report);
+		return report;
 	};
 
-	// The first catalog is read in the background: the startup of pi does
-	// not wait for the network.
-	void readCatalogEntries();
+	/** The catalog of the graph, read once. */
+	const catalog = (): Promise<OmnigraphCatalogReport> => {
+		if (!catalogPromise) catalogPromise = readCatalogState();
+		return catalogPromise;
+	};
 
-	pi.on("resources_discover", () => {
+	// The stubs of the last verified catalog are written right away: the
+	// discovery of pi must find a tree, even when the graph is down.
+	hydrateStubs();
+	// The first read of the catalog starts right away: the row of the
+	// graph says "ready" without waiting for a tool to be called. The
+	// read is in the background, so it never blocks the start.
+	const firstRead = catalog();
+
+	const context: OmnigraphContext = {
+		config,
+		source,
+		log,
+		catalog: () => catalog(),
+		report: () => report,
+		refresh: () => {
+			catalogPromise = undefined;
+		},
+		reset: () => {
+			clearCache(config.cacheDir);
+			report = { state: "unknown", count: 0 };
+		},
+	};
+	if (options.fetcher) context.fetcher = options.fetcher;
+
+	pi.on("resources_discover", discoveryHandler(context));
+	pi.registerTool(searchTool(context));
+	pi.registerTool(loadTool(context));
+	pi.registerTool(resourceTool(context));
+	pi.registerCommand("remote-skills", remoteSkillsCommand(context));
+
+	return { ready: firstRead, report: () => report };
+}
+
+/**
+ * The discovery of the skills of the graph.
+ *
+ * The stubs of the last verified catalog are written before the network
+ * is touched, so the tree exists even when the graph is down. The first
+ * read of the catalog is awaited with a bound: pi discovers the skills
+ * of the graph without a second reload, and the startup does not wait
+ * longer than the timeout of the catalog.
+ */
+function discoveryHandler(context: OmnigraphContext) {
+	return async () => {
+		if (!readCatalog(context.config.cacheDir).length) {
+			await Promise.race([
+				context.catalog(),
+				new Promise((resolve) => {
+					const timer = setTimeout(
+						resolve,
+						context.config.catalogTimeoutMs,
+					);
+					timer.unref?.();
+				}),
+			]);
+		} else {
+			void context.catalog();
+		}
 		// The stubs are the only thing that is advertised. The hydrated
 		// skills live in another tree, so pi never discovers two skills
 		// with the same name.
-		const root = stubRoot(config.cacheDir);
-		return { skillPaths: [root] };
-	});
+		return { skillPaths: [stubRoot(context.config.cacheDir)] };
+	};
+}
 
-	pi.registerTool({
+/**
+ * The command of the source.
+ */
+function remoteSkillsCommand(context: OmnigraphContext) {
+	return {
+		description:
+			"The skills of the shared graph: status, search, refresh, clear-cache",
+		handler: async (
+			args: string,
+			ctx: ExtensionCommandContext,
+		): Promise<void> => {
+			const [command = "status", ...rest] = args.trim().split(/\s+/);
+			const notify = (message: string) => {
+				if (ctx?.ui?.notify) ctx.ui.notify(message, "info");
+				else context.log(`[pi-harness] ${message}`);
+			};
+			if (command === "status") {
+				const state = await context.catalog();
+				notify(
+					`The graph "${context.config.graph}" holds ${state.count} skill(s); the state of the source is ${describeState(state, context.config)}.`,
+				);
+				return;
+			}
+			if (command === "search") {
+				const state = await context.catalog();
+				if (state.state === "denied") {
+					notify(
+						`The graph refused the read (${state.error ?? "the credential was refused"}); no skill is listed.`,
+					);
+					return;
+				}
+				const matched = searchEntries(
+					readCatalog(context.config.cacheDir),
+					rest.join(" "),
+				);
+				notify(
+					matched.length
+						? matched
+								.slice(0, 20)
+								.map((entry) => `${entry.name} (${entry.id})`)
+								.join(", ")
+						: "The catalog holds no skill that fits.",
+				);
+				return;
+			}
+			if (command === "refresh") {
+				context.refresh();
+				const state = await context.catalog();
+				notify(
+					`The catalog holds ${state.count} skill(s) (${describeState(state, context.config)}).`,
+				);
+				return;
+			}
+			if (command === "clear-cache") {
+				context.reset();
+				notify("The cache of the graph is empty.");
+				return;
+			}
+			notify(
+				"Unknown command. Use: status, search <text>, refresh, clear-cache.",
+			);
+		},
+	};
+}
+
+/**
+ * The tool that finds a skill in the catalog of the graph.
+ */
+function searchTool(context: OmnigraphContext) {
+	return {
 		name: "remote_skill_search",
 		label: "Remote Skill Search",
 		description:
@@ -170,37 +398,52 @@ export function registerOmnigraphSkills(
 				Type.Number({ description: "How many skills to return (default 20)" }),
 			),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId: string, params: { query?: string; limit?: number }) {
 			try {
-				const entries = await readCatalogEntries();
-				const query = (params.query ?? "").trim().toLowerCase();
-				const matched = query
-					? entries.filter(
-							(entry) =>
-								entry.name.toLowerCase().includes(query) ||
-								entry.description.toLowerCase().includes(query) ||
-								entry.id.toLowerCase().includes(query),
-						)
-					: entries;
+				const state = await context.catalog();
+				if (state.state === "denied") {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `The graph refused the read (${state.error ?? "the credential was refused"}). No skill of the graph is available, and the catalog of another read is not used in its place.`,
+							},
+						],
+						details: {},
+					};
+				}
+				const matched = searchEntries(
+					readCatalog(context.config.cacheDir),
+					params.query ?? "",
+				);
 				const limit = params.limit && params.limit > 0 ? params.limit : 20;
 				const lines = matched.slice(0, limit).map(
 					(entry) =>
 						`- ${entry.name} (${entry.id}) — ${entry.description || "no description"} [revision ${entry.revision || "unknown"}]`,
 				);
+				const notice =
+					state.state === "unavailable"
+						? `The graph could not be reached (${state.error ?? "unknown reason"}); the catalog of the last verified read is used.\n`
+						: "";
 				const text = matched.length
-					? `${matched.length} skill(s) found:\n${lines.join("\n")}`
-					: "The catalog holds no skill that fits.";
-				return { content: [{ type: "text", text }], details: {} };
+					? `${notice}${matched.length} skill(s) found:\n${lines.join("\n")}`
+					: `${notice}The catalog holds no skill that fits.`;
+				return { content: [{ type: "text" as const, text }], details: {} };
 			} catch (error) {
 				return {
-					content: [{ type: "text", text: messageOf(error) }],
+					content: [{ type: "text" as const, text: messageOf(error) }],
 					details: {},
 				};
 			}
 		},
-	});
+	};
+}
 
-	pi.registerTool({
+/**
+ * The tool that reads the instructions of a skill.
+ */
+function loadTool(context: OmnigraphContext) {
+	return {
 		name: "remote_skill_load",
 		label: "Remote Skill Load",
 		description:
@@ -211,102 +454,140 @@ export function registerOmnigraphSkills(
 				Type.String({ description: "The revision that is expected" }),
 			),
 		}),
-		async execute(_toolCallId, params): Promise<{
+		async execute(
+			_toolCallId: string,
+			params: { id?: string; revision?: string },
+		): Promise<{
 			content: { type: "text"; text: string }[];
 			details: LoadDetails;
 		}> {
 			const id = (params.id ?? "").trim();
 			if (!id) {
 				return {
-					content: [{ type: "text", text: "The id of the skill is missing." }],
-					details: { id: "", revision: "", directory: "" },
+					content: [
+						{ type: "text", text: "The id of the skill is missing." },
+					],
+					details: { id: "", revision: "", directory: "", offline: false },
 				};
 			}
 			try {
-				const record = await source.record(id);
-				if (!record) {
-					return {
-						content: [
-							{ type: "text", text: `The graph holds no skill with the id "${id}".` },
-						],
-						details: { id: "", revision: "", directory: "" },
-					};
-				}
-				if (params.revision && params.revision !== record.revision) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `The skill "${id}" is at the revision "${record.revision}", and the revision "${params.revision}" was asked for.`,
-							},
-						],
-						details: {
-							id: record.id,
-							revision: record.revision,
-							directory: "",
-						},
-					};
-				}
-				const entry: CachedCatalogEntry = {
-					id: record.id,
-					name: record.name,
-					description: record.description,
-					revision: record.revision,
-					sha256: record.sha256,
-				};
-				const directory = writeCachedSkill(
-					config.cacheDir,
-					entry,
-					record.instructions,
-				);
-				const manifest = parseResourceManifest(record.resourcesJson);
-				const unsupported = manifest.resources.filter(
-					(resource) => resource.state === "unsupported",
-				);
-				const header = [
-					`# ${record.name}`,
-					"",
-					`The instructions of the skill "${record.name}" (id \`${record.id}\`) at the revision \`${record.revision}\`.`,
-					`The hash of the instructions was checked against the publication.`,
-					`The files of the skill are materialized under \`${directory}\`.`,
-					manifest.resources.length
-						? `The skill declares ${manifest.resources.length} file(s); a file that is needed is fetched with \`remote_skill_resource\`.`
-						: "The skill declares no supporting file.",
-					unsupported.length
-						? `WARNING: ${unsupported.length} file(s) of the manifest are not supported and cannot be fetched: ${unsupported.map((resource) => `${resource.path} (${resource.reason})`).join(", ")}.`
-						: "",
-					"",
-				].filter((line) => line !== "");
-				return {
-					content: [{ type: "text", text: `${header.join("\n")}\n${record.instructions}` }],
-					details: {
-						id: record.id,
-						revision: record.revision,
-						directory,
-					},
-				};
+				return await loadSkill(context, id, params.revision);
 			} catch (error) {
 				return {
 					content: [{ type: "text", text: messageOf(error) }],
-					details: { id: "", revision: "", directory: "" },
+					details: { id: "", revision: "", directory: "", offline: false },
 				};
 			}
 		},
-	});
+	};
+}
 
-	pi.registerTool({
+/**
+ * The body of one skill.
+ *
+ * The body of the graph is the first choice. A graph that cannot be
+ * reached may serve the body of the last verified read, after the hash
+ * of the publication was checked again. A graph that refuses the
+ * credential may not: a refusal is not an outage.
+ */
+async function loadSkill(
+	context: OmnigraphContext,
+	id: string,
+	revision: string | undefined,
+): Promise<{
+	content: { type: "text"; text: string }[];
+	details: LoadDetails;
+}> {
+	const { config, source } = context;
+	// The expectation binds the request to the publication: the record of
+	// another revision or another hash is refused, even when it is a
+	// valid one.
+	const known = readCatalog(config.cacheDir).find((entry) => entry.id === id);
+	const expectation: OmnigraphPublicationExpectation = {};
+	if (revision) expectation.revision = revision;
+	if (known?.sha256) expectation.sha256 = known.sha256;
+	let record: OmnigraphSkillRecord | null;
+	try {
+		record = await source.record(id, expectation);
+	} catch (error) {
+		if (!(error instanceof OmnigraphError) || error.code !== "unavailable") {
+			throw error;
+		}
+		const offline = offlineBody(config.cacheDir, id, revision, known);
+		if (!offline) throw error;
+		return offlineAnswer(offline, known, error.message);
+	}
+	if (!record) {
+		return {
+			content: [
+				{ type: "text", text: `The graph holds no skill with the id "${id}".` },
+			],
+			details: { id: "", revision: "", directory: "", offline: false },
+		};
+	}
+	const entry: CachedCatalogEntry = {
+		id: record.id,
+		name: record.name,
+		description: record.description,
+		revision: record.revision,
+		sha256: record.sha256,
+	};
+	const directory = writeCachedSkill(config.cacheDir, entry, record.instructions);
+	const manifest = parseResourceManifest(record.resourcesJson);
+	const unsupported = manifest.resources.filter(
+		(resource) => resource.state === "unsupported",
+	);
+	const header = [
+		`# ${record.name}`,
+		"",
+		`The instructions of the skill "${record.name}" (id \`${record.id}\`) at the revision \`${record.revision}\`.`,
+		"The hash of the instructions was checked against the publication.",
+		`The files of the skill are materialized under \`${directory}\`.`,
+		manifest.error
+			? `WARNING: the manifest of the files could not be read (${manifest.error}), so the files of this skill are unknown.`
+			: manifest.resources.length
+				? `The skill declares ${manifest.resources.length} file(s); a file that is needed is fetched with \`remote_skill_resource\`.`
+				: "The skill declares no supporting file.",
+		unsupported.length
+			? `WARNING: ${unsupported.length} file(s) of the manifest are not supported and cannot be fetched: ${unsupported.map((resource) => `${resource.path} (${resource.reason})`).join(", ")}.`
+			: "",
+		"",
+	].filter((line) => line !== "");
+	return {
+		content: [
+			{ type: "text", text: `${header.join("\n")}\n${record.instructions}` },
+		],
+		details: {
+			id: record.id,
+			revision: record.revision,
+			directory,
+			offline: false,
+		},
+	};
+}
+
+/**
+ * The tool that fetches one supporting file of a skill.
+ */
+function resourceTool(context: OmnigraphContext) {
+	return {
 		name: "remote_skill_resource",
 		label: "Remote Skill Resource",
 		description:
 			"Fetch one supporting file of a skill of the shared graph into the local directory of that skill. The content is checked against the hash of the publication. Use it when the instructions of a skill name a file that is not on the machine.",
 		parameters: Type.Object({
 			id: Type.String({ description: "The id of the skill in the graph" }),
-			path: Type.String({ description: "The path of the file, relative to the skill" }),
+			path: Type.String({
+				description: "The path of the file, relative to the skill",
+			}),
 			revision: Type.Optional(
 				Type.String({ description: "The revision that is expected" }),
 			),
 		}),
-		async execute(_toolCallId, params): Promise<{
+		async execute(
+			_toolCallId: string,
+			params: { id?: string; path?: string; revision?: string },
+		): Promise<{
 			content: { type: "text"; text: string }[];
 			details: ResourceDetails;
 		}> {
@@ -315,12 +596,15 @@ export function registerOmnigraphSkills(
 			if (!id || !path) {
 				return {
 					content: [
-						{ type: "text", text: "The id of the skill and the path of the file are needed." },
+						{
+							type: "text",
+							text: "The id of the skill and the path of the file are needed.",
+						},
 					],
 					details: { path: "" },
 				};
 			}
-			if (!options.fetcher) {
+			if (!context.fetcher) {
 				return {
 					content: [
 						{
@@ -332,60 +616,7 @@ export function registerOmnigraphSkills(
 				};
 			}
 			try {
-				const record = await source.record(id);
-				if (!record) {
-					return {
-						content: [
-							{ type: "text", text: `The graph holds no skill with the id "${id}".` },
-						],
-						details: { path: "" },
-					};
-				}
-				const revision = params.revision || record.revision;
-				const manifest = parseResourceManifest(record.resourcesJson);
-				const resource = manifest.resources.find(
-					(candidate) => candidate.path === path,
-				);
-				if (!resource) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `The skill "${id}" declares no file with the path "${path}".`,
-							},
-						],
-						details: { path: "" },
-					};
-				}
-				if (resource.state !== "supported") {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `The file "${path}" cannot be fetched: ${resource.reason}.`,
-							},
-						],
-						details: { path: "" },
-					};
-				}
-				const content = await options.fetcher.fetch(resource, revision);
-				const target = writeCachedResource(
-					config.cacheDir,
-					record.id,
-					revision,
-					resource.path,
-					content,
-					resource.sha256,
-				);
-				return {
-					content: [
-						{
-							type: "text",
-							text: `The file "${path}" of the skill "${id}" is at \`${target}\` (${content.byteLength} bytes, the hash was checked).`,
-						},
-					],
-					details: { path: target },
-				};
+				return await fetchResource(context, id, path, params.revision);
 			} catch (error) {
 				return {
 					content: [{ type: "text", text: messageOf(error) }],
@@ -393,83 +624,244 @@ export function registerOmnigraphSkills(
 				};
 			}
 		},
-	});
-
-	pi.registerCommand("remote-skills", {
-		description: "The skills of the shared graph: status, search, refresh, clear-cache",
-		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-			const [command = "status", ...rest] = args.trim().split(/\s+/);
-			const notify = (message: string) => {
-				if (ctx?.ui?.notify) ctx.ui.notify(message, "info");
-				else log(`[pi-harness] ${message}`);
-			};
-			if (command === "status") {
-				const status = await omnigraphStatus(options);
-				notify(
-					`The graph "${status.graph}" holds ${status.catalogCount} skill(s); the cache holds ${status.cacheBytes} of ${status.cacheBudgetBytes} bytes.`,
-				);
-				return;
-			}
-			if (command === "search") {
-				const query = rest.join(" ");
-				const entries = await readCatalogEntries();
-				const needle = query.trim().toLowerCase();
-				const matched = needle
-					? entries.filter(
-							(entry) =>
-								entry.name.toLowerCase().includes(needle) ||
-								entry.description.toLowerCase().includes(needle) ||
-								entry.id.toLowerCase().includes(needle),
-						)
-					: entries;
-				notify(
-					matched.length
-						? matched
-								.slice(0, 20)
-								.map((entry) => `${entry.name} (${entry.id})`)
-								.join(", ")
-						: "The catalog holds no skill that fits.",
-				);
-				return;
-			}
-			if (command === "refresh") {
-				const entries = await readCatalogEntries();
-				notify(`The catalog holds ${entries.length} skill(s).`);
-				return;
-			}
-			if (command === "clear-cache") {
-				clearCache(config.cacheDir);
-				notify("The cache of the graph is empty.");
-				return;
-			}
-			notify(
-				"Unknown command. Use: status, search <text>, refresh, clear-cache.",
-			);
-		},
-	});
+	};
 }
 
 /**
- * The state of the source.
+ * One supporting file of a skill.
+ *
+ * The file belongs to the publication of the skill: the revision that is
+ * asked for, the revision of the record and the revision of the file
+ * itself have to be the same. A file of another publication is never
+ * fetched, and the size of the file is known before it is read.
  */
-export async function omnigraphStatus(
-	options: OmnigraphRegistrationOptions,
-): Promise<OmnigraphStatus> {
-	const { config } = options;
-	const status: OmnigraphStatus = {
-		configured: true,
-		graph: config.graph,
-		catalogCount: readCatalog(config.cacheDir).length,
-		cacheBytes: cacheUsage(config.cacheDir),
-		cacheBudgetBytes: config.cacheBudgetBytes,
-	};
-	try {
-		const entries = await options.source.catalog();
-		status.catalogCount = entries.length;
-	} catch (error) {
-		status.error = messageOf(error);
+async function fetchResource(
+	context: OmnigraphContext,
+	id: string,
+	path: string,
+	revision: string | undefined,
+): Promise<{
+	content: { type: "text"; text: string }[];
+	details: ResourceDetails;
+}> {
+	const { config, source, fetcher } = context;
+	if (!fetcher) throw new Error("the machine has no reader for the files");
+	// One exact publication: the revision that is asked for and the
+	// revision of the record must be the same. The manifest of another
+	// publication is never borrowed.
+	const expectation = revision ? { revision } : undefined;
+	const record = await source.record(id, expectation);
+	if (!record) {
+		return {
+			content: [
+				{ type: "text", text: `The graph holds no skill with the id "${id}".` },
+			],
+			details: { path: "" },
+		};
 	}
-	return status;
+	const manifest = parseResourceManifest(record.resourcesJson);
+	const resource = manifest.resources.find((candidate) => candidate.path === path);
+	if (!resource) {
+		return {
+			content: [
+				{
+					type: "text",
+					text: manifest.error
+						? `The manifest of the files of "${id}" could not be read (${manifest.error}), so the file "${path}" is unknown.`
+						: `The skill "${id}" declares no file with the path "${path}".`,
+				},
+			],
+			details: { path: "" },
+		};
+	}
+	if (resource.state !== "supported") {
+		return {
+			content: [
+				{
+					type: "text",
+					text: `The file "${path}" cannot be fetched: ${resource.reason}.`,
+				},
+			],
+			details: { path: "" },
+		};
+	}
+	if (resource.revision && resource.revision !== record.revision) {
+		return {
+			content: [
+				{
+					type: "text",
+					text: `The file "${path}" belongs to the revision "${resource.revision}", and the skill is at the revision "${record.revision}".`,
+				},
+			],
+			details: { path: "" },
+		};
+	}
+	const limit = config.cacheBudgetBytes;
+	const declared = declaredSizeRefusal(resource, limit);
+	if (declared) {
+		return {
+			content: [{ type: "text", text: declared }],
+			details: { path: "" },
+		};
+	}
+	const content = await fetcher.fetch(resource, record.revision);
+	const arrived = arrivedSizeRefusal(resource, content, limit);
+	if (arrived) {
+		return {
+			content: [{ type: "text", text: arrived }],
+			details: { path: "" },
+		};
+	}
+	// The cache has a budget: the write is refused when it does not fit,
+	// after the oldest versions that are not pinned were removed.
+	makeRoomInCache(
+		config.cacheDir,
+		config.cacheBudgetBytes,
+		content.byteLength,
+		skillVersionDir(config.cacheDir, record.id, record.revision),
+	);
+	const target = writeCachedResource(
+		config.cacheDir,
+		record.id,
+		record.revision,
+		resource.path,
+		content,
+		resource.sha256,
+	);
+	return {
+		content: [
+			{
+				type: "text",
+				text: `The file "${path}" of the skill "${id}" is at \`${target}\` (${content.byteLength} bytes, the hash was checked).`,
+			},
+		],
+		details: { path: target },
+	};
+}
+
+/**
+ * The refusal of a file whose size is known before it is read.
+ *
+ * The size of the publication is a number of the manifest, so the file
+ * is refused before the download when it does not fit the budget of the
+ * cache.
+ */
+function declaredSizeRefusal(
+	resource: { bytes: number; path: string },
+	limit: number,
+): string | undefined {
+	if (limit <= 0) return undefined;
+	if (!(resource.bytes > 0)) return undefined;
+	if (resource.bytes <= limit) return undefined;
+	return `The file "${resource.path}" is ${resource.bytes} bytes, and the budget of the cache is ${limit} bytes: the file is not fetched.`;
+}
+
+/**
+ * The refusal of a file whose size is not the size of the publication.
+ */
+function arrivedSizeRefusal(
+	resource: { bytes: number; path: string },
+	content: Uint8Array,
+	limit: number,
+): string | undefined {
+	if (limit > 0 && content.byteLength > limit) {
+		return `The file "${resource.path}" is ${content.byteLength} bytes, and the budget of the cache is ${limit} bytes: the file is not kept.`;
+	}
+	if (resource.bytes > 0 && content.byteLength !== resource.bytes) {
+		return `The file "${resource.path}" is ${content.byteLength} bytes, and the publication says ${resource.bytes} bytes: the file is not the file of the publication.`;
+	}
+	return undefined;
+}
+
+/**
+ * The entries of a catalog that fit a text.
+ */
+function searchEntries(
+	entries: CachedCatalogEntry[],
+	query: string,
+): CachedCatalogEntry[] {
+	const needle = query.trim().toLowerCase();
+	if (!needle) return entries;
+	return entries.filter(
+		(entry) =>
+			entry.name.toLowerCase().includes(needle) ||
+			entry.description.toLowerCase().includes(needle) ||
+			entry.id.toLowerCase().includes(needle),
+	);
+}
+
+/**
+ * The body of the last verified read, for a graph that cannot be
+ * reached.
+ *
+ * The body is only used when it matches the hash of the publication of
+ * the catalog of this source: a body that cannot be checked is not a
+ * body.
+ */
+function offlineBody(
+	cacheDir: string,
+	id: string,
+	revision: string | undefined,
+	known: CachedCatalogEntry | undefined,
+): { body: string; revision: string } | null {
+	if (!known || !known.revision) return null;
+	if (revision && revision !== known.revision) return null;
+	if (!isPublicationHash(known.sha256)) return null;
+	const body = readCachedSkill(cacheDir, id, known.revision);
+	if (!body) return null;
+	if (sha256Of(body) !== known.sha256.toLowerCase()) return null;
+	return { body, revision: known.revision };
+}
+
+/**
+ * The answer of a load that was served from the local cache.
+ */
+function offlineAnswer(
+	offline: { body: string; revision: string },
+	known: CachedCatalogEntry | undefined,
+	reason: string,
+): {
+	content: { type: "text"; text: string }[];
+	details: LoadDetails;
+} {
+	const header = [
+		`# ${known?.name ?? "The skill"}`,
+		"",
+		`The graph could not be reached (${reason}); the instructions of the last verified read are used.`,
+		"The hash of the instructions was checked against the publication.",
+		`The revision of the publication: \`${offline.revision}\`.`,
+		"",
+	].join("\n");
+	return {
+		content: [{ type: "text", text: `${header}\n${offline.body}` }],
+		details: {
+			id: known?.id ?? "",
+			revision: offline.revision,
+			directory: "",
+			offline: true,
+		},
+	};
+}
+
+/**
+ * The state of the source, in words.
+ */
+function describeState(
+	report: OmnigraphCatalogReport,
+	config: OmnigraphConfig,
+): string {
+	switch (report.state) {
+		case "ok":
+			return "ready";
+		case "empty":
+			return "ready, the graph holds no skill";
+		case "denied":
+			return `the graph refused the read (${report.error ?? "the credential was refused"})`;
+		case "unavailable":
+			return `the graph could not be reached (${report.error ?? "unknown reason"}); the cache of the last verified read is used`;
+		default:
+			return `not read yet (the graph "${config.graph}" at ${config.url})`;
+	}
 }
 
 /**

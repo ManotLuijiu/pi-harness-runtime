@@ -12,6 +12,9 @@
  * with every published copy of the package.
  */
 
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+
 /** The version of the HTTP contract of the server. */
 export const OMNIGRAPH_HTTP_API_VERSION = "0.14";
 
@@ -57,6 +60,45 @@ export interface OmnigraphConfig {
 
 /** The environment the configuration is read from. */
 export type OmnigraphEnv = Record<string, string | undefined>;
+
+/**
+ * The identity of the reader, without the credential.
+ *
+ * The credential itself never becomes a name of a directory. Its hash
+ * is enough to tell two readers apart, and a hash cannot be read back
+ * into the credential.
+ */
+export function readerIdentity(token: string): string {
+	return createHash("sha256").update(token, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * The namespace of the cache of one source.
+ *
+ * The cache holds the catalog and the bodies of a source. Two sources
+ * are two authorities, and their data must not meet: the namespace is
+ * built from the endpoint, the graph, the publication and the identity
+ * of the reader, so the cache of one source is never the answer of
+ * another one.
+ */
+export function cacheNamespace(options: {
+	/** The endpoint of the server. */
+	url: string;
+	/** The graph that holds the skills. */
+	graph: string;
+	/** The credential of the reader. */
+	token: string;
+	/** The publication that is approved. */
+	publication?: string;
+}): string {
+	const canonical = [
+		normalizeOmnigraphUrl(options.url).toLowerCase(),
+		options.graph,
+		options.publication ?? "",
+		readerIdentity(options.token),
+	].join("|");
+	return createHash("sha256").update(canonical, "utf8").digest("hex").slice(0, 16);
+}
 
 /**
  * The default directory of the cache.
@@ -105,19 +147,31 @@ export function readOmnigraphConfig(
 	const token = env.OMNIGRAPH_SKILLS_TOKEN?.trim();
 	if (!url || !token) return undefined;
 	const home = env.HOME ?? "/tmp";
+	const base =
+		options.cacheDir ??
+		env.OMNIGRAPH_CACHE_DIR?.trim() ??
+		defaultOmnigraphCacheDir(home);
+	const publication = env.OMNIGRAPH_APPROVED_REVISION?.trim();
+	const graph = env.OMNIGRAPH_GRAPH?.trim() || OMNIGRAPH_DEFAULT_GRAPH;
+	const namespaceOptions = {
+		url: normalizeOmnigraphUrl(url),
+		graph,
+		token,
+		publication: publication ?? "",
+	};
 	return {
 		url: normalizeOmnigraphUrl(url),
-		graph: env.OMNIGRAPH_GRAPH?.trim() || OMNIGRAPH_DEFAULT_GRAPH,
+		graph,
 		token,
 		apiVersion: OMNIGRAPH_HTTP_API_VERSION,
 		timeoutMs: options.timeoutMs ?? numberOf(env.OMNIGRAPH_TIMEOUT_MS, 15_000),
 		catalogTimeoutMs:
 			options.catalogTimeoutMs ??
 			numberOf(env.OMNIGRAPH_CATALOG_TIMEOUT_MS, 5_000),
-		cacheDir:
-			options.cacheDir ??
-			env.OMNIGRAPH_CACHE_DIR?.trim() ??
-			defaultOmnigraphCacheDir(home),
+		// The cache belongs to one source: the namespace keeps the
+		// catalog of another endpoint, another graph or another reader
+		// out of it.
+		cacheDir: join(base, cacheNamespace(namespaceOptions)),
 		cacheBudgetBytes:
 			options.cacheBudgetBytes ??
 			numberOf(env.OMNIGRAPH_CACHE_BUDGET_BYTES, 64 * 1024 * 1024),

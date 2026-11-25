@@ -204,6 +204,12 @@ function errorForStatus(status: number): OmnigraphError {
  *
  * The answer of a graph can be large. A read that answers more than the
  * bound is refused: the client asked for a catalog, not for a dump.
+ *
+ * The bound is applied while the answer arrives, not after it was
+ * received: an answer without a useful Content-Length is read in
+ * pieces, and the read stops as soon as the bound is crossed. The
+ * counter counts bytes, not characters: an answer of many multi-byte
+ * characters is bigger than its length says.
  */
 async function readBounded(
 	response: Response,
@@ -219,14 +225,43 @@ async function readBounded(
 			"invalid",
 		);
 	}
-	const text = await response.text();
-	if (text.length > maxBytes) {
-		throw new OmnigraphError(
-			`the answer of the server is larger than ${maxBytes} bytes`,
-			"invalid",
-		);
+	const body = response.body;
+	if (!body) {
+		// An answer without a stream (a test double) is read whole, but
+		// it is measured in bytes.
+		const text = await response.text();
+		if (Buffer.byteLength(text, "utf8") > maxBytes) {
+			throw new OmnigraphError(
+				`the answer of the server is larger than ${maxBytes} bytes`,
+				"invalid",
+			);
+		}
+		return text;
 	}
-	return text;
+	const reader = body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (!value) continue;
+			total += value.byteLength;
+			if (total > maxBytes) {
+				// The read stops here: the rest of the answer is not
+				// read, and the connection is released.
+				await reader.cancel().catch(() => {});
+				throw new OmnigraphError(
+					`the answer of the server is larger than ${maxBytes} bytes`,
+					"invalid",
+				);
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock?.();
+	}
+	return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
 
 /**

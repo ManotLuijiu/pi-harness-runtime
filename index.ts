@@ -6143,7 +6143,9 @@ async function initQdrant(): Promise<void> {
  * Qdrant and names the endpoint that is read - so the user sees which
  * graph the machine uses.
  */
-async function initOmnigraph(pi: ExtensionAPI): Promise<void> {
+async function initOmnigraph(
+	pi: ExtensionAPI,
+): Promise<{ placeRow: (anchor?: string) => void } | null> {
 	try {
 		const { initOmnigraphSkills } = await import(
 			"./harness/omnigraph/startup.js"
@@ -6159,7 +6161,7 @@ async function initOmnigraph(pi: ExtensionAPI): Promise<void> {
 			// source, and nothing else changes.
 			saasConfigured = false;
 		}
-		await initOmnigraphSkills(pi, {
+		return initOmnigraphSkills(pi, {
 			insert: (anchor, label, text, status, details) => {
 				startupStatus.updateAfter(anchor, label, text, status, details);
 			},
@@ -6170,6 +6172,7 @@ async function initOmnigraph(pi: ExtensionAPI): Promise<void> {
 		logStartup(
 			`[pi-harness] The OmniGraph source could not be prepared: ${err instanceof Error ? err.message : String(err)}`,
 		);
+		return null;
 	}
 }
 
@@ -9110,7 +9113,16 @@ export default async function (pi: ExtensionAPI) {
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
 	// The graph waits for the row of Qdrant: its own row belongs next to it.
-	asyncInitPromises.push(initQdrant().then(() => initOmnigraph(pi)));
+	// The graph is prepared without waiting for another service: the
+	// discovery of the skills of the graph must not depend on Qdrant.
+	const omnigraphStartup = initOmnigraph(pi);
+	// The row of the graph sits next to the row of Qdrant, so it is
+	// placed once that row exists.
+	asyncInitPromises.push(
+		initQdrant().then(async () => {
+			(await omnigraphStartup)?.placeRow("Qdrant");
+		}),
+	);
 
 	// --- tooling-preference: offer Biome.js instead of ESLint/Prettier ------
 	// The proposal is a decision of its own: it never pauses the work.

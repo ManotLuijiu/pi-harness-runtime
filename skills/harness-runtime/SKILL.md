@@ -162,6 +162,15 @@ guess what a skill says.
 | `remote_skill_load` | The complete instructions of one skill, hash-checked |
 | `remote_skill_resource` | One supporting file of a skill, hash-checked |
 
+A body whose publication carries no hash is never returned: the tool
+answers with the refusal instead, and the agent must not treat a skill as
+loaded when the tool did not return its instructions.
+
+The states of the source stay apart. A graph that refused the credential
+serves no skill at all, and the agent must not fall back to a catalog of
+another source. A graph that cannot be reached serves the catalog of the
+last verified read of the same source, and the answer says so.
+
 The graph is read-only for the runtime: the agent never writes a skill,
 never publishes one, and never changes the schema of the graph. The
 credential of the reader is not the credential of the publisher.

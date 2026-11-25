@@ -162,13 +162,16 @@ echo "<the reader token>" > ~/.pi-harness-runtime/keys/omnigraph-skills-token.tx
 ```
 
 | Variable | Meaning | Default |
-|---|---|---|
+| --- | --- | --- |
 | `OMNIGRAPH_URL` | The base address of the graph | unset (the source is off) |
 | `OMNIGRAPH_SKILLS_TOKEN` | The bearer credential of the reader | unset |
 | `OMNIGRAPH_GRAPH` | The graph that holds the skills | `skills` |
 | `OMNIGRAPH_SOURCE_MODE` | `omnigraph`, `saas` or `off` | decided, not guessed |
 | `OMNIGRAPH_TIMEOUT_MS` | How long one read may take | `15000` |
+| `OMNIGRAPH_CATALOG_TIMEOUT_MS` | How long the startup waits for the first catalog | `5000` |
 | `OMNIGRAPH_CACHE_DIR` | Where the local cache lives | `~/.pi-harness-runtime/omnigraph` |
+| `OMNIGRAPH_CACHE_BUDGET_BYTES` | How many bytes the cache may hold | `67108864` |
+| `OMNIGRAPH_MAX_ADVERTISED_SKILLS` | How many skills are advertised to pi | `500` |
 | `OMNIGRAPH_SKILL_REPO_PATH` | A checkout of the skills, to read the files of a skill | unset |
 | `OMNIGRAPH_APPROVED_REVISION` | The one revision that is accepted | unset |
 
@@ -207,13 +210,48 @@ A skill of the graph is also found the native way, with `/skill:<name>`:
 the stub that pi discovers tells the agent to load the real instructions
 before it uses the skill.
 
+### The cache, the states and the limits
+
+The cache of the graph belongs to the source it was read from. Its
+directory is derived from the endpoint, the graph, the approved
+publication and the identity of the reader, so the catalog of one graph is
+never the answer of another one - and the credential itself is never part
+of a name.
+
+The state of the source stays apart in the row and in the answer of the
+tools:
+
+| State | What it means |
+| --- | --- |
+| `ready` | the graph answered and the catalog was verified |
+| `not ready` - refused | the graph refused the credential: no cached catalog is served in its place |
+| `not ready` - unreachable | the graph could not be reached: the catalog of the last verified read of the same source is used, and the body is checked against its hash again |
+| `ready`, empty | the graph answered and holds no skill |
+
+The limits are enforced, not only reported: the size of an answer is
+counted while it arrives, the cache refuses a write that does not fit its
+budget, and only the advertised subset of the catalog is written as stubs
+(the whole catalog stays searchable).
+
+### The files of a skill
+
+The instructions of a skill are read from the graph. The supporting files
+of a skill are read from the checkout of the operator
+(`OMNIGRAPH_SKILL_REPO_PATH`), at the exact revision of the publication
+and with the hash of the manifest. **Without that checkout this release is
+instruction-only**: the instructions of a skill load, and its files do not.
+
 ### What it does not do
 
 - It never writes to the graph: the tools of the runtime are read-only.
 - It never prints the credential: the errors are redacted.
-- It never uses a body that does not match the hash of the publication.
+- It never uses a body that does not match the hash of the publication,
+  and it never uses a body whose publication carries no hash.
 - It never reads a file that the manifest of the skill does not describe
   with a path, a size and a hash.
+- It never serves the catalog of another source, and a refused graph never
+  falls back to a catalog.
+- It never follows a link out of its cache.
 
 ## Example Session
 

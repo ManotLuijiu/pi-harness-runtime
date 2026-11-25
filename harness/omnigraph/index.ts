@@ -16,6 +16,7 @@
  */
 
 export {
+	cacheNamespace,
 	defaultOmnigraphCacheDir,
 	normalizeOmnigraphUrl,
 	OMNIGRAPH_CATALOG_QUERY,
@@ -24,6 +25,7 @@ export {
 	OMNIGRAPH_LOOKUP_QUERY,
 	readOmnigraphConfig,
 	readOmnigraphSourceMode,
+	readerIdentity,
 	redactOmnigraphSecret,
 	type OmnigraphConfig,
 	type OmnigraphEnv,
@@ -58,10 +60,13 @@ export {
 	CachePathError,
 	clearCache,
 	containedPath,
+	isPublicationHash,
+	makeRoomInCache,
 	readCachedSkill,
 	readCatalog,
 	safeSegment,
 	sha256Of,
+	skillNameOf,
 	skillRoot,
 	skillVersionDir,
 	stubRoot,
@@ -87,8 +92,8 @@ export {
 
 export {
 	cachedSkillOf,
-	omnigraphStatus,
 	registerOmnigraphSkills,
+	type OmnigraphCatalogReport,
+	type OmnigraphCatalogState,
 	type OmnigraphRegistrationOptions,
-	type OmnigraphStatus,
 } from "./registration.ts";
