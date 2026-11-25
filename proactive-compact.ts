@@ -1,6 +1,14 @@
 import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 
-export const PROACTIVE_COMPACT_THRESHOLD = 0.9;
+import { contextAtLeast } from "./harness/context-usage.ts";
+
+/**
+ * The fill of the context window that triggers the compaction.
+ *
+ * The usage of the pi reports a percentage and not a fraction, so the
+ * threshold is ninety and not 0.9.
+ */
+export const PROACTIVE_COMPACT_THRESHOLD = 90;
 export const PROACTIVE_COMPACT_HEADROOM_TOKENS = 15_000;
 export const PROACTIVE_COMPACT_COOLDOWN_MS = 10 * 60 * 1000;
 export const MAX_PROACTIVE_COMPACT_FAILURES = 3;
@@ -30,7 +38,7 @@ export function shouldTriggerProactiveCompact(
 	}
 
 	const threshold = options?.threshold ?? PROACTIVE_COMPACT_THRESHOLD;
-	return usage.percent !== null && usage.percent >= threshold;
+	return contextAtLeast(usage, threshold);
 }
 
 export type AssistantStopLike = {

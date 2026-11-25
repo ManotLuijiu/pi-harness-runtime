@@ -109,7 +109,7 @@ test("the reminder goes through the guarded continuation path", () => {
 	// The send of the advisory lives in the advisory hook, so it only
 	// happens after the guards of the continuation passed.
 	assert.ok(indexSource.includes("advisoryDispatch: async (content: string, meta) =>"));
-	assert.ok(indexSource.includes('customType: "harness:exploration-guard"'));
+	assert.ok(indexSource.includes('"harness:exploration-guard"'));
 	// The controller knows the guarded path for an advisory.
 	assert.ok(controllerSource.includes("async dispatchAdvisory("));
 	assert.ok(controllerSource.includes("this.guardedDispatch("));

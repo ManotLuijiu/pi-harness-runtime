@@ -50,6 +50,15 @@ export interface JevRejectionContext {
 	 * set with a "stop".
 	 */
 	pausedBefore?: boolean;
+	/**
+	 * The epoch of the pause that the refusal set.
+	 *
+	 * The epoch says which pause the refusal owns. A pause that came after
+	 * it - the user stopped the work while the question was open - is not
+	 * the pause of the refusal, and the approval of the human must not
+	 * clear it.
+	 */
+	pauseEpoch?: number;
 	/** The deadline of the answer, in words. */
 	deadlineText?: string;
 	/**
@@ -165,6 +174,80 @@ export function buildJevRejectionMessage(context: JevRejectionContext): string {
 }
 
 /**
+ * The state of the pause of the work.
+ */
+export interface PauseOwnership {
+	/** Is the work paused right now? */
+	paused: boolean;
+	/**
+	 * The epoch of the current pause.
+	 *
+	 * The epoch counts the pauses of the request, so it says which pause
+	 * is the current one.
+	 */
+	pauseEpoch?: number;
+}
+
+/**
+ * What the approval of the human does to the pause of the work.
+ */
+export interface ApprovalResumeDecision {
+	/** May the work continue? */
+	resume: boolean;
+	/** Why. */
+	reason: string;
+}
+
+/**
+ * May the approval of the human clear the pause of the work?
+ *
+ * The approval releases the action the judge refused. It does not clear a
+ * pause that belongs to somebody else:
+ *
+ * - A pause that was already there before the refusal belongs to the user.
+ * - A pause that came after the refusal belongs to whoever set it: the
+ *   user may stop the work while the question is open, and the approval of
+ *   an action must not undo that.
+ * - A pause that cannot be attributed belongs to nobody the harness knows,
+ *   so it stays.
+ *
+ * Only the pause of the refusal itself is cleared by the approval.
+ */
+export function decideApprovalResume(
+	context: JevRejectionContext,
+	pause: PauseOwnership,
+): ApprovalResumeDecision {
+	if (!pause.paused) {
+		return { resume: true, reason: "the work was not paused" };
+	}
+	if (context.pausedBefore === true) {
+		return {
+			resume: false,
+			reason:
+				"the work was paused before the refusal, and only an explicit resume of the human clears that pause",
+		};
+	}
+	if (
+		typeof context.pauseEpoch !== "number" ||
+		typeof pause.pauseEpoch !== "number"
+	) {
+		return {
+			resume: false,
+			reason:
+				"the pause of the work cannot be attributed to the refusal, so the approval does not clear it",
+		};
+	}
+	if (pause.pauseEpoch !== context.pauseEpoch) {
+		return {
+			resume: false,
+			reason:
+				"the work was paused after the refusal, and only an explicit resume of the human clears that pause",
+		};
+	}
+	return { resume: true, reason: "the pause is the pause of the refusal" };
+}
+
+/**
  * The continuation that carries the approval of the human.
  *
  * The approval releases the block of the action the judge refused, so the
@@ -230,6 +313,12 @@ export class JevRejectionEscalationRuntime {
 			// asked once: a second question about the same refusal would be
 			// a duplicate, and the buttons of an answered question are
 			// stale.
+			//
+			// The context is the newest refusal: the pause that the new
+			// refusal set is the pause the escalation owns, so the epoch of
+			// the old context would keep the approval from releasing the
+			// work.
+			existing.context = { ...existing.context, ...context };
 			this.deps.log?.(
 				`The escalation of ${context.originalRequestId} was already asked (${existing.status}) - it is not asked again.`,
 			);

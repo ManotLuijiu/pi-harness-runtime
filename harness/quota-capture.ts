@@ -27,6 +27,8 @@ export interface QuotaCaptureOutcome {
 	ok: boolean;
 	/** When the capture ended. */
 	at: number;
+	/** When this capture began; older successful evidence can remain usable. */
+	startedAt: number;
 }
 
 /** The dependencies of the controller. */
@@ -90,6 +92,13 @@ export class QuotaCaptureController {
 		return outcome.provider === provider.toLowerCase() && !outcome.ok;
 	}
 
+	/** A failed refresh must not erase a prior observation or certify its own partial write. */
+	allowsEvidence(provider: string, syncedAt: string | undefined): boolean {
+		if (!this.failed(provider)) return true;
+		const observedAt = Date.parse(syncedAt ?? "");
+		return Number.isFinite(observedAt) && observedAt < (this.last?.startedAt ?? -Infinity);
+	}
+
 	/**
 	 * Start the capture of a quota failure.
 	 *
@@ -107,10 +116,11 @@ export class QuotaCaptureController {
 		) {
 			return;
 		}
+		const startedAt = this.now();
 		const promise = (async () => {
 			try {
 				const ok = await this.options.capture(key);
-				this.last = { provider: key, ok, at: this.now() };
+				this.last = { provider: key, ok, at: this.now(), startedAt };
 				return ok;
 			} catch (error) {
 				this.options.log?.(
@@ -118,11 +128,11 @@ export class QuotaCaptureController {
 						error instanceof Error ? error.message : String(error)
 					}`,
 				);
-				this.last = { provider: key, ok: false, at: this.now() };
+				this.last = { provider: key, ok: false, at: this.now(), startedAt };
 				return false;
 			}
 		})();
-		this.pending = { provider: key, promise, startedAt: this.now() };
+		this.pending = { provider: key, promise, startedAt };
 	}
 
 	/**

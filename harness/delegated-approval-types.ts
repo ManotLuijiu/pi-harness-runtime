@@ -28,6 +28,7 @@ export const DELEGATED_OPERATION_KINDS = [
 	"commit-and-push",
 	"deploy",
 	"external-write",
+	"build",
 ] as const;
 
 /** A kind of operation a delegation can cover. */
@@ -94,8 +95,18 @@ export interface ApprovalRequest {
 	sessionId: string;
 	/** The generation of the request. */
 	generation: number;
-	/** The kind of the operation. */
+	/** The kind of the operation. It is the headline of the request. */
 	kind: DelegatedOperationKind;
+	/**
+	 * Every operation the request proposes.
+	 *
+	 * A request may name more than one operation: "may I commit my changes
+	 * and push" is a commit and a push. The delegation is checked against
+	 * this list, so a delegation for a commit never covers the push that
+	 * came with it. The list falls back to the single kind of the request
+	 * when it is not known.
+	 */
+	kinds?: DelegatedOperationKind[];
 	/** The exact operation, in the words of the human. */
 	operation: string;
 	/** What stays blocked while the request is open. */
@@ -227,6 +238,38 @@ const PERSONAL_SUBJECTS = new Set([
 ]);
 
 /**
+ * The words that turn a personal subject into an intent.
+ *
+ * A personal subject behind one of these words names a proposal of the
+ * speaker ("then I will push to origin"), not a fact about the past ("the
+ * service I deployed yesterday"). The window of the personal subject ends
+ * at the word, so the operation behind it counts.
+ *
+ * Without this rule a question that proposes a commit and a push in two
+ * sentences ("may I commit the change? then I will push to origin") was
+ * read as a commit alone, and a delegation for the commit covered the
+ * whole proposal.
+ */
+const INTENT_AFTER_SUBJECT = new Set([
+	"will",
+	"shall",
+	"going",
+	"about",
+	"plan",
+	"planning",
+	"intend",
+	"intending",
+	"want",
+	"wanting",
+	"need",
+	"needing",
+	"would",
+	"could",
+	"should",
+	"must",
+]);
+
+/**
  * The operations and the words that name them.
  *
  * Only the active forms are named. The past tense describes what happened
@@ -258,9 +301,150 @@ const OPERATION_WORDS: { kind: DelegatedOperationKind; words: string[] }[] = [
 			"upload",
 			"uploads",
 			"uploading",
+			// A message that leaves the machine is an external write, in
+			// every wording of it.
+			"send",
+			"sends",
+			"sending",
+			"mail",
+			"mails",
+			"email",
+			"emails",
+			"notify",
+			"notifies",
+			"post",
+			"posts",
+			"posting",
+			"message",
+			"messages",
 		],
 	},
 ];
+
+/**
+ * The words that ask for something.
+ *
+ * A question does not name a command by itself: the words that ask for it
+ * are not part of the command, so they are taken off before the command
+ * is looked at.
+ */
+const QUESTION_WORDS = [
+	"may i",
+	"can i",
+	"could i",
+	"would you",
+	"can you",
+	"could you",
+	"will you",
+	"do you want me to",
+	"want me to",
+	"should i",
+	"shall i",
+	"is it ok if i",
+	"is it okay if i",
+	"please",
+	"go ahead and",
+	"i need to",
+	"i want to",
+	"i'd like to",
+	"i would like to",
+];
+
+/**
+ * The words that start the doing of a command.
+ */
+const ACTION_WORDS = ["run", "execute", "start", "perform", "do", "launch"];
+
+/**
+ * The forms of a build that a delegation may cover.
+ *
+ * The list is explicit. A command that is not in it is not a build, so a
+ * delegation for a build never covers an operation that only looks like
+ * one. The word "build" alone is not a build: "may I build the project?"
+ * asks for work, not for the build of the project.
+ */
+const BUILD_MENTION =
+	/\bbench\s+build\b|\b(?:yarn|npm|bun|pnpm)\s+(?:run\s+)?build\b/;
+
+const BUILD_FORMS: { form: string; pattern: RegExp }[] = [
+	// The build of a bench. The app of the bench is part of the command,
+	// and it changes nothing about the kind of the operation.
+	{ form: "bench build", pattern: /^bench\s+build(?:\s+--app\s+[\w.-]+)?$/ },
+	// The build script of the project. The runner is not part of the form:
+	// the script of the project is the same for every runner.
+	{
+		form: "package build",
+		pattern: /^(?:yarn|npm|bun|pnpm)\s+(?:run\s+)?build$/,
+	},
+];
+
+/**
+ * The build a proposal names, when it names exactly one.
+ *
+ * The proposal must be a standalone build. The words that ask for it and
+ * the words that start the doing are taken off, and what is left has to
+ * be a build command and nothing else. A proposal that names another
+ * operation beside the build names no build: a delegation for a build
+ * may not cover an operation the user never delegated.
+ */
+export function buildFormOf(text: string | undefined): string | undefined {
+	let rest = (text ?? "").trim();
+	if (rest.length === 0) return undefined;
+	// The trailing punctuation of the question.
+	rest = rest.replace(/[.!?]+$/, "").trim();
+	// The words that ask for something.
+	let changed = true;
+	while (changed) {
+		changed = false;
+		const lower = rest.toLowerCase();
+		for (const word of QUESTION_WORDS) {
+			if (lower.startsWith(word)) {
+				rest = rest.slice(word.length).replace(/^[\s,:-]+/, "").trim();
+				changed = true;
+				break;
+			}
+		}
+	}
+	// The words that ask for something, at the end of the question.
+	changed = true;
+	while (changed) {
+		changed = false;
+		const lowerEnd = rest.toLowerCase();
+		for (const word of QUESTION_WORDS) {
+			if (lowerEnd.endsWith(" " + word)) {
+				rest = rest.slice(0, rest.length - word.length).trim();
+				changed = true;
+				break;
+			}
+		}
+	}
+	// The words that start the doing.
+	const lower = rest.toLowerCase();
+	for (const word of ACTION_WORDS) {
+		if (lower === word || lower.startsWith(word + " ")) {
+			const next = rest.slice(word.length).trim();
+			if (next.length > 0) {
+				rest = next;
+				break;
+			}
+		}
+	}
+	for (const entry of BUILD_FORMS) {
+		if (entry.pattern.test(rest)) return entry.form;
+	}
+	return undefined;
+}
+
+/**
+ * Does the text name a build command?
+ *
+ * The mention is loose on purpose: a question that names a build beside
+ * another operation still names a build. Whether the operation may
+ * continue is a different question, and it is answered by the scope.
+ */
+function mentionsBuild(text: string | undefined): boolean {
+	return BUILD_MENTION.test((text ?? "").toLowerCase());
+}
 
 /**
  * The kind of operation a word names.
@@ -273,11 +457,28 @@ function operationKindOfWord(word: string): DelegatedOperationKind | undefined {
 }
 
 /**
- * The operations the ask names, in the order they appear.
+ * The words that end the window of a personal subject.
+ *
+ * A conjunction starts a new operation: "commit my changes and push" names
+ * two operations, and the push is not part of the phrase of the speaker.
  */
-function operationKindsAfter(value: string, from: number): DelegatedOperationKind[] {
-	const sentence = value.slice(from).split(/[.!?;\n]/)[0] ?? "";
-	const words = sentence
+const CONJUNCTIONS = new Set([
+	"and",
+	"or",
+	"then",
+	"also",
+	"plus",
+	"afterwards",
+]);
+
+/**
+ * The operations of one clause of an ask.
+ */
+function operationKindsOfClause(clause: string): {
+	kinds: DelegatedOperationKind[];
+	denied: boolean;
+} {
+	const words = clause
 		.split(/[^a-z0-9-]+/)
 		.filter((word) => word.length > 0);
 	const kinds: DelegatedOperationKind[] = [];
@@ -290,12 +491,24 @@ function operationKindsAfter(value: string, from: number): DelegatedOperationKin
 			continue;
 		}
 		if (denied) continue;
+		if (personalWindow > 0 && CONJUNCTIONS.has(word)) {
+			// The phrase of the speaker is over: the conjunction starts an
+			// operation of its own.
+			personalWindow = 0;
+			continue;
+		}
 		if (PERSONAL_SUBJECTS.has(word)) {
 			// The next words belong to the past of the speaker.
 			personalWindow = 3;
 			continue;
 		}
 		if (personalWindow > 0) {
+			if (INTENT_AFTER_SUBJECT.has(word)) {
+				// The speaker turns to an intent: the operation behind the
+				// word is a proposal, not a fact about the past.
+				personalWindow = 0;
+				continue;
+			}
 			personalWindow -= 1;
 			continue;
 		}
@@ -303,10 +516,75 @@ function operationKindsAfter(value: string, from: number): DelegatedOperationKin
 		if (kind && !kinds.includes(kind)) kinds.push(kind);
 	}
 	// A post to somebody else is an external write.
-	if (!denied && /\bpost(?:s|ing)?\s+to\b/.test(sentence)) {
+	if (!denied && /\bpost(?:s|ing)?\s+to\b/.test(clause)) {
 		if (!kinds.includes("external-write")) kinds.push("external-write");
 	}
+	// A build command is a build. The word "build" alone is not: the
+	// command itself has to be named. A clause that names a build beside
+	// another operation names a build, and the check of the scope refuses
+	// the mixed operation later.
+	if (!denied && mentionsBuild(clause)) {
+		if (!kinds.includes("build")) kinds.push("build");
+	}
+	return { kinds, denied };
+}
+
+/**
+ * The operations the ask names, in the order they appear.
+ *
+ * Every clause of the ask counts: "May I commit the change? Then push to
+ * origin." names a commit and a push. A clause that is not read is an
+ * operation nobody checked, so a delegation for the commit would cover a
+ * question that also proposes the push.
+ */
+function operationKindsAfter(value: string, from: number): DelegatedOperationKind[] {
+	const clauses = value.slice(from).split(/[.!?;\n]/);
+	const kinds: DelegatedOperationKind[] = [];
+	for (const clause of clauses) {
+		const found = operationKindsOfClause(clause);
+		// A denial speaks for the whole ask.
+		if (found.denied) break;
+		for (const kind of found.kinds) {
+			if (!kinds.includes(kind)) kinds.push(kind);
+		}
+	}
 	return kinds;
+}
+
+/**
+ * Every operation a proposal names.
+ *
+ * A proposal may name more than one operation: "may I commit my changes
+ * and push" is a commit and a push. The list is what the delegation is
+ * checked against, so a delegation for one of them never covers the other.
+ */
+export function operationKindsFor(
+	text: string | undefined,
+): DelegatedOperationKind[] {
+	const value = (text ?? "").toLowerCase();
+	if (value.trim().length === 0) return [];
+	const ask = INTENT_PATTERN.exec(value);
+	if (!ask) return [];
+	return operationKindsAfter(value, ask.index + ask[0].length);
+}
+
+/**
+ * The scope of a question: every operation the question proposes.
+ *
+ * The scope is read from the complete question. The action of a question
+ * is shortened for the display, and a question that is longer than that
+ * bound still proposes every operation it names: classifying the
+ * shortened text would drop the operations that lie behind the bound, and
+ * a delegation for the operations that were read would cover the whole
+ * question.
+ *
+ * The result is empty when the question names no operation: a question
+ * without a known operation is covered by nothing.
+ */
+export function questionScope(
+	questionText: string | undefined,
+): DelegatedOperationKind[] {
+	return operationKindsFor(questionText);
 }
 
 /**
@@ -320,15 +598,16 @@ function operationKindsAfter(value: string, from: number): DelegatedOperationKin
  * something, and the operation has to be the active form of the ask. A
  * mention of the past ("the service I deployed yesterday") and a denial
  * ("do not commit") name no operation at all.
+ *
+ * The kind is the headline of the proposal, not its whole scope: a
+ * proposal that names a commit and a deploy is a deploy, but the delegation
+ * is checked against every operation of the proposal. Use
+ * `operationKindsFor` for that.
  */
 export function operationKindFor(
 	text: string | undefined,
 ): DelegatedOperationKind | undefined {
-	const value = (text ?? "").toLowerCase();
-	if (value.trim().length === 0) return undefined;
-	const ask = INTENT_PATTERN.exec(value);
-	if (!ask) return undefined;
-	const kinds = operationKindsAfter(value, ask.index + ask[0].length);
+	const kinds = operationKindsFor(text);
 	if (kinds.length === 0) return undefined;
 	if (kinds.includes("deploy")) return "deploy";
 	if (kinds.includes("external-write")) return "external-write";
@@ -339,16 +618,68 @@ export function operationKindFor(
 }
 
 /**
- * Does a delegation cover an operation?
+ * The primitive operations of a list of kinds.
+ *
+ * The compound kind "commit-and-push" covers a commit and a push, so it
+ * stands for the two of them.
+ */
+function primitiveKinds(
+	kinds: DelegatedOperationKind[],
+): Set<DelegatedOperationKind> {
+	const primitives = new Set<DelegatedOperationKind>();
+	for (const kind of kinds) {
+		if (kind === "commit-and-push") {
+			primitives.add("commit");
+			primitives.add("push");
+			continue;
+		}
+		primitives.add(kind);
+	}
+	return primitives;
+}
+
+/**
+ * The operations a request asks for.
+ *
+ * The headline of the request and the list of its operations are both
+ * part of the ask: a request whose headline is a deploy and whose
+ * operations are a commit and a deploy asks for all three. A caller that
+ * names fewer operations than its headline cannot narrow the request
+ * down, so the two are read together.
+ *
+ * The result holds the primitive operations, so a request without a known
+ * operation asks for nothing and is covered by nothing.
+ */
+export function requiredOperations(
+	kind: DelegatedOperationKind | undefined,
+	kinds: DelegatedOperationKind[] | undefined,
+): DelegatedOperationKind[] {
+	const required = new Set<DelegatedOperationKind>();
+	if (kind) {
+		for (const primitive of primitiveKinds([kind])) required.add(primitive);
+	}
+	for (const entry of kinds ?? []) {
+		for (const primitive of primitiveKinds([entry])) required.add(primitive);
+	}
+	// The order is stable, so a caller can compare the list.
+	return [...required].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Does a delegation cover every operation of a request?
  *
  * The check is exact: the workspace must be the same, the delegation must
- * not have expired, and the kind of the operation must be one the
- * delegation names. A delegation for a commit does not cover a push, and
- * a delegation of one workspace does not cover the operation of another.
+ * not have expired, and every operation of the request must be one the
+ * delegation names.
+ *
+ * A proposal may name more than one operation. "May I commit my changes
+ * and push" is a commit and a push, and a delegation for a commit does not
+ * cover the push: the delegation of the user is for the operation they
+ * named, not for the operation that came with it.
  */
-export function delegationCovers(
+export function delegationCoversAll(
 	delegation: Delegation,
-	kind: DelegatedOperationKind,
+	kinds: DelegatedOperationKind[],
 	workspace: string,
 	now: number,
 ): boolean {
@@ -356,5 +687,14 @@ export function delegationCovers(
 	if (delegation.expiresAt !== undefined && delegation.expiresAt <= now) {
 		return false;
 	}
-	return delegation.kinds.includes(kind);
+	// A request without an operation authorizes nothing.
+	if (kinds.length === 0) return false;
+	const covered = primitiveKinds(delegation.kinds);
+	// The operations of the request are primitives too: a request whose
+	// kind is the compound one covers a commit and a push.
+	const required = primitiveKinds(kinds);
+	for (const kind of required) {
+		if (!covered.has(kind)) return false;
+	}
+	return true;
 }

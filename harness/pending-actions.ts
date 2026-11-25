@@ -24,7 +24,8 @@ export type PendingActionKind =
 	| "resume"
 	| "retry"
 	| "quota-check"
-	| "jev-decision";
+	| "jev-decision"
+	| "consult";
 
 /** Where an automatic action stands. */
 export type PendingActionState =
@@ -199,6 +200,8 @@ export function pendingActionLabel(action: PendingAction): string {
 	switch (action.kind) {
 		case "jev-decision":
 			return "Jev decision";
+		case "consult":
+			return `${provider ?? "agent"} consult`;
 		case "quota-check":
 			return `${provider ?? "quota"}${code} quota check`;
 		case "retry":
@@ -219,6 +222,8 @@ function pendingActionVerb(action: PendingAction): string {
 	switch (action.kind) {
 		case "jev-decision":
 			return "decision";
+		case "consult":
+			return "consult";
 		case "quota-check":
 			return "check";
 		case "retry":

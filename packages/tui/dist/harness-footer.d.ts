@@ -35,6 +35,22 @@ export declare const HARNESS_AUTO_CONTINUE_STATUS_KEY = "harness-auto-continue";
  * own row, so a blocked provider stays visible next to the other statuses.
  */
 export declare const HARNESS_ACTIONS_STATUS_KEY = "harness-actions";
+/**
+ * Status key that carries the state of the task list of the session.
+ *
+ * The row names the work that is open, and it says that a completion
+ * is unverified when nothing proves it. It never says that the request
+ * is done.
+ */
+export declare const HARNESS_TASK_STATUS_KEY = "harness-task";
+/**
+ * Status key that carries the state of the bd handoff watcher.
+ *
+ * The watcher of the issue tracker has its own row: a handoff that waits
+ * for a safe boundary is a fact of its own, and it must not hide behind
+ * the quota or the task list.
+ */
+export declare const HARNESS_BD_HANDOFF_STATUS_KEY = "harness-bd-handoff";
 export interface HarnessFooterOptions {
     /** Status key holding the quota summary (own row). */
     quotaStatusKey?: string;
@@ -44,6 +60,10 @@ export interface HarnessFooterOptions {
     autoContinueStatusKey?: string;
     /** Status key holding the pending automatic actions (own row). */
     actionsStatusKey?: string;
+    /** Status key holding the state of the task list (own row). */
+    taskStatusKey?: string;
+    /** Status key holding the state of the bd handoff watcher (own row). */
+    bdHandoffStatusKey?: string;
     /**
      * Supplies the live extension context. May throw when the session was
      * replaced — the footer degrades to status-only rows in that case.
@@ -141,15 +161,6 @@ export interface FooterRow {
  */
 export declare function wrapStatusText(text: string, width: number, maxLines?: number): string[];
 export declare function renderFooterRows(info: FooterSessionInfo | null, rows: readonly FooterRow[], width: number, theme: Theme, autoCompactEnabled?: boolean): string[];
-/**
- * Create the harness footer component.
- *
- * The component reads the live extension context on every render (through
- * `options.getContext`) so it never holds a stale session, and reads the
- * harness status values from the footer data provider so the quota and the
- * workspace summary are always rendered from the same source the built-in
- * footer would use.
- */
 export declare function createHarnessFooter(_tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider, options?: HarnessFooterOptions): Component & {
     dispose?(): void;
 };

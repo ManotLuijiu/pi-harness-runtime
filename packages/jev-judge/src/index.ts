@@ -761,8 +761,18 @@ export {
 export type { ScoreScale, TypeSafeChoiceCriteria } from "./typesafe-request.js";
 
 // Export TodoContinuation
-export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
-export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
+export {
+	TodoContinuationController,
+	createTodoContinuation,
+	ADVISORY_SOURCE_EXPLORATION_GUARD,
+	ADVISORY_SOURCE_BD_HANDOFF,
+} from "./continuation-controller.js";
+export type {
+	ContinuationConfig,
+	ContinuationState,
+	ContinuationResult,
+	AdvisoryMeta,
+} from "./continuation-controller.js";
 
 // Export TodoProvider
 export { createTodoProvider } from "./todo-provider.js";

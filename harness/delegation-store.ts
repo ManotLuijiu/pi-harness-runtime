@@ -77,24 +77,38 @@ export class DelegationStore {
 	}
 
 	/**
-	 * Remove a delegation.
+	 * Remove a delegation of a workspace.
+	 *
+	 * The removal is scoped to the workspace: a delegation of another
+	 * workspace is not reachable from here, so a command of one workspace
+	 * never ends the delegation of another one.
+	 *
+	 * The directory of a workspace is a safe name, not a unique one: two
+	 * paths can share it ("/project/a/b" and "/project/a_b" are one
+	 * directory). The stored workspace decides, so the removal checks it
+	 * before the file is unlinked.
 	 *
 	 * The result is true when a delegation was removed.
 	 */
-	remove(id: string): boolean {
-		const dir = join(this.root, "delegations");
-		if (!existsSync(dir)) return false;
-		for (const workspace of readdirSync(dir)) {
-			const path = join(dir, workspace, `${safePart(id)}.json`);
-			if (!existsSync(path)) continue;
-			try {
-				unlinkSync(path);
-				return true;
-			} catch {
-				return false;
-			}
+	remove(id: string, workspace: string): boolean {
+		const path = join(
+			this.workspaceDir(workspace),
+			`${safePart(id)}.json`,
+		);
+		if (!existsSync(path)) return false;
+		const delegation = readJson<Delegation>(path);
+		if (!delegation) return false;
+		if (delegation.workspace !== workspace) {
+			// The delegation belongs to another workspace that shares this
+			// directory: it is not removed here.
+			return false;
 		}
-		return false;
+		try {
+			unlinkSync(path);
+			return true;
+		} catch {
+			return false;
+		}
 	}
 }
 

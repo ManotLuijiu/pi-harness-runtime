@@ -29,6 +29,16 @@ export interface RequestTodoLike {
 	subject?: string;
 	/** The status of the item ("pending", "in_progress", "completed", ...). */
 	status: string;
+	/**
+	 * The metadata of the item.
+	 *
+	 * The metadata is auxiliary data: it says what an item is about, for
+	 * example which handoff of the issue tracker it belongs to. It is not
+	 * part of the identity of a request: the shape of an item, and with it
+	 * the scope of a request, is the status and the subject, and the
+	 * metadata never changes that.
+	 */
+	metadata?: Record<string, unknown>;
 }
 
 /**

@@ -245,3 +245,28 @@ test("a pairing of a session that ended never decides", () => {
 
 	assert.equal(result.decision, "needs-recipient");
 });
+
+test("the plan carries the correlation of its work", () => {
+	// The correlation names the work of the plan. A producer that writes the
+	// same correlation into the envelope of a handoff of the issue tracker
+	// joins the two paths: both of them lease the work under that name.
+	const fixture = stores();
+	const workspace = temporary();
+
+	const result = deliverPlanToWorkspace({
+		workspace,
+		sender: { agentId: "codex", sessionId: "codex-1" },
+		summary: "Codex finished a plan",
+		correlationId: "corr-1",
+		registrations: [registration("agent-a", "session-a", workspace)],
+		host: "host-a",
+		mailbox: fixture.mailbox,
+		retained: fixture.retained,
+		now: () => 1_000,
+	});
+
+	assert.equal(result.decision, "queued");
+	const pending = fixture.mailbox("agent-a").pending();
+	assert.equal(pending.length, 1);
+	assert.equal(pending[0].message.correlationId, "corr-1");
+});

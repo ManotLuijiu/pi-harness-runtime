@@ -569,7 +569,7 @@ export { TypeSafeJudge, detectProvider, providerForBaseUrl } from "./typesafe-pr
 // Export the TypeSafe request contract helpers
 export { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, scorePositionToValue, validateQuestion, MAX_SCORE_LEVELS, } from "./typesafe-request.js";
 // Export TodoContinuation
-export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
+export { TodoContinuationController, createTodoContinuation, ADVISORY_SOURCE_EXPLORATION_GUARD, ADVISORY_SOURCE_BD_HANDOFF, } from "./continuation-controller.js";
 // Export TodoProvider
 export { createTodoProvider } from "./todo-provider.js";
 // Export the reconciliation of the todos before a continuation

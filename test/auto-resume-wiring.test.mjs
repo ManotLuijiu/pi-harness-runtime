@@ -65,10 +65,10 @@ test("the guard of a late resume is a public boundary of Pi", () => {
 		/pi\.on\("context", async \(event\) => \{/,
 		"the guard runs before the provider is called",
 	);
-	const region = around('pi.on("context", async (event) => {', 0, 3200);
+	const region = around('pi.on("context", async (event) => {', 0, 6000);
 	assert.match(
 		region,
-		/findAutoResumeIndex\(event\.messages\)/,
+		/findAutoResumeIndex\(messages\)/,
 		"the guard looks for the marker",
 	);
 	assert.match(
@@ -78,13 +78,13 @@ test("the guard of a late resume is a public boundary of Pi", () => {
 	);
 	assert.match(
 		region,
-		/return \{\s*messages: neutralizeAutoResume\(event\.messages, index\)/,
+		/return \{\s*messages: neutralizeAutoResume\(messages, index\)/,
 		"the guard replaces the resume",
 	);
 });
 
 test("the guard does not abort the run", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 3200);
+	const region = around('pi.on("context", async (event) => {', 0, 6000);
 	assert.equal(
 		region.includes("abort("),
 		false,
@@ -93,7 +93,7 @@ test("the guard does not abort the run", () => {
 });
 
 test("a resume of a cut turn is not guarded", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 3200);
+	const region = around('pi.on("context", async (event) => {', 0, 6000);
 	assert.match(
 		region,
 		/details\?\.scope !== "request"/,
@@ -102,7 +102,7 @@ test("a resume of a cut turn is not guarded", () => {
 });
 
 test("a resume of a replaced request is neutralized", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 3200);
+	const region = around('pi.on("context", async (event) => {', 0, 6000);
 	assert.match(
 		region,
 		/details\.requestGeneration !== generation/,

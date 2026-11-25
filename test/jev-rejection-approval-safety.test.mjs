@@ -15,7 +15,7 @@
 
 import { test, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +26,7 @@ import {
 import { TodoContinuationController } from "../packages/jev-judge/dist/index.js";
 import {
 	buildJevApprovalContinuation,
+	decideApprovalResume,
 	JevRejectionEscalationRuntime,
 } from "../harness/jev-rejection-escalation.ts";
 
@@ -218,9 +219,16 @@ function makeChain() {
 			}));
 		},
 		onApproved: (state) => {
-			// The wiring of the harness: the pause is over, and one guarded
-			// continuation carries the approval to the agent.
-			continuation.resume();
+			// The wiring of the harness: the pause of the refusal is over,
+			// and one guarded continuation carries the approval to the
+			// agent. A pause that belongs to somebody else stays.
+			const decision = decideApprovalResume(
+				state.context,
+				continuation.pauseState(),
+			);
+			if (decision.resume) {
+				continuation.resume();
+			}
 			void continuation.dispatchAdvisory(
 				buildJevApprovalContinuation(state.context, state.questionId),
 				{ meta: { reason: "human-approval" } },
@@ -245,8 +253,13 @@ async function settle() {
 /**
  * The context of a refusal: the judge refused an operation and the work
  * is paused.
+ *
+ * The refusal remembers the epoch of the pause it set, so the approval can
+ * tell its own pause apart from a pause that came later.
  */
-function refusal() {	return {
+function refusal(chain) {
+	chain.continuation.explicitPause();
+	return {
 		originalRequestId: "req-approval-1",
 		sessionId: "session-approval",
 		generation: 1,
@@ -256,16 +269,71 @@ function refusal() {	return {
 		reason: "the action is destructive and the request does not name it",
 		blocked: ["the removal of the release directory"],
 		independentWork: "the report of the remaining disk usage",
+		pauseEpoch: chain.continuation.pauseEpoch(),
 	};
 }
+
+/**
+ * The source of the extension.
+ *
+ * The approval of the human is wired in index.ts, and the tests above
+ * drive the parts. The wiring itself is checked here: a change that
+ * resumes the work without asking who owns the pause would leave the
+ * tests above green.
+ */
+const indexSource = readFileSync(
+	new URL("../index.ts", import.meta.url),
+	"utf8",
+);
+
+test("the approval of the human asks who owns the pause", () => {
+	// The approval is routed through the decision of the ownership: it may
+	// only clear the pause of the refusal.
+	assert.match(
+		indexSource,
+		/decideApprovalResume\(\s*state\.context,\s*pause,?\s*\)/,
+		"the approval of the human is decided by the ownership of the pause",
+	);
+	// The pause is read as one state: a temporary pause of the user is a
+	// pause too.
+	assert.match(
+		indexSource,
+		/pauseState\?\.\(\)/,
+		"the pause of the work is read as one state",
+	);
+	// The refusal remembers the epoch of the pause it set.
+	assert.match(
+		indexSource,
+		/pauseEpoch: refusalPauseEpoch,/,
+		"the refusal remembers the epoch of its pause",
+	);
+});
+
+test("the approval of the human resumes the work only through the decision", () => {
+	// The resume of the work is guarded by the decision: an approval that
+	// may not clear the pause does not resume.
+	assert.match(
+		indexSource,
+		/if \(!decision\.resume\) \{[\s\S]{0,600}?\} else \{[\s\S]{0,600}?controller\?\.resume\?\.\(\);/,
+		"the work resumes only when the decision allows it",
+	);
+});
+
+test("the action the judge refused is asked of the human", () => {
+	assert.match(
+		indexSource,
+		/await escalateJevRejection\(\{/,
+		"the refusal of the judge is escalated",
+	);
+});
 
 test("the approval of the human resumes the work and queues one guarded continuation", async () => {
 	const chain = makeChain();
 	// The judge refused: the work is paused until the human answers.
-	chain.continuation.explicitPause();
+	const context = refusal(chain);
 	assert.equal(chain.continuation.isExplicitlyPaused(), true);
 
-	const result = await chain.runtime.escalate(refusal());
+	const result = await chain.runtime.escalate(context);
 	assert.equal(result.deliveredAtLeastOne, true);
 
 	const answered = chain.runtime.answer(result.state.questionId, "yes");
@@ -289,8 +357,7 @@ test("the approval of the human resumes the work and queues one guarded continua
 
 test("the approval of the human does not run the refused action", async () => {
 	const chain = makeChain();
-	chain.continuation.explicitPause();
-	const result = await chain.runtime.escalate(refusal());
+	const result = await chain.runtime.escalate(refusal(chain));
 
 	// The human is told what is at stake: the action is named.
 	const message = captured
@@ -325,8 +392,7 @@ test("the approval of the human does not run the refused action", async () => {
 
 test("the approval of the human does not finish the work", async () => {
 	const chain = makeChain();
-	chain.continuation.explicitPause();
-	const result = await chain.runtime.escalate(refusal());
+	const result = await chain.runtime.escalate(refusal(chain));
 	chain.runtime.answer(result.state.questionId, "yes");
 
 	// The item is still open: the approval is not a close.
@@ -345,8 +411,7 @@ test("the approval of the human does not finish the work", async () => {
 
 test("the rejection of the human keeps the work blocked", async () => {
 	const chain = makeChain();
-	chain.continuation.explicitPause();
-	const result = await chain.runtime.escalate(refusal());
+	const result = await chain.runtime.escalate(refusal(chain));
 
 	const answered = chain.runtime.answer(result.state.questionId, "no");
 	assert.equal(answered, true);
@@ -358,8 +423,7 @@ test("the rejection of the human keeps the work blocked", async () => {
 
 test("the answer of the human wins over the second answer", async () => {
 	const chain = makeChain();
-	chain.continuation.explicitPause();
-	const result = await chain.runtime.escalate(refusal());
+	const result = await chain.runtime.escalate(refusal(chain));
 
 	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
 	await settle();
@@ -368,4 +432,117 @@ test("the answer of the human wins over the second answer", async () => {
 	await settle();
 	assert.equal(chain.continuation.isExplicitlyPaused(), false);
 	assert.equal(chain.dispatched.length, 1, "the approval was delivered twice");
+});
+
+test("a message of the user after the refusal is not cleared by the approval", async () => {
+	const chain = makeChain();
+	const context = refusal(chain);
+	const result = await chain.runtime.escalate(context);
+
+	// The user writes something while the question is open. The work waits
+	// for that message, so the pause is a pause of its own - even when the
+	// user did not say "stop".
+	chain.continuation.tempPause();
+
+	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
+	await settle();
+
+	// The work stays paused: the approval releases the action, not the
+	// message the user is waiting for.
+	assert.equal(chain.continuation.pauseState().paused, true);
+	assert.deepEqual(chain.dispatched, []);
+});
+
+test("the pause of a new session is not the pause of an old refusal", async () => {
+	const chain = makeChain();
+	const context = refusal(chain);
+	await chain.runtime.escalate(context);
+
+	// A new session, a new controller. The epoch of the process is unique,
+	// so the pause of the new session is not the pause of the refusal.
+	const next = new TodoContinuationController(
+		{
+			sessionManager: {
+				getSessionId: () => "session-approval-2",
+				getBranch: () => [],
+			},
+			isIdle: () => true,
+			hasPendingMessages: () => false,
+		},
+		{
+			dispatch: async () => {},
+			todoProvider: fakeProvider([]),
+		},
+	);
+	next.explicitPause();
+	assert.notEqual(next.pauseEpoch(), context.pauseEpoch);
+
+	const decision = decideApprovalResume(context, next.pauseState());
+	assert.equal(decision.resume, false);
+	assert.match(decision.reason, /paused after the refusal/);
+});
+
+test("a repeated refusal refreshes the pause the escalation owns", async () => {
+	const chain = makeChain();
+	const context = refusal(chain);
+	const result = await chain.runtime.escalate(context);
+
+	// The judge refuses the same request again. The new refusal owns the
+	// new pause, so the approval releases the work.
+	chain.continuation.explicitPause();
+	const repeated = { ...context, pauseEpoch: chain.continuation.pauseEpoch() };
+	const again = await chain.runtime.escalate(repeated);
+	assert.equal(again.reused, true);
+	assert.equal(again.state.context.pauseEpoch, repeated.pauseEpoch);
+
+	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
+	await settle();
+
+	// The work may continue: the pause the escalation owns is the pause of
+	// the refusal.
+	assert.equal(chain.continuation.isExplicitlyPaused(), false);
+});
+
+test("a pause that came after the refusal is not cleared by the approval", async () => {
+	const chain = makeChain();
+	const result = await chain.runtime.escalate(refusal(chain));
+
+	// The user stops the work while the question is open.
+	chain.continuation.explicitPause();
+
+	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
+	await settle();
+
+	// The work stays paused: the approval releases the action, not a pause
+	// that belongs to somebody else.
+	assert.equal(chain.continuation.isExplicitlyPaused(), true);
+	// And nothing was handed to the agent: the guarded dispatch refuses a
+	// paused work.
+	assert.deepEqual(chain.dispatched, []);
+});
+
+test("a pause that was there before the refusal is not cleared either", async () => {
+	const chain = makeChain();
+	// The user had already stopped the work before the judge refused.
+	chain.continuation.explicitPause();
+	const context = {
+		originalRequestId: "req-approval-2",
+		sessionId: "session-approval",
+		generation: 1,
+		workspace: "/srv/work",
+		task: "Remove the old release directory",
+		action: REFUSED_ACTION,
+		reason: "the action is destructive and the request does not name it",
+		blocked: ["the removal of the release directory"],
+		independentWork: "the report of the remaining disk usage",
+		pausedBefore: true,
+		pauseEpoch: chain.continuation.pauseEpoch(),
+	};
+	const result = await chain.runtime.escalate(context);
+
+	assert.equal(chain.runtime.answer(result.state.questionId, "yes"), true);
+	await settle();
+
+	assert.equal(chain.continuation.isExplicitlyPaused(), true);
+	assert.deepEqual(chain.dispatched, []);
 });

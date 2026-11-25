@@ -101,11 +101,12 @@ function createWiring(overrides = {}) {
 		// The evidence of the harness: a failed capture proves nothing, a
 		// fresh row of the mirror decides.
 		quotaResetEvidence: (failure, provider) => {
-			if (captureController.failed(provider)) return undefined;
+			const row = store.readProvider(provider.toLowerCase());
+			if (!captureController.allowsEvidence(provider, row?.synced_at)) return undefined;
 			return confirmedQuotaReset(
 				failure,
 				provider,
-				store.readProvider(provider.toLowerCase()),
+				row,
 				state.now,
 			);
 		},
@@ -200,6 +201,23 @@ test("a capture that failed proves nothing", async () => {
 
 		const row = actions.get("provider-recovery");
 		assert.equal(row.attempt, 1, "a failed capture cannot prove a deadline");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a failed refresh retains prior fresh exhausted-window evidence", async () => {
+	const { store, cleanup } = tempMirror();
+	try {
+		store.writeProvider("minimax", freshRow(NOW - MINUTE));
+		const { runtime, actions, captureController } = createWiring({ store, capture: async () => false });
+		runtime.noteFailure(classifyProviderFailure(USAGE_LIMIT), "quota", { provider: "minimax", boundedEligible: true });
+		captureController.begin("minimax");
+		await captureController.wait();
+		runtime.noteSettled();
+		assert.equal(captureController.failed("minimax"), true);
+		assert.equal(actions.get("provider-recovery").dueAt, NOW + 101 * MINUTE + QUOTA_RESET_BUFFER_MS);
+		assert.equal(actions.get("provider-recovery").attempt, undefined);
 	} finally {
 		cleanup();
 	}

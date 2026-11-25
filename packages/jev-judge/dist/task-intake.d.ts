@@ -15,6 +15,21 @@ export interface TaskIntakeConfig extends JevJudgeConfig {
     actionableThreshold?: number;
     /** Dispatch function to send messages to the agent */
     dispatch: (content: string) => Promise<void>;
+    /**
+     * The name of the tool that records the work.
+     *
+     * The harness knows which tool records the work of a request: the
+     * plain todo tool, or the tool of a handoff that writes the
+     * identifiers of the handoff into the todo. The name is asked for
+     * when the instruction is written, so a request that belongs to a
+     * handoff is not recorded with a tool that knows nothing of it.
+     *
+     * The message that is captured is given to the asker: the tool of a
+     * handoff is named for the request that is captured, not for every
+     * handoff of the session. A request that works on something else is
+     * recorded with the plain tool, and its todo names no issue.
+     */
+    todoToolName?: (userMessage: string) => string;
 }
 /**
  * Result of task intake evaluation
@@ -73,7 +88,11 @@ export declare class TaskIntakeController {
      */
     private hashMessage;
     /**
-     * Record a capture request to prevent re-triggering
+     * Record that a capture was requested, to prevent re-triggering.
+     *
+     * The record is the state of the attempt. It is not the state of the
+     * work: an item of the task list is what says that the work was
+     * recorded, and only a read of the list says that.
      */
     private _recordCapture;
     /**

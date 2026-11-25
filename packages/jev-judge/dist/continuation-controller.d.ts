@@ -4,15 +4,42 @@ import type { ValidationLedger } from "./validation-ledger.js";
 /**
  * The context of an advisory message.
  *
- * The fields are known: they name the reason of the advisory and the
- * generation of the request it belongs to.
+ * The fields are known: they name the reason of the advisory, the
+ * generation of the request it belongs to and the source that produced
+ * it.
+ *
+ * The source names the subsystem the observation comes from. It does not
+ * change the guards: an advisory from the store and an advisory from the
+ * exploration are both observations, and both of them wait for the same
+ * safe boundary. The source only says which one it is, so the transport
+ * can tell the traffic of one subsystem from the traffic of another.
  */
 export interface AdvisoryMeta {
     /** The reason of the advisory, in the vocabulary of its source. */
     reason?: string;
     /** The generation of the request the advisory belongs to. */
     requestGeneration?: string;
+    /**
+     * The subsystem the advisory comes from.
+     *
+     * The default is the exploration guard, because that is the source
+     * that existed before the field did.
+     */
+    source?: string;
 }
+/**
+ * The source of an advisory that comes from the exploration guard.
+ */
+export declare const ADVISORY_SOURCE_EXPLORATION_GUARD = "exploration-guard";
+/**
+ * The source of an advisory that comes from the bd handoff watcher.
+ *
+ * The name is the identity of the traffic: the transport gives it a
+ * custom type of its own, so a handoff is never mistaken for an
+ * exploration, and neither of them is mistaken for a request of the
+ * human.
+ */
+export declare const ADVISORY_SOURCE_BD_HANDOFF = "bd-handoff";
 export interface ContinuationConfig {
     /** Dispatch function to send messages to the agent (required) */
     dispatch: (content: string) => Promise<void>;
@@ -96,6 +123,24 @@ export interface ContinuationState {
     continuationQueued: boolean;
     userPaused: boolean;
     explicitPause: boolean;
+    /**
+     * The number of pauses of this request.
+     *
+     * The epoch says which pause is the current one. A pause that belongs
+     * to a refusal of the judge is not the pause the user set afterwards,
+     * and only the epoch tells the two apart.
+     */
+    pauseEpoch: number;
+    /**
+     * The epoch of the explicit pause.
+     *
+     * The explicit pause and the temporary pause are two pauses, and each
+     * of them has its own epoch: a temporary pause that came after an
+     * explicit one is the newer pause, and it is the one that is active.
+     */
+    explicitPauseEpoch: number;
+    /** The epoch of the temporary pause. */
+    tempPauseEpoch: number;
     lastSteerMessage: string | null;
     steerAttemptsForCurrentItem: number;
     lastItemContinued: number | null;
@@ -158,6 +203,14 @@ export declare class TodoContinuationController {
     /** Delay before the guard is released after a dropped mid-dispatch release */
     private guardReleaseAfterDropMs;
     private state;
+    /**
+     * A fresh epoch for a pause.
+     *
+     * The counter belongs to the process, not to a controller: an epoch of
+     * one session must never be the epoch of another one, or a pause of
+     * the new session would look like the pause of an old refusal.
+     */
+    private _nextPauseEpoch;
     private _inFlightSeq;
     private _dispatchSeq;
     private _guardTimer;
@@ -260,6 +313,29 @@ export declare class TodoContinuationController {
      */
     isExplicitlyPaused(): boolean;
     /**
+     * The epoch of the current pause.
+     *
+     * The epoch counts the pauses of the request. A caller that paused the
+     * work itself remembers the epoch it got, and it compares it later: a
+     * pause that came after is not the pause it set, and the approval of
+     * the human must not clear it.
+     *
+     * The current pause is the newest pause that is still active. A
+     * temporary pause is cleared by the next decision, and the explicit
+     * pause of a refusal is then the current one again.
+     */
+    pauseEpoch(): number;
+    /**
+     * The pause of the work and the epoch of that pause.
+     *
+     * The two flags are one pause for the caller: a temporary pause of the
+     * user is a pause too, and an approval of the human must not clear it.
+     */
+    pauseState(): {
+        paused: boolean;
+        pauseEpoch: number;
+    };
+    /**
      * Resume from explicit pause
      */
     resume(): void;
@@ -267,6 +343,25 @@ export declare class TodoContinuationController {
      * Get current todo snapshot (exposed for task intake)
      */
     getSnapshot(): Promise<import("./todo-provider.js").TodoSnapshot>;
+    /**
+     * The budget of the work of an item, when the item declares one.
+     *
+     * Only a declared `budgetMinutes` arms a budget - the harness never
+     * invents one, because an invented budget could pause legitimate work.
+     * The accessor is narrow on purpose: the recovery of a repeated output
+     * has to know that the budget of the work is spent, and nothing else.
+     *
+     * An item that is not in the list has no budget: the work of an item
+     * that the harness cannot see is not a work it may stop.
+     */
+    budgetStatusOfItem(itemId: number): Promise<ValidationBudgetStatus | undefined>;
+    /**
+     * The error of the last read of the list, when the read failed.
+     *
+     * A read that failed answers with an empty list, so the error is the
+     * only evidence that the list is unknown rather than empty.
+     */
+    get lastError(): string | null;
     /**
      * The history of the todo list: the state after every change.
      *
@@ -413,6 +508,7 @@ export declare class TodoContinuationController {
         lastSteerMessage: string | null;
         explicitPause: boolean;
         userPaused: boolean;
+        pauseEpoch: number;
         pendingGuardRelease: string | null;
         lastDroppedGuardRelease: string | null;
         cancelRequested: boolean;

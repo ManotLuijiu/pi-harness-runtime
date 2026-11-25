@@ -14,6 +14,14 @@
   "files": [
     "./harness/key-file-audit.ts",
     "./harness/startup-report.ts",
-    "./harness/startup-lines.ts"
+    "./harness/startup-lines.ts",
+    "./harness/omnigraph/config.ts",
+    "./harness/omnigraph/transport.ts",
+    "./harness/omnigraph/source.ts",
+    "./harness/omnigraph/cache.ts",
+    "./harness/omnigraph/resources.ts",
+    "./harness/omnigraph/registration.ts",
+    "./harness/omnigraph/startup.ts",
+    "./harness/omnigraph/index.ts"
   ]
 }

@@ -1303,6 +1303,39 @@ describe("TodoContinuationController - staged validation context", () => {
 });
 
 describe("TodoContinuationController - validation budget and ledger", () => {
+	it("reads the budget of one item through the narrow accessor", async () => {
+		const provider = new MockTodoProvider();
+		const budgeted = provider.addItem({
+			subject: "budgeted work",
+			status: "in_progress",
+			metadata: {
+				validationPlan: {
+					fast: { command: "bun test tests/fast" },
+					budgetMinutes: 0,
+				},
+			},
+		} as never);
+		const free = provider.addItem({
+			subject: "work without a budget",
+			status: "in_progress",
+		} as never);
+
+		const controller = makeController({
+			provider,
+			dispatch: async () => {},
+		});
+
+		// The item that declares a budget of zero minutes has spent it.
+		const spent = await controller.budgetStatusOfItem(budgeted.id);
+		expect(spent?.exhausted).toBe(true);
+		// The item that declares no budget has no budget: the harness never
+		// invents one.
+		const none = await controller.budgetStatusOfItem(free.id);
+		expect(none?.exhausted).toBe(false);
+		// An item that the harness cannot see has no budget either.
+		expect(await controller.budgetStatusOfItem(9999)).toBeUndefined();
+	});
+
 	it("pauses the item when the declared time budget is spent", async () => {
 		const provider = new MockTodoProvider();
 		provider.addItem({

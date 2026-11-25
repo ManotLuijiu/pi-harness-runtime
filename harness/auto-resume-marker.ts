@@ -133,9 +133,11 @@ export function autoResumeDetails(
 }
 
 /**
- * The index of the resume in the messages, or -1 when there is none.
+ * The index of a pending resume, or -1 when there is none.
  *
- * The last resume wins: it is the one that is consumed.
+ * Only the unanswered tail is eligible. A marker in conversation history
+ * was already consumed; transforming it again would manufacture another
+ * completion reply or override a later human prompt on every inference.
  */
 export function findAutoResumeIndex(
 	messages: readonly unknown[] | null | undefined,
@@ -143,6 +145,10 @@ export function findAutoResumeIndex(
 	if (!Array.isArray(messages)) return -1;
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		if (isAutoResumeMessage(messages[index])) return index;
+		const message = messages[index] as MaybeAutoResumeMessage | null;
+		if (message && (message.role === "assistant" || message.role === "user" ||
+			message.role === "toolResult" || message.role === "compactionSummary" ||
+			message.role === "branchSummary")) return -1;
 	}
 	return -1;
 }
@@ -180,7 +186,7 @@ export const NEUTRALIZED_RESUME_TEXT = [
 	"The request of the user is already complete.",
 	"There is no work left to continue.",
 	"Do not start, resume or expand any work, and do not look for other tasks.",
-	"Answer with one short sentence that says the request is complete.",
+	"If completion was already reported, do not repeat the completion acknowledgment for this control message.",
 ].join(" ");
 
 /**
@@ -192,7 +198,21 @@ export const NEUTRALIZED_RESUME_TEXT = [
 export const NEUTRALIZED_STALE_RESUME_TEXT = [
 	"The request that this automatic resume belongs to was replaced by a newer request.",
 	"Do not continue, resume or expand that older work, and do not look for other tasks.",
-	"Answer with one short sentence that says the newer request is the one that counts.",
+	"This obsolete harness control message is not a new user request and needs no acknowledgment.",
+].join(" ");
+
+/**
+ * The text that replaces a resume of a handoff whose state is unknown.
+ *
+ * The issue of the work could not be read: the work is neither finished
+ * nor unfinished. The text says so, and it asks for nothing: the turn
+ * ends, the work waits for a read that works, and no todo of the handoff
+ * is closed as finished.
+ */
+export const NEUTRALIZED_UNKNOWN_WORK_TEXT = [
+	"The state of the work of the handoff could not be read.",
+	"It is unknown whether that work is finished, so it is not continued now.",
+	"Do not close its todos as finished and do not look for other tasks.",
 ].join(" ");
 
 /**

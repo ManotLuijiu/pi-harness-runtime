@@ -48,16 +48,39 @@ import {
 	resolveRecipientSelection,
 } from "./harness/plan-handoff-recipient-selection.ts";
 import { ExplorationGuardRuntime } from "./harness/exploration-guard-runtime.ts";
+import { jevDecisionStatus, notifyJevHumanRequired } from "./harness/jev-decision-feedback.ts";
 import {
 	buildJevApprovalContinuation,
+	decideApprovalResume,
 	JevRejectionEscalationRuntime,
 } from "./harness/jev-rejection-escalation.ts";
 import { DelegatedApprovalRuntime } from "./harness/delegated-approval-runtime.ts";
+import { coveredBuildForm } from "./harness/build-authorization.ts";
 import { DelegationStore } from "./harness/delegation-store.ts";
+import {
+	applyDelegationCommand,
+	parseDelegationCommand,
+} from "./harness/delegation-command.ts";
 import { ApprovalDecisionStore } from "./harness/approval-decision-store.ts";
-import { operationKindFor } from "./harness/delegated-approval-types.ts";
+import {
+	canonicalWorkspace,
+	registerAgentCommunication,
+} from "./harness/agent-communication/registration.ts";
+import { registerAgentCommunicationTools } from "./harness/agent-communication/tools.ts";
+import { writeThroughWorker } from "./harness/agent-communication/write-lane.ts";
+import {
+	detectWorkers,
+	presenceLine,
+} from "./harness/agent-communication/detect.ts";
+import {
+	operationKindFor,
+	questionScope,
+} from "./harness/delegated-approval-types.ts";
 import type { NotificationResult } from "./packages/notification/src/types.ts";
 import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
+import { registerTaskMemoryReminders } from "./harness/task-memory-reminder.ts";
+import { stepsOfRequest } from "./harness/request-capture.ts";
+import { contextFillPercent } from "./harness/context-usage.ts";
 import {
 	describeCandidates,
 	type AgentRegistration,
@@ -80,7 +103,16 @@ import {
 	type JevWorkState,
 	type TodoStateLike,
 } from "./harness/jev-wait-eligibility.ts";
-import { RequestScopeTracker } from "./harness/jev-request-scope.ts";
+import {
+	itemsOfRequest,
+	type RequestTodoLike,
+	RequestScopeTracker,
+} from "./harness/jev-request-scope.ts";
+import {
+	TaskTrackingStatusController,
+	type TaskTrackingTodo,
+	todoReadFailure,
+} from "./harness/task-tracking-status.ts";
 import { describeInboundAccess, getAllowedUserIds } from "./harness/telegram-auth.ts";
 import { buildTelegramCallbackUpdate, buildTelegramMessageUpdate } from "./harness/telegram-update.ts";
 import { installConsoleGuard } from "./harness/console-guard.ts";
@@ -117,6 +149,7 @@ import { ProviderRecoveryRuntime } from "./harness/provider-recovery-runtime.ts"
 import { confirmedQuotaReset } from "./harness/provider-quota-reset.ts";
 import { mergeMirrorRecord } from "./harness/mirror-record-merge.ts";
 import { onOptionalEvent } from "./harness/optional-event.ts";
+import { registerExplorationContext } from "./harness/exploration-context.ts";
 import {
 	providerDisplayName,
 	weeklyExhaustionMessage,
@@ -138,12 +171,20 @@ import {
 	type ResumeWorkState,
 } from "./harness/resume-scope.ts";
 import {
+	classifyRunStop,
+	textDeltaOf,
+	type ContextMessage,
+} from "./harness/repetition-guard.ts";
+import { RepetitionGuardRuntime } from "./harness/repetition-guard-runtime.ts";
+import { decideRepetitionRecovery } from "./harness/repetition-recovery.ts";
+import {
 	buildAutoResumeMessage,
 	autoResumeDetails,
 	findAutoResumeIndex,
 	isAutoResumeMessage,
 	neutralizeAutoResume,
 	NEUTRALIZED_STALE_RESUME_TEXT,
+	NEUTRALIZED_UNKNOWN_WORK_TEXT,
 } from "./harness/auto-resume-marker.ts";
 import {
 	buildLocalRefusalMessage,
@@ -161,13 +202,45 @@ import {
 	type ScopeDecision,
 	type ScopeProposal,
 } from "./harness/scope-expansion.ts";
+import {
+	BdHandoffSession,
+	formatBdHandoffStatus,
+} from "./harness/bd-handoff-session.ts";
+import type { BdHandoffDelivery } from "./harness/bd-handoff-runtime.ts";
+import type { BdHandoffIssue } from "./harness/bd-handoff-reader.ts";
+import { BdHandoffContext } from "./harness/bd-handoff-todo.ts";
+import {
+	BD_HANDOFF_TODO_TOOL,
+	registerBdHandoffTodoTool,
+} from "./harness/bd-handoff-todo-tool.ts";
+import {
+	linksOfTodos,
+	type BdClosureDecision,
+	type BdHandoffIdentity,
+	type BdTodoLink,
+} from "./harness/bd-handoff-link.ts";
+import {
+	handoffLinkOfRequest,
+	handoffWorkGeneration,
+	openHandoffsOfRequest,
+	todoToolOf,
+} from "./harness/bd-handoff-request.ts";
+import {
+	HandoffLeaseStore,
+	HANDOFF_LEASE_RENEW_MS,
+	handoffLeaseKeys,
+	handoffLeaseOwner,
+} from "./harness/handoff-lease.ts";
 import type { ProviderFailure } from "./harness/provider-failure.ts";
 import {
 	createProviderRecoveryController,
 	MAX_RECOVERY_ATTEMPTS,
 	type RecoveryResetEvidence,
 } from "./harness/provider-recovery.ts";
-import { HARNESS_ACTIONS_STATUS_KEY } from "./packages/tui/dist/harness-footer.js";
+import {
+	HARNESS_ACTIONS_STATUS_KEY,
+	HARNESS_BD_HANDOFF_STATUS_KEY,
+} from "./packages/tui/dist/harness-footer.js";
 import { endPendingWait, releaseWait } from "./harness/pending-wait.ts";
 import { isChannelDisabled, setChannelDisabled } from "./harness/notification-settings.ts";
 import {
@@ -547,6 +620,18 @@ const PROVIDER_BLOCKED_ACTION_ID = "provider-blocked";
  * resumes when the user pauses the work.
  */
 let providerRecoveryRuntime: ProviderRecoveryRuntime | null = null;
+/**
+ * The consultation of the session.
+ *
+ * It is nothing when the consultation is switched off, and the write lane
+ * of the human is then nothing too.
+ */
+let agentCommunication:
+	| {
+			runtime: import("./harness/agent-communication/runtime.ts").AgentCommunicationRuntime;
+			sender: () => import("./harness/agent-communication/types.ts").ConsultSender;
+	  }
+	| null = null;
 
 /**
  * The decisions of the human about an empty weekly allowance.
@@ -666,6 +751,461 @@ let planReceiver: PlanReceiver | null = null;
  * countdown of the provider. It says what it saw, and the agent decides.
  */
 let explorationGuard: ExplorationGuardRuntime | null = null;
+
+/**
+ * The watcher of the handoffs of the issue tracker.
+ *
+ * The watcher belongs to the session: it starts with the session and stops
+ * with it. A watcher that outlives its session would deliver a handoff
+ * into a session that does not exist, and a replaced session would keep
+ * the reader of the workspace that is gone.
+ *
+ * The watcher itself lives in its own module. This variable is only the
+ * handle of the session that owns it.
+ */
+let bdHandoffSession: BdHandoffSession | null = null;
+
+/**
+ * The row of the watcher in the footer.
+ *
+ * The setter is resolved when the session starts and dropped when it ends.
+ * A setter of an ended session would write into a footer that belongs to
+ * another session, and the setter of a session without a user interface
+ * drops the row without a word.
+ */
+let bdHandoffStatusSetter: ((text: string | undefined) => void) | null = null;
+
+/**
+ * A check of the watcher is running.
+ *
+ * The runtime reads the store once for two checks that overlap, but both
+ * of them deliver the queue they found. One check at a time keeps a
+ * handoff from arriving twice.
+ */
+let bdHandoffCheckRunning = false;
+
+/**
+ * Look at the store of the handoffs and deliver what waits.
+ *
+ * The check is a safe boundary on its own: the runtime keeps a handoff in
+ * the queue while the session is busy, paused or busy with a question of
+ * the human. A watcher that interrupts a running tool call would steer a
+ * request that is not finished.
+ */
+function runBdHandoffCheck(): void {
+	if (bdHandoffCheckRunning) return;
+	const session = bdHandoffSession;
+	if (!session) return;
+	bdHandoffCheckRunning = true;
+	void session
+		.check()
+		.catch((error) => logToFile("[bd-handoff]", "the check failed:", oneLineError(error)))
+		.finally(() => {
+			bdHandoffCheckRunning = false;
+		});
+}
+
+/**
+ * The handoffs that this session received.
+ *
+ * The context holds the links of the handoffs that the watcher delivered
+ * into the running request. The todos of that work are linked to them:
+ * the context is what says which handoff a todo belongs to, so the todo
+ * of one handoff never gets the link of another one.
+ */
+const bdHandoffContext = new BdHandoffContext();
+
+/**
+ * The root of the state of the harness.
+ *
+ * Every part of the harness that keeps a durable state keeps it here:
+ * the leases of the handoffs, the records of the handoffs, the logs.
+ * The root is named once, so two parts of the harness cannot write to
+ * two different places.
+ */
+const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
+
+/**
+ * The durable lease of the handoffs.
+ *
+ * The lease is taken before a handoff is delivered and it is held while
+ * the work runs. The live path of the plan handoff and the path of the
+ * issue tracker lease the same handoff, so the two paths cannot execute
+ * one handoff at once.
+ */
+const handoffLeaseStore = new HandoffLeaseStore(HARNESS_ROOT_DIR);
+
+/**
+ * The leases that this session holds.
+ *
+ * Every name is kept with the owner that took it, and the owner is part
+ * of the key: the two paths of a session have an owner each, and the
+ * release of one path must not give back the lease of the other path.
+ * A lease that is given back by the wrong owner is a lease that the
+ * other path believes it holds, and the work of the handoff runs twice.
+ */
+const heldHandoffLeases = new Map<string, string>();
+
+/**
+ * The owners of the leases of the live path, by the id of the plan.
+ *
+ * The owner is resolved once per claim: the release of the lease gives
+ * it back under the owner that took it, even when the session of the
+ * plan changed in the meantime.
+ *
+ * The names that the claim created are kept with it: a name that the
+ * owner held already belongs to a work that runs already, and giving it
+ * back would let the other path run the same handoff at the same time.
+ */
+const planLeaseClaims = new Map<string, { owner: string; created: string[] }>();
+
+/**
+ * The key of a held lease.
+ *
+ * The owner is part of the key: the two paths of a session have an owner
+ * each, and the release of one path must not give back the lease of the
+ * other path.
+ */
+function leaseMapKey(owner: string, key: string): string {
+	return `${owner}\u0000${key}`;
+}
+
+/**
+ * The owner of the leases of this session.
+ *
+ * The owner is resolved once per claim and it is the owner that gives
+ * the lease back: the session id may change while a delivery is in
+ * flight, and a lease that is given back under a new owner is a lease
+ * that nobody gives back.
+ */
+function leaseOwnerOf(path: "store" | "plan"): string {
+	return handoffLeaseOwner(activeSessionId, path);
+}
+
+/**
+ * Take the lease of the handoffs of a delivery.
+ *
+ * The lease is taken before the delivery: the work of a handoff runs
+ * once, whichever path delivers it. Every name of the handoff is leased,
+ * so the two paths meet on the same lease.
+ */
+function claimHandoffLease(handoffs: readonly BdHandoffIssue[]): {
+	ok: boolean;
+	reason?: string;
+	keys: string[];
+	/**
+	 * The names that this claim created.
+	 *
+	 * A name that the owner held already belongs to a work that runs
+	 * already: it is not given back when a delivery fails, because the
+	 * other path would be free to run the same handoff while the first
+	 * work is still running.
+	 */
+	created: string[];
+	owner: string;
+} {
+	const keys = [
+		...new Set(
+			handoffs.flatMap((handoff) =>
+				handoffLeaseKeys({
+					handoffId: handoff.envelope.handoffId,
+					correlationId: handoff.envelope.correlationId,
+					// The name of the message is the name of the live
+					// message of the work. The envelope names it as the live
+					// job of the handoff, and the live path knows the same
+					// message under its own id: the two paths meet on this
+					// name when the producer wrote the id of that message
+					// into the envelope. An envelope that names no live job
+					// falls back to the id of the handoff, so the two paths
+					// meet when the producer gave both the same id.
+					messageId: handoff.envelope.liveJobId ?? handoff.envelope.handoffId,
+				}),
+			),
+		),
+	];
+	const owner = leaseOwnerOf("store");
+	if (keys.length === 0) return { ok: true, keys, created: [], owner };
+	const claim = handoffLeaseStore.claim({
+		keys,
+		owner,
+	});
+	if (claim.ok === false) {
+		return {
+			ok: false,
+			reason: `the handoff is leased by ${claim.holder || "another session"}`,
+			keys,
+			created: [],
+			owner,
+		};
+	}
+	for (const key of keys) heldHandoffLeases.set(leaseMapKey(owner, key), key);
+	return { ok: true, keys, created: claim.created, owner };
+}
+
+/**
+ * Take the lease of the handoff of a plan of the live path.
+ *
+ * The live path and the path of the store lease the same handoff: they
+ * meet on the correlation of the request. A plan whose handoff runs in
+ * the other path waits in the mailbox.
+ */
+function claimPlanHandoffLease(message: {
+	id: string;
+	correlationId: string;
+}): string | null {
+	const keys = handoffLeaseKeys({
+		correlationId: message.correlationId,
+		// The name of the message is the id of the live message itself:
+		// the path of the tracker knows the same message as the live job
+		// of the envelope of the handoff.
+		messageId: message.id,
+	});
+	const owner = leaseOwnerOf("plan");
+	if (keys.length === 0) return owner;
+	const claim = handoffLeaseStore.claim({ keys, owner });
+	if (claim.ok === false) {
+		logToFile(
+			"[plan-handoff]",
+			`the handoff of the plan ${message.id} is leased by ${
+				claim.holder || "another session"
+			}, so the plan waits.`,
+		);
+		return null;
+	}
+	for (const key of keys) heldHandoffLeases.set(leaseMapKey(owner, key), key);
+	// The owner of the lease is kept with the message: the release gives
+	// the lease back under the owner that took it, even when the session
+	// of the plan changed in the meantime. The names that the claim
+	// created are kept with it: a name that the owner held already
+	// belongs to a work that runs already.
+	planLeaseClaims.set(message.id, { owner, created: claim.created });
+	return owner;
+}
+
+/**
+ * Give the lease of the handoff of a plan back.
+ *
+ * The lease is given back when the plan was not handed over: nobody runs
+ * the work, so the other path may run it.
+ *
+ * Only the names that the claim created are given back: a name that the
+ * owner held already belongs to a work that runs already, and giving it
+ * back would let the other path run the same handoff at the same time.
+ */
+function releasePlanHandoffLease(message: {
+	id: string;
+	correlationId: string;
+}): void {
+	const claim = planLeaseClaims.get(message.id);
+	if (claim === undefined) return;
+	planLeaseClaims.delete(message.id);
+	releaseHandoffLease(claim.created, claim.owner);
+}
+
+/**
+ * Does the text of a request name the issue of a handoff?
+ *
+ * The name of the issue is looked for in the text of the request. A
+ * request that names no issue is a request that is not about a handoff.
+ */
+/**
+ * The handoffs whose work the running request has still to record.
+ *
+ * The selection is the one of the whole session: the intake, the
+ * reminder and the checkpoint ask the same question, and they get the
+ * same answer. A request that names the plain tool while the advisory of
+ * the same request names the tool of the handoff would leave the choice
+ * to the agent, and the todo of the work of the handoff would be written
+ * without its link.
+ *
+ * A handoff whose todo is in the list is work that the list holds: it
+ * needs no instruction any more.
+ */
+function openHandoffsOfRunningRequest(
+	context: BdHandoffContext,
+	text: string,
+): BdHandoffIdentity[] {
+	return openHandoffsOfRequest(
+		context,
+		text,
+		handoffGenerationOfRunningRequest(),
+	);
+}
+
+/**
+ * The generation of the request that the work of a handoff runs in.
+ *
+ * The selection of the handoff of a request asks the question the
+ * delivery asked: the work of a handoff that arrives after the agent
+ * answered runs in the request that follows. A selection that asked the
+ * generation of the answered request would not see that handoff, and the
+ * intake would name the plain tool while the advisory of the same turn
+ * names the tool of the handoff.
+ */
+function handoffGenerationOfRunningRequest(): number {
+	return handoffWorkGeneration({
+		generation: requestScopeTracker.generation,
+		requestBegan: humanRequestBegan,
+		requestAnswered: humanRequestAnswered,
+	});
+}
+
+/**
+ * The instruction that tells the agent how to record the work of a
+ * handoff.
+ *
+ * The agent names the issue of the handoff and the harness writes the
+ * link into the todo, so the todo of the work names the issue it belongs
+ * to.
+ */
+function handoffTodoInstruction(links: readonly BdHandoffIdentity[]): string {
+	if (links.length === 0) return "";
+	const ids = links
+		.map((link) => link.bdIssueId)
+		.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+		.join(", ");
+	if (ids.length === 0) return "";
+	return `Record the work of a handoff in the task list with the tool ${BD_HANDOFF_TODO_TOOL}, and give it the exact issue id of the handoff (${ids}). The tool adds the identifiers of the handoff to the todo, so the todo stays linked to the issue.`;
+}
+
+/**
+ * Give a lease of a handoff back.
+ *
+ * The lease is given back by the owner that took it: a name that another
+ * path holds is not this path's to give back. The owner is named by the
+ * caller, because the owner is resolved once per claim and the session
+ * may have changed since then.
+ */
+function releaseHandoffLease(
+	keys: readonly string[],
+	owner: string,
+): void {
+	if (keys.length === 0) return;
+	for (const key of keys) {
+		const held = heldHandoffLeases.get(leaseMapKey(owner, key));
+		if (held === undefined) continue;
+		handoffLeaseStore.release({ keys: [key], owner });
+		heldHandoffLeases.delete(leaseMapKey(owner, key));
+	}
+}
+
+/**
+ * Give every lease of this session back.
+ *
+ * The session ends: the work that held the lease is over, and nobody
+ * may wait for it any more. The lease of a handoff is not given back at
+ * the boundary of a request: a handoff arrives between two requests, and
+ * the work of it runs in the request that follows.
+ */
+function releaseHandoffLeases(): void {
+	const owners = new Set<string>();
+	for (const [held, key] of heldHandoffLeases.entries()) {
+		const owner = held.slice(0, held.indexOf("\u0000"));
+		owners.add(owner);
+		handoffLeaseStore.release({ keys: [key], owner });
+	}
+	heldHandoffLeases.clear();
+	planLeaseClaims.clear();
+	// The memory of the session is not the truth: the store is. A lease
+	// that this session took before a restart of the extension is not in
+	// the map any more, and it would hold its handoff until it runs out.
+	// Every lease of the owners of this session is given back.
+	for (const path of ["store", "plan"] as const) {
+		owners.add(leaseOwnerOf(path));
+	}
+	for (const owner of owners) {
+		for (const lease of handoffLeaseStore.leasesOf(owner)) {
+			handoffLeaseStore.release({ keys: [lease.key], owner });
+		}
+	}
+}
+
+/**
+ * Extend the leases of this session.
+ *
+ * The work of a handoff can run longer than the bound of a lease. The
+ * lease is extended while the session works on the handoff, so the other
+ * path cannot start the same work while this one is running it.
+ *
+ * The leases are extended by their owner: a lease of another owner is
+ * never touched, and a lease that ran out is not extended. It is free
+ * again, and the owner has to take it again.
+ */
+function renewHandoffLeases(): void {
+	if (heldHandoffLeases.size === 0) return;
+	const byOwner = new Map<string, string[]>();
+	for (const [held, key] of heldHandoffLeases.entries()) {
+		const owner = held.slice(0, held.indexOf("\u0000"));
+		const keys = byOwner.get(owner);
+		if (keys) keys.push(key);
+		else byOwner.set(owner, [key]);
+	}
+	for (const [owner, keys] of byOwner.entries()) {
+		handoffLeaseStore.renew({
+			keys,
+			owner,
+			leaseMs: HANDOFF_LEASE_RENEW_MS,
+		});
+	}
+}
+
+/**
+ * The links of the todos of the running request.
+ *
+ * The todos of the running request are the evidence of its work: a todo
+ * that names a handoff says which handoff the request works on, even
+ * when the todo was linked in an earlier request.
+ */
+async function linksOfRunningRequest(): Promise<BdTodoLink[]> {
+	const read = await requestScopeTracker.read();
+	const items = read.items ? itemsOfRequest(read.items, read.scope) : [];
+	return linksOfTodos(
+		items
+			.filter(
+				(item): item is RequestTodoLike & { id: number } =>
+					typeof item.id === "number",
+			)
+			.map((item) => ({
+				id: item.id,
+				status: item.status,
+				metadata: item.metadata,
+			})),
+	);
+}
+
+/**
+ * The closure of the work that the running request points at.
+ *
+ * A handoff whose issue was closed by somebody else is finished: a
+ * pending resume of that work must not start it again. An issue that
+ * could not be read is unknown and not closed, so the work waits for a
+ * read that works. A request that points at no issue of the store is not
+ * a request of a handoff, and its work goes on.
+ */
+async function currentHandoffClosure(): Promise<BdClosureDecision> {
+	const runtime = bdHandoffSession?.runtime;
+	if (!runtime) {
+		return {
+			action: "continue",
+			reason: "the watcher of the handoffs is not running",
+		};
+	}
+	const links = await linksOfRunningRequest();
+	// A todo that was linked to a handoff during the running request is
+	// work of that request, even when the link was the only thing that
+	// changed about it: the scope of a request is decided by the status
+	// and the subject of its todos, and the link is the evidence that the
+	// todo belongs to a handoff.
+	const generation = requestScopeTracker.generation;
+	links.push(...bdHandoffContext.linksOfGeneration(generation));
+	if (links.length === 0) {
+		return {
+			action: "continue",
+			reason: "the request points at no issue of the store",
+		};
+	}
+	return runtime.closureOf(links);
+}
 
 /**
  * The phase of the request that is running, as the guard names it.
@@ -924,6 +1464,16 @@ function glmQuotaActionId(jobId: string): string {
 }
 
 /**
+ * The identity of the row of a consultation.
+ *
+ * The row belongs to the job: it is there while the worker answers and it
+ * is gone when the job is over.
+ */
+function agentConsultActionId(jobId: string): string {
+	return `agent-consult:${jobId}`;
+}
+
+/**
  * The identities of the continuations that have no scheduled deadline.
  *
  * The output limit and the compaction continue the work right away, so
@@ -1037,6 +1587,20 @@ const sharedState = {
 	// reads its phase, so the exploration budget follows the phase of the
 	// work: a review reads differently than an implementation.
 	twoPhaseRuntime: null as unknown,
+	/**
+	 * Reads the task list of the session.
+	 *
+	 * The reminder that asks the agent to record its work reads the same
+	 * list that the phase of the work reads.
+	 */
+	todoReader: null as null | ((ctx: unknown) => Promise<TwoPhaseTodoLike[] | undefined>),
+	/**
+	 * Reads the state of the required validations of the work.
+	 *
+	 * The ledger is the source; the row of the footer only names what it
+	 * observed.
+	 */
+	validationReader: null as null | ((todos: TwoPhaseTodoLike[]) => Promise<{ pending: boolean; failed: boolean }>),
 	// The state of the work of the request that is running. The automatic
 	// resume reads it to know whether the work of the request remains.
 	workContext: null as unknown,
@@ -1081,6 +1645,58 @@ const sharedState = {
  * the user has to read again and again.
  */
 let suppressedResumeReported = false;
+
+/**
+ * The messages that the harness sent.
+ *
+ * A message of the harness reaches the handler of the user messages like
+ * a request of the human would. The work of a request is read from its
+ * text, so the text of a message of the harness must not be read as the
+ * work of a request.
+ */
+const sentHarnessMessages = new Set<string>();
+
+/**
+ * Remember a message that the harness sends.
+ *
+ * The set is bounded: the old messages are dropped, because a message
+ * that is long past cannot be the text of a message that arrives now.
+ */
+function noteHarnessMessage(text: string): void {
+	sentHarnessMessages.add(text);
+	if (sentHarnessMessages.size > 50) {
+		const oldest = sentHarnessMessages.values().next();
+		if (!oldest.done) sentHarnessMessages.delete(oldest.value);
+	}
+}
+
+/**
+ * The text of the request that is running.
+ *
+ * The text is what the reminder of the task list names, and the steps of
+ * the request are read from it. A request that has no text yet has no
+ * known steps, and the list alone decides then.
+ */
+let currentRequestText = "";
+
+/**
+ * Did a request of the human begin in this session?
+ *
+ * The state decides where the work of a handoff runs: the advisory of a
+ * handoff continues the request that is running, and a handoff that
+ * arrives after the agent answered belongs to the request that follows.
+ */
+let humanRequestBegan = false;
+
+/**
+ * Did the agent answer the request that is running?
+ *
+ * The run of the agent settles when the work of the request is over: no
+ * retry, no compaction and no queued continuation will follow. The
+ * advisory of a handoff that arrives after that point starts a turn of
+ * its own, and the work of that handoff runs in the request that follows.
+ */
+let humanRequestAnswered = false;
 
 /** The number of the resumes that the harness queued in this session. */
 let resumeNonceCounter = 0;
@@ -1133,6 +1749,72 @@ async function currentRequestWorkState(): Promise<ResumeWorkState> {
 }
 
 /**
+ * The status of the task list of the session.
+ *
+ * The row names the work that is open and says that a completion is
+ * unverified when nothing proves it. It never restarts the agent, never
+ * creates a task and never announces a completion.
+ */
+const taskTracking = new TaskTrackingStatusController();
+
+/**
+ * Read the todos of the current request and keep them for the status.
+ *
+ * A list that cannot be read is not an empty list: the status says that
+ * the todos are unavailable instead of pretending that there is no work.
+ */
+async function refreshTaskTracking(): Promise<void> {
+	// The read happens inside the controller: a read that arrives after a
+	// newer event is dropped, so a slow read of an old request cannot
+	// replace the row of the current one.
+	await taskTracking.refresh(async () => {
+		try {
+			const read = await requestScopeTracker.read();
+			if (read.items === null) return { todos: undefined };
+			const items = itemsOfRequest(read.items, read.scope);
+			const todos: TaskTrackingTodo[] = items.map((item) => ({
+				subject: item.subject,
+				status: item.status,
+			}));
+			const validation = await readTaskValidation(items as unknown as TwoPhaseTodoLike[]);
+			return {
+				todos,
+				validationPending: validation.pending,
+				validationFailed: validation.failed,
+			};
+		} catch (error) {
+			logToFile(
+				"[task-tracking]",
+				"the task list could not be read:",
+				oneLineError(error),
+			);
+			return { todos: undefined };
+		}
+	});
+}
+
+/**
+ * Read the state of the required validations of the work.
+ *
+ * The ledger is the only mechanical source for "did the final tier
+ * pass?". A test item whose validation has not passed yet is not a
+ * finished item, and the row must say so.
+ */
+async function readTaskValidation(
+	todos: TwoPhaseTodoLike[],
+): Promise<{ pending: boolean; failed: boolean }> {
+	const reader = sharedState.validationReader;
+	if (!reader) return { pending: false, failed: false };
+	try {
+		return await reader(todos);
+	} catch {
+		// The state of the validation is unknown: the row says nothing
+		// about it rather than guessing.
+		return { pending: false, failed: false };
+	}
+}
+
+/**
  * The scope of the request that is running.
  *
  * The task list is the history of the session: the todos of a request that
@@ -1148,11 +1830,15 @@ const requestScopeTracker = new RequestScopeTracker({
 	readTodos: async () => {
 		const controller = sharedState.todoContinuationController as {
 			getSnapshot?: () => Promise<{ items?: TodoStateLike[] }>;
+			lastError?: string | null;
 		} | null;
 		if (!controller || typeof controller.getSnapshot !== "function") {
 			return null;
 		}
 		const snapshot = await controller.getSnapshot();
+		// A read that failed answers with an empty list, so the failure is
+		// the only evidence that the list is unknown rather than empty.
+		if (todoReadFailure(controller.lastError)) return null;
 		return snapshot?.items ?? null;
 	},
 	readHistory: async () => {
@@ -1173,6 +1859,81 @@ const requestScopeTracker = new RequestScopeTracker({
 });
 
 /**
+ * The guard of an output that repeats itself.
+ *
+ * The guard belongs to the session: a new session starts with a clean
+ * guard, and the state of the run that repeated itself does not leak into
+ * it. The identity of the run is read when the guard needs it, so a
+ * request that replaces another one is told apart from the run it
+ * replaced.
+ */
+const repetitionGuard = new RepetitionGuardRuntime({
+	identity: {
+		sessionId: () => activeSessionId,
+		requestGeneration: () => requestScopeTracker.generation,
+	},
+});
+
+/**
+ * The identity of the row of the guard of the repetition.
+ *
+ * The row names the request the repetition belongs to: two requests of one
+ * session have two rows, and the row of a request that is over leaves
+ * with it.
+ */
+function repetitionGuardActionId(generation: number): string {
+	return `repetition-guard:${activeSessionId}:${generation}`;
+}
+
+/**
+ * The text of the recovery of a repetition.
+ *
+ * The text asks the agent to continue the request. It does not tell the
+ * agent to repeat the answer that repeated itself, and it authorises
+ * nothing.
+ */
+const REPETITION_RESUME_PROMPT =
+	"resume\n\nThe output of the request repeated itself and the run was stopped. Continue the request from where it stopped, and do not repeat the answer that repeated itself.";
+
+/**
+ * Is the budget of the work of the request spent?
+ *
+ * Only a declared budget counts: the harness never invents a budget,
+ * because an invented budget could stop work that is allowed to run. The
+ * budget of an item is the one its plan declares.
+ *
+ * A list or a budget that cannot be read says nothing: the work is not
+ * stopped for a budget that nobody could read.
+ */
+async function repetitionBudgetSpent(): Promise<boolean> {
+	// The budget belongs to the controller of the todos: the controller of
+	// the questions of the notification does not know it.
+	const controller = sharedState.todoContinuationController as {
+		budgetStatusOfItem?: (
+			itemId: number,
+		) => Promise<{ exhausted?: boolean } | undefined>;
+	} | null;
+	if (!controller?.budgetStatusOfItem) return false;
+	let todos: TwoPhaseTodoLike[] | undefined;
+	try {
+		todos = await sharedState.todoReader?.(undefined);
+	} catch {
+		return false;
+	}
+	for (const todo of todos ?? []) {
+		if (todo.id === undefined) continue;
+		if (todo.status === "completed") continue;
+		try {
+			const budget = await controller.budgetStatusOfItem(todo.id);
+			if (budget?.exhausted === true) return true;
+		} catch {
+			continue;
+		}
+	}
+	return false;
+}
+
+/**
  * A request of the human begins.
  *
  * Every path that carries the words or the decision of the human into Pi
@@ -1191,12 +1952,47 @@ const requestScopeTracker = new RequestScopeTracker({
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// A request of the human began: the work of a handoff that arrives
+	// now belongs to this request, until the agent answers it.
+	humanRequestBegan = true;
+	humanRequestAnswered = false;
+	// The text of the new request is not known yet. The reminder asks the
+	// agent to record the work of the request, and the steps of a request
+	// are read from its text.
+	currentRequestText = "";
+	// The row of the footer belongs to the request that is running. The
+	// work of the request that ended is history, and a row that names it
+	// would tell the human about a request that is not the one in front
+	// of them.
+	taskTracking.reset();
 	// A new request of the human has its own report: the completion of the
 	// previous one was already reported.
 	suppressedResumeReported = false;
 	// The guard of the exploration is active again. The state of the new
 	// request is its own: the counters of the old request do not carry over.
 	explorationGuard?.activate();
+	// The guard of a repeated output starts with the new request as well: a
+	// run that repeated itself belongs to the request that is over. The
+	// noise of that run stays in the transcript, and it stays out of the
+	// context of the next call of the model.
+	repetitionGuard.resetRun();
+}
+
+/**
+ * The handoffs of the session that ended.
+ *
+ * The leases are given back: the work that held them is over, and a
+ * handoff that waits for another session must not stay leased by this
+ * one. The links are forgotten: they belong to the work of this
+ * session, and the todos of another session are not linked to them.
+ */
+function endHandoffSession(): void {
+	releaseHandoffLeases();
+	bdHandoffContext.clear();
+	// The leases that ran out hold nothing, and the files that were kept
+	// aside are rubbish: the directory of the leases does not grow for
+	// ever.
+	handoffLeaseStore.cleanup();
 }
 
 /**
@@ -1651,6 +2447,14 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 				};
 			}
 			const snapshot = await provider.getSnapshot();
+			// The provider answers with an empty list when it could not
+			// read the list, and names the failure in its last error. An
+			// empty list that is really a failure must not look like a
+			// list without work.
+			const failure = todoReadFailure(provider.lastError);
+			if (failure) {
+				return { available: false, todos: [], reason: failure };
+			}
 			return { available: true, todos: (snapshot.items ?? []) as TwoPhaseTodoLike[] };
 		} catch (error) {
 			return { available: false, todos: [], reason: oneLineError(error) };
@@ -1751,6 +2555,40 @@ async function initTwoPhaseReview(pi: ExtensionAPI): Promise<void> {
 			// The guard of the exploration reads the phase of the workflow.
 			sharedState.twoPhaseRuntime = runtime;
 		});
+
+	// The reminder that asks the agent to record its work reads the same
+	// list. A session whose list cannot be read gets no reminder: an
+	// agent that cannot add a task cannot act on the nudge.
+	//
+	// The list is filtered through the scope of the running request. A
+	// todo of an earlier request says nothing about the work of this
+	// one, and an old open task must not silence the reminder about a
+	// request that has no task of its own.
+	sharedState.todoReader = async (_ctx: unknown) => {
+		// The scope and the list come from one read, so the reminder and
+		// the row of the footer see the same moment of the same list. A
+		// read that failed is not an empty list: the scope of the request
+		// is unknown then, and the reminder stays away.
+		const read = await requestScopeTracker.read();
+		if (read.items === null) return undefined;
+		return itemsOfRequest(
+			read.items as unknown as RequestTodoLike[],
+			read.scope,
+		) as unknown as TwoPhaseTodoLike[];
+	};
+
+	// The row of the footer names the validation of the work that has not
+	// passed yet. The ledger is the only source of that fact.
+	sharedState.validationReader = async (todos: TwoPhaseTodoLike[]) => {
+		const state = await readValidation(todos);
+		return {
+			pending:
+				state.pendingFinalTier > 0 ||
+				state.incompletePlan > 0 ||
+				state.missingPilot > 0,
+			failed: state.failedFinalTier > 0,
+		};
+	};
 	} catch (error) {
 		logToFile("[TwoPhase]", `runtime not registered: ${oneLineError(error)}`);
 	}
@@ -1907,10 +2745,12 @@ async function startBiomeImplementation(
 		// The prompt reaches Pi as a message of the harness, so the input
 		// event cannot begin the scope of the request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			mod.buildToolingImplementationPrompt(context, workspaceRoot),
-			{ deliverAs: "steer" },
+		const tooling = mod.buildToolingImplementationPrompt(
+			context,
+			workspaceRoot,
 		);
+		noteHarnessMessage(tooling);
+		await pi.sendUserMessage(tooling, { deliverAs: "steer" });
 		logToFile("[ToolingPreference]", `agent asked to implement Biome (${channel})`);
 	} catch (error) {
 		logToFile("[ToolingPreference]", `steer failed: ${oneLineError(error)}`);
@@ -2618,6 +3458,8 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const controller = sharedState.todoContinuationController as {
 					resume?: () => void;
 					isExplicitlyPaused?: () => boolean;
+					pauseEpoch?: () => number;
+					pauseState?: () => { paused: boolean; pauseEpoch: number };
 					dispatchAdvisory?: (
 						message: string,
 						options?: { meta?: { reason?: string } },
@@ -2627,11 +3469,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// approval releases the action, but it does not clear a
 				// pause the user set with a "stop". Only an explicit resume
 				// of the human clears that one.
-				const pausedByUser = state.context.pausedBefore === true;
-				if (pausedByUser) {
+				//
+				// The pause may also come after the refusal: the user may
+				// stop the work while the question is open. The epoch of
+				// the pause tells the two apart - the refusal remembers
+				// the epoch it set, and a pause with another epoch belongs
+				// to somebody else.
+				const pause =
+					controller?.pauseState?.() ?? {
+						paused: controller?.isExplicitlyPaused?.() === true,
+						pauseEpoch: controller?.pauseEpoch?.(),
+					};
+				const decision = decideApprovalResume(state.context, pause);
+				if (!decision.resume) {
 					logToFile(
 						"[Approval]",
-						"The work stays paused: the pause of the user is not the pause of the refusal, and only an explicit resume clears it",
+						`The work stays paused: ${decision.reason}`,
 					);
 				} else {
 					// The resume continues the work of the request. The
@@ -2792,24 +3645,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 		};
 		sharedState.updateAutoContinueStatus = updateAutoContinueStatus;
 
-		/**
-		 * The short hash of the current question.
-		 *
-		 * It identifies the question in the status row without showing the
-		 * question itself.
-		 */
-		function questionHash(): string {
-			return _lastNotifiedQuestion
-				? Math.abs(
-						_lastNotifiedQuestion.split("").reduce((a, c) => {
-							a = ((a << 5) - a) + c.charCodeAt(0);
-							return a & a;
-						}, 0),
-					).toString(36)
-				: "";
+		// Update auto-continue status in TUI footer
+		function showJevDecision(evaluation: import("./packages/jev-judge/dist/wait-lifecycle.js").WaitEvaluation): void {
+			_currentAutoContinueState = jevDecisionStatus(evaluation);
+			_setAutoContinueStatus?.(_currentAutoContinueState);
 		}
 
-		// Update auto-continue status in TUI footer
 		function updateAutoContinueStatus(
 			state: keyof typeof AC_STATE_MESSAGES,
 			requestId?: string,
@@ -2952,6 +3793,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 								?.isExplicitlyPaused?.() === true ||
 							!ctx.isIdle() ||
 							ctx.hasPendingMessages(),
+						// The lease of the handoff is shared with the path of
+						// the store: the work of one handoff runs once, and
+						// the two paths meet on the correlation of the
+						// request.
+						lease: {
+							claim: (message) => claimPlanHandoffLease(message) !== null,
+							release: (message) => releasePlanHandoffLease(message),
+						},
 					});
 					planReceiver.start();
 				} catch (error) {
@@ -3329,17 +4178,40 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// A delegation of the user may cover the operation of this
 				// question. The human is then told what happens without an
 				// answer, and the deadline is watched for that decision.
-				const delegatedKind = operationKindFor(
-					questionAction ?? result.questionText,
-				);
-				const delegation = delegatedKind
+				//
+				// The delegation is checked against every operation the
+				// question proposes: a question that asks for a commit and
+				// a push is not covered by a delegation for a commit.
+				//
+				// The scope is the complete question. The action that is
+				// extracted is shortened for the display, and a question
+				// that is longer than that bound still proposes every
+				// operation it names: classifying the shortened text would
+				// drop the operations that lie behind the bound.
+				const delegatedOperation = result.questionText ?? "";
+				const delegatedKinds = questionScope(delegatedOperation);
+				const delegatedKind =
+					delegatedKinds.length > 0
+						? operationKindFor(delegatedOperation)
+						: undefined;
+				const delegation = delegatedKinds.length > 0
 					? sharedState.delegatedApproval?.delegationFor({
-							kind: delegatedKind,
-							workspace: _piSessionCwd || "/",
+							kinds: delegatedKinds,
+							workspace: delegationWorkspace(),
+							// The operation is read with the scope: a
+							// build is covered only when the workspace
+							// really has that build.
+							operation: delegatedOperation,
 						})
 					: undefined;
+				// A build names the build that continues: the human is
+				// told which build runs without their answer.
+				const delegatedBuild =
+					delegatedKinds.includes("build") && delegation
+						? coveredBuildForm(delegatedOperation, delegationWorkspace())
+						: undefined;
 				const delegatedNotice = delegation
-					? `If you do not answer within ${MIN_WAIT_MINUTES} minutes, I will continue under your configured authorization (${delegation.id}).`
+					? `If you do not answer within ${MIN_WAIT_MINUTES} minutes, I will continue under your configured authorization (${delegation.id}${delegatedBuild ? `: ${delegatedBuild}` : ""}).`
 					: undefined;
 				const requirement = delegatedNotice
 					? `${options}\n\n${delegatedNotice}`
@@ -3371,10 +4243,11 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					await sharedState.delegatedApproval?.open(
 						{
 							requestId: questionJobId,
-							workspace: _piSessionCwd || "/",
+							workspace: delegationWorkspace(),
 							sessionId: _sessionId,
 							generation: requestScopeTracker.generation,
 							kind: delegatedKind,
+							kinds: delegatedKinds,
 							operation: questionAction ?? result.questionText,
 							blocked: [questionAction ?? result.questionText],
 							deadlineAt,
@@ -3469,8 +4342,21 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					content = rawContent;
 				}
 
-				// Skip harness-generated follow-ups (not real user prompts)
-				if (!content.includes("Please add all tasks to task list todo")) {
+				// Skip harness-generated follow-ups (not real user prompts).
+				// A message of the harness is not a request of the human,
+				// and the work of a request is read from its text.
+				const fromHarness =
+					sentHarnessMessages.has(content) ||
+					content.includes(
+						"Please record the work of this request in the task list",
+					) ||
+					content.includes("Please add all tasks to task list todo");
+				if (!fromHarness) {
+					// The text of the request is what the reminder names,
+					// and the steps of the request are read from it. The
+					// request of the human is the work to record; a
+					// message of the harness is not.
+					currentRequestText = content;
 					const now = Date.now();
 					// Reset batch if window expired
 					if (now - lastPromptTime > PROMPT_WINDOW_MS) {
@@ -3496,8 +4382,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						const capturedContents = [...pendingPromptContents];
 
 						intakeTimer = setTimeout(async () => {
-							// Only trigger if multiple prompts arrived
-							if (capturedCount > 1) {
+							// The capture happens for a batch of prompts and for
+							// a single request that names more than one step.
+							// The work of a request is more than one prompt:
+							// a request that asks for two things asks for two
+							// items of the task list.
+							const steps = stepsOfRequest(
+								capturedContents.join("\n"),
+							);
+							if (capturedCount > 1 || steps.length > 1) {
 								pendingUserPromptCount = 0;
 								pendingPromptContents = [];
 								logToFile("[auto-continue]", "Multiple prompts in queue, evaluating for task capture");
@@ -3817,6 +4710,13 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			 * clear a pause the user set with a "stop".
 			 */
 			pausedBefore?: boolean;
+			/**
+			 * The epoch of the pause that the refusal set.
+			 *
+			 * A pause that comes after it belongs to somebody else, and the
+			 * approval of the human must not clear it.
+			 */
+			pauseEpoch?: number;
 		}): Promise<void> => {
 			const runtime = sharedState.jevRejectionEscalation;
 			if (!runtime) {
@@ -3847,6 +4747,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						? `the remaining work (${open.slice(0, 3).join(", ")}) may continue`
 						: undefined,
 					pausedBefore: input.pausedBefore,
+					pauseEpoch: input.pauseEpoch,
 				});
 				if (result.reused) {
 					// The question was already asked for this request. The
@@ -3978,7 +4879,26 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				(sharedState.todoContinuationController as any)?.explicitPause?.();
 				// The wait is over: the work is paused until a human answers.
 				clearWait();
-				updateAutoContinueStatus("IDLE");
+				showJevDecision(evaluation);
+				if (requestId) {
+					void notifyJevHumanRequired({
+						question: { requestId, text: questionText ?? "Please answer the pending question.",
+							kind: pendingQuestion?.kind, alternatives: pendingQuestion?.alternatives },
+						evaluation,
+						isCurrent: () => {
+							const current = sharedState.pqController?.getCurrentQuestion?.();
+							return ownsQuestion(current, requestId) && isQuestionOpen(current);
+						},
+						deliver: async (question, text) => ((await _nc?.notifyWithApproval("WaitingForUserInput", {
+							jobId: question.requestId, questionId: question.requestId,
+							questionKind: question.kind, requirement: text,
+						}, { approveLabel: "Continue", rejectLabel: "Not yet" })) ?? []) as NotificationResult[],
+						onFailure: (message) => {
+							logToFile("[auto-continue]", message);
+							showJevDecision({ ...evaluation, reasoning: `${message}; answer in this session` });
+						},
+					});
+				}
 				return;
 			}
 
@@ -4035,17 +4955,27 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				);
 				// A pause that was already there belongs to the user: the
 				// approval of the human releases the action, but it does not
-				// clear a pause the user set with a "stop".
+				// clear a pause the user set with a "stop". The pause of the
+				// work is one state: a temporary pause of the user counts too.
 				const pausedBefore =
+					(sharedState.todoContinuationController as any)?.pauseState?.()
+						?.paused ??
 					(sharedState.todoContinuationController as any)?.isExplicitlyPaused?.() ===
-					true;
+						true;
 				(sharedState.todoContinuationController as any)?.explicitPause?.();
+				// The epoch of the pause that the refusal set. A pause that
+				// comes after it belongs to somebody else - the user may
+				// stop the work while the question is open - and the
+				// approval of the human must not clear it.
+				const refusalPauseEpoch =
+					(sharedState.todoContinuationController as any)?.pauseEpoch?.();
 				if (waitBelongsToRequest(requestId)) {
 					// The work pauses for a human: the wait and the
 					// countdown of the wait are over with it.
 					clearWait();
 					updateAutoContinueStatus("IDLE");
 				}
+				showJevDecision(evaluation);
 				// The refusal of the judge is asked of the human. The
 				// question of the judge is closed, so a linked question
 				// with a fresh id carries the buttons: live buttons on a
@@ -4064,6 +4994,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							evaluation.reasoning ||
 							"the judge did not approve the action",
 						pausedBefore,
+						pauseEpoch: refusalPauseEpoch,
 					});
 				}
 				return;
@@ -4076,7 +5007,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			logQuestionTransition(requestId, "applied", outcome);
 
 			// Update status to continuing
-			updateAutoContinueStatus("CONTINUING", questionHash());
+			showJevDecision(evaluation);
 
 			// The steer names the selected option, the scope and the
 			// reasoning of the decision. A bare "continue with the
@@ -4157,7 +5088,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const message = result.evaluation.error?.message ?? "the evaluation failed";
 				logToFile("[auto-continue]", "The evaluation of the question failed:", message);
 				_inferenceInProgress = false;
-				updateAutoContinueStatus("ERROR");
+				showJevDecision(result.evaluation);
 				// The question is still open: the work must not continue
 				// behind it. The pause ends when the question is answered
 				// (a channel answer resumes it) or cancelled (a reply of
@@ -4309,6 +5240,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						"Work on exactly these ids and stop when they are done:",
 						lines,
 					].join("\n");
+					noteHarnessMessage(message);
 					void (async () => {
 						try {
 							await pi.sendUserMessage(message, { deliverAs: "steer" });
@@ -4369,12 +5301,22 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		pi.on("session_start", async (_event, ctx) => {
 			try {
+				// The handoffs of the session belong to the session: a new
+				// session starts with none of them, and the leases of the
+				// session that ended are given back. A handoff that was
+				// delivered to the session before is not a handoff of this
+				// one, so its todo may not be linked here.
+				endHandoffSession();
 				// The runtime of the scope expansion belongs to the session:
 				// a session that starts has no open proposal, and a session
 				// that ends leaves none behind.
 				sharedState.scopeRuntime?.dispose();
 				sharedState.scopeRuntime = createScopeExpansionRuntime();
 				const { TodoContinuationController } = await import("./packages/jev-judge/dist/continuation-controller.js");
+				const {
+					ADVISORY_SOURCE_EXPLORATION_GUARD,
+					ADVISORY_SOURCE_BD_HANDOFF,
+				} = await import("./packages/jev-judge/dist/continuation-controller.js");
 				const { ValidationLedger } = await import("./packages/jev-judge/dist/validation-ledger.js");
 				// The ledger records which validation tier ran. The controller
 				// uses it to tell the agent what already passed and whether the
@@ -4411,14 +5353,23 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// continues the request that is running, so it carries
 					// the generation of that request.
 					advisoryDispatch: async (content: string, meta) => {
+						// The custom type names the source of the traffic.
+						// A handoff of the store is not an exploration, and
+						// the two must not be mistaken for each other.
+						const source = meta?.source ?? ADVISORY_SOURCE_EXPLORATION_GUARD;
+						const customType =
+							source === ADVISORY_SOURCE_BD_HANDOFF
+								? "harness:bd-handoff"
+								: "harness:exploration-guard";
 						pi.sendMessage(
 							{
-								customType: "harness:exploration-guard",
+								customType,
 								content,
 								display: false,
 								details: {
 									reason: meta?.reason ?? "exploration-guard",
 									requestGeneration: meta?.requestGeneration,
+									source,
 								},
 							},
 							{ deliverAs: "followUp", triggerTurn: true },
@@ -4440,6 +5391,183 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				// never stopped the work.
 				sharedState.todoContinuationController = todoContinuationController;
 				logToFile("[auto-continue]", "Todo continuation controller initialized");
+				// The watcher of the handoffs belongs to this session: it
+				// reads the store of the workspace and delivers what waits
+				// for this agent.
+				bdHandoffSession?.stop();
+				bdHandoffSession = new BdHandoffSession();
+				// The row of the watcher is passive and belongs to the
+				// session that is running. A session without a user
+				// interface has a setter that drops the row without a
+				// word, so it gets no setter at all.
+				bdHandoffStatusSetter = ctx.hasUI
+					? ctx.ui.setStatus.bind(ctx.ui, HARNESS_BD_HANDOFF_STATUS_KEY)
+					: null;
+				bdHandoffSession.start({
+					// The workspace of the store: the reader refuses a store
+					// that does not belong to it.
+					workspace: () => _piSessionCwd || process.cwd(),
+					// The id of the session owns the claim of a handoff.
+					// An empty id would make every session of the machine
+					// the same owner, and the claim would hold nobody.
+					sessionId: () => activeSessionId || `pi-${process.pid}`,
+					// A handoff arrives as an observation of the request that
+					// is running. The guards of the controller still hold
+					// and the attempt budget of a task is untouched.
+					deliver: async (delivery: BdHandoffDelivery) => {
+						const controller = sharedState.todoContinuationController as {
+							dispatchAdvisory?: (
+								content: string,
+								options?: {
+									meta?: {
+										reason?: string;
+										requestGeneration?: string;
+										source?: string;
+									};
+								},
+							) => Promise<{ dispatched: boolean; reason?: string }>;
+						} | null;
+						if (!controller?.dispatchAdvisory) {
+							return {
+								delivered: false,
+								reason: "the continuation controller is not there",
+							};
+						}
+						// The lease of the handoff is taken before the
+						// delivery: the work of one handoff runs once,
+						// whichever path delivers it.
+						const lease = claimHandoffLease(delivery.handoffs);
+						if (!lease.ok) {
+							return {
+								delivered: false,
+								reason: lease.reason ?? "the handoff is leased",
+							};
+						}
+						const message = `${delivery.message}\n${handoffTodoInstruction(
+							delivery.handoffs.map((handoff) => ({
+								bdIssueId: handoff.issue.id,
+								handoffId: handoff.envelope.handoffId,
+								correlationId: handoff.envelope.correlationId,
+							})),
+						)}`;
+						try {
+							const result = await controller.dispatchAdvisory(message, {
+								meta: {
+									// The reason of the advisory is the source of
+									// the traffic: one constant names both, so
+									// the metadata cannot drift.
+									reason: ADVISORY_SOURCE_BD_HANDOFF,
+									requestGeneration: String(requestScopeTracker.generation),
+									source: ADVISORY_SOURCE_BD_HANDOFF,
+								},
+							});
+							if (!result.dispatched) {
+								// The message did not reach the session: the
+								// lease is given back and the handoff waits
+								// for the next boundary.
+								//
+								// Only the names that the claim created are
+								// given back. A name that this owner held
+								// already belongs to a work that runs
+								// already, and giving it back would let
+								// the other path run the same handoff
+								// while that work is still running.
+								releaseHandoffLease(lease.created, lease.owner);
+								return { delivered: false, reason: result.reason };
+							}
+							// The session knows which handoffs arrived: the
+							// todos of that work are linked to them. A
+							// handoff that did not arrive is not linked.
+							//
+							// The handoff belongs to the session and not to
+							// the request that was running when it
+							// arrived: it can arrive between two
+							// requests, and the work of it runs in the
+							// request that follows. The generation of
+							// that request is the one the work runs in:
+							// the advisory of a handoff that arrives
+							// during a request continues that request,
+							// and the advisory of a handoff that arrives
+							// after the answer of the agent belongs to
+							// the request that follows.
+							const generation = handoffGenerationOfRunningRequest();
+							for (const handoff of delivery.handoffs) {
+								bdHandoffContext.add(
+									{
+										bdIssueId: handoff.issue.id,
+										handoffId: handoff.envelope.handoffId,
+										correlationId: handoff.envelope.correlationId,
+									},
+									generation,
+								);
+							}
+							return { delivered: true, reason: result.reason };
+						} catch (error) {
+							releaseHandoffLease(lease.created, lease.owner);
+							return { delivered: false, reason: oneLineError(error) };
+						}
+					},
+					// A handoff never interrupts a running tool call: it waits
+					// for a boundary of the session.
+					isIdle: () => {
+						try {
+							return activeExtensionContext?.isIdle?.() ?? false;
+						} catch {
+							// A context of an ended session cannot answer:
+							// the session is not idle, so the handoff waits.
+							return false;
+						}
+					},
+					// The pause of the human holds the handoff back.
+					isPaused: () => todoContinuationHandle?.isExplicitlyPaused() ?? false,
+					// A question of the human is work in progress: the handoff
+					// waits for the answer.
+					hasOpenQuestion: () => hasOpenQuestion(),
+					// A handoff outside the authorized scope is proposed to
+					// the human. It never starts by itself.
+					proposeScope: async (handoff, generation) => {
+						const runtime = sharedState.scopeRuntime;
+						// Without the runtime of the scope there is nobody
+						// to ask: the handoff is not acknowledged, and it is
+						// proposed again with the next boundary.
+						if (!runtime) return false;
+						const proposal = await runtime.propose({
+							requestId: `bd-handoff-${handoff.issueId}`,
+							workspace: _piSessionCwd || process.cwd(),
+							generation,
+							candidates: [{ id: handoff.issueId, title: handoff.title }],
+							proposedIds: [handoff.issueId],
+							scope: `the work of the handoff ${handoff.issueId}`,
+							validation: "the tests of the repository and the closing of the issue",
+							risks: ["the work of the issue was not part of the request"],
+							choices: ["run the work of the issue", "leave the handoff closed"],
+						});
+						// A proposal that reached nobody is not a proposal:
+						// the handoff stays in the queue and is proposed
+						// again with the next boundary.
+						return proposal !== null;
+					},
+					// The row of the footer says what the watcher observed.
+					// It never steers the session.
+					onStatus: (status) => {
+						const setter = bdHandoffStatusSetter;
+						if (!setter) return;
+						try {
+							setter(formatBdHandoffStatus(status));
+						} catch (error) {
+							logToFile(
+								"[bd-handoff]",
+								"the status could not be published:",
+								oneLineError(error),
+							);
+						}
+					},
+					// The log of the watcher is the log of the harness.
+					log: (message: string) => logToFile("[bd-handoff]", message),
+				});
+				// The first look at the store happens now: a handoff that
+				// waits for this session should not wait for the next tick.
+				runBdHandoffCheck();
 			} catch (err) {
 				logToFile("[auto-continue]", "Failed to create todo continuation controller:", String(err));
 			}
@@ -4447,6 +5575,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Clean up controller on session shutdown
 		pi.on("session_shutdown", () => {
+			// The watcher of the handoffs belongs to the session that is
+			// ending: it must not deliver into a session that is gone.
+			bdHandoffSession?.stop();
+			bdHandoffSession = null;
+			// The handoffs of the session are over with the session.
+			endHandoffSession();
+			// The row of the watcher leaves the footer with the session.
+			try {
+				bdHandoffStatusSetter?.(undefined);
+			} catch {
+				// The footer of an ended session is gone too.
+			}
+			bdHandoffStatusSetter = null;
 			// Release the guard timer and the queue: a stopped session must not
 			// keep a timer alive nor block a later continuation.
 			todoContinuationController?.dispose?.();
@@ -4460,6 +5601,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			sharedState.scopeRuntime = null;
 			// The scope belongs to the session that is ending.
 			requestScopeTracker.reset();
+			// The request of the session that is ending is over: a handoff
+			// that arrives now belongs to no request of this session.
+			humanRequestBegan = false;
+			humanRequestAnswered = false;
 			// The pending actions of the guard belong to the session that
 			// is ending: a completed request is not continued by the guard.
 			explorationGuard?.deactivate();
@@ -4474,9 +5619,46 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 				const { TaskIntakeController } = await import("./packages/jev-judge/dist/task-intake.js");
 				taskIntakeController = new TaskIntakeController({
 					providers: jevProviders,
+					// The name of the tool that records the work is asked
+					// for when the instruction is written: a request that
+					// works on a handoff is recorded with the tool of the
+					// handoff, and the plain todo tool writes a todo
+					// that names no issue at all.
+					//
+					// The tool of the handoff is named for the request that
+					// is captured: a request that works on a handoff whose
+					// work was not recorded yet is recorded with the tool
+					// of the handoff, and every other request is recorded
+					// with the plain tool. The selection is the one of the
+					// whole session, so the intake and the advisory of a
+					// handoff of the same request never name two tools.
+					todoToolName: (message: string) =>
+						todoToolOf(
+							openHandoffsOfRunningRequest(bdHandoffContext, message),
+							BD_HANDOFF_TODO_TOOL,
+						),
 					dispatch: async (content: string) => {
+						// The message is the harness speaking, not a request
+						// of the human: it must not be read as one.
+						noteHarnessMessage(content);
+						// The work of a handoff is recorded with the tool of
+						// the handoff, so the todo of the work names the
+						// issue it belongs to. The plain todo tool knows
+						// nothing of the handoff, and the todo of the work
+						// would name no issue at all.
+						//
+						// Only the handoff that this request works on is
+						// named: a handoff whose todo is in the list needs
+						// no instruction any more, and a handoff of another
+						// request does not belong to this one.
+						const handoff = handoffTodoInstruction(
+							openHandoffsOfRunningRequest(bdHandoffContext, content),
+						);
 						// Queue for next turn so agent processes after current work completes
-						await pi.sendUserMessage(content, { deliverAs: "followUp" });
+						await pi.sendUserMessage(
+							handoff ? `${content}\n${handoff}` : content,
+							{ deliverAs: "followUp" },
+						);
 					},
 				});
 				logToFile("[auto-continue]", "Task intake controller initialized");
@@ -4690,6 +5872,12 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 			if (!ctx.isIdle?.() || ctx.hasPendingMessages?.()) {
 				return;
 			}
+
+			// The watcher of the handoffs looks at the store at a safe
+			// boundary: the turn is over and the session is idle. The check
+			// runs in the background, so a store that reads slowly never
+			// delays the work of the request.
+			runBdHandoffCheck();
 
 			// Use the retained controller (not a new one per event)
 			try {
@@ -4947,11 +6135,63 @@ async function initQdrant(): Promise<void> {
 	}
 }
 
+/**
+ * The shared skill graph (OmniGraph).
+ *
+ * The source is optional: a machine without it behaves exactly as before.
+ * When it is configured, the row of the graph sits next to the row of
+ * Qdrant and names the endpoint that is read - so the user sees which
+ * graph the machine uses.
+ */
+async function initOmnigraph(
+	pi: ExtensionAPI,
+): Promise<{ placeRow: (anchor?: string) => void } | null> {
+	try {
+		const { initOmnigraphSkills } = await import(
+			"./harness/omnigraph/startup.js"
+		);
+		let saasConfigured = false;
+		try {
+			const { isSkillSyncConfigured } = await import(
+				"./harness/skill-sync.js"
+			);
+			saasConfigured = isSkillSyncConfigured();
+		} catch {
+			// The skill service is optional: without it the graph is the
+			// source, and nothing else changes.
+			saasConfigured = false;
+		}
+		return initOmnigraphSkills(pi, {
+			insert: (anchor, label, text, status, details) => {
+				startupStatus.updateAfter(anchor, label, text, status, details);
+			},
+			log: (message) => logStartup(message),
+			saasConfigured,
+		});
+	} catch (err) {
+		logStartup(
+			`[pi-harness] The OmniGraph source could not be prepared: ${err instanceof Error ? err.message : String(err)}`,
+		);
+		return null;
+	}
+}
+
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
 
 // Shared Codex session state - accessible by both initTelegram() and the watcher
 let _piSessionCwd = "";
+
+/**
+ * The workspace of the delegations.
+ *
+ * The command that records a delegation and the runtime that reads one
+ * must agree on the workspace, otherwise a delegation never covers
+ * anything. Both use this one.
+ */
+function delegationWorkspace(): string {
+	return _piSessionCwd || "/";
+}
 const _SETTLE_DELAY_MS = 5000; // Wait 5 seconds after plan ready
 
 interface PlanEvent {
@@ -5080,19 +6320,17 @@ async function advanceCodexTask(
 		// The message reaches Pi as a message of the harness, so the input
 		// event cannot begin the scope of the request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			`Human approved. Proceed to implement: ${event.planPath}`,
-			{ deliverAs: "steer" }
-		);
+		const proceed = `Human approved. Proceed to implement: ${event.planPath}`;
+		noteHarnessMessage(proceed);
+		await pi.sendUserMessage(proceed, { deliverAs: "steer" });
 		event.status = "triggered";
 		logToFile("[codex-trigger]", `Advanced to code: ${event.planPath}`);
 	} else if (action === "review") {
 		// The decision of the human starts new work: it begins a request.
 		beginHumanRequest();
-		await pi.sendUserMessage(
-			"Human requests a review of the implementation.",
-			{ deliverAs: "steer" }
-		);
+		const review = "Human requests a review of the implementation.";
+		noteHarnessMessage(review);
+		await pi.sendUserMessage(review, { deliverAs: "steer" });
 		logToFile("[codex-trigger]", "Advanced to review");
 	} else if (action === "done") {
 		event.status = "done";
@@ -5257,12 +6495,12 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				parsed.action === PING_PONG_ACTIONS.CODE_AGAIN ||
 				parsed.action === PING_PONG_ACTIONS.DONE) {
 				// Map action string to internal action type
-				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+				const actionMap = {
 					[PING_PONG_ACTIONS.CODE]: "code",
 					[PING_PONG_ACTIONS.REVIEW]: "review",
 					[PING_PONG_ACTIONS.CODE_AGAIN]: "code_again",
 					[PING_PONG_ACTIONS.DONE]: "done",
-				};
+				} satisfies Record<string, "code" | "review" | "code_again" | "done">;
 				const internalAction = actionMap[parsed.action];
 				
 				const result = await advanceCodexTask(parsed.targetId, internalAction, pi);
@@ -5377,7 +6615,7 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 					const isEnabled = action === "on";
 					const targetChannels = channel === "all" ? ["telegram", "line"] : [channel];
 					for (const ch of targetChannels) {
-						(center as any).setChannelEnabled?.(ch, isEnabled);
+						center.setChannelEnabled?.(ch, isEnabled);
 						// The decision must survive a restart.
 						persistChannelDecision(ch, isEnabled);
 						logToFile("[NotifySettings]", `Set ${ch} to ${isEnabled ? "enabled" : "disabled"}`);
@@ -5389,8 +6627,8 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				}
 
 				// Show current status
-				const telegramStatus = (center as any).isChannelEnabled?.("telegram") ? "ON" : "OFF";
-				const lineStatus = (center as any).isChannelEnabled?.("line") ? "ON" : "OFF";
+				const telegramStatus = center.isChannelEnabled?.("telegram") ? "ON" : "OFF";
+				const lineStatus = center.isChannelEnabled?.("line") ? "ON" : "OFF";
 				logToFile("[NotifySettings]", `Current: Telegram=${telegramStatus}, LINE=${lineStatus}`);
 				logToFile("[NotifySettings]", `Commands: /notify-settings telegram on|off, /notify-settings line on|off, /notify-settings all on|off`);
 				return;
@@ -5402,11 +6640,11 @@ async function initTelegram(pi: ExtensionAPI): Promise<void> {
 				const [, sessionId, action] = taskCommandMatch;
 				
 				// Map action string to internal type
-				const actionMap: Record<string, "code" | "review" | "code_again" | "done"> = {
+				const actionMap = {
 					code: "code",
 					review: "review",
 					done: "done",
-				};
+				} satisfies Record<string, "code" | "review" | "code_again" | "done">;
 				const internalAction = actionMap[action.toLowerCase()];
 				if (!internalAction) {
 					logToFile("[codex-trigger]", `Unknown /task action: ${action}`);
@@ -5793,6 +7031,126 @@ function hasAnyRelayKeyFile(): boolean {
 }
 
 /**
+ * Handle one callback that arrived over the relay stream.
+ *
+ * The handler lives outside of the initializer: the initializer opens a
+ * connection, and the decisions that a callback carries are a different
+ * concern. One resolver answers every channel, so a LINE postback and a
+ * Telegram button click reach the same decision.
+ */
+async function handleRelayCallback(callback: CallbackPayload): Promise<void> {
+	logToFile(
+		"[RelayStream]",
+		callback.type === "telegram_message"
+			? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
+			: `Callback: ${callback.action} ${callback.targetId}`,
+	);
+
+	// A LINE postback is the same decision as a Telegram button
+	// click: one resolver, the same canonical request ID.
+	if (callback.type === "line_callback") {
+		if (
+			callback.action === "biome" ||
+			callback.action.startsWith("biome_")
+		) {
+			// The tooling proposal is a decision of its own: it never
+			// resolves a pending question and it never pauses the
+			// work. The postback data may arrive split or as one
+			// string - both carry the choice and the request ID.
+			const raw = callback.action.startsWith("biome_")
+				? callback.action.slice("biome_".length)
+				: callback.targetId;
+			await resolveToolingPreference(raw, "line", _extensionApi);
+		} else if (
+			callback.action === "weekcountdown" ||
+			callback.action === "weekmanual" ||
+			callback.action.startsWith("weekcountdown_") ||
+			callback.action.startsWith("weekmanual_")
+		) {
+			// The decision about the weekly allowance is the same
+			// decision as in Telegram: one resolver, the first
+			// answer wins. The postback data arrives split into
+			// the action and the request ID, and it may arrive as
+			// one string.
+			const separator = callback.action.indexOf("_");
+			const raw =
+				separator === -1
+					? callback.targetId
+					: callback.action.slice(separator + 1);
+			const decision: WeeklyDecision =
+				callback.action.startsWith("weekcountdown")
+					? "countdown"
+					: "manual";
+			await resolveWeeklyDecision(raw, decision, "line");
+		} else if (
+			callback.action === "planpick" ||
+			callback.action.startsWith("planpick_")
+		) {
+			// The choice of the recipient of a plan is the same
+			// choice as in Telegram: one resolver, the first
+			// answer wins. The postback data arrives split into
+			// the action and the token of the candidate, and it may
+			// arrive as one string.
+			const separator = callback.action.indexOf("_");
+			const raw =
+				separator === -1
+					? callback.targetId
+					: callback.action.slice(separator + 1);
+			await resolvePlanRecipient(raw, "line");
+		} else {
+			applyChannelApproval(callback.action, callback.targetId, "line");
+		}
+	}
+
+	// Forward Telegram callbacks to the adapter
+	if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
+		// The mapping is a pure function (harness/telegram-update.ts) so
+		// that it can be tested without the harness.
+		const update = buildTelegramCallbackUpdate({
+			id: callback.id,
+			action: callback.action,
+			targetId: callback.targetId,
+			callbackQueryId: callback.callbackQueryId,
+			userId: callback.userId,
+			username: callback.username,
+			messageId: callback.messageId,
+			chatId: callback.chatId,
+			isBot: callback.isBot,
+		});
+		if (update) {
+			try {
+				await _relayTelegramAdapter.handleWebhookUpdate(update);
+				logToFile("[RelayStream]", "Callback processed by Telegram adapter");
+			} catch (err) {
+				logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+			}
+		}
+	}
+
+	// Forward a Telegram TEXT message (the user typed it) to the adapter
+	if (callback.type === "telegram_message" && _relayTelegramAdapter) {
+		// The mapping is a pure function (harness/telegram-update.ts) so
+		// that it can be tested without the harness.
+		const update = buildTelegramMessageUpdate({
+			userId: callback.userId,
+			username: callback.username,
+			messageId: callback.messageId,
+			chatId: callback.chatId,
+			text: callback.text,
+			isBot: callback.isBot,
+		});
+		if (update) {
+			try {
+				await _relayTelegramAdapter.handleWebhookUpdate(update);
+				logToFile("[RelayStream]", "Message processed by Telegram adapter");
+			} catch (err) {
+				logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
+			}
+		}
+	}
+}
+
+/**
  * Initialize relay streaming for real-time callback delivery.
  * Connects to the relay WebSocket server and forwards Telegram callbacks
  * to the adapter for proper greeting verification and handling.
@@ -5845,115 +7203,7 @@ async function initRelayStream(): Promise<void> {
 				logToFile("[RelayStream]", "Synchronized - receiving live events");
 			},
 			onCallback: async (callback: CallbackPayload) => {
-				logToFile(
-					"[RelayStream]",
-					callback.type === "telegram_message"
-						? `Message from ${callback.username || callback.userId} (${(callback.text || "").length} chars)`
-						: `Callback: ${callback.action} ${callback.targetId}`,
-				);
-
-				// A LINE postback is the same decision as a Telegram button
-				// click: one resolver, the same canonical request ID.
-				if (callback.type === "line_callback") {
-					if (
-						callback.action === "biome" ||
-						callback.action.startsWith("biome_")
-					) {
-						// The tooling proposal is a decision of its own: it never
-						// resolves a pending question and it never pauses the
-						// work. The postback data may arrive split or as one
-						// string - both carry the choice and the request ID.
-						const raw = callback.action.startsWith("biome_")
-							? callback.action.slice("biome_".length)
-							: callback.targetId;
-						await resolveToolingPreference(raw, "line", _extensionApi);
-					} else if (
-						callback.action === "weekcountdown" ||
-						callback.action === "weekmanual" ||
-						callback.action.startsWith("weekcountdown_") ||
-						callback.action.startsWith("weekmanual_")
-					) {
-						// The decision about the weekly allowance is the same
-						// decision as in Telegram: one resolver, the first
-						// answer wins. The postback data arrives split into
-						// the action and the request ID, and it may arrive as
-						// one string.
-						const separator = callback.action.indexOf("_");
-						const raw =
-							separator === -1
-								? callback.targetId
-								: callback.action.slice(separator + 1);
-						const decision: WeeklyDecision =
-							callback.action.startsWith("weekcountdown")
-								? "countdown"
-								: "manual";
-						await resolveWeeklyDecision(raw, decision, "line");
-					} else if (
-						callback.action === "planpick" ||
-						callback.action.startsWith("planpick_")
-					) {
-						// The choice of the recipient of a plan is the same
-						// choice as in Telegram: one resolver, the first
-						// answer wins. The postback data arrives split into the
-						// action and the token of the candidate, and it may
-						// arrive as one string.
-						const separator = callback.action.indexOf("_");
-						const raw =
-							separator === -1
-								? callback.targetId
-								: callback.action.slice(separator + 1);
-						await resolvePlanRecipient(raw, "line");
-					} else {
-						applyChannelApproval(callback.action, callback.targetId, "line");
-					}
-				}
-
-				// Forward Telegram callbacks to the adapter
-				if (callback.type === "telegram_callback" && _relayTelegramAdapter) {
-					// The mapping is a pure function (harness/telegram-update.ts) so
-					// that it can be tested without the harness.
-					const update = buildTelegramCallbackUpdate({
-						id: callback.id,
-						action: callback.action,
-						targetId: callback.targetId,
-						callbackQueryId: callback.callbackQueryId,
-						userId: callback.userId,
-						username: callback.username,
-						messageId: callback.messageId,
-						chatId: callback.chatId,
-						isBot: callback.isBot,
-					});
-					if (update) {
-						try {
-							await _relayTelegramAdapter.handleWebhookUpdate(update);
-							logToFile("[RelayStream]", "Callback processed by Telegram adapter");
-						} catch (err) {
-							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
-						}
-					}
-				}
-
-				// Forward a Telegram TEXT message (the user typed it) to the adapter
-				if (callback.type === "telegram_message" && _relayTelegramAdapter) {
-					// The mapping is a pure function (harness/telegram-update.ts) so
-					// that it can be tested without the harness.
-					const update = buildTelegramMessageUpdate({
-						userId: callback.userId,
-						username: callback.username,
-						messageId: callback.messageId,
-						chatId: callback.chatId,
-						text: callback.text,
-						isBot: callback.isBot,
-					});
-					if (update) {
-						try {
-							await _relayTelegramAdapter.handleWebhookUpdate(update);
-							logToFile("[RelayStream]", "Message processed by Telegram adapter");
-						} catch (err) {
-							logToFile("[RelayStream]", `Adapter error: ${oneLineError(err)}`);
-						}
-					}
-				}
+				await handleRelayCallback(callback);
 			},
 			onError: (error) => {
 				logToFile("[RelayStream]", `Error: ${oneLineError(error)}`);
@@ -7199,7 +8449,6 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 // --- Harness Runtime State --------------------------------------------
-const HARNESS_ROOT_DIR = join(homedir(), ".pi-harness-runtime");
 
 /** Startup messages collected during init — shown on session_start via ctx.ui.notify */
 const startupMessages: string[] = [];
@@ -7322,6 +8571,10 @@ type NcCenter = {
 	notifyWithApproval: Function;
 	notify: Function;
 	notifyWithButtons?: Function;
+	/** Is the channel turned on? */
+	isChannelEnabled?: (channelId: string) => boolean;
+	/** Turn the channel on or off. */
+	setChannelEnabled?: (channelId: string, enabled: boolean) => void;
 };
 
 /**
@@ -7798,6 +9051,47 @@ export default async function (pi: ExtensionAPI) {
 	// --- write-review: Two-agent write with review loop ----------------------
 	void initWriteReview(pi);
 
+	// --- agent-communication: consult the workers of other vendors -----------
+	// The consultation is off by default: a user switches it on with
+	// PI_AGENT_COMMUNICATION=1. The workers are the user's own CLIs, and
+	// the answer of a worker is data that never approves anything.
+	const registration = registerAgentCommunication({
+		workspace: () => activeExtensionContext?.cwd ?? process.cwd(),
+		sessionId: () =>
+			(
+				activeExtensionContext as {
+					sessionManager?: { getSessionId?: () => string | undefined };
+				} | null
+			)?.sessionManager?.getSessionId?.(),
+		log: (message: string) => logToFile("[agent-communication]", message),
+		onJobStart: (job) => {
+			pendingActions.register({
+				id: agentConsultActionId(job.jobId),
+				sessionId: job.sessionId,
+				owner: "agent-communication",
+				kind: "consult",
+				state: "running",
+				provider: job.target,
+				reason: `the ${job.target} worker answers`,
+			});
+		},
+		onJobEnd: (job) => {
+			pendingActions.remove(agentConsultActionId(job.jobId));
+		},
+	});
+	if (registration) {
+		registerAgentCommunicationTools(pi, registration.tools);
+		agentCommunication = {
+			runtime: registration.runtime,
+			sender: registration.sender,
+		};
+	}
+	// A session that stops leaves no worker behind: a worker that runs on
+	// answers a question nobody asks any more.
+	pi.on("session_shutdown", () => {
+		void registration?.stop();
+	});
+
 	// --- file-copy-helper: Inject cp rule when mimicking files -------------
 	void initFileCopyHelper(pi);
 
@@ -7818,7 +9112,17 @@ export default async function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
-	asyncInitPromises.push(initQdrant());
+	// The graph waits for the row of Qdrant: its own row belongs next to it.
+	// The graph is prepared without waiting for another service: the
+	// discovery of the skills of the graph must not depend on Qdrant.
+	const omnigraphStartup = initOmnigraph(pi);
+	// The row of the graph sits next to the row of Qdrant, so it is
+	// placed once that row exists.
+	asyncInitPromises.push(
+		initQdrant().then(async () => {
+			(await omnigraphStartup)?.placeRow("Qdrant");
+		}),
+	);
 
 	// --- tooling-preference: offer Biome.js instead of ESLint/Prettier ------
 	// The proposal is a decision of its own: it never pauses the work.
@@ -7869,17 +9173,129 @@ export default async function (pi: ExtensionAPI) {
 	initConsoleGuard(pi);
 
 	// --- exploration-checkpoint: let the agent record what it found ---
+	registerExplorationContext(pi, {
+		current: () => explorationGuard,
+		workState: currentRequestWorkState,
+		paused: () =>
+			(sharedState.todoContinuationController as {
+				isExplicitlyPaused?: () => boolean;
+			} | null)?.isExplicitlyPaused?.() === true ||
+			isQuestionOpen(sharedState.pqController?.getCurrentQuestion?.()),
+	});
+	registerTaskMemoryReminders(pi, {
+		requestGeneration: () => String(requestScopeTracker.generation),
+		recoveryText: () => explorationGuard?.continuationAfterCompaction(),
+		// The reminder asks the agent to record its work only when the
+		// task list does not hold that work. The list is the same one the
+		// phase of the work reads, and a session whose list cannot be
+		// read is never nudged about it.
+		todoList: async (ctx: unknown) => {
+			const reader = sharedState.todoReader;
+			if (!reader) return undefined;
+			return reader(ctx);
+		},
+		// The steps of the request are read from its text. The list is
+		// reconciled with them, so one item of the list does not silence
+		// the reminder about the steps that have no item.
+		requestSteps: () => stepsOfRequest(currentRequestText),
+		requestText: () => currentRequestText,
+		// The work of a handoff is recorded with the tool of the handoff:
+		// the plain todo tool knows nothing of the handoff, and the item
+		// of the work would name no issue at all.
+		//
+		// Only the handoff that the running request names is named: a
+		// request that works on something else is not the work of a
+		// handoff, and its todo must not name an issue of the store. A
+		// handoff that arrived in this request is the work of this
+		// request, and the request does not have to name its issue.
+		todoInstruction: () =>
+			handoffTodoInstruction(
+				openHandoffsOfRunningRequest(bdHandoffContext, currentRequestText),
+			) || undefined,
+		// The nudge names one tool: the tool of the handoff when the
+		// running request works on a handoff whose work was not recorded
+		// yet, and the plain tool otherwise. Two names in one message
+		// leave the agent to choose, and the plain one writes a todo
+		// without the link.
+		todoToolName: () =>
+			todoToolOf(
+				openHandoffsOfRunningRequest(bdHandoffContext, currentRequestText),
+				BD_HANDOFF_TODO_TOOL,
+			),
+	});
+
 	// The guard watches the reads, but only the agent knows what it learned
 	// from them. The tool records that statement beside the coverage of the
 	// request, so a compaction does not make the agent find it again.
 	try {
 		registerExplorationCheckpointTool(pi, {
 			current: () => explorationGuard,
+			// The checkpoint of a request that works on a handoff names the
+			// handoff: the identifiers are evidence, and they never change
+			// the identity of the request.
+			//
+			// The handoff of the running request is the one whose todo was
+			// linked in it. A request that records the work of a handoff
+			// that has no todo yet is named by the handoffs whose work is
+			// still open.
+			link: async () => {
+				// The handoff of the running request: the todos of the
+				// request are the evidence of its work, and the handoff
+				// the request was told about is the work it does.
+				//
+				// A handoff of another request is not named here: the
+				// identifiers of a checkpoint are evidence, and false
+				// evidence survives the compaction and sends the resumed
+				// agent back to a handoff that this request never
+				// touched.
+				const link = handoffLinkOfRequest(
+					bdHandoffContext,
+					currentRequestText,
+					handoffGenerationOfRunningRequest(),
+					await linksOfRunningRequest(),
+				);
+				if (!link) return null;
+				return {
+					bdIssueId: link.bdIssueId,
+					handoffId: link.handoffId,
+					correlationId: link.correlationId,
+				};
+			},
 		});
 	} catch (error) {
 		logToFile(
 			"[exploration-guard]",
 			"the tool of the checkpoint could not be registered:",
+			oneLineError(error),
+		);
+	}
+
+	// --- bd-handoff-todo: the todo that names the handoff it belongs to ---
+	// The list of the session is the list of the steps of the request. A
+	// step of a handoff names that handoff, so the step is still linked to
+	// the issue of the store after a restart of the session.
+	try {
+		registerBdHandoffTodoTool(pi, {
+			context: () => bdHandoffContext,
+			// The durable record of the handoff keeps the todos that belong
+			// to it.
+			onLinked: (link, todoIds) => {
+				// The todo of a handoff is the evidence that the work
+				// belongs to it. The request is remembered with it: only
+				// the todos of the running request are the work of the
+				// running request.
+				const generation = requestScopeTracker.generation;
+				for (const todoId of todoIds) {
+					bdHandoffContext.noteTodo(todoId, link, generation);
+				}
+				if (!link.handoffId || todoIds.length === 0) return;
+				bdHandoffSession?.runtime?.linkTodos(link.handoffId, todoIds);
+			},
+		});
+	} catch (error) {
+		logToFile(
+			"[bd-handoff]",
+			"the tool of the handoff todo could not be registered:",
 			oneLineError(error),
 		);
 	}
@@ -8784,30 +10200,41 @@ issue is not authorized work of the current request).
 		}),
 		resetEvidence: (failure) => applicableResetEvidence(failure),
 		quotaResetEvidence: (failure, provider) => {
-			// A capture that failed means that the row of the mirror is the
-			// old one, and an old row cannot prove a deadline.
-			if (quotaCaptureController.failed(provider)) return undefined;
+			// A failed refresh does not invalidate a still-fresh observation.
+			// The selector validates age, provider and reset on the row itself.
+			const mirror = mirrorStore.readProvider(provider.toLowerCase());
+			if (!quotaCaptureController.allowsEvidence(provider, mirror?.synced_at)) return undefined;
 			return confirmedQuotaReset(
 				failure,
 				provider,
-				mirrorStore.readProvider(provider.toLowerCase()),
+				mirror,
 				Date.now(),
 			);
 		},
 		weeklyExhaustionEvidence: (failure, provider) => {
-			// The same rule as for the deadline: a capture that failed
-			// leaves the old row of the mirror, and an old row cannot prove
-			// an empty week.
-			if (quotaCaptureController.failed(provider)) return undefined;
+			// Reuse valid recent evidence even if this refresh failed; stale
+			// or incomplete rows are rejected by the selector, never guessed.
+			const mirror = mirrorStore.readProvider(provider.toLowerCase());
+			if (!quotaCaptureController.allowsEvidence(provider, mirror?.synced_at)) return undefined;
 			return weeklyQuotaExhausted({
 				failure,
 				provider,
-				mirror: mirrorStore.readProvider(provider.toLowerCase()),
+				mirror,
 				now: Date.now(),
 			});
 		},
 		onWeeklyExhaustion: (exhaustion) => {
 			void notifyWeeklyExhaustion(exhaustion);
+		},
+		// Exhausted five-hour/weekly windows wait for the captured reset,
+		// rather than spending the short retry budget or asking again.
+		automaticWeeklyReset: true,
+		quotaResetBufferMs: 0,
+		onQuotaResetScheduled: (evidence, dueAt) => {
+			void nc("Info", {
+				jobId: `quota-reset:${evidence.provider}:${evidence.window}:${dueAt}`,
+				requirement: `${providerDisplayName(evidence.provider)} ${evidence.window === "h5" ? "5h" : evidence.window} quota reset countdown started. Work waits until ${new Date(dueAt).toISOString()}.`,
+			});
 		},
 		overloadDelayMs: () => getProviderOverloadResumeDelayMs(),
 		overloadMaxAttempts: PROVIDER_OVERLOAD_AUTO_RESUME_LIMIT,
@@ -8848,6 +10275,61 @@ issue is not authorized work of the current request).
 		beginHumanRequest();
 	});
 
+	// --- The state of the task list of the session -------------------------
+	//
+	// The row of the footer tells the human what happened to the work:
+	// the open todos, or the fact that a completion is unverified. It is
+	// refreshed when the agent starts, when it settles and when the task
+	// list changes. It never steers the session.
+	function refreshTaskTrackingFooter(): void {
+		if (!footerSetStatus) return;
+		refreshFooterStatus(
+			footerSetStatus,
+			tracker,
+			mirrorStore,
+			cookieSourceState,
+			() => lastActiveProvider,
+		);
+	}
+
+	// The session was replaced: the row of the old session says nothing
+	// about the new one, and the state of the old request must not leak
+	// into it.
+	pi.on("session_start", () => {
+		taskTracking.reset();
+		// The session was replaced: the guard of a repeated output starts
+		// clean, and the run that repeated itself does not follow the human
+		// into the new session.
+		repetitionGuard.reset();
+	});
+
+	pi.on("agent_start", async () => {
+		taskTracking.agentStarted();
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
+	pi.on("agent_settled", async () => {
+		taskTracking.agentSettled();
+		// The run of the agent is over: the work of the request is done
+		// until the human asks for more. The advisory of a handoff that
+		// arrives now starts a turn of its own, so the work of that
+		// handoff runs in the request that follows.
+		humanRequestAnswered = true;
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
+	// A write to the task list changes what the row says, so the row is
+	// refreshed. The other tools change nothing about the task list.
+	pi.on("tool_execution_end", async (event) => {
+		const toolEvent = event as { toolName?: string; isError?: boolean };
+		if (toolEvent.isError) return;
+		if (String(toolEvent.toolName ?? "") !== "todo") return;
+		await refreshTaskTracking();
+		refreshTaskTrackingFooter();
+	});
+
 	// The run settled: the internal retries of Pi are over, so a failure
 	// that waited for the boundary is final and the recovery starts now.
 	pi.on("agent_settled", async (event) => {
@@ -8880,6 +10362,101 @@ issue is not authorized work of the current request).
 		providerFailureAttemptsInRun = 0;
 	});
 
+	// --- The guard of an output that repeats itself ------------------------
+	//
+	// A model that repeats one symbol fills the context of the session with
+	// noise and stops. The guard sees the output while it streams, marks the
+	// repetition before it stops the run, and stops the run before the
+	// budget of the response is spent.
+	//
+	// The mark comes first: the stop of the guard is not the stop of the
+	// human, and only the stop of the guard may be recovered.
+	pi.on("message_update", (event, ctx) => {
+		const delta = textDeltaOf(event.assistantMessageEvent);
+		if (!delta) return;
+		const state = repetitionGuard.observeDelta(delta, () => {
+			// The runtime marked the guard before it called this: the state
+			// of the run is known before the run is stopped.
+			ctx.abort();
+		});
+		if (!state) return;
+		const repeats = state.finding.repeats;
+		logToFile(
+			"[repetition-guard]",
+			`the output repeated itself (${repeats} times) - the run was stopped`,
+		);
+		pendingActions.register({
+			id: repetitionGuardActionId(state.requestGeneration),
+			sessionId: activeSessionId,
+			owner: "repetition-guard",
+			kind: "resume",
+			state: "queued",
+			reason: `the output of the request repeated itself (${repeats} times) - the run was stopped and one recovery is allowed`,
+		});
+		void nc("Info", {
+			jobId: "repetition-guard",
+			requirement: `the output of the request repeated itself (${repeats} times); the run was stopped and one recovery is allowed`,
+		});
+	});
+
+	// The stream of a new message begins: the guard of the repetition starts
+	// with a clean tail and may fire again. The claim of the recovery
+	// survives it.
+	pi.on("message_start", () => {
+		repetitionGuard.newMessage();
+	});
+
+	// The run settled: the repetition that the guard stopped is decided
+	// here. The recovery waits for the boundary of the run, so the run that
+	// repeated itself is over before the work starts again.
+	pi.on("agent_settled", async () => {
+		// The live repetition is consumed: the decision sees it once. A
+		// continuation that Pi queued before the run settled starts its own
+		// message, and the live repetition must survive that start.
+		const state = repetitionGuard.takeState();
+		if (!state) return;
+		const decision = decideRepetitionRecovery({
+			detected: true,
+			recoveryTried: repetitionGuard.recoveryTried(),
+			requestMatches:
+				state.requestGeneration === requestScopeTracker.generation,
+			work: await currentRequestWorkState(),
+			paused: todoContinuationHandle?.isExplicitlyPaused() === true,
+			questionOpen: isQuestionOpen(
+				sharedState.pqController?.getCurrentQuestion?.(),
+			),
+			budgetSpent: await repetitionBudgetSpent(),
+		});
+		if (decision.action !== "recover") {
+			// The row leaves with the decision: the run repeated itself and
+			// the harness does not recover it again.
+			pendingActions.remove(repetitionGuardActionId(state.requestGeneration));
+			if (decision.action === "block") {
+				logToFile(
+					"[repetition-guard]",
+					`the repetition came back after the recovery: ${decision.reason}`,
+				);
+				void nc("Error", {
+					jobId: "repetition-guard",
+					requirement: `the output of the request repeated itself again and the recovery was refused: ${decision.reason}`,
+				});
+			}
+			return;
+		}
+		// One recovery per run: a repetition that survives its recovery is
+		// not recovered a second time.
+		if (!repetitionGuard.claimRecovery()) return;
+		// The row leaves with the recovery: the session keeps the promise
+		// of one recovery, and the recovery is on its way.
+		pendingActions.remove(repetitionGuardActionId(state.requestGeneration));
+		await queueAutoResume("repetition-guard", REPETITION_RESUME_PROMPT, "steer", {
+			// The recovery continues the request that repeated itself. The
+			// guard of a stale resume reads that scope and neutralizes the
+			// recovery when the human replaced the request in the meantime.
+			scope: "request",
+		});
+	});
+
 	/**
 	 * The guard of a resume that is consumed too late.
 	 *
@@ -8897,15 +10474,22 @@ issue is not authorized work of the current request).
 	 * the resume itself is neutralized.
 	 */
 	pi.on("context", async (event) => {
-		const index = findAutoResumeIndex(event.messages);
+		// The noise of a repetition is kept out of the context of the next
+		// call of the model. The transcript of the session keeps it: the
+		// handler replaces the messages it returns, it does not change the
+		// transcript of the session.
+		const messages = repetitionGuard.quarantine(
+			event.messages as unknown as ContextMessage[],
+		) as unknown as typeof event.messages;
+		const index = findAutoResumeIndex(messages);
 		const details =
-			index === -1 ? undefined : autoResumeDetails(event.messages[index]);
+			index === -1 ? undefined : autoResumeDetails(messages[index]);
 		// A resume of a cut turn continues a turn that was cut off: it is
 		// unfinished by definition and the guard does not apply. A resume
 		// whose scope cannot be read is not known to be a resume of the
 		// request, and the guard does not apply either.
 		if (index === -1 || details?.scope !== "request") {
-			return { messages: event.messages };
+			return { messages };
 		}
 		// The resume belongs to a request. When the human replaced that
 		// request, the resume is stale: it must not continue the old work
@@ -8920,7 +10504,7 @@ issue is not authorized work of the current request).
 			reportSuppressedResume(report);
 			return {
 				messages: neutralizeAutoResume(
-					event.messages,
+					messages,
 					index,
 					NEUTRALIZED_STALE_RESUME_TEXT,
 				) as typeof event.messages,
@@ -8931,7 +10515,47 @@ issue is not authorized work of the current request).
 			reason: details?.reason ?? "auto-resume",
 		});
 		if (decision.action !== "suppress") {
-			return { messages: event.messages };
+			// The closure of the work is read before the resume runs: a
+			// handoff whose issue was closed elsewhere is finished, and a
+			// work whose issue cannot be read is unresolved. Both stop the
+			// resume, and both wait for a read that works.
+			const closure = await currentHandoffClosure();
+			if (closure.action === "suppress") {
+				logToFile(
+					"[resume-scope]",
+					`Resume neutralized: ${closure.reason} (${details?.nonce || "no nonce"})`,
+				);
+				reportSuppressedResume(
+					`The work of the request is finished elsewhere; the automatic resume (${details?.reason ?? "auto-resume"}) is not sent.`,
+				);
+				return {
+					messages: neutralizeAutoResume(messages, index) as typeof event.messages,
+				};
+			}
+			if (closure.action === "unknown") {
+				// The state of the issue is unknown: the work is neither
+				// finished nor unfinished. The resume waits for a read that
+				// works instead of starting the work twice.
+				//
+				// The agent is told the truth as well: the work of the
+				// handoff is not done, and its todos are not closed as
+				// finished.
+				logToFile(
+					"[resume-scope]",
+					`Resume not started: ${closure.reason} (${details?.nonce || "no nonce"})`,
+				);
+				reportSuppressedResume(
+					`The state of the issue of the work is unknown, so the automatic resume (${details?.reason ?? "auto-resume"}) is not sent; the work waits for a read that works.`,
+				);
+				return {
+					messages: neutralizeAutoResume(
+						messages,
+						index,
+						NEUTRALIZED_UNKNOWN_WORK_TEXT,
+					) as typeof event.messages,
+				};
+			}
+			return { messages };
 		}
 		logToFile(
 			"[resume-scope]",
@@ -8939,7 +10563,7 @@ issue is not authorized work of the current request).
 		);
 		reportSuppressedResume(decision.report);
 		return {
-			messages: neutralizeAutoResume(event.messages, index) as typeof event.messages,
+			messages: neutralizeAutoResume(messages, index) as typeof event.messages,
 		};
 	});
 
@@ -8980,10 +10604,32 @@ issue is not authorized work of the current request).
 			};
 		};
 
-		// An aborted turn is a decision of the user, not a failure of the
-		// provider. The candidate of an earlier failure dies with it: an
-		// automatic resume would fight the decision of the user.
-		if (m.stopReason === "aborted" || ctx.signal?.aborted === true) {
+		// The stop of the guard and the stop of the human are two different
+		// things. The guard stops a run that repeats itself, and that stop
+		// may be recovered; the human stops a run, and that stop may not.
+		const stop = classifyRunStop({
+			// The fact is taken by the boundary of the run: the next run of
+			// the model does not inherit it.
+			stoppedByGuard: repetitionGuard.takeStoppedByGuard(),
+			stopReason: m.stopReason,
+			signalAborted: ctx.signal?.aborted === true,
+		});
+		if (stop === "guard") {
+			// The guard stopped the run: the provider is not at fault, so
+			// the recovery of the provider does not start. The recovery of
+			// the repetition is decided at the boundary of the run.
+			providerRecoveryRuntime?.cancel();
+			providerFailureAttemptsInRun = 0;
+			logToFile(
+				"[repetition-guard]",
+				"the run was stopped by the guard of the repetition",
+			);
+			return;
+		}
+		if (stop === "human") {
+			// An aborted turn is a decision of the user, not a failure of the
+			// provider. The candidate of an earlier failure dies with it: an
+			// automatic resume would fight the decision of the user.
 			providerRecoveryRuntime?.cancel();
 			providerFailureAttemptsInRun = 0;
 			return;
@@ -9354,16 +11000,18 @@ issue is not authorized work of the current request).
 
 	// --- Context-usage escalating warning tiers -----------------------------
 	// Amber at 75%, red at 85%. No notify above 90% (proactive compact handles it).
-	// Per-session dedup: only notify when crossing INTO a new higher tier.
-	const TIER_WARNING = 0.75; // amber
-	const TIER_ERROR = 0.85; // red
+	// The usage of the pi reports a percentage and not a fraction, so the
+	// thresholds are percentage points.
+	const TIER_WARNING = 75; // amber
+	const TIER_ERROR = 85; // red
+	const TIER_COMPACT = 90; // the proactive compaction takes over here
 	let lastNotifiedTier: "none" | "warning" | "error" = "none";
 
 	function maybeNotifyContextUsage(ctx: ExtensionContext): void {
 		const usage = ctx.getContextUsage();
-		const pct = usage?.percent;
-		if (pct === null || pct === undefined) return;
-		if (pct >= 0.9) return; // proactive compact handles 90%+
+		const pct = contextFillPercent(usage);
+		if (pct === undefined) return;
+		if (pct >= TIER_COMPACT) return; // proactive compact handles 90%+
 
 		const tier: "none" | "warning" | "error" =
 			pct >= TIER_ERROR ? "error" : pct >= TIER_WARNING ? "warning" : "none";
@@ -10259,6 +11907,96 @@ issue is not authorized work of the current request).
 		},
 	});
 
+	// --- /harness-delegate — The delegations of the user ---------------
+	pi.registerCommand("harness-agent", {
+		description:
+			"Show the workers of another vendor that the harness can consult: Codex and Claude Code, their version, their sign-in and where their binary is",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			// The workers of the machine: what is installed, what version
+			// it is and whether it is signed in. The harness asks the
+			// worker itself, and it never reads a credential.
+			const presences = await detectWorkers();
+			ctx.ui.notify(
+				presences.map((presence) => presenceLine(presence)).join("\n"),
+				"info",
+			);
+		},
+	});
+
+	pi.registerCommand("harness-agent-write", {
+		description:
+			"Ask a worker (Codex or Claude Code) to write a plan into the files you name, and apply it into the workspace: /harness-agent-write --paths=wiki/plan.md --target=codex <the question>",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			// The write lane: the human names the files, the worker writes
+			// into a copy of the workspace, and the harness applies the
+			// named files. A worker that wrote anything else is refused.
+			if (!agentCommunication) {
+				ctx.ui.notify(
+					"The consultation is off. Switch it on with PI_AGENT_COMMUNICATION=1.",
+					"info",
+				);
+				return;
+			}
+			const text = (args ?? "").trim();
+			const paths = (text.match(/--paths=([^\s]+)/)?.[1] ?? "")
+				.split(",")
+				.map((path) => path.trim())
+				.filter((path) => path.length > 0);
+			const named = text.match(/--target=([^\s]+)/)?.[1];
+			const question = text
+				.replace(/--paths=[^\s]+/, "")
+				.replace(/--target=[^\s]+/, "")
+				.trim();
+			if (paths.length === 0) {
+				ctx.ui.notify(
+					"Name the files of the plan: --paths=wiki/plan.md",
+					"error",
+				);
+				return;
+			}
+			const outcome = await writeThroughWorker(agentCommunication.runtime, {
+				workspace: canonicalWorkspace(
+					activeExtensionContext?.cwd ?? process.cwd(),
+				),
+				target: named === "claude" ? "claude" : "codex",
+				paths,
+				prompt:
+					question.length > 0
+						? question
+						: "Write the plan into the named files.",
+				sender: agentCommunication.sender(),
+			});
+			const lines = [`[WRITE] ${outcome.status}`];
+			for (const file of outcome.applied) {
+				lines.push(`[WRITE] ${file.path} (${file.bytes} bytes)`);
+			}
+			if (outcome.diagnostic) lines.push(outcome.diagnostic);
+			if (outcome.answer) lines.push(outcome.answer.trim());
+			ctx.ui.notify(
+				lines.join("\n"),
+				outcome.status === "written" ? "info" : "error",
+			);
+		},
+	});
+
+	pi.registerCommand("harness-delegate", {
+		description:
+			"List, add or remove the delegations that let a deadline continue the work without your answer",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			// The delegations of the user: a deadline is not an answer, so
+			// the work continues at the deadline only when the user
+			// delegated that outcome in advance. This command is the way to
+			// record one, to see them and to end them.
+			const plan = parseDelegationCommand(args ?? "");
+			const result = applyDelegationCommand(plan, {
+				store: new DelegationStore(join(homedir(), ".pi-harness-runtime")),
+				workspace: delegationWorkspace(),
+				now: Date.now(),
+			});
+			ctx.ui.notify(result.message, result.failed ? "error" : "info");
+		},
+	});
+
 	// --- /harness pause — Pause the harness job -----------------------
 	pi.registerCommand("harness-pause", {
 		description: "Pause the current harness job",
@@ -10624,6 +12362,13 @@ issue is not authorized work of the current request).
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
+		// The lease of a handoff is held while the work of the handoff
+		// runs. A work that runs longer than the bound of the lease is
+		// renewed at the end of every turn, so the lease of the session
+		// is held at least as often as the boundary of a request, and the
+		// other path cannot start the same work while this session is
+		// working on it.
+		renewHandoffLeases();
 		noteActiveProvider(ctx.model?.id ?? null);
 		// Capture only the setStatus function, not the ctx
 		footerSetStatus = ctx.ui.setStatus.bind(ctx.ui);
@@ -11001,7 +12746,7 @@ issue is not authorized work of the current request).
 
 		const compactOptions: CompactOptions = {
 			customInstructions:
-				"Preserve the current task, recent code changes, pending work, exact next step, and any unresolved errors. This compaction was triggered proactively near the context limit. After compaction, continue seamlessly without asking the user to resume or recap.",
+				"Preserve the current task, local todo IDs and statuses, recent code changes, exploration findings with file locations, rejected hypotheses, pending validation, blockers, exact next step, and any unresolved errors. Keep enough evidence to reuse completed exploration after compaction. This compaction was triggered proactively near the context limit. After compaction, continue seamlessly without asking the user to resume or recap.",
 			onComplete: () => {
 				proactiveCompactInFlight = false;
 				lastProactiveCompactAt = Date.now();
@@ -11062,6 +12807,33 @@ function refreshFooterStatus(
 	// The exploration of the request is published under its own status key.
 	// The numbers describe the reads, never what the agent understood.
 	setExplorationStatus(setStatus);
+
+	// The state of the task list is published under its own status key.
+	// It names the work that is open, and it never claims a completion.
+	setTaskTrackingStatus(setStatus);
+}
+
+/**
+ * Publish the state of the task list of the session.
+ *
+ * The status is passive: it shows what was observed and it never steers
+ * the session. A list that cannot be read says so instead of showing a
+ * number of open todos that nobody knows.
+ */
+function setTaskTrackingStatus(
+	setStatus: (key: string, value: string) => void,
+): void {
+	try {
+		const status = taskTracking.status();
+		if (!status) return;
+		setStatus("harness-task", status.text);
+	} catch (error) {
+		logToFile(
+			"[task-tracking]",
+			"the status could not be published:",
+			oneLineError(error),
+		);
+	}
 }
 
 /**

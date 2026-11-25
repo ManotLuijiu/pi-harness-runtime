@@ -187,6 +187,36 @@ test("a delivery failure leaves the work stopped", async () => {
 
 	assert.equal(proposal, null);
 	assert.equal(rt.record.dispatches.length, 0);
+	// The window of the decision starts only after a delivery that
+	// succeeded: a proposal that reached nobody waits for nothing.
+	assert.equal(rt.record.timers.length, 0, "the window of the decision does not start");
+});
+
+test("the question is registered before the delivery and the window after it", async () => {
+	const order = [];
+	const rt = runtime({
+		registerQuestion: (proposal) => {
+			order.push("question");
+			return `q-${proposal.id}`;
+		},
+		deliver: async () => {
+			order.push("delivery");
+			return { delivered: true, failures: [] };
+		},
+		setTimeout: (callback, ms) => {
+			order.push("window");
+			rt.record.timers.push({ callback, ms });
+			return rt.record.timers.length;
+		},
+	});
+	const proposal = await rt.controller.propose(request());
+
+	assert.ok(proposal, "the proposal exists");
+	// The question of the human is registered before the delivery, so the
+	// buttons exist when the proposal reaches them. The window of the
+	// decision starts only after the delivery succeeded.
+	assert.deepEqual(order, ["question", "delivery", "window"]);
+	assert.equal(rt.record.timers.length, 1);
 });
 
 test("a failed evaluation starts nothing", async () => {

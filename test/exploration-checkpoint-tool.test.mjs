@@ -101,3 +101,126 @@ test("the tool authorises nothing", () => {
 	assert.ok(!text.includes("npm publish"));
 	assert.ok(!text.includes("bd close"));
 });
+
+test("the checkpoint of a handoff carries the identifiers of the handoff", async () => {
+	// The identifiers are the evidence of the work of the handoff: the
+	// record of the checkpoint names the issue of the store, the id of
+	// the handoff and the correlation of the delivery that brought it,
+	// and the result of the tool names the same three.
+	const calls = [];
+	const tool = explorationCheckpointTool({
+		current: () => ({
+			recordCheckpoint(input) {
+				calls.push(input);
+				return true;
+			},
+		}),
+		link: () => ({
+			bdIssueId: "bd-1",
+			handoffId: "h1",
+			correlationId: "c1",
+		}),
+	});
+
+	const result = await tool.execute(
+		"call-1",
+		{ findings: [{ statement: "a finding" }] },
+		undefined,
+		undefined,
+		undefined,
+	);
+
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].bdIssueId, "bd-1");
+	assert.equal(calls[0].handoffId, "h1");
+	assert.equal(calls[0].correlationId, "c1");
+	assert.equal(result.details.bdIssueId, "bd-1");
+	assert.equal(result.details.handoffId, "h1");
+	assert.equal(result.details.correlationId, "c1");
+	assert.equal(result.details.recorded, true);
+});
+
+test("the callback of the handoff may be asynchronous", async () => {
+	// The todos of the request are read from the list of the session, and
+	// the list is read asynchronously: the callback may answer with a
+	// promise, and the identifiers are the ones of the answer.
+	const calls = [];
+	const tool = explorationCheckpointTool({
+		current: () => ({
+			recordCheckpoint(input) {
+				calls.push(input);
+				return true;
+			},
+		}),
+		link: async () => ({ bdIssueId: "bd-2", handoffId: "h2" }),
+	});
+
+	await tool.execute(
+		"call-1",
+		{ findings: [{ statement: "a finding" }] },
+		undefined,
+		undefined,
+		undefined,
+	);
+
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].bdIssueId, "bd-2");
+	assert.equal(calls[0].handoffId, "h2");
+	assert.equal(calls[0].correlationId, undefined);
+});
+
+test("a request that works on no handoff names no identifier", async () => {
+	// The identifiers of a checkpoint are evidence. A request that works
+	// on no handoff carries none, and the record of the checkpoint says
+	// so instead of naming the issue of another request.
+	const calls = [];
+	const tool = explorationCheckpointTool({
+		current: () => ({
+			recordCheckpoint(input) {
+				calls.push(input);
+				return true;
+			},
+		}),
+		link: () => null,
+	});
+
+	const result = await tool.execute(
+		"call-1",
+		{ findings: [{ statement: "a finding" }] },
+		undefined,
+		undefined,
+		undefined,
+	);
+
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].bdIssueId, undefined);
+	assert.equal(calls[0].handoffId, undefined);
+	assert.equal(calls[0].correlationId, undefined);
+	assert.equal(result.details.bdIssueId, undefined);
+	assert.equal(result.details.handoffId, undefined);
+	assert.equal(result.details.correlationId, undefined);
+	assert.equal(result.details.recorded, true);
+});
+
+test("a tool without a callback of a handoff carries no identifier", async () => {
+	const calls = [];
+	const tool = explorationCheckpointTool({
+		current: () => ({
+			recordCheckpoint(input) {
+				calls.push(input);
+				return true;
+			},
+		}),
+	});
+
+	await tool.execute(
+		"call-1",
+		{ findings: [{ statement: "a finding" }] },
+		undefined,
+		undefined,
+		undefined,
+	);
+
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].bdIssueId, undefined);
+});

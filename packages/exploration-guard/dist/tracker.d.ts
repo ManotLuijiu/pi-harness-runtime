@@ -94,6 +94,12 @@ export declare class ExplorationTracker {
      * remembered as it was, not as the largest one ever seen: a request
      * that answered a budget warning with a checkpoint may run into a soft
      * warning again, and that warning has to be heard too.
+     *
+     * The memory of the guard is merged into the state that is current now,
+     * never into the snapshot the caller holds. The delivery of a warning
+     * takes time, and the request keeps moving while it does: a snapshot
+     * that was written back would undo the reads and the checkpoint of the
+     * agent that happened in the meantime.
      */
     markSpoken(state: ExplorationState, severity: number): void;
     /**

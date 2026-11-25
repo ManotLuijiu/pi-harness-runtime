@@ -191,8 +191,8 @@ export { TypeSafeJudge, detectProvider, providerForBaseUrl } from "./typesafe-pr
 export type { TypeSafeConfig } from "./typesafe-provider.js";
 export { buildChoiceCriteria, buildScoreScale, scorePositionToProbability, scorePositionToValue, validateQuestion, MAX_SCORE_LEVELS, } from "./typesafe-request.js";
 export type { ScoreScale, TypeSafeChoiceCriteria } from "./typesafe-request.js";
-export { TodoContinuationController, createTodoContinuation } from "./continuation-controller.js";
-export type { ContinuationConfig, ContinuationState, ContinuationResult } from "./continuation-controller.js";
+export { TodoContinuationController, createTodoContinuation, ADVISORY_SOURCE_EXPLORATION_GUARD, ADVISORY_SOURCE_BD_HANDOFF, } from "./continuation-controller.js";
+export type { ContinuationConfig, ContinuationState, ContinuationResult, AdvisoryMeta, } from "./continuation-controller.js";
 export { createTodoProvider } from "./todo-provider.js";
 export type { TodoProvider, TodoAvailability, TodoItem, TodoStatus, TodoSnapshot, TodoContext } from "./todo-provider.js";
 export { TODO_RECONCILIATION_REMINDER, todoReconciliationItems, buildTodoReconciliationBlock, } from "./todo-reconciliation.js";

@@ -13,19 +13,28 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createPendingQuestionController } from "../packages/notification/dist/index.js";
 import { DelegationStore } from "../harness/delegation-store.ts";
 import { ApprovalDecisionStore } from "../harness/approval-decision-store.ts";
 import { DelegatedApprovalRuntime } from "../harness/delegated-approval-runtime.ts";
-import { operationKindFor } from "../harness/delegated-approval-types.ts";
+import {
+	operationKindFor,
+	operationKindsFor,
+	questionScope,
+} from "../harness/delegated-approval-types.ts";
+import { extractQuestionAction } from "../packages/jev-judge/dist/index.js";
 
 const WORKSPACE = "/home/frappe/project";
 const QUESTION_TEXT =
 	"May I create and push these two commits in /home/frappe/project?";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const indexSource = readFileSync(join(here, "..", "index.ts"), "utf8");
 
 /** A temporary directory for a fixture. */
 function temporary() {
@@ -74,9 +83,10 @@ function makeHarness(dir, overrides = {}) {
 	 * and open the window of the answer.
 	 */
 	const ask = async () => {
+		const kinds = operationKindsFor(QUESTION_TEXT);
 		const kind = operationKindFor(QUESTION_TEXT);
 		assert.equal(kind, "commit-and-push");
-		const delegation = runtime.delegationFor({ kind, workspace: WORKSPACE });
+		const delegation = runtime.delegationFor({ kinds, workspace: WORKSPACE });
 		if (!delegation) return { kind, delegation: undefined, questionId: undefined };
 		const question = controller.createQuestion({
 			text: QUESTION_TEXT,
@@ -95,6 +105,7 @@ function makeHarness(dir, overrides = {}) {
 				sessionId: "session-1",
 				generation: 1,
 				kind,
+				kinds,
 				operation: QUESTION_TEXT,
 				blocked: [QUESTION_TEXT],
 				deadlineAt: now + 50,
@@ -128,6 +139,27 @@ test("the question of a delegated operation names the kind", () => {
 	// An unknown operation is covered by nothing.
 	assert.equal(operationKindFor("May I read the file?"), undefined);
 	assert.equal(operationKindFor(undefined), undefined);
+});
+
+test("a compound ask names every operation it proposes", () => {
+	// The phrase of the speaker does not swallow the operation that came
+	// with it: "my changes" is a phrase, "and push" is a second operation.
+	assert.deepEqual(operationKindsFor("May I commit my changes and push?"), [
+		"commit",
+		"push",
+	]);
+	assert.deepEqual(operationKindsFor("May I commit and push?"), [
+		"commit",
+		"push",
+	]);
+	assert.deepEqual(operationKindsFor("May I commit and deploy?"), [
+		"commit",
+		"deploy",
+	]);
+	// A mention of the past names no operation.
+	assert.deepEqual(operationKindsFor("May I check the service I deployed yesterday?"), []);
+	// A denial names no operation.
+	assert.deepEqual(operationKindsFor("May I not commit the change?"), []);
 });
 
 test("without a delegation the question asks nothing", async () => {
@@ -316,4 +348,173 @@ test("the countdown of the question and the deadline of the delegation are one m
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("a delegation for a commit does not cover a request that also pushes", async () => {
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		// The user delegated a commit. The question asks for a commit and a
+		// push, so the delegation does not cover it.
+		harness.delegations.record({
+			id: "d-commit",
+			workspace: WORKSPACE,
+			kinds: ["commit"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const kinds = operationKindsFor(QUESTION_TEXT);
+		// The order is the order of the words: "push" comes before
+		// "commits" in the question.
+		assert.deepEqual(kinds, ["push", "commit"]);
+		const delegation = harness.runtime.delegationFor({ kinds, workspace: WORKSPACE });
+		assert.equal(delegation, undefined);
+
+		// The question asks nothing: without a delegation that covers every
+		// operation, the deadline cannot continue the work.
+		const result = await harness.ask();
+		assert.equal(result.delegation, undefined);
+		assert.equal(result.questionId, undefined);
+		assert.equal(harness.runtime.pending().length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a delegation of the push alone does not cover the request", async () => {
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		// The user delegated the push alone. The question asks for a commit
+		// and a push, so the delegation does not cover it. The kinds of the
+		// question start with the push, so a check of the first kind alone
+		// would let the delegation through: every kind of the request has
+		// to be covered.
+		harness.delegations.record({
+			id: "d-push",
+			workspace: WORKSPACE,
+			kinds: ["push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const kinds = operationKindsFor(QUESTION_TEXT);
+		assert.deepEqual(kinds, ["push", "commit"]);
+		const delegation = harness.runtime.delegationFor({
+			kinds,
+			workspace: WORKSPACE,
+		});
+		assert.equal(delegation, undefined);
+
+		// And the runtime decides nothing at the deadline.
+		const result = await harness.ask();
+		assert.equal(result.delegation, undefined);
+		assert.equal(result.questionId, undefined);
+		assert.equal(harness.runtime.pending().length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a delegation of the commit and the push covers the request", async () => {
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		harness.delegations.record({
+			id: "d-both",
+			workspace: WORKSPACE,
+			kinds: ["commit", "push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const result = await harness.ask();
+		assert.ok(result.delegation);
+		assert.equal(result.delegation.id, "d-both");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a delegation of the commit and the push does not cover a deploy", async () => {
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		harness.delegations.record({
+			id: "d-both",
+			workspace: WORKSPACE,
+			kinds: ["commit-and-push"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const kinds = operationKindsFor("May I commit the change and deploy it?");
+		assert.deepEqual(kinds, ["commit", "deploy"]);
+		const delegation = harness.runtime.delegationFor({ kinds, workspace: WORKSPACE });
+		assert.equal(delegation, undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a proposal in a second sentence is part of the scope", () => {
+	// The question proposes two operations in two sentences: the push is
+	// the intent of the speaker ("I will push"), not a fact about the
+	// past.
+	const kinds = operationKindsFor(
+		"May I commit the change? Then I will push to origin.",
+	);
+	assert.deepEqual(kinds, ["commit", "push"]);
+
+	// A delegation of the commit alone does not cover the question.
+	const dir = temporary();
+	try {
+		const harness = makeHarness(dir);
+		harness.delegations.record({
+			id: "d-commit",
+			workspace: WORKSPACE,
+			kinds: ["commit"],
+			defaultOutcome: "continue",
+			recordedAt: 500,
+		});
+		const delegation = harness.runtime.delegationFor({
+			kinds,
+			workspace: WORKSPACE,
+		});
+		assert.equal(delegation, undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the scope of a long question is read from the complete question", () => {
+	// The action of the question is shortened for the display: the push
+	// lies behind the bound of the display.
+	const filler = Array.from({ length: 40 }, () => "I will run the tests.").join(" ");
+	const question = `May I commit the change? ${filler} Then I will push to origin.`;
+	const action = extractQuestionAction(question);
+	assert.ok(action !== undefined);
+	assert.ok(action.length <= 600);
+	assert.ok(action.length < question.length);
+
+	// The shortened text names the commit alone.
+	assert.deepEqual(operationKindsFor(action), ["commit"]);
+	// The scope of the question names both.
+	assert.deepEqual(questionScope(question), ["commit", "push"]);
+});
+
+test("the wiring reads the scope from the complete question", () => {
+	// The scope of a delegation is read from the question itself: the
+	// action that is extracted is shortened for the display, and the
+	// shortened text would hide the operations behind the bound.
+	const at = indexSource.indexOf("const delegatedKinds = questionScope(");
+	assert.ok(at !== -1, "the scope of the question is read");
+	const region = indexSource.slice(Math.max(0, at - 1_200), at + 400);
+	assert.match(
+		region,
+		/const delegatedOperation = result\.questionText \?\? "";/,
+		"the scope is the complete question",
+	);
+	assert.doesNotMatch(
+		region,
+		/questionAction \?\? result\.questionText/,
+		"the shortened action never decides the scope",
+	);
 });

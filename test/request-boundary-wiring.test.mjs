@@ -38,8 +38,14 @@ test("the scope of a request is begun in one place only", () => {
 	);
 	assert.match(
 		indexSource,
-		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);[\s\S]{0,400}?\n\}/,
+		/function beginHumanRequest\(\): void \{\n\trequestScopeTracker\.begin\(\);[\s\S]{0,1400}?\n\}/,
 		"the helper begins the scope of the request",
+	);
+	// The row of the footer follows the request: it is reset with it.
+	assert.match(
+		indexSource,
+		/function beginHumanRequest\(\): void \{[\s\S]{0,1400}?taskTracking\.reset\(\)/,
+		"the helper resets the row of the task list",
 	);
 });
 
@@ -95,7 +101,7 @@ test("the decision of the human on a proposal begins a request", () => {
 	// The human answered a proposal of the harness, and the harness asks
 	// the agent to carry it out. The answer of the human reaches Pi as a
 	// message of the harness, so the boundary has to be here.
-	const region = around("mod.buildToolingImplementationPrompt(context, workspaceRoot)", 400);
+	const region = around("mod.buildToolingImplementationPrompt(", 400);
 	assert.ok(region, "the proposal of the tooling is carried out");
 	assert.match(region, /beginHumanRequest\(\)/, "the decision begins a request");
 	assert.ok(

@@ -287,12 +287,12 @@ test("the abort of the user is read from the signal of the run", () => {
 	);
 	assert.match(
 		indexSource,
-		/m\.stopReason === "aborted" \|\| ctx\.signal\?\.aborted === true/,
+		/classifyRunStop\(\{[\s\S]{0,300}?signalAborted: ctx\.signal\?\.aborted === true/,
 		"an aborted turn is a decision of the user, not a failure",
 	);
 	assert.match(
 		indexSource,
-		/m\.stopReason === "aborted"[\s\S]{0,300}?providerRecoveryRuntime\?\.cancel\(\)/,
+		/if \(stop === "human"\) \{[\s\S]{0,400}?providerRecoveryRuntime\?\.cancel\(\)/,
 		"an aborted turn clears the candidate of the recovery",
 	);
 });

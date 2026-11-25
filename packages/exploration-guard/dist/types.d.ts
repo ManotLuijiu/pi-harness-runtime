@@ -129,6 +129,18 @@ export interface ExplorationCheckpoint {
     nextAction?: string;
     /** The revision of the checkpoint, bumped by the agent. */
     revision: number;
+    /**
+     * The issue of the store that the work belongs to.
+     *
+     * The identifiers are evidence, not identity: they say which handoff
+     * the checkpoint belongs to, and they never take part in the identity
+     * of the request.
+     */
+    bdIssueId?: string;
+    /** The handoff that the work belongs to. */
+    handoffId?: string;
+    /** The correlation of the request the work belongs to. */
+    correlationId?: string;
 }
 /**
  * The reason a repeated read was allowed.
