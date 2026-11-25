@@ -173,7 +173,7 @@ echo "<the reader token>" > ~/.pi-harness-runtime/keys/omnigraph-skills-token.tx
 | `OMNIGRAPH_CACHE_BUDGET_BYTES` | How many bytes the cache may hold | `67108864` |
 | `OMNIGRAPH_MAX_ADVERTISED_SKILLS` | How many skills are advertised to pi | `500` |
 | `OMNIGRAPH_SKILL_REPO_PATH` | A checkout of the skills, to read the files of a skill | unset |
-| `OMNIGRAPH_APPROVED_REVISION` | The one revision that is accepted | unset |
+| `OMNIGRAPH_APPROVED_REVISION` | The one revision that is accepted: nothing of another revision is advertised, loaded or reused | unset |
 
 Without an explicit `OMNIGRAPH_SOURCE_MODE`, the skill service of the
 harness keeps the place when it is configured: a graph that is configured
@@ -224,7 +224,7 @@ tools:
 | State | What it means |
 | --- | --- |
 | `ready` | the graph answered and the catalog was verified |
-| `not ready` - refused | the graph refused the credential: no cached catalog is served in its place |
+| `not ready` - refused | the graph refused the credential: no cached catalog is served in its place, and no skill of the graph is advertised to pi |
 | `not ready` - unreachable | the graph could not be reached: the catalog of the last verified read of the same source is used, and the body is checked against its hash again |
 | `ready`, empty | the graph answered and holds no skill |
 
@@ -232,6 +232,12 @@ The limits are enforced, not only reported: the size of an answer is
 counted while it arrives, the cache refuses a write that does not fit its
 budget, and only the advertised subset of the catalog is written as stubs
 (the whole catalog stays searchable).
+
+The budget of the cache is the budget of the whole cache: the instructions
+of a skill, the catalog, the stubs and the supporting files are counted
+together, and a write that does not fit is refused. A write that replaces
+a file counts only what it adds, so a body that is read again does not
+grow the cache twice.
 
 ### The files of a skill
 
@@ -251,6 +257,11 @@ instruction-only**: the instructions of a skill load, and its files do not.
   with a path, a size and a hash.
 - It never serves the catalog of another source, and a refused graph never
   falls back to a catalog.
+- It never advertises a skill of the graph whose credential was refused:
+  the stubs of the last verified read are removed and the discovery of pi
+  gets nothing.
+- It never loads, advertises or reuses a skill of another revision than
+  the approved one.
 - It never follows a link out of its cache.
 
 ## Example Session

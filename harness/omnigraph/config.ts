@@ -56,6 +56,15 @@ export interface OmnigraphConfig {
 	cacheBudgetBytes: number;
 	/** How many catalog stubs are advertised, at most. */
 	maxAdvertisedSkills: number;
+	/**
+	 * The revision of the publication that is approved.
+	 *
+	 * When it is set, only the skills of that revision may be
+	 * advertised, loaded and read. The value is the approval of the
+	 * operator, so it is resolved once and then enforced on every
+	 * path.
+	 */
+	approvedRevision?: string;
 }
 
 /** The environment the configuration is read from. */
@@ -178,6 +187,9 @@ export function readOmnigraphConfig(
 		maxAdvertisedSkills:
 			options.maxAdvertisedSkills ??
 			numberOf(env.OMNIGRAPH_MAX_ADVERTISED_SKILLS, 500),
+		// The approval of the operator. It is read here, once, so
+		// that every path of the source enforces the same revision.
+		approvedRevision: publication,
 	};
 }
 

@@ -30,6 +30,8 @@ import type {
 
 import {
 	clearCache,
+	clearCatalog,
+	clearStubs,
 	isPublicationHash,
 	makeRoomInCache,
 	readCachedSkill,
@@ -146,6 +148,8 @@ interface OmnigraphContext {
 	config: OmnigraphConfig;
 	/** The source of the skills of the graph. */
 	source: OmnigraphSkillSource;
+	/** The revision of the publication that is approved. */
+	approvedRevision?: string;
 	/** The mechanism that reads the supporting files. */
 	fetcher?: OmnigraphResourceFetcher;
 	/** The function that writes a line of the report. */
@@ -173,6 +177,10 @@ export function registerOmnigraphSkills(
 ): OmnigraphRegistration {
 	const { config, source } = options;
 	const log = options.log ?? (() => {});
+	// The approval of the operator. It bounds the catalog that is
+	// advertised and the bodies that are reused, not only the records
+	// that are read.
+	const approvedRevision = options.approvedRevision?.trim() || undefined;
 
 	/** The state of the catalog. */
 	let report: OmnigraphCatalogReport = { state: "unknown", count: 0 };
@@ -186,10 +194,21 @@ export function registerOmnigraphSkills(
 	 * starts while the graph is down still finds the skills it knows.
 	 */
 	const hydrateStubs = (): CachedCatalogEntry[] => {
-		const cached = readCatalog(config.cacheDir);
-		if (!cached.length) return cached;
+		const cached = approvedEntries(
+			readCatalog(config.cacheDir),
+			approvedRevision,
+		);
+		if (!readCatalog(config.cacheDir).length) return cached;
 		try {
-			writeStubs(config.cacheDir, cached, config.maxAdvertisedSkills);
+			// The stubs that the approval does not allow are removed
+			// as well: the tree of the discovery holds the approved
+			// skills only.
+			writeStubs(
+				config.cacheDir,
+				cached,
+				config.maxAdvertisedSkills,
+				config.cacheBudgetBytes,
+			);
 		} catch (error) {
 			log(
 				`[pi-harness] The stubs of the graph could not be written: ${messageOf(error)}`,
@@ -210,15 +229,32 @@ export function registerOmnigraphSkills(
 	const readCatalogState = async (): Promise<OmnigraphCatalogReport> => {
 		try {
 			const entries = await source.catalog();
-			const cached: CachedCatalogEntry[] = entries.map((entry) => ({
-				id: entry.id,
-				name: entry.name,
-				description: entry.description,
-				revision: entry.revision,
-				sha256: entry.sha256,
-			}));
-			writeCatalog(config.cacheDir, cached);
-			writeStubs(config.cacheDir, cached, config.maxAdvertisedSkills);
+			const cached: CachedCatalogEntry[] = approvedEntries(
+				entries.map((entry) => ({
+					id: entry.id,
+					name: entry.name,
+					description: entry.description,
+					revision: entry.revision,
+					sha256: entry.sha256,
+				})),
+				approvedRevision,
+			);
+			try {
+				writeCatalog(config.cacheDir, cached, config.cacheBudgetBytes);
+				writeStubs(
+					config.cacheDir,
+					cached,
+					config.maxAdvertisedSkills,
+					config.cacheBudgetBytes,
+				);
+			} catch (writeError) {
+				// The budget of the cache is not an outage of the graph:
+				// the catalog was read, and it is simply too large for
+				// the cache of this machine.
+				log(
+					`[pi-harness] The catalog of the graph does not fit the cache: ${messageOf(writeError)}`,
+				);
+			}
 			report = {
 				state: cached.length ? "ok" : "empty",
 				count: cached.length,
@@ -227,6 +263,11 @@ export function registerOmnigraphSkills(
 			const reason = messageOf(error);
 			const denied = error instanceof OmnigraphError && error.code === "denied";
 			if (denied) {
+				// The credential was refused: the names and the
+				// descriptions of the skills of the graph are not
+				// advertised any more, and they are not kept.
+				clearStubs(config.cacheDir);
+				clearCatalog(config.cacheDir);
 				report = { state: "denied", count: 0, error: reason };
 				log(`[pi-harness] The graph refused the read: ${reason}`);
 			} else {
@@ -274,6 +315,7 @@ export function registerOmnigraphSkills(
 		},
 	};
 	if (options.fetcher) context.fetcher = options.fetcher;
+	if (approvedRevision) context.approvedRevision = approvedRevision;
 
 	pi.on("resources_discover", discoveryHandler(context));
 	pi.registerTool(searchTool(context));
@@ -292,22 +334,28 @@ export function registerOmnigraphSkills(
  * read of the catalog is awaited with a bound: pi discovers the skills
  * of the graph without a second reload, and the startup does not wait
  * longer than the timeout of the catalog.
+ *
+ * A source that refuses the credential advertises nothing. The stubs of
+ * the last verified read hold the names and the descriptions of the
+ * skills of the graph, and a credential that was refused may not hand
+ * them to the discovery of the machine.
  */
 function discoveryHandler(context: OmnigraphContext) {
 	return async () => {
-		if (!readCatalog(context.config.cacheDir).length) {
-			await Promise.race([
-				context.catalog(),
-				new Promise((resolve) => {
-					const timer = setTimeout(
-						resolve,
-						context.config.catalogTimeoutMs,
-					);
-					timer.unref?.();
-				}),
-			]);
-		} else {
-			void context.catalog();
+		await Promise.race([
+			context.catalog(),
+			new Promise((resolve) => {
+				const timer = setTimeout(
+					resolve,
+					context.config.catalogTimeoutMs,
+				);
+				timer.unref?.();
+			}),
+		]);
+		if (context.report().state === "denied") {
+			// The refusal is not an outage: the tree of the stubs is
+			// empty, and it is not advertised.
+			return { skillPaths: [] };
 		}
 		// The stubs are the only thing that is advertised. The hydrated
 		// skills live in another tree, so pi never discovers two skills
@@ -502,7 +550,10 @@ async function loadSkill(
 	// The expectation binds the request to the publication: the record of
 	// another revision or another hash is refused, even when it is a
 	// valid one.
-	const known = readCatalog(config.cacheDir).find((entry) => entry.id === id);
+	const known = approvedEntries(
+		readCatalog(config.cacheDir),
+		context.approvedRevision,
+	).find((entry) => entry.id === id);
 	const expectation: OmnigraphPublicationExpectation = {};
 	if (revision) expectation.revision = revision;
 	if (known?.sha256) expectation.sha256 = known.sha256;
@@ -513,7 +564,13 @@ async function loadSkill(
 		if (!(error instanceof OmnigraphError) || error.code !== "unavailable") {
 			throw error;
 		}
-		const offline = offlineBody(config.cacheDir, id, revision, known);
+		const offline = offlineBody(
+			config.cacheDir,
+			id,
+			revision,
+			known,
+			context.approvedRevision,
+		);
 		if (!offline) throw error;
 		return offlineAnswer(offline, known, error.message);
 	}
@@ -532,7 +589,12 @@ async function loadSkill(
 		revision: record.revision,
 		sha256: record.sha256,
 	};
-	const directory = writeCachedSkill(config.cacheDir, entry, record.instructions);
+	const directory = writeCachedSkill(
+		config.cacheDir,
+		entry,
+		record.instructions,
+		config.cacheBudgetBytes,
+	);
 	const manifest = parseResourceManifest(record.resourcesJson);
 	const unsupported = manifest.resources.filter(
 		(resource) => resource.state === "unsupported",
@@ -791,6 +853,21 @@ function searchEntries(
 }
 
 /**
+ * The entries of the catalog that the approval allows.
+ *
+ * A skill of another revision is not advertised, and a skill without a
+ * revision is not advertised either: it cannot be approved. Without an
+ * approval every entry of the catalog is allowed.
+ */
+function approvedEntries(
+	entries: CachedCatalogEntry[],
+	approvedRevision?: string,
+): CachedCatalogEntry[] {
+	if (!approvedRevision) return entries;
+	return entries.filter((entry) => entry.revision === approvedRevision);
+}
+
+/**
  * The body of the last verified read, for a graph that cannot be
  * reached.
  *
@@ -803,9 +880,13 @@ function offlineBody(
 	id: string,
 	revision: string | undefined,
 	known: CachedCatalogEntry | undefined,
+	approvedRevision?: string,
 ): { body: string; revision: string } | null {
 	if (!known || !known.revision) return null;
 	if (revision && revision !== known.revision) return null;
+	// The approval of the operator bounds the reuse of a body: a body
+	// of another revision is not served, even when its hash is good.
+	if (approvedRevision && known.revision !== approvedRevision) return null;
 	if (!isPublicationHash(known.sha256)) return null;
 	const body = readCachedSkill(cacheDir, id, known.revision);
 	if (!body) return null;
