@@ -36,16 +36,23 @@ export type OmnigraphFailure = "denied" | "unavailable" | "invalid";
 /** The error a failed read raises. */
 export class OmnigraphError extends Error {
 	/**
+	 * Why the read failed.
+	 *
+	 * The field is declared and assigned in the body of the constructor:
+	 * a parameter property is TypeScript that node cannot strip, and the
+	 * node suite reads these modules as they are.
+	 */
+	readonly code: OmnigraphFailure;
+
+	/**
 	 * @param message The reason of the failure. Never a credential.
 	 * @param code Whether the server refused, could not be reached, or
 	 *   answered something the client cannot read.
 	 */
-	constructor(
-		message: string,
-		readonly code: OmnigraphFailure,
-	) {
+	constructor(message: string, code: OmnigraphFailure) {
 		super(message);
 		this.name = "OmnigraphError";
+		this.code = code;
 	}
 }
 
