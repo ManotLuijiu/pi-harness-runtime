@@ -161,13 +161,21 @@ export function initOmnigraphSkills(
 		return inactive();
 	}
 
+	// The approval of the operator is resolved once, here: the option of
+	// the caller wins over the environment, and the value that is found
+	// is given to every path of the source. A configured approval that
+	// is not passed on would only change the name of the cache, and the
+	// skills of another revision would still load.
+	const approvedRevision =
+		options.approvedRevision?.trim() || config.approvedRevision;
+
 	const sourceOptions: {
 		config: OmnigraphConfig;
 		approvedRevision?: string;
 		fetchImpl?: typeof fetch;
 	} = { config };
-	if (options.approvedRevision) {
-		sourceOptions.approvedRevision = options.approvedRevision;
+	if (approvedRevision) {
+		sourceOptions.approvedRevision = approvedRevision;
 	}
 	if (options.fetchImpl) sourceOptions.fetchImpl = options.fetchImpl;
 	const source = new OmnigraphSkillSource(sourceOptions);
@@ -195,6 +203,9 @@ export function initOmnigraphSkills(
 			placeRow();
 		},
 	};
+	if (approvedRevision) {
+		registrationOptions.approvedRevision = approvedRevision;
+	}
 	if (options.fetcher) registrationOptions.fetcher = options.fetcher;
 	else {
 		// The checkout of the operator is the approved way to read the

@@ -314,6 +314,59 @@ export function sha256Of(content: string | Uint8Array): string {
 }
 
 /**
+ * The bytes of a write that grow the cache.
+ *
+ * A write that replaces a file adds the difference, not the whole size:
+ * the file that is replaced is already counted in the usage of the
+ * cache.
+ */
+function growthOf(root: string, relativePath: string, size: number): number {
+	const target = join(realRootOf(root), relativePath);
+	let existing = 0;
+	try {
+		const state = lstatSync(target);
+		if (state.isFile() && !state.isSymbolicLink()) existing = state.size;
+	} catch {
+		existing = 0;
+	}
+	return Math.max(0, size - existing);
+}
+
+/**
+ * Write a file into the cache, within the budget of the cache.
+ *
+ * The budget is a boundary of the whole cache, not of one kind of file:
+ * the instructions, the catalog and the stubs are counted together with
+ * the supporting files. The decision and the write are one block of
+ * synchronous work, so two writes cannot both decide that there is
+ * room.
+ *
+ * @param root The tree of the cache.
+ * @param relativePath The path of the file inside the tree.
+ * @param content The bytes of the file.
+ * @param budget The budget of the cache, in bytes. Without one, the
+ *   write is not bounded.
+ * @param pinned The path of the version that must not be removed to
+ *   make room.
+ */
+export function writeBudgeted(
+	root: string,
+	relativePath: string,
+	content: string | Uint8Array,
+	budget?: number,
+	pinned?: string,
+): string {
+	if (budget && budget > 0) {
+		const size =
+			typeof content === "string"
+				? Buffer.byteLength(content, "utf8")
+				: content.byteLength;
+		makeRoomInCache(root, budget, growthOf(root, relativePath, size), pinned);
+	}
+	return writeFileAtomic(root, relativePath, content);
+}
+
+/**
  * Write the catalog.
  *
  * The catalog is the last verified list of the skills. It is written
@@ -323,8 +376,14 @@ export function sha256Of(content: string | Uint8Array): string {
 export function writeCatalog(
 	cacheDir: string,
 	entries: CachedCatalogEntry[],
+	budget?: number,
 ): void {
-	writeFileAtomic(cacheDir, CATALOG_FILE, `${JSON.stringify({ entries }, null, 2)}\n`);
+	writeBudgeted(
+		cacheDir,
+		CATALOG_FILE,
+		`${JSON.stringify({ entries }, null, 2)}\n`,
+		budget,
+	);
 }
 
 /**
@@ -483,13 +542,15 @@ export function writeStub(
 	cacheDir: string,
 	entry: CachedCatalogEntry,
 	name?: string,
+	budget?: number,
 ): string {
 	// The tree of the cache is the boundary of the write: a stub tree
 	// that is a link cannot become the way out of the cache.
-	const target = writeFileAtomic(
+	const target = writeBudgeted(
 		cacheDir,
 		`${STUB_DIR}/${safeSegment(entry.id)}/SKILL.md`,
 		stubSkillMarkdown(entry, name),
+		budget,
 	);
 	return dirname(target);
 }
@@ -509,6 +570,7 @@ export function writeStubs(
 	cacheDir: string,
 	entries: CachedCatalogEntry[],
 	advertised?: number,
+	budget?: number,
 ): string[] {
 	const directory = stubRoot(cacheDir);
 	mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -521,15 +583,19 @@ export function writeStubs(
 	// The names are computed over the whole catalog, so a name does not
 	// change when the advertised subset changes.
 	const names = skillNamesOf(entries);
-	for (const entry of entries.slice(0, limit)) {
-		const segment = safeSegment(entry.id);
-		keep.add(segment);
-		written.push(writeStub(cacheDir, entry, names.get(entry.id)));
+	const advertisedEntries = entries.slice(0, limit);
+	for (const entry of advertisedEntries) {
+		keep.add(safeSegment(entry.id));
 	}
+	// The stubs that the catalog does not hold any more are removed
+	// first, so their bytes are free for the stubs that are written.
 	for (const name of readdirSync(directory)) {
 		if (!keep.has(name)) {
 			rmSync(join(directory, name), { recursive: true, force: true });
 		}
+	}
+	for (const entry of advertisedEntries) {
+		written.push(writeStub(cacheDir, entry, names.get(entry.id), budget));
 	}
 	return written;
 }
@@ -574,6 +640,7 @@ export function writeCachedSkill(
 	cacheDir: string,
 	entry: CachedCatalogEntry,
 	instructions: string,
+	budget?: number,
 ): string {
 	if (!isPublicationHash(entry.sha256)) {
 		throw new CachePathError(
@@ -586,10 +653,14 @@ export function writeCachedSkill(
 			`the instructions of the skill "${entry.id}" do not match the hash of the publication`,
 		);
 	}
-	const target = writeFileAtomic(
+	const target = writeBudgeted(
 		cacheDir,
 		`${SKILL_DIR}/${safeSegment(entry.id)}/${safeSegment(entry.revision)}/SKILL.md`,
 		instructions,
+		budget,
+		// The version that is written is pinned: the room is made with
+		// the other versions, never with this one.
+		skillVersionDir(cacheDir, entry.id, entry.revision),
 	);
 	return dirname(target);
 }
@@ -750,6 +821,26 @@ export function makeRoomInCache(
 			`the cache of the graph holds ${usage} bytes and its budget is ${budget} bytes: the write of ${incoming} bytes does not fit`,
 		);
 	}
+}
+
+/**
+ * Remove the stubs of the source.
+ *
+ * Only the tree of the discovery is removed: the skills of the machine
+ * are not touched, and the hydrated bodies of the source stay.
+ */
+export function clearStubs(cacheDir: string): void {
+	rmSync(stubRoot(cacheDir), { recursive: true, force: true });
+}
+
+/**
+ * Remove the catalog of the source.
+ *
+ * The catalog holds the names and the descriptions of the skills of the
+ * graph. A source that refuses the credential does not keep them.
+ */
+export function clearCatalog(cacheDir: string): void {
+	rmSync(join(cacheDir, CATALOG_FILE), { force: true });
 }
 
 /**

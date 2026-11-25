@@ -122,6 +122,16 @@ export class OmnigraphSkillSource implements RemoteSkillSource {
 		for (const row of result.rows) {
 			const entry = catalogEntryOf(row, result.columns);
 			if (!entry) continue;
+			// The approval of the operator bounds the catalog: a skill
+			// of another revision is not advertised, and a skill
+			// without a revision is not advertised either, because it
+			// cannot be approved.
+			if (
+				this.approvedRevision &&
+				entry.revision !== this.approvedRevision
+			) {
+				continue;
+			}
 			entries.push(entry);
 		}
 		return entries;

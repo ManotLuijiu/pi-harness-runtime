@@ -171,6 +171,16 @@ serves no skill at all, and the agent must not fall back to a catalog of
 another source. A graph that cannot be reached serves the catalog of the
 last verified read of the same source, and the answer says so.
 
+A refused graph advertises nothing either: its stubs are removed, so the
+names and the descriptions of its skills are not handed to the discovery of
+the machine. A machine whose credential was revoked keeps no skill of that
+graph in view.
+
+When the operator approves one revision of the publication
+(`OMNIGRAPH_APPROVED_REVISION`), only that revision is advertised, loaded
+and reused. A skill of another revision is refused, and the refusal says
+which revision was approved.
+
 The graph is read-only for the runtime: the agent never writes a skill,
 never publishes one, and never changes the schema of the graph. The
 credential of the reader is not the credential of the publisher.
