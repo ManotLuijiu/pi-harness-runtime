@@ -29,19 +29,66 @@ runs `npm install @pi-harness/<anything>`.
 
 ## Version Management
 
+### The Rule of the Release (CRITICAL)
+
+**Commit, push and release to `develop`. GitHub does the rest.**
+
+The work of the agent ends on `develop`. The agent never opens a pull
+request by hand, never merges one, never creates a tag and never
+publishes to npm.
+
+```bash
+# 1. the change, with its message
+git add -A && git commit -m "fix(scope): what the change repairs"
+
+# 2. the branch of the work
+git push origin develop
+
+# 3. the version of the release, prepared and pushed on develop
+bun scripts/release-all.ts --release-as patch
+
+# 4. the workflow opens the pull request into main with its own token
+gh workflow run auto-merge.yml --ref develop -f open_release_pr=true
+
+# 5. the workflow merges the pull request when the gates are green
+
+# 6. the tag, on the commit that is on main
+bun scripts/release-all.ts --tag
+
+# 7. the tag publishes the package to npm through OIDC
+```
+
+**What the agent never does:**
+
+- it never runs `npm publish` (the publication belongs to the workflow),
+- it never merges a pull request by hand,
+- it never creates a tag on a commit that is not on `main`,
+- it never opens a pull request with its own token: the token of the
+  agent may not create one (`GraphQL: Resource not accessible by personal
+  access token (createPullRequest)`), and that is not a problem - the
+  workflow of the repository opens and merges it with its own token.
+
+**The gates of the merge** are the checks of the head commit of the pull
+request: `Tests` and `No sensitive terms`. A pull request run of the CI
+that fails before a job starts reports no check run at all; that failure
+is on the side of GitHub and it does not hold the release, because the
+push run of the same commit is green.
+
 ### NPM Publishing via GitHub Actions + OIDC
 
-**GitHub Actions automatically publishes to npm when you push to `develop` branch.**
+**The tag publishes the package to npm.** The publication uses **OpenID
+Connect (OIDC)**, so no npm token is stored in GitHub secrets, and each
+package is configured at: npmjs.com → Package → Settings → Trusted
+Publisher
 
-- Uses **OpenID Connect (OIDC)** for secure npm authentication
-- No npm token stored in GitHub secrets
-- Each package is configured at: npmjs.com → Package → Settings → Trusted Publisher
-
-After every `git push` to `develop`:
-1. GitHub Actions detects the push
+The tag on `main` starts the workflow:
+1. GitHub Actions detects the tag
 2. Authenticates to npm via OIDC
 3. Runs build and tests
-4. Publishes to npm automatically
+4. Publishes to npm with a signed provenance statement
+
+A push to `develop` alone publishes nothing: it runs the checks of the
+branch. The publication belongs to the tag.
 
 You do NOT need to manually run `npm publish` or manage tokens.
 
