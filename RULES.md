@@ -76,6 +76,16 @@ push run of the same commit is green.
 
 ### NPM Publishing via GitHub Actions + OIDC
 
+Dependency updates have a separate gate: `dependency-merge.yml` can merge
+verified Dependabot minor/patch updates into `develop` after `Tests` and
+`No sensitive terms` pass on the exact head. It reads only trusted policy
+code and verified metadata. Major upgrades and Pi runtime migrations stay
+under explicit review. The release merger still targets only `main`.
+Automatic releases must be authored by GitHub Actions or the release App
+whose identity is authenticated with this repository's configured App
+credentials. Human authors, unrelated Apps and external source repositories
+are never eligible for automatic merging.
+
 **The tag publishes the package to npm.** The publication uses **OpenID
 Connect (OIDC)**, so no npm token is stored in GitHub secrets, and each
 package is configured at: npmjs.com → Package → Settings → Trusted

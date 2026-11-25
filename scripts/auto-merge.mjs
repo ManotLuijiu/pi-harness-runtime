@@ -49,9 +49,9 @@ export const REQUIRED_CHECKS = [SENSITIVE_TERMS_CHECK, CI_CHECK];
  * The release branch is `main`, and `main` is the branch that npm
  * publishes. A change reaches it from `develop` through the merge gate,
  * so the merge gate is what moves a reviewed change from `develop` into
- * `main`. A pull request into `develop` is merged by a human: the
- * working branch is where the work happens, and a change there is
- * reviewed by the person who wrote it.
+ * `main`. Verified dependency updates into `develop` have a separate
+ * policy in merge-dependency-pr.mjs. This release merger never broadens
+ * its target to ordinary development or dependency pull requests.
  */
 export const MERGE_TARGETS = ["main"];
 
@@ -64,7 +64,7 @@ export const MERGE_TARGETS = ["main"];
  * @param {{evaluation: ReturnType<typeof evaluateChecks>,
  *   pullRequest: Record<string, any> | null, repository: string}} options
  */
-export function decideAutoMerge({ evaluation, pullRequest, repository }) {
+export function decideAutoMerge({ evaluation, pullRequest, repository, releaseBotLogin }) {
 	if (!pullRequest) {
 		return { action: "skip", reasons: ["the pull request could not be read"] };
 	}
@@ -88,7 +88,7 @@ export function decideAutoMerge({ evaluation, pullRequest, repository }) {
 		};
 	}
 	const head = pullRequest.head && pullRequest.head.repo;
-	if (head && head.full_name && head.full_name !== repository) {
+	if (head?.full_name !== repository) {
 		// A change from another repository is merged by a human. The
 		// gates of this repository say nothing about what a stranger
 		// wrote, and a stranger gets no auto merge.
@@ -96,6 +96,15 @@ export function decideAutoMerge({ evaluation, pullRequest, repository }) {
 			action: "skip",
 			reasons: ["the change comes from another repository"],
 		};
+	}
+	if (pullRequest.head?.ref !== "develop") {
+		return { action: "skip", reasons: ["only the develop release branch is eligible"] };
+	}
+	const author = pullRequest.user;
+	if (author?.type !== "Bot" ||
+		(author.login !== "github-actions[bot]" &&
+		 !(releaseBotLogin?.endsWith("[bot]") && author.login === releaseBotLogin))) {
+		return { action: "skip", reasons: ["only GitHub Actions or the configured release App may open an automatic release"] };
 	}
 	if (evaluation.failed.length > 0) {
 		return {
@@ -169,6 +178,8 @@ async function main() {
 	const token = process.env.GITHUB_TOKEN;
 	const repository = process.env.GITHUB_REPOSITORY;
 	const number = Number(process.env.PR_NUMBER);
+	// This identity comes from the authenticated App action, never the PR.
+	const releaseBotLogin = process.env.TRUSTED_RELEASE_BOT;
 
 	if (!token || !repository || !Number.isInteger(number)) {
 		console.error(
@@ -194,6 +205,13 @@ async function main() {
 		console.error("the pull request has no head commit.");
 		process.exit(2);
 	}
+	const eligibility = decideAutoMerge({
+		evaluation: evaluateChecks([], REQUIRED_CHECKS), pullRequest, repository, releaseBotLogin,
+	});
+	if (eligibility.action === "skip") {
+		console.log(eligibility.reasons.join("; "));
+		return;
+	}
 
 	console.log(
 		`The checks of ${headSha} are read until they have finished.`,
@@ -218,7 +236,7 @@ async function main() {
 		// can only lead to a merge that GitHub then refuses.
 	}
 
-	const decision = decideAutoMerge({ evaluation, pullRequest, repository });
+	const decision = decideAutoMerge({ evaluation, pullRequest, repository, releaseBotLogin });
 	writeSummary(buildSummary({ decision, evaluation }));
 
 	for (const reason of decision.reasons) {

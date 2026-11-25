@@ -51,8 +51,10 @@ function pullRequest(overrides = {}) {
 		state: "open",
 		draft: false,
 		merged: false,
+		user: { login: "github-actions[bot]", type: "Bot" },
 		base: { ref: "main" },
 		head: {
+			ref: "develop",
 			sha: "abc1234",
 			repo: { full_name: "ManotLuijiu/pi-harness-runtime" },
 		},
@@ -520,6 +522,33 @@ test("a green pull request is merged", () => {
 		repository: "ManotLuijiu/pi-harness-runtime",
 	});
 	assert.equal(decision.action, "merge");
+});
+
+test("release automation never merges human or unrelated third-party bot PRs", () => {
+	for (const user of [
+		{ login: "maintainer", type: "User" },
+		{ login: "outside-user", type: "User" },
+		{ login: "external-service[bot]", type: "Bot" },
+		{ login: "github-actions[bot]", type: "User" },
+	]) {
+		assert.equal(decideAutoMerge({ evaluation: evaluateChecks(greenChecks(), REQUIRED_CHECKS),
+			pullRequest: pullRequest({ user }), repository: "ManotLuijiu/pi-harness-runtime",
+			releaseBotLogin: "repository-release[bot]" }).action, "skip");
+	}
+});
+
+test("only the explicitly configured release App identity is trusted", () => {
+	const options = { evaluation: evaluateChecks(greenChecks(), REQUIRED_CHECKS),
+		pullRequest: pullRequest({ user: { login: "repository-release[bot]", type: "Bot" } }),
+		repository: "ManotLuijiu/pi-harness-runtime" };
+	assert.equal(decideAutoMerge(options).action, "skip");
+	assert.equal(decideAutoMerge({ ...options, releaseBotLogin: "repository-release[bot]" }).action, "merge");
+});
+
+test("a release with missing source repository identity never merges", () => {
+	assert.equal(decideAutoMerge({ evaluation: evaluateChecks(greenChecks(), REQUIRED_CHECKS),
+		pullRequest: pullRequest({ head: { ref: "develop", sha: "abc1234" } }),
+		repository: "ManotLuijiu/pi-harness-runtime" }).action, "skip");
 });
 
 test("a change from another repository waits for a human", () => {

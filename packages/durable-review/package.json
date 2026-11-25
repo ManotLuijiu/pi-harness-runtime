@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/durable-review",
-  "version": "1.1.529",
+  "version": "1.1.530",
   "description": "SQLite-backed durable reviewer using @earendil-works/pi-durable",
   "type": "module",
   "main": "src/index.ts",
@@ -20,12 +20,12 @@
   "author": "MooCoding",
   "license": "MIT",
   "peerDependencies": {
-    "@earendil-works/pi-durable": "^1.3.0",
+    "@earendil-works/pi-durable": "^1.6.0",
     "@earendil-works/pi-ai": "^1.3.0",
-    "@earendil-works/chord": "^1.3.0"
+    "@earendil-works/chord": "^1.6.0"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0"
+    "better-sqlite3": "^13.2.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11"

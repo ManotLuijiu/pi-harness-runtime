@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/task-compiler",
-  "version": "1.1.529",
+  "version": "1.1.530",
   "description": "Task Compiler for pi-harness-runtime — produces deterministic task DAG from CompiledRequirement",
   "type": "module",
   "main": "./dist/index.js",
@@ -38,6 +38,6 @@
     "@pi-harness/types": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0"
+    "@types/node": "^26.6.6"
   }
 }

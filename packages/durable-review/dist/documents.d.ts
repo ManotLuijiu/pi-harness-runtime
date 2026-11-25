@@ -4,7 +4,7 @@
  * Versioned durable documents for review/job index using pi-durable's defineDoc.
  * Uses chord's JsonValue for JSON-compatible types.
  */
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 /**
  * Schema version for migration support
  */
