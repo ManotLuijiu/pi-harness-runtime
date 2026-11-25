@@ -136,6 +136,36 @@ harness-auth scrape
 # Or: bun packages/auth/src/run-minimax-auth.ts scrape
 ```
 
+### OmniGraph Commands
+
+| Command | Description |
+| --------- | ------------- |
+| `/remote-skills` | Show the state of the shared skill graph |
+| `/remote-skills search <text>` | Find the skills of the graph that fit a text |
+| `/remote-skills refresh` | Read the catalog of the graph again |
+| `/remote-skills clear-cache` | Empty the local cache of the graph |
+
+## Shared Skills (OmniGraph)
+
+When the machine is configured for the shared skill graph (OmniGraph), the
+skills of that graph are found like any other skill - pi discovers a small
+stub of every skill of the catalog.
+
+**The stub holds no instructions.** The instructions of a skill are read
+with the tool `remote_skill_load`, and the body is checked against the hash
+of the publication before it is returned. Never act on a stub, and never
+guess what a skill says.
+
+| Tool | Description |
+| --------- | ------------- |
+| `remote_skill_search` | The catalog of the graph: names, descriptions, revisions |
+| `remote_skill_load` | The complete instructions of one skill, hash-checked |
+| `remote_skill_resource` | One supporting file of a skill, hash-checked |
+
+The graph is read-only for the runtime: the agent never writes a skill,
+never publishes one, and never changes the schema of the graph. The
+credential of the reader is not the credential of the publisher.
+
 ## Job State Machine
 
 ```

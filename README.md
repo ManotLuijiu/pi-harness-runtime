@@ -139,6 +139,82 @@ bd --version
 /harness cancel               # Cancel job
 ```
 
+## OmniGraph: the Shared Skill Graph
+
+OmniGraph is a graph of shared skills. A skill that lives in the graph is
+**found** on your machine without being installed on it: the startup
+discovers the catalog of the graph, writes a tiny stub for every skill, and
+pi lists them like any other skill.
+
+The runtime only ever **reads** the graph. It never writes a skill, never
+publishes one, and never changes the schema of the graph. The credential of
+the reader is not the credential of the publisher.
+
+### Configure it
+
+```bash
+# The endpoint of the graph and the credential of the reader.
+export OMNIGRAPH_URL="https://omnigraph.example"
+export OMNIGRAPH_SKILLS_TOKEN="<the reader token>"
+
+# Or keep the credential in the key file of the machine (mode 600):
+echo "<the reader token>" > ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt
+```
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `OMNIGRAPH_URL` | The base address of the graph | unset (the source is off) |
+| `OMNIGRAPH_SKILLS_TOKEN` | The bearer credential of the reader | unset |
+| `OMNIGRAPH_GRAPH` | The graph that holds the skills | `skills` |
+| `OMNIGRAPH_SOURCE_MODE` | `omnigraph`, `saas` or `off` | decided, not guessed |
+| `OMNIGRAPH_TIMEOUT_MS` | How long one read may take | `15000` |
+| `OMNIGRAPH_CACHE_DIR` | Where the local cache lives | `~/.pi-harness-runtime/omnigraph` |
+| `OMNIGRAPH_SKILL_REPO_PATH` | A checkout of the skills, to read the files of a skill | unset |
+| `OMNIGRAPH_APPROVED_REVISION` | The one revision that is accepted | unset |
+
+Without an explicit `OMNIGRAPH_SOURCE_MODE`, the skill service of the
+harness keeps the place when it is configured: a graph that is configured
+next to it does not silently take the place of the service. Set
+`OMNIGRAPH_SOURCE_MODE=omnigraph` to make the graph the source.
+
+### Use it
+
+The startup summary names the graph next to the other services:
+
+```text
+Qdrant       ready (connection verified)
+Omnigraph    ready (https://omnigraph.example)
+Honcho       ready
+```
+
+```bash
+/remote-skills            # the state of the source
+/remote-skills search pdf # the skills that fit a text
+/remote-skills refresh    # read the catalog again
+/remote-skills clear-cache
+```
+
+The agent has three tools:
+
+- `remote_skill_search` - the catalog of the graph (names, descriptions,
+  revisions),
+- `remote_skill_load` - the complete instructions of one skill; the body is
+  checked against the hash of the publication before it is returned,
+- `remote_skill_resource` - one supporting file of a skill, checked against
+  the hash of the publication.
+
+A skill of the graph is also found the native way, with `/skill:<name>`:
+the stub that pi discovers tells the agent to load the real instructions
+before it uses the skill.
+
+### What it does not do
+
+- It never writes to the graph: the tools of the runtime are read-only.
+- It never prints the credential: the errors are redacted.
+- It never uses a body that does not match the hash of the publication.
+- It never reads a file that the manifest of the skill does not describe
+  with a path, a size and a hash.
+
 ## Example Session
 
 ```

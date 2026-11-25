@@ -6135,6 +6135,44 @@ async function initQdrant(): Promise<void> {
 	}
 }
 
+/**
+ * The shared skill graph (OmniGraph).
+ *
+ * The source is optional: a machine without it behaves exactly as before.
+ * When it is configured, the row of the graph sits next to the row of
+ * Qdrant and names the endpoint that is read - so the user sees which
+ * graph the machine uses.
+ */
+async function initOmnigraph(pi: ExtensionAPI): Promise<void> {
+	try {
+		const { initOmnigraphSkills } = await import(
+			"./harness/omnigraph/startup.js"
+		);
+		let saasConfigured = false;
+		try {
+			const { isSkillSyncConfigured } = await import(
+				"./harness/skill-sync.js"
+			);
+			saasConfigured = isSkillSyncConfigured();
+		} catch {
+			// The skill service is optional: without it the graph is the
+			// source, and nothing else changes.
+			saasConfigured = false;
+		}
+		await initOmnigraphSkills(pi, {
+			insert: (anchor, label, text, status, details) => {
+				startupStatus.updateAfter(anchor, label, text, status, details);
+			},
+			log: (message) => logStartup(message),
+			saasConfigured,
+		});
+	} catch (err) {
+		logStartup(
+			`[pi-harness] The OmniGraph source could not be prepared: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+}
+
 // --- telegram-notifications: Telegram bot for harness event notifications ------------
 // Sends Telegram messages when jobs complete, tasks finish, or human input is needed.
 
@@ -9071,7 +9109,8 @@ export default async function (pi: ExtensionAPI) {
 
 	// --- qdrant-vector-search: Qdrant integration for semantic skill search ----
 	// Collect promise so we can wait for initialization before showing startup notification
-	asyncInitPromises.push(initQdrant());
+	// The graph waits for the row of Qdrant: its own row belongs next to it.
+	asyncInitPromises.push(initQdrant().then(() => initOmnigraph(pi)));
 
 	// --- tooling-preference: offer Biome.js instead of ESLint/Prettier ------
 	// The proposal is a decision of its own: it never pauses the work.

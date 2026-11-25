@@ -256,6 +256,18 @@ export const KEY_REQUIREMENTS: KeyRequirement[] = [
 		// hint to the log file - so the audit must not report it as missing.
 		optional: true,
 	},
+	{
+		feature: "OmniGraph",
+		label: "skills reader token",
+		candidates: ["omnigraph-skills-token.txt"],
+		env: "OMNIGRAPH_SKILLS_TOKEN",
+		fixFile: "omnigraph-skills-token.txt",
+		placeholder: "<TOKEN>",
+		// The shared skill graph is optional: a machine without it works
+		// exactly as before, so the audit must not report it as missing.
+		// The row of the graph reports the missing part itself.
+		optional: true,
+	},
 ];
 
 export interface MissingCredential {
