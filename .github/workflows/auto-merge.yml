@@ -152,19 +152,25 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: false
 
-      # The release script opens the pull request with the token of the
-      # machine, and a token of a machine does not always have the
-      # permission to open a pull request. The token of a workflow has
-      # it, so the pull request is opened here when a manual run asks
-      # for it.
-      #
-      # Nothing of the pull request is run: only the name of the head
-      # branch is used, and the pull request is judged by the gates of
-      # the pull request event.
+      # GITHUB_TOKEN-created pull requests require approval before their
+      # CI can run. An installation token lets the release PR start CI
+      # unattended. With no owner/repositories override, the token is
+      # restricted to this repository and is revoked when the job ends.
+      - name: Create the release App token
+        id: release-app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+
+      # Only PR creation uses the App token. The gate reader and merger
+      # keep the workflow token and their existing permission checks.
       - name: Open the release pull request
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-app.outputs.token }}
           RELEASE_BRANCH: develop
         run: |
           set -euo pipefail
@@ -210,19 +216,13 @@ jobs:
 
       # The gates are judged here as well.
       #
-      # A pull request that a workflow opened does not start a workflow
-      # of its own: an event that a token of the repository creates does
-      # not create a run. The pull request event of the pull request
-      # therefore never comes, and the merge job of the workflow never
-      # runs for it. The manual run takes that work over: it reads the
-      # checks of the head commit of the pull request and merges it when
-      # they are green.
+      # The App-created pull request starts its own CI and merge event.
+      # This manual run can also wait for the same gates, including when
+      # it finds an existing release PR. Both paths bind the merge to the
+      # reviewed head commit; neither bypasses a pending or failed check.
       #
       # A run that is told not to merge only opens the pull request. The
-      # next push to the head branch is a push of a person, and that
-      # push starts the pull request event, and the merge job of the
-      # workflow merges the pull request with the script of the base
-      # branch.
+      # pull request event merges it with the script of the base branch.
       - name: Merge or hold
         # The input is a boolean, so it is read as a boolean. A
         # comparison with the string 'false' would coerce the string to
