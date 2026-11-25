@@ -3,7 +3,7 @@
  *
  * Reviewer extension with constrained tools and structured result validation.
  */
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { Type } from "typebox";
 /**
  * Finding from the reviewer
@@ -33,18 +33,18 @@ export declare const ReadFileTool: import("@earendil-works/pi-durable").ToolRegi
     path: Type.TString;
     startLine: Type.TOptional<Type.TNumber>;
     endLine: Type.TOptional<Type.TNumber>;
-}>, JsonValue>;
+}>, JsonValue, JsonValue>;
 /**
  * Tool parameters for listing files
  */
 export declare const ListFilesTool: import("@earendil-works/pi-durable").ToolRegistration<Type.TObject<{
     path: Type.TOptional<Type.TString>;
     pattern: Type.TOptional<Type.TString>;
-}>, JsonValue>;
+}>, JsonValue, JsonValue>;
 /**
  * Tool parameters for getting diff
  */
-export declare const GetDiffTool: import("@earendil-works/pi-durable").ToolRegistration<Type.TObject<{}>, JsonValue>;
+export declare const GetDiffTool: import("@earendil-works/pi-durable").ToolRegistration<Type.TObject<{}>, JsonValue, JsonValue>;
 /**
  * Tool parameters for submitting review result
  */
@@ -59,9 +59,9 @@ export declare const SubmitReviewTool: import("@earendil-works/pi-durable").Tool
         endLine: Type.TOptional<Type.TNumber>;
     }>>;
     summary: Type.TString;
-}>, JsonValue>;
+}>, JsonValue, JsonValue>;
 /**
  * Reviewer extension
  */
-export declare const ReviewerExtension: import("@earendil-works/pi-durable").Extension<import("@earendil-works/pi-durable").ToolRegistration<Type.TObject<{}>, JsonValue>>;
+export declare const ReviewerExtension: import("@earendil-works/pi-durable").Extension<import("@earendil-works/pi-durable").ToolRegistration<Type.TObject<{}>, JsonValue, JsonValue>>;
 //# sourceMappingURL=reviewer.d.ts.map

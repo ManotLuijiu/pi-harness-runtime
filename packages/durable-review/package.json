@@ -20,9 +20,9 @@
   "author": "MooCoding",
   "license": "MIT",
   "peerDependencies": {
-    "@earendil-works/pi-durable": "^1.3.0",
+    "@earendil-works/pi-durable": "^1.6.0",
     "@earendil-works/pi-ai": "^1.3.0",
-    "@earendil-works/chord": "^1.3.0"
+    "@earendil-works/chord": "^1.6.0"
   },
   "dependencies": {
     "better-sqlite3": "^13.2.0"

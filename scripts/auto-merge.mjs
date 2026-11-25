@@ -49,9 +49,9 @@ export const REQUIRED_CHECKS = [SENSITIVE_TERMS_CHECK, CI_CHECK];
  * The release branch is `main`, and `main` is the branch that npm
  * publishes. A change reaches it from `develop` through the merge gate,
  * so the merge gate is what moves a reviewed change from `develop` into
- * `main`. A pull request into `develop` is merged by a human: the
- * working branch is where the work happens, and a change there is
- * reviewed by the person who wrote it.
+ * `main`. Verified dependency updates into `develop` have a separate
+ * policy in merge-dependency-pr.mjs. This release merger never broadens
+ * its target to ordinary development or dependency pull requests.
  */
 export const MERGE_TARGETS = ["main"];
 

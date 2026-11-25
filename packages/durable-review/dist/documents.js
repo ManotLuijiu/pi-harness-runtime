@@ -16,6 +16,9 @@ export const ReviewJobDoc = defineDoc({
     kind: "moocoding.durable-review.jobs",
     version: 1,
     scope: "task",
+    // Preserve the pre-1.6 default: ordinary commits store deltas.
+    // The runtime still stores a base on creation and schema migration.
+    checkpointWhen: () => false,
     initial: () => ({
         schemaVersion: SCHEMA_VERSION,
         jobs: {},
@@ -28,6 +31,7 @@ export const WorkerOwnerDoc = defineDoc({
     kind: "moocoding.durable-review.owner",
     version: 1,
     scope: "task",
+    checkpointWhen: () => false,
     initial: () => ({
         ownerId: "",
         pid: 0,

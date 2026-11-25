@@ -9,12 +9,16 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
-    # Dependency PRs are reviewed on develop; release automation merges
-    # only develop -> main after the required checks pass.
+    # Compatible dependency updates have their own develop merge gate.
+    # Pi API migrations and major upgrades remain under explicit review.
     target-branch: "develop"
     open-pull-requests-limit: 5
     groups:
       compatible-updates:
+        update-types: [minor, patch]
+        exclude-patterns: ["@earendil-works/*"]
+      pi-runtime:
+        patterns: ["@earendil-works/*"]
         update-types: [minor, patch]
     # These old major upgrades are tracked as explicit migrations.
     ignore:

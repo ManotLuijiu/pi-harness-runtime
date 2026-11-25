@@ -6,7 +6,7 @@
  */
 
 import { defineDoc } from "@earendil-works/pi-durable";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 
 /**
  * Schema version for migration support
@@ -78,6 +78,9 @@ export const ReviewJobDoc = defineDoc({
   kind: "moocoding.durable-review.jobs",
   version: 1,
   scope: "task",
+  // Preserve the pre-1.6 default: ordinary commits store deltas.
+  // The runtime still stores a base on creation and schema migration.
+  checkpointWhen: () => false,
   initial: (): JobsIndexValue => ({
     schemaVersion: SCHEMA_VERSION,
     jobs: {},
@@ -91,6 +94,7 @@ export const WorkerOwnerDoc = defineDoc({
   kind: "moocoding.durable-review.owner",
   version: 1,
   scope: "task",
+  checkpointWhen: () => false,
   initial: (): WorkerOwnerValue => ({
     ownerId: "",
     pid: 0,

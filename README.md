@@ -1511,7 +1511,7 @@ publishes nothing.
 
 ```bash
 bun scripts/release-all.ts --release-as patch   # prepare the version on develop
-bun scripts/release-all.ts --tag                 # tag the tip of main after the merge
+# GitHub opens the PR, merges after the gates, tags main and publishes.
 ```
 
 **The merge gate**: the workflow merges the pull request itself, with
