@@ -1,6 +1,6 @@
 {
   "name": "@pi-harness/doc-generator",
-  "version": "1.1.520",
+  "version": "1.1.521",
   "description": "Auto-Doc Generator — generate documentation from source code (RFC-0014)",
   "type": "module",
   "main": "./dist/index.js",
