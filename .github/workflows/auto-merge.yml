@@ -118,6 +118,16 @@ jobs:
       - name: The merger is there
         run: test -f scripts/auto-merge.mjs
 
+      # The configured App's authenticated slug is the allowlisted bot.
+      # Do not accept a bot identity claimed by the PR or its branch.
+      - name: Verify the configured release App identity
+        id: release-identity
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+
       # The only step that decides. It reads the checks of the head
       # commit, waits for them to finish, and merges the pull request
       # when they are green. It runs no code of the pull request.
@@ -126,6 +136,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          TRUSTED_RELEASE_BOT: ${{ steps.release-identity.outputs.app-slug }}[bot]
         run: node scripts/auto-merge.mjs
 
   open-release-pr:
@@ -232,4 +243,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          TRUSTED_RELEASE_BOT: ${{ steps.release-app.outputs.app-slug }}[bot]
         run: node scripts/auto-merge.mjs
