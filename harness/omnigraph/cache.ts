@@ -71,6 +71,14 @@ const STUB_DIR = "stubs";
 const SKILL_DIR = "skills";
 
 /**
+ * The longest name the reader of pi reads.
+ *
+ * A name that is longer is read with a warning, and it may collide with
+ * another skill.
+ */
+const MAX_SKILL_NAME = 64;
+
+/**
  * The directory of the stubs.
  *
  * The stubs are the tree that pi discovers. It holds no instructions.
@@ -447,11 +455,19 @@ export function yamlValue(value: string): string {
 export function skillNameOf(entry: CachedCatalogEntry): string {
 	const candidate = entry.name.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 	const cleaned = candidate.replace(/^-+|-+$/g, "");
-	if (cleaned) return cleaned.replace(/-+/g, "-").slice(0, 64).replace(/-+$/, "");
+	if (cleaned) {
+		return cleaned
+			.replace(/-+/g, "-")
+			.slice(0, MAX_SKILL_NAME)
+			.replace(/-+$/, "");
+	}
 	const fallback = entry.id.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 	return (
-		fallback.replace(/^-+|-+$/g, "").replace(/-+/g, "-").slice(0, 64).replace(/-+$/, "") ||
-		"remote-skill"
+		fallback
+			.replace(/^-+|-+$/g, "")
+			.replace(/-+/g, "-")
+			.slice(0, MAX_SKILL_NAME)
+			.replace(/-+$/, "") || "remote-skill"
 	);
 }
 
@@ -476,10 +492,10 @@ function skillNamesOf(
 				.update(entry.id)
 				.digest("hex")
 				.slice(0, 6);
-			name = `${base}-${suffix}`.slice(0, 64).replace(/-+$/, "");
+			name = withSuffix(base, suffix);
 			let counter = 2;
 			while (taken.has(name)) {
-				name = `${base}-${counter}`.slice(0, 64).replace(/-+$/, "");
+				name = withSuffix(base, String(counter));
 				counter += 1;
 			}
 		}
@@ -487,6 +503,27 @@ function skillNamesOf(
 		names.set(entry.id, name);
 	}
 	return names;
+}
+
+/**
+ * The name of a skill with a suffix, within the length pi reads.
+ *
+ * The room of the suffix is taken from the base first. A base that is
+ * already 64 characters long is shortened, so the name of the second
+ * skill differs from the name of the first one: without that, the name
+ * would stay the same and the loop that looks for a free name would
+ * never end.
+ *
+ * @param base The name of the skill.
+ * @param suffix The suffix that makes the name its own.
+ */
+function withSuffix(base: string, suffix: string): string {
+	const room = MAX_SKILL_NAME - suffix.length - 1;
+	const shortened = (room > 0 ? base.slice(0, room) : "")
+		.replace(/-+$/, "")
+		.slice(0, MAX_SKILL_NAME);
+	const stem = shortened || "skill";
+	return `${stem}-${suffix}`.slice(0, MAX_SKILL_NAME).replace(/-+$/, "");
 }
 
 /**
