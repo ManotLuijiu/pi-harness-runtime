@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 import {
 	CI_CHECK,
@@ -690,6 +691,26 @@ test("a manual run can open the release pull request", () => {
 	assert.match(workflow, /gh pr create --base main --head develop/);
 	// The pull request is opened once, not again and again.
 	assert.match(workflow, /gh pr list --base main --head develop/);
+});
+
+test("release PR creation uses a repository-scoped App token without changing the gates", () => {
+	const config = parseYaml(workflow);
+	const steps = config.jobs["open-release-pr"].steps;
+	const token = steps.find((step) => step.id === "release-app");
+	assert.equal(token.uses, "actions/create-github-app-token@v3");
+	assert.deepEqual(token.with, {
+		"client-id": "${{ secrets.RELEASE_CLIENT_ID }}",
+		"private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+		"permission-contents": "read",
+		"permission-pull-requests": "write",
+	});
+	const creation = steps.find((step) => step.id === "pr");
+	assert.ok(steps.indexOf(token) < steps.indexOf(creation));
+	assert.equal(creation.env.GH_TOKEN, "${{ steps.release-app.outputs.token }}");
+	const merge = steps.find((step) => step.name === "Merge or hold");
+	assert.equal(merge.env.GITHUB_TOKEN, "${{ secrets.GITHUB_TOKEN }}");
+	assert.equal(merge.run, "node scripts/auto-merge.mjs");
+	assert.ok(config.jobs.merge.steps.every((step) => step.id !== "release-app"));
 });
 
 test("the manual run never runs the change it pulls", () => {
