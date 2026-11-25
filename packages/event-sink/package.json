@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@pi-harness/contracts": "workspace:*",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^13.2.0",
     "uuid": "^11.0.3"
   },
   "devDependencies": {
