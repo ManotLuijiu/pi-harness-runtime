@@ -692,6 +692,20 @@ test("a command for an existing file says that the file is replaced", () => {
 	assert.match(fix, /replaces it/);
 });
 
+test("the fix command quotes a key directory that the shell would read otherwise", () => {
+	const fix = formatKeyFileFix(
+		{
+			requirement: KEY_REQUIREMENTS.find((requirement) => requirement.fixFile === "telegram-bot-token.txt"),
+			file: "telegram-bot-token.txt",
+			reason: "missing",
+		},
+		"/home/user/my keys",
+	);
+	// The path is one quoted argument: the command writes into the file
+	// that was named and not into another one.
+	assert.match(fix, /> '[^']*my keys[^']*telegram-bot-token\.txt'$/);
+});
+
 // The mode of a key file.
 //
 // A key file is a secret. The harness reads its own key files, so a file

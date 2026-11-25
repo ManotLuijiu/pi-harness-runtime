@@ -26,11 +26,13 @@
 
 import {
 	chmodSync,
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	readFileSync,
 	realpathSync,
 	renameSync,
+	rmdirSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -309,19 +311,26 @@ export function preflightFiles(
 export function prepareFiles(
 	workspace: string,
 	prepared: PreparedFile[],
-): { ok: boolean; diagnostic?: string } {
+): { ok: boolean; diagnostic?: string; folders?: string[] } {
+	// The folders that the preparation creates are remembered: a write
+	// that fails must not leave empty folders in the tree of the user.
+	const folders: string[] = [];
 	for (const file of prepared) {
 		const target = join(workspace, file.path);
+		const folder = dirname(target);
 		try {
-			mkdirSync(dirname(target), { recursive: true });
+			folders.push(...missingFolders(folder));
+			mkdirSync(folder, { recursive: true });
 			writeFileSync(file.temporary, file.content);
 			// The file keeps the mode it had: a file of the user does not
 			// become readable by everybody because a worker wrote it.
 			if (file.mode !== undefined) chmodSync(file.temporary, file.mode);
 		} catch (error) {
 			discardTemporaries(prepared);
+			removeCreatedFolders(folders);
 			return {
 				ok: false,
+				folders,
 				diagnostic: `"${file.path}" could not be prepared: ${
 					error instanceof Error ? error.message : String(error)
 				}`,
@@ -341,6 +350,40 @@ function discardTemporaries(prepared: PreparedFile[]): void {
 		} catch {
 			// A temporary that stays is a file in the workspace with a name
 			// of the harness. The workspace itself is untouched.
+		}
+	}
+}
+
+/**
+ * The folders that a path needs and that are not there yet.
+ *
+ * The list is ordered from the top down, so the folders can be taken
+ * away in the same order.
+ */
+function missingFolders(folder: string): string[] {
+	const missing: string[] = [];
+	let current = folder;
+	while (!existsSync(current)) {
+		missing.unshift(current);
+		const parent = dirname(current);
+		if (parent === current) break;
+		current = parent;
+	}
+	return missing;
+}
+
+/**
+ * The folders that a failed write created, away.
+ *
+ * A folder that holds something else belongs to the user: it is left
+ * alone.
+ */
+function removeCreatedFolders(folders: string[]): void {
+	for (const folder of [...folders].reverse()) {
+		try {
+			rmdirSync(folder);
+		} catch {
+			// The folder is not empty: it holds a file of the user.
 		}
 	}
 }
@@ -423,6 +466,24 @@ interface PendingFiles {
 }
 
 /**
+ * Whether a path of the copy is a folder on the way to a named file.
+ *
+ * A worker that writes a named file into a folder that does not exist yet
+ * creates the folder as well. The folder is not a write of its own: it is
+ * the way to the file that the human named. The lane refuses the files
+ * that were not named, not the folders on the way to them.
+ */
+function isFolderOnTheWay(stagedRoot: string, path: string, named: string[]): boolean {
+	if (!named.some((name) => name.startsWith(`${path}/`))) return false;
+	try {
+		return lstatSync(join(stagedRoot, path)).isDirectory();
+	} catch {
+		// The path is not there anymore: it cannot be a folder.
+		return false;
+	}
+}
+
+/**
  * The files of the copy that the lane is going to write.
  *
  * A file that the worker did not write, or that is the same as the file
@@ -475,11 +536,47 @@ interface ApplyOutcome {
 async function applyTransaction(
 	workspace: string,
 	pending: { path: string; content: string }[],
+	before: Map<string, string | undefined>,
 ): Promise<ApplyOutcome> {
 	const wanted = pending.map((file) => ({
 		path: file.path,
 		content: Buffer.from(file.content, "utf8"),
 	}));
+	const committed = await withApplyLock(workspace, () =>
+		applyUnderLock(workspace, wanted, before),
+	);
+	if (!committed.ok) {
+		return {
+			ok: false,
+			// A rollback that failed leaves the workspace in a state that
+			// nobody asked for: the human has to know that.
+			status: committed.rolledBack === false ? "failed" : (committed.status ?? "refused"),
+			diagnostic: committed.diagnostic ?? "the files were not written",
+		};
+	}
+	return { ok: true, applied: committed.applied ?? [] };
+}
+
+/**
+ * The transaction of the lane, under the lock of the workspace.
+ *
+ * Everything that reads the workspace of the user happens here: the
+ * destination of a file is read again under the lock, so a file that the
+ * human edited after the first check refuses the whole write, and two
+ * lanes of one process cannot write the same file at the same time.
+ */
+function applyUnderLock(
+	workspace: string,
+	wanted: { path: string; content: Buffer }[],
+	before: Map<string, string | undefined>,
+): {
+	ok: boolean;
+	applied?: { path: string; bytes: number }[];
+	bytes?: number[];
+	diagnostic?: string;
+	rolledBack?: boolean;
+	status?: "refused" | "failed";
+} {
 	const preflight = preflightFiles(workspace, wanted);
 	const checked = preflight.prepared ?? [];
 	if (!preflight.ok) {
@@ -493,34 +590,33 @@ async function applyTransaction(
 		// Nothing to write: the worker wrote nothing that was named.
 		return { ok: true, applied: [] };
 	}
-	const committed = await withApplyLock(
-		workspace,
-		(): {
-			ok: boolean;
-			bytes?: number[];
-			diagnostic?: string;
-			rolledBack?: boolean;
-		} => {
-			const preparation = prepareFiles(workspace, checked);
-			if (!preparation.ok) {
-				// Nothing was moved over the workspace: it is as it was.
-				return { ok: false, rolledBack: true, diagnostic: preparation.diagnostic };
-			}
-			return commitFiles(workspace, checked);
-		},
+	const changed = checked.find(
+		(file) => readFileOrUndefined(join(workspace, file.path)) !== before.get(file.path),
 	);
-	if (!committed.ok) {
+	if (changed) {
 		return {
 			ok: false,
-			// A rollback that failed leaves the workspace in a state that
-			// nobody asked for: the human has to know that.
-			status: committed.rolledBack === false ? "failed" : "refused",
-			diagnostic: committed.diagnostic ?? "the files were not written",
+			status: "refused",
+			diagnostic: `"${changed.path}" changed in the workspace while the worker was running`,
 		};
+	}
+	const preparation = prepareFiles(workspace, checked);
+	if (!preparation.ok) {
+		// Nothing was moved over the workspace: it is as it was.
+		removeCreatedFolders(preparation.folders ?? []);
+		return { ok: false, rolledBack: true, diagnostic: preparation.diagnostic };
+	}
+	const committed = commitFiles(workspace, checked);
+	if (!committed.ok) {
+		// The files that were written are put back, and the folders that
+		// the preparation created go away with them.
+		removeCreatedFolders(preparation.folders ?? []);
+		return committed;
 	}
 	const bytes = committed.bytes ?? [];
 	return {
 		ok: true,
+		bytes,
 		applied: checked.map((file, index) => ({
 			path: file.path,
 			bytes: bytes[index] ?? file.content.byteLength,
@@ -672,7 +768,9 @@ export async function writeThroughWorker(
 		// The worker may only write the files the human named. A file
 		// outside of them is a refusal: nothing is applied.
 		const named = new Set(paths);
-		const outside = touched.filter((path) => !named.has(path));
+		const outside = touched.filter(
+			(path) => !named.has(path) && !isFolderOnTheWay(staged, path, paths),
+		);
 		if (outside.length > 0) {
 			return {
 				status: "refused",
@@ -701,7 +799,7 @@ export async function writeThroughWorker(
 		// new content is written next to its destination, and only then
 		// the files are moved over the workspace. A failure puts the
 		// files that were moved back.
-		const outcome = await applyTransaction(workspace, pending);
+		const outcome = await applyTransaction(workspace, pending, before);
 		if (!outcome.ok) {
 			return {
 				status: outcome.status ?? "refused",

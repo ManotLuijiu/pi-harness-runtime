@@ -11,8 +11,9 @@
  *   - one of its environment variables is set (and not empty), or
  *   - one of its candidate key files exists and is not empty.
  *
- * The audit never reads or returns a secret value - only file names and the
- * state of a file (missing / empty).
+ * The audit never returns a secret value: it reads a candidate file only to
+ * decide whether the runtime would accept it, and it reports the name of
+ * the file and its state (missing / empty / too short / invalid).
  */
 
 import {
@@ -917,7 +918,7 @@ export function formatKeyFileFix(
 	file = entry.file,
 	placeholder = entry.requirement.placeholder,
 ): string {
-	const command = `echo "${placeholder}" > ${join(displayKeysDir(keysDir), file)}`;
+	const command = `echo "${placeholder}" > ${shellQuoteIfNeeded(join(displayKeysDir(keysDir), file))}`;
 	// The reason only belongs to the primary file: an alternate file that
 	// does not exist yet is simply missing, not empty.
 	if (file === entry.file && entry.reason !== "missing") {

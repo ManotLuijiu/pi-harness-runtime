@@ -149,7 +149,9 @@ harness-auth scrape
 
 When the machine is configured for the shared skill graph (OmniGraph), the
 skills of that graph are found like any other skill - pi discovers a small
-stub of every skill of the catalog.
+stub of every advertised skill of the catalog. A catalog that is larger than
+the advertised limit keeps the rest searchable, but only the advertised
+subset becomes a skill that pi discovers.
 
 **The stub holds no instructions.** The instructions of a skill are read
 with the tool `remote_skill_load`, and the body is checked against the hash

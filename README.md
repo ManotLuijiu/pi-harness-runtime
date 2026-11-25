@@ -143,8 +143,10 @@ bd --version
 
 OmniGraph is a graph of shared skills. A skill that lives in the graph is
 **found** on your machine without being installed on it: the startup
-discovers the catalog of the graph, writes a tiny stub for every skill, and
-pi lists them like any other skill.
+discovers the catalog of the graph, writes a tiny stub for every advertised
+skill of it, and pi lists them like any other skill. A catalog that is
+larger than the advertised limit keeps the rest searchable, but only the
+advertised subset becomes a skill that pi discovers.
 
 The runtime only ever **reads** the graph. It never writes a skill, never
 publishes one, and never changes the schema of the graph. The credential of
