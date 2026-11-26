@@ -1,6 +1,6 @@
 {
   "name": "@moocoding/durable-review",
-  "version": "1.1.530",
+  "version": "1.1.531",
   "description": "SQLite-backed durable reviewer using @earendil-works/pi-durable",
   "type": "module",
   "main": "src/index.ts",
@@ -28,6 +28,6 @@
     "better-sqlite3": "^13.2.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11"
+    "@types/better-sqlite3": "^9.6.0"
   }
 }

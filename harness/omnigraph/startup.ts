@@ -322,12 +322,12 @@ function offRow(
 	}
 	if (saasConfigured) {
 		details.push("The skill service of the harness holds the skills meanwhile");
-		details.push(
-			url && token
-				? "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph"
-				: "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader",
-		);
 	}
+	details.push(
+		url && token
+			? "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph"
+			: "How to make the graph the source: set OMNIGRAPH_SOURCE_MODE=omnigraph, with the endpoint and the credential of the reader",
+	);
 	details.push("Then reload Pi so the graph is read");
 	// The usage of the graph belongs to the row of a machine that reads
 	// it: on this machine the tools of the graph are not registered, so
