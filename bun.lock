@@ -257,7 +257,7 @@
         "better-sqlite3": "^13.2.0",
       },
       "devDependencies": {
-        "@types/better-sqlite3": "^7.6.11",
+        "@types/better-sqlite3": "^9.6.0",
       },
       "peerDependencies": {
         "@earendil-works/chord": "^1.6.0",
@@ -293,7 +293,7 @@
         "uuid": "^14.0.3",
       },
       "devDependencies": {
-        "@types/better-sqlite3": "^7.6.12",
+        "@types/better-sqlite3": "^9.6.0",
         "@types/uuid": "^11.0.0",
         "typescript": "^5.7.2",
       },
@@ -1263,7 +1263,7 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@types/better-sqlite3": ["@types/better-sqlite3@7.6.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA=="],
+    "@types/better-sqlite3": ["@types/better-sqlite3@9.6.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-ZEEwBSgMu7GYJOynoagg5X9JbxfL6dTJDsgViJIqh67jV44kyOr9RXfmFjLK5rzC4MWssP06t9hu/JwGDnUbCg=="],
 
     "@types/json-schema": ["@types/json-schema@7.0.15", "", {}, "sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA=="],
 
