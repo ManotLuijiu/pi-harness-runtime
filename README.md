@@ -154,14 +154,26 @@ the reader is not the credential of the publisher.
 
 ### Configure it
 
-```bash
-# The endpoint of the graph and the credential of the reader.
-export OMNIGRAPH_URL="https://omnigraph.example"
-export OMNIGRAPH_SKILLS_TOKEN="<the reader token>"
+On a machine with an authorized OmniGraph CLI target named `omnigraph`,
+export its reader credential directly into the runtime's private key file.
+Use the account that runs Pi; installation already creates the key directory.
 
-# Or keep the credential in the key file of the machine (mode 600):
-echo "<the reader token>" > ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt
+```bash
+/opt/omnigraph/bin/omnigraph credentials export --target omnigraph |
+  install -m 600 /dev/stdin \
+    ~/.pi-harness-runtime/keys/omnigraph-skills-token.txt
+
+export OMNIGRAPH_URL="https://omnigraph.bunchee.online"
+export OMNIGRAPH_SOURCE_MODE="omnigraph"
 ```
+
+The URL above is this deployment's example; use your own endpoint for
+another deployment. Launch or reload Pi from that environment. If the
+graph server and Pi run on different machines, securely provision the
+reader key file on the machine running Pi. The export uses an existing
+authorized credential; it does not create one or grant access. You may
+instead provide the reader token through `OMNIGRAPH_SKILLS_TOKEN`, which
+takes precedence over the key file.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
