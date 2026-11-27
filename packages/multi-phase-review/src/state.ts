@@ -88,16 +88,31 @@ export function normalizeState(value: unknown, taskId: string): TwoPhaseState {
 		// The identity of the work survives the restart: without it every
 		// work would look new after the session came back.
 		taskIdentity: typeof raw.taskIdentity === "string" ? raw.taskIdentity : undefined,
+		// The baseline of the task survives the restart: without it the
+		// scope of the review would cover the work that came before it.
+		baselineFiles: isStringRecord(raw.baselineFiles) ? raw.baselineFiles : undefined,
 		scopeFiles: Array.isArray(raw.scopeFiles) ? raw.scopeFiles.filter((f) => typeof f === "string") : [],
-		chunks: Array.isArray(raw.chunks) ? raw.chunks.filter(isChunk) : [],
-		signals: Array.isArray(raw.signals) ? raw.signals.filter(isSignal) : [],
-		findings: Array.isArray(raw.findings) ? raw.findings.filter(isFinding) : [],
+		chunks: normalizedList(raw.chunks, isChunk),
+		signals: normalizedList(raw.signals, isSignal),
+		findings: normalizedList(raw.findings, isFinding),
 		reviewTodoSubject:
 			typeof raw.reviewTodoSubject === "string" ? raw.reviewTodoSubject : undefined,
 		reviewTodoDescription:
 			typeof raw.reviewTodoDescription === "string" ? raw.reviewTodoDescription : undefined,
 		updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
 	};
+}
+
+/** The usable entries of a list of the persisted state. */
+function normalizedList<T>(value: unknown, usable: (entry: unknown) => entry is T): T[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter((entry) => usable(entry));
+}
+
+/** Is the value a record of strings (the baseline of the task)? */
+function isStringRecord(value: unknown): value is Record<string, string> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 /** Is the chunk of a persisted state usable? */

@@ -61,6 +61,74 @@ export function currentRevision(root) {
 export function revisionExists(root, revision) {
     return runGit(root, ["cat-file", "-e", `${revision}^{commit}`]).ok;
 }
+/**
+ * The content hash of the files of the workspace.
+ *
+ * The hash is the Git blob hash, so it is the same for the same content. A
+ * file that cannot be hashed has no hash: it changed in a way that the
+ * baseline cannot describe.
+ */
+export function hashOfFiles(root, files) {
+    const hashes = new Map();
+    const chunkSize = 100;
+    for (let start = 0; start < files.length; start += chunkSize) {
+        const chunk = files.slice(start, start + chunkSize);
+        if (chunk.length === 0)
+            continue;
+        const result = runGit(root, ["hash-object", "--", ...chunk]);
+        if (!result.ok)
+            continue;
+        const lines = result.stdout.split("\n").map((line) => line.trim());
+        chunk.forEach((file, index) => {
+            const hash = lines[index] ?? "";
+            if (hash)
+                hashes.set(file, hash);
+        });
+    }
+    return hashes;
+}
+/**
+ * The files that are changed in the workspace.
+ *
+ * The changes against the revision cover the committed and the uncommitted
+ * ones; the untracked files are the new ones.
+ */
+function changedFiles(root, revision) {
+    const files = new Set();
+    const diff = runGit(root, ["diff", "--name-only", revision ?? "HEAD"]);
+    if (diff.ok) {
+        for (const line of diff.stdout.split("\n")) {
+            const file = line.trim();
+            if (file)
+                files.add(file);
+        }
+    }
+    const untracked = runGit(root, ["ls-files", "--others", "--exclude-standard"]);
+    if (untracked.ok) {
+        for (const line of untracked.stdout.split("\n")) {
+            const file = line.trim();
+            if (file)
+                files.add(file);
+        }
+    }
+    return [...files];
+}
+/**
+ * The baseline of a task in the workspace.
+ *
+ * The baseline is captured once, when the task starts: it names the revision
+ * the task started at and the changes that were already there.
+ */
+export function captureBaseline(root) {
+    if (!isGitRepository(root))
+        return { revision: null, dirty: {} };
+    const revision = currentRevision(root);
+    const dirty = {};
+    const hashes = hashOfFiles(root, changedFiles(root, revision));
+    for (const [file, hash] of hashes)
+        dirty[file] = hash;
+    return { revision, dirty };
+}
 /** The module a file belongs to (the review chunk it is grouped in). */
 export function moduleKey(file) {
     const parts = file.split("/").filter(Boolean);
@@ -102,8 +170,13 @@ export function parseNumstat(output) {
  * The scope is the diff since the start revision (committed and uncommitted)
  * plus the untracked files. A workspace that is not a Git repository has no
  * honest scope, so nothing is reviewed.
+ *
+ * The files that were already changed when the task started are not the work
+ * of this task: they leave the scope unless the work of the task changed them
+ * further. The change of the task is therefore the scope, not the history of
+ * the session.
  */
-export function collectScope(root, startRevision) {
+export function collectScope(root, startRevision, baselineFiles) {
     const empty = {
         files: [],
         detected: false,
@@ -142,8 +215,10 @@ export function collectScope(root, startRevision) {
         if (file)
             files.add(file);
     }
-    const scopeFiles = [...files]
-        .filter((file) => isReviewablePath(file))
+    const candidates = [...files].filter((file) => isReviewablePath(file));
+    const unchanged = unchangedSinceBaseline(root, candidates, baselineFiles);
+    const scopeFiles = candidates
+        .filter((file) => !unchanged.has(file))
         .sort((a, b) => a.localeCompare(b));
     const numstat = runGit(root, ["diff", "--numstat", revision]);
     return {
@@ -156,6 +231,28 @@ export function collectScope(root, startRevision) {
             changedLines: numstat.ok ? parseNumstat(numstat.stdout) : 0,
         },
     };
+}
+/**
+ * The files that are unchanged since the baseline of the task.
+ *
+ * A file that was already changed when the task started and that has the
+ * same content now is not the work of this task. A file that the task
+ * changed further is: its content differs from the baseline.
+ */
+function unchangedSinceBaseline(root, files, baselineFiles) {
+    const unchanged = new Set();
+    if (!baselineFiles)
+        return unchanged;
+    const known = files.filter((file) => baselineFiles[file]);
+    if (known.length === 0)
+        return unchanged;
+    const hashes = hashOfFiles(root, known);
+    for (const file of known) {
+        const hash = hashes.get(file);
+        if (hash && hash === baselineFiles[file])
+            unchanged.add(file);
+    }
+    return unchanged;
 }
 /** The default number of files one review chunk covers. */
 export const DEFAULT_CHUNK_SIZE = 12;

@@ -415,11 +415,117 @@ test("a work that does not progress is continued a bounded number of times", asy
 		controller.acknowledgeDelivery();
 	}
 	assert.equal(sent.length, 3);
-	// The fourth round stops the request with a visible reason.
-	const stopped = await controller.settle();
-	assert.equal(stopped.action, "idle");
-	assert.match(stopped.reason, /without progress/);
-	assert.equal(controller.terminal, true);
+	// The fourth round pauses the request with a visible reason. The work
+	// is unfinished, so the request does not end.
+	const paused = await controller.settle();
+	assert.equal(paused.action, "idle");
+	assert.match(paused.reason, /without progress/);
+	assert.equal(paused.work, "unfinished");
+	assert.equal(controller.terminal, false);
+	assert.equal(controller.stalled, true);
+	assert.equal(sent.length, 3);
+});
+
+test("a work that does not progress never becomes completed work", async () => {
+	// The defect of the second review: the exhaustion of the continuations
+	// marked the request as finished, and the next read of the work
+	// reported it as complete.
+	const sent = [];
+	const cancelled = [];
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: (instruction) => {
+			sent.push(instruction);
+		},
+		cancel: (generation) => {
+			cancelled.push(generation);
+		},
+		maxContinuations: 3,
+	});
+	for (let round = 0; round < 4; round += 1) {
+		const decision = await controller.settle();
+		if (round < 3) {
+			assert.equal(decision.action, "continue");
+			controller.acknowledgeDelivery();
+			continue;
+		}
+		assert.equal(decision.action, "idle");
+		assert.equal(decision.work, "unfinished");
+	}
+	// Every later read still reports the work as unfinished, and never as
+	// complete.
+	for (let round = 0; round < 3; round += 1) {
+		const decision = await controller.settle();
+		assert.equal(decision.action, "idle");
+		assert.notEqual(decision.work, "complete");
+		assert.equal(decision.work, "unfinished");
+	}
+	assert.equal(controller.terminal, false);
+	// The request was not ended, so nothing was given back: the issues it
+	// authorized and the countdowns it armed are still its own.
+	assert.deepEqual(cancelled, []);
+	assert.equal(sent.length, 3);
+});
+
+test("the pause of a request that did not progress can be lifted deliberately", async () => {
+	const sent = [];
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: (instruction) => {
+			sent.push(instruction);
+		},
+		maxContinuations: 2,
+	});
+	for (let round = 0; round < 2; round += 1) {
+		await controller.settle();
+		controller.acknowledgeDelivery();
+	}
+	const paused = await controller.settle();
+	assert.equal(paused.action, "idle");
+	assert.equal(controller.stalled, true);
+	// The recovery does not need a new request of the human: the scope of
+	// the request stays, and the request continues with the work that is
+	// open.
+	assert.equal(controller.resumeStalled(), true);
+	assert.equal(controller.stalled, false);
+	const again = await controller.settle();
+	assert.equal(again.action, "continue");
+	assert.equal(sent.length, 3);
+});
+
+test("a request that made progress leaves the pause on its own", async () => {
+	const sent = [];
+	let items = [todo(1, "in_progress", "do the work")];
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items,
+			ownItems: items,
+		}),
+		dispatch: (instruction) => {
+			sent.push(instruction);
+		},
+		maxContinuations: 2,
+	});
+	for (let round = 0; round < 2; round += 1) {
+		await controller.settle();
+		controller.acknowledgeDelivery();
+	}
+	assert.equal((await controller.settle()).action, "idle");
+	assert.equal(controller.stalled, true);
+	// The work moved: the pause is lifted and the request continues.
+	items = [todo(1, "in_progress", "do the work"), todo(2, "in_progress", "the next part")];
+	const again = await controller.settle();
+	assert.equal(again.action, "continue");
+	assert.equal(controller.stalled, false);
 	assert.equal(sent.length, 3);
 });
 

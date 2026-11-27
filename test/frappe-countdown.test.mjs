@@ -216,8 +216,14 @@ test("a dispatch that the session refused keeps the countdown", async () => {
 	assert.equal(owner.dispatcher.list().length, 1);
 	assert.equal(owner.pending.list().length, 1);
 
+	// The refusal waits before the next try: the countdown is not due yet.
+	assert.equal(owner.dispatcher.due().length, 0);
+	assert.equal((await owner.dispatcher.fire()).length, 0);
+	assert.equal(sent.length, 1);
+
 	// The session is free again: the countdown fires and the operation runs.
 	refused = false;
+	owner.setNow(2000 + 5000);
 	const second = await owner.dispatcher.fire();
 	assert.equal(second[0].kind, "authorized");
 	assert.match(second[0].reason, /permission covers the operation/);
@@ -225,6 +231,130 @@ test("a dispatch that the session refused keeps the countdown", async () => {
 	// The message that was refused is the one that is sent again.
 	assert.equal(sent.length, 2);
 	assert.equal(sent[0], sent[1]);
+});
+
+test("a refused countdown waits before it is tried again", async () => {
+	const timers = [];
+	const owner = makeOwner({
+		dispatch: async () => ({ dispatched: false, reason: "session not idle" }),
+		setTimeout: (callback, delayMs) => {
+			timers.push({ callback, delayMs });
+			return timers.length;
+		},
+	});
+	owner.remember();
+	owner.setNow(2000);
+
+	await owner.dispatcher.fire();
+
+	// The countdown is still there, but it is not due before its try.
+	assert.equal(owner.dispatcher.list().length, 1);
+	assert.equal(owner.dispatcher.due().length, 0);
+	// The timer waits: the delay of the next try is not zero.
+	const armed = timers[timers.length - 1];
+	assert.ok(armed.delayMs > 0, `the delay was ${armed.delayMs}ms`);
+});
+
+test("a refusal that lasts a minute does not spin", async () => {
+	let attempts = 0;
+	const timers = [];
+	const owner = makeOwner({
+		dispatch: async () => {
+			attempts += 1;
+			return { dispatched: false, reason: "session not idle" };
+		},
+		setTimeout: (callback, delayMs) => {
+			timers.push({ callback, delayMs });
+			return timers.length;
+		},
+	});
+	owner.remember();
+	const started = 2000;
+	let now = started;
+	owner.setNow(now);
+	while (now - started < 60_000) {
+		await owner.dispatcher.fire();
+		const armed = timers[timers.length - 1];
+		if (!armed || armed.delayMs <= 0) break;
+		now += armed.delayMs;
+		owner.setNow(now);
+	}
+	// A minute of refusal is a bounded number of tries, not a loop.
+	assert.ok(
+		attempts <= 6,
+		`the countdown tried ${attempts} times in a minute`,
+	);
+});
+
+test("a countdown that was refused delivers once when the session is free again", async () => {
+	let refused = true;
+	const sent = [];
+	const owner = makeOwner({
+		dispatch: async (message) => {
+			sent.push(message);
+			return refused
+				? { dispatched: false, reason: "session not idle" }
+				: { dispatched: true };
+		},
+	});
+	owner.remember();
+	owner.setNow(2000);
+	await owner.dispatcher.fire();
+	assert.equal(sent.length, 1);
+	// Before the wait the countdown does not try again.
+	assert.equal((await owner.dispatcher.fire()).length, 0);
+	assert.equal(sent.length, 1);
+	// After the wait the session is free: the operation is authorized once.
+	refused = false;
+	owner.setNow(2000 + 5000);
+	const outcomes = await owner.dispatcher.fire();
+	assert.equal(outcomes[0].kind, "authorized");
+	assert.match(outcomes[0].reason, /permission covers the operation/);
+	assert.equal(sent.length, 2);
+	assert.equal(owner.dispatcher.list().length, 0);
+	assert.equal(owner.pending.list().length, 0);
+});
+
+test("a dispatch that fails does not throw into the timer", async () => {
+	const owner = makeOwner({
+		dispatch: async () => {
+			throw new Error("the session is gone");
+		},
+	});
+	owner.remember();
+	owner.setNow(2000);
+
+	const outcomes = await owner.dispatcher.fire();
+
+	// The failure is a refusal: it authorizes nothing and it does not throw.
+	assert.equal(outcomes[0].kind, "authorized");
+	assert.match(outcomes[0].reason, /dispatch was refused/);
+	// The countdown stays and it waits for its next try.
+	assert.equal(owner.dispatcher.list().length, 1);
+	assert.equal(owner.dispatcher.due().length, 0);
+});
+
+test("a countdown that was cancelled while it waited delivers nothing", async () => {
+	const sent = [];
+	const owner = makeOwner({
+		dispatch: async (message) => {
+			sent.push(message);
+			return { dispatched: false, reason: "session not idle" };
+		},
+	});
+	owner.remember();
+	owner.setNow(2000);
+	await owner.dispatcher.fire();
+	assert.equal(sent.length, 1);
+
+	// The request ends while the countdown waits.
+	assert.equal(owner.dispatcher.forget(7), 1);
+	owner.setNow(2000 + 10_000);
+	const outcomes = await owner.dispatcher.fire();
+
+	assert.equal(outcomes.length, 0);
+	assert.equal(sent.length, 1);
+	assert.equal(owner.pending.list().length, 0);
 });
 
 test("the request that ends forgets its countdowns", async () => {

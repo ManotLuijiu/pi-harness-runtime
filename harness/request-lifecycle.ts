@@ -482,6 +482,16 @@ interface RequestLifecycleState {
 	generation: number;
 	terminal: boolean;
 	terminalReason?: string;
+	/**
+	 * Is the request paused because it did not progress?
+	 *
+	 * A pause is not an end: the work of the request stays open, the
+	 * authorized issues stay authorized and the countdowns of the request
+	 * stay armed.
+	 */
+	stalled: boolean;
+	/** Why the request is paused. */
+	stalledReason?: string;
 	recoveries: number;
 	/** The work the request continued for. */
 	continuedFor: string;
@@ -507,6 +517,7 @@ export class RequestLifecycleController {
 		this.state = {
 			generation: options.generation?.() ?? 0,
 			terminal: false,
+			stalled: false,
 			recoveries: 0,
 			continuedFor: "",
 			continuations: 0,
@@ -537,6 +548,21 @@ export class RequestLifecycleController {
 	}
 
 	/**
+	 * Is the request paused because it did not progress?
+	 *
+	 * The pause keeps the work of the request open: it is not a
+	 * completion and it does not forget what the request authorized.
+	 */
+	get stalled(): boolean {
+		return this.state.stalled;
+	}
+
+	/** Why the request is paused. */
+	get stalledReason(): string | undefined {
+		return this.state.stalledReason;
+	}
+
+	/**
 	 * A request of the human begins.
 	 *
 	 * The state of the previous request is not carried over: it was the
@@ -546,11 +572,42 @@ export class RequestLifecycleController {
 		this.state = {
 			generation: generation ?? this.generation,
 			terminal: false,
+			stalled: false,
 			recoveries: 0,
 			continuedFor: "",
 			continuations: 0,
 			outstanding: false,
 		};
+	}
+
+	/**
+	 * The request is paused because it did not progress.
+	 *
+	 * A pause is not an end. The work of the request stays open, the
+	 * issues it authorized stay authorized and the countdowns it armed stay
+	 * armed: only a real completion gives them back. The pause is visible
+	 * and it can be lifted deliberately.
+	 */
+	markStalled(reason: string): boolean {
+		if (this.state.terminal || this.state.stalled) return false;
+		this.state.stalled = true;
+		this.state.stalledReason = reason;
+		return true;
+	}
+
+	/**
+	 * The pause of the request is lifted deliberately.
+	 *
+	 * The scope of the request stays: the work that is open and the issues
+	 * that were authorized are the work of this request, and a recovery
+	 * does not need a new request of the human that would lose them.
+	 */
+	resumeStalled(): boolean {
+		if (!this.state.stalled) return false;
+		this.state.stalled = false;
+		this.state.stalledReason = undefined;
+		this.state.continuations = 0;
+		return true;
 	}
 
 	/**
@@ -692,29 +749,10 @@ export class RequestLifecycleController {
 		// The same work is continued once while its queue entry is
 		// outstanding. A queue entry that was consumed may be continued
 		// again, but a work that does not progress is not continued for
-		// ever: the request stops with a visible reason.
+		// ever: the request pauses with a visible reason.
 		const key = this.workKey(view);
-		if (key && key === state.continuedFor) {
-			if (state.outstanding) {
-				return {
-					action: "idle",
-					reason: `the continuation for this work is still queued (${decision.reason})`,
-					work: decision.work,
-				};
-			}
-			state.continuations += 1;
-			if (state.continuations >= this.maxContinuations) {
-				const reason = `the request continued for the same work ${state.continuations} times without progress`;
-				this.markTerminal(reason);
-				return {
-					action: "idle",
-					reason: `${reason} (${decision.reason})`,
-					work: decision.work,
-				};
-			}
-		} else {
-			state.continuations = 0;
-		}
+		const blocked = this.continuationGuard(state, key, decision);
+		if (blocked) return blocked;
 		if (key) {
 			state.continuedFor = key;
 			state.outstanding = true;
@@ -737,6 +775,62 @@ export class RequestLifecycleController {
 			};
 		}
 		return decision;
+	}
+
+	/**
+	 * The guard of the repetitions of the continuation.
+	 *
+	 * The guard answers one question: may the continuation of this work go
+	 * out now? A decision is returned when it may not, and nothing is
+	 * returned when it may.
+	 *
+	 * - A queue entry that is still outstanding holds the continuation:
+	 *   the agent has not seen it yet.
+	 * - A paused request stays paused while its work did not change.
+	 * - The budget of the continuations of the same work pauses the
+	 *   request when it is spent. The work is unfinished, so the request
+	 *   does not end: the scope of the request, the issues it authorized
+	 *   and the countdowns it armed stay.
+	 */
+	private continuationGuard(
+		state: RequestLifecycleState,
+		key: string,
+		decision: ContinuationDecision,
+	): ContinuationDecision | null {
+		if (!key || key !== state.continuedFor) {
+			// The work changed: the request made progress, so the pause is
+			// lifted and the counter of the continuations starts again.
+			state.continuations = 0;
+			state.stalled = false;
+			state.stalledReason = undefined;
+			return null;
+		}
+		if (state.outstanding) {
+			return {
+				action: "idle",
+				reason: `the continuation for this work is still queued (${decision.reason})`,
+				work: decision.work,
+			};
+		}
+		if (state.stalled) {
+			// The request is paused and the work did not change: it stays
+			// paused, the work stays open and nothing is forgotten as
+			// finished.
+			return {
+				action: "idle",
+				reason: `the request is paused (${state.stalledReason ?? "it did not progress"}); its work is still open (${decision.reason})`,
+				work: decision.work,
+			};
+		}
+		state.continuations += 1;
+		if (state.continuations < this.maxContinuations) return null;
+		const reason = `the request continued for the same work ${state.continuations} times without progress`;
+		this.markStalled(reason);
+		return {
+			action: "idle",
+			reason: `${reason}; the request is paused and its work stays open (${decision.reason})`,
+			work: decision.work,
+		};
 	}
 
 	/**

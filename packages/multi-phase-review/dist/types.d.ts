@@ -54,6 +54,15 @@ export interface TwoPhaseState {
      * finished workflow from the work that follows it.
      */
     taskIdentity?: string;
+    /**
+     * The content hash of the files that were already changed when the task
+     * started.
+     *
+     * The baseline separates the work of this task from the work that came
+     * before it: a file that was already changed and that did not change
+     * again is not part of the scope of the review.
+     */
+    baselineFiles?: Record<string, string>;
     /** The files the review covers. */
     scopeFiles: string[];
     /** The review chunks the scope was split into. */

@@ -23,6 +23,36 @@ export interface ScopeMetrics {
     modules: number;
     changedLines: number;
 }
+/**
+ * The baseline of a task.
+ *
+ * The baseline answers "what was already there when this task started".
+ * The revision names the commits that came before, and the content hash of
+ * the files that were already changed names the work that was not committed
+ * yet. A task that comes after another one therefore reviews its own
+ * changes and not the changes of the task before it.
+ */
+export interface TaskBaseline {
+    /** The revision the task started at. */
+    revision: string | null;
+    /** The content hash of the files that were already changed. */
+    dirty: Record<string, string>;
+}
+/**
+ * The content hash of the files of the workspace.
+ *
+ * The hash is the Git blob hash, so it is the same for the same content. A
+ * file that cannot be hashed has no hash: it changed in a way that the
+ * baseline cannot describe.
+ */
+export declare function hashOfFiles(root: string, files: string[]): Map<string, string>;
+/**
+ * The baseline of a task in the workspace.
+ *
+ * The baseline is captured once, when the task starts: it names the revision
+ * the task started at and the changes that were already there.
+ */
+export declare function captureBaseline(root: string): TaskBaseline;
 /** The scope of the review. */
 export interface ScopeResult {
     files: string[];
@@ -42,8 +72,13 @@ export declare function parseNumstat(output: string): number;
  * The scope is the diff since the start revision (committed and uncommitted)
  * plus the untracked files. A workspace that is not a Git repository has no
  * honest scope, so nothing is reviewed.
+ *
+ * The files that were already changed when the task started are not the work
+ * of this task: they leave the scope unless the work of the task changed them
+ * further. The change of the task is therefore the scope, not the history of
+ * the session.
  */
-export declare function collectScope(root: string, startRevision: string | null): ScopeResult;
+export declare function collectScope(root: string, startRevision: string | null, baselineFiles?: Record<string, string>): ScopeResult;
 /** The default number of files one review chunk covers. */
 export declare const DEFAULT_CHUNK_SIZE = 12;
 /**

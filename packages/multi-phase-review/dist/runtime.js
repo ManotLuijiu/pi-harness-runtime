@@ -6,9 +6,9 @@
  * decision that the runtime takes is conservative - when the state of the
  * todo list is unknown, the workflow waits instead of guessing.
  */
-import { classifyTodo, completedImplementationTodos, implementationTodos, reviewFixTodos, testTodos, } from "./classify.js";
+import { classifyTodo, completedImplementationTodos, implementationTodos, isOpenTodo, reviewFixTodos, testTodos, } from "./classify.js";
 import { detectReviewInvocation, explicitReviewRequest, parseExtraPatterns, } from "./signals.js";
-import { chunkScope, collectScope, currentRevision } from "./scope.js";
+import { chunkScope, captureBaseline, collectScope, } from "./scope.js";
 import { TwoPhaseStateStore, allChunksDone, completeWithoutReview, createState, markComplete, recordSignal, startReview, transitionToReviewFixes, transitionToReviewPending, transitionToTestPending, } from "./state.js";
 import { TWO_PHASE_CONTRACT, buildChunkTodoSubject, buildDeferralReason, buildPhaseInstruction, buildPhaseView, buildReviewTodoDescription, buildReviewTodoSubject, formatPhaseStatus, syncChunkStatus, } from "./rules.js";
 import { emptyValidationGateState, validationGateSatisfied, } from "./validation.js";
@@ -51,6 +51,56 @@ function taskIdentityOf(todos) {
     return ids ? `todos:${ids}` : "";
 }
 /**
+ * The open work of the list.
+ *
+ * The implementation work and the work that has no kind are the work of the
+ * session. A list that holds open work cannot be the work of a workflow that
+ * already finished.
+ */
+function hasOpenWork(todos) {
+    return todos.some((todo) => {
+        const kind = classifyTodo(todo);
+        if (kind !== "implement" && kind !== "other")
+            return false;
+        return isOpenTodo(todo);
+    });
+}
+/**
+ * The state of the task with its baseline.
+ *
+ * The revision of the task is captured once: the scope of the review is the
+ * change since then. A state that already has a revision keeps it: the task
+ * continues where it stopped. The content hash of the files that were
+ * already changed belongs to the baseline of a new workflow, because only
+ * there the question "what came before this work" has an answer.
+ */
+function stateWithBaseline(current, root) {
+    if (current.startRevision)
+        return current;
+    const baseline = captureBaseline(root);
+    if (!baseline.revision)
+        return current;
+    return { ...current, startRevision: baseline.revision };
+}
+/**
+ * The state of a finished workflow with the baseline of the work that comes
+ * after it.
+ *
+ * The baseline is captured when the workflow finishes: that is the moment
+ * the work of the finished workflow is done and the work that comes after it
+ * starts. The next workflow therefore reviews its own changes: the changes
+ * that were committed before it and the ones that were left in the workspace
+ * belong to the work that is done.
+ */
+function stateWithNextBaseline(current, root) {
+    const baseline = captureBaseline(root);
+    return {
+        ...current,
+        startRevision: baseline.revision,
+        baselineFiles: baseline.dirty,
+    };
+}
+/**
  * The state of the work that the list describes.
  *
  * The phase belongs to the work and not to the session: a session that runs
@@ -61,8 +111,15 @@ function taskIdentityOf(todos) {
  * todo that the list gained does not restart it. A finished workflow records
  * the work it did, so a later clarification of the human (which creates no
  * todo) keeps the finished workflow, while other work in the list starts a
- * new workflow. The baseline of the review stays the revision of the
- * session, so the scope still covers what the session changed.
+ * new workflow.
+ *
+ * A state of an older version does not name the work it did. The list
+ * decides then: open work that the finished workflow cannot have done starts
+ * a new workflow, a list without open work keeps the finished one.
+ *
+ * A new workflow gets the baseline of the work that follows the finished one:
+ * the review covers the changes of this work and not the ones of the work
+ * that came before it.
  */
 function workState(current, todos) {
     const identity = taskIdentityOf(todos);
@@ -71,17 +128,20 @@ function workState(current, todos) {
     if (current.phase !== "complete" && current.phase !== "test_pending") {
         return current;
     }
-    if (current.taskIdentity === undefined) {
-        // The finished workflow did the work of the list: it is recorded, so
-        // a later clarification keeps the workflow and other work starts a
-        // new one.
+    if (current.taskIdentity === undefined && !hasOpenWork(todos)) {
+        // The state does not name the work it did, but the list holds no
+        // open work: the finished workflow did the work of the list. It is
+        // recorded, so a later clarification keeps the workflow and other
+        // work starts a new one.
         return { ...current, taskIdentity: identity };
     }
-    // The workflow is finished and the list holds other work: the new work
-    // starts a new workflow.
+    // The work is new: the workflow starts again with the baseline of the
+    // work that follows the finished one, so the review covers this work
+    // and not the one before it.
     const fresh = createState(current.taskId);
     fresh.taskIdentity = identity;
     fresh.startRevision = current.startRevision;
+    fresh.baselineFiles = current.baselineFiles;
     return fresh;
 }
 /**
@@ -259,6 +319,7 @@ export async function initTwoPhaseReview(options) {
     const syncProgress = async (todos) => {
         // The work of the list decides which state it is.
         applyWork(todos);
+        const wasComplete = state.phase === "complete";
         const synced = syncChunkStatus(state, todos);
         const openFixes = reviewFixTodos(todos).length;
         const openTests = testTodos(todos).length;
@@ -279,17 +340,18 @@ export async function initTwoPhaseReview(options) {
         }
         if (next !== state)
             persist(next);
+        // A finished workflow hands the baseline of the work that comes
+        // after it to the state: the next workflow reviews its own changes.
+        if (!wasComplete && state.phase === "complete") {
+            state = stateWithNextBaseline(state, workspaceRoot());
+            persist(state);
+        }
         // The finished workflow records the work it did.
         applyWork(todos);
     };
     pi.on("session_start", (_event, ctx) => {
         const id = sessionId(ctx);
-        state = store.read(id) ?? createState(id);
-        if (!state.startRevision) {
-            const revision = currentRevision(workspaceRoot());
-            if (revision)
-                state = { ...state, startRevision: revision };
-        }
+        state = stateWithBaseline(store.read(id) ?? createState(id), workspaceRoot());
         // The intent of a previous session never carries over.
         lastUserMessage = "";
         persist(state);
@@ -381,6 +443,10 @@ export async function initTwoPhaseReview(options) {
             updateStatus(ctx);
             return undefined;
         }
+        // The work of the list decides which state it is: a finished
+        // workflow never finishes the work that comes after it, so the work
+        // is resolved before the phase is read.
+        applyWork(read.todos);
         if (state.phase === "implementation") {
             if (implementationTodos(read.todos).length > 0) {
                 updateStatus(ctx, read.todos);
@@ -394,8 +460,9 @@ export async function initTwoPhaseReview(options) {
                 return undefined;
             }
             // The review starts on its own: its scope is the measured diff of
-            // the task, not a signal the agent has to raise.
-            const scope = collectScope(workspaceRoot(), state.startRevision);
+            // the task, not a signal the agent has to raise. The baseline of
+            // the task keeps the work that came before it out of the scope.
+            const scope = collectScope(workspaceRoot(), state.startRevision, state.baselineFiles);
             if (scope.files.length === 0) {
                 // The task changed no file, so there is nothing to review.
                 const done = completeWithoutReview(state, scope.files);

@@ -67,7 +67,9 @@ export type FrappeCountdownOutcomeKind =
 	/** The operation may not run. */
 	| "blocked"
 	/** The countdown is not due yet. */
-	| "not-due";
+	| "not-due"
+	/** The expiry failed and waits for its next try. */
+	| "deferred";
 
 /** The result of the expiry of a countdown. */
 export interface FrappeCountdownOutcome {
@@ -80,6 +82,19 @@ export interface FrappeCountdownOutcome {
 	/** Why the expiry did that. */
 	reason: string;
 }
+
+/**
+ * The delay before a refused dispatch is tried again.
+ *
+ * A refused dispatch keeps the authorization: the countdown may fire
+ * again. The delay between the tries is not zero: a zero delay turns the
+ * refusal into a loop that reads the state, hashes the file and tries the
+ * guarded path again and again.
+ */
+export const DEFAULT_RETRY_DELAY_MS = 5_000;
+
+/** The longest delay between two tries of the same countdown. */
+export const MAX_RETRY_DELAY_MS = 60_000;
 
 /** The options of the countdown. */
 export interface FrappeCountdownOptions {
@@ -106,6 +121,16 @@ export interface FrappeCountdownOptions {
 	) => Promise<{ dispatched: boolean; reason?: string }>;
 	/** The clock (the tests drive it). */
 	now?: () => number;
+	/**
+	 * The delay before a refused dispatch is tried again.
+	 *
+	 * The delay grows with the number of refusals, up to the longest
+	 * delay. It is never zero: a countdown that is refused is a countdown
+	 * that waits.
+	 */
+	retryDelayMs?: number;
+	/** The longest delay between two tries of the same countdown. */
+	maxRetryDelayMs?: number;
 	/** The timer that arms the next expiry (the tests drive it). */
 	setTimeout?: (callback: () => void, delayMs: number) => unknown;
 	/** The timer that stops the arming (the tests drive it). */
@@ -153,6 +178,12 @@ export class FrappeCountdownDispatcher {
 	private readonly entries = new Map<string, FrappeCountdownEntry>();
 	private readonly setTimer: (callback: () => void, delayMs: number) => unknown;
 	private readonly clearTimer: (handle: unknown) => void;
+	/** When the next try of a countdown is allowed. */
+	private readonly retryAt = new Map<string, number>();
+	/** How many times the dispatch of a countdown was refused. */
+	private readonly refusals = new Map<string, number>();
+	/** Is an expiry running? Only one expiry is in flight. */
+	private firing = false;
 	private handle: unknown = null;
 
 	constructor(options: FrappeCountdownOptions) {
@@ -214,6 +245,7 @@ export class FrappeCountdownDispatcher {
 			if (entry.generation !== generation) continue;
 			this.entries.delete(entry.actionId);
 			this.options.pending.remove(entry.actionId);
+			this.forgetRetry(entry.actionId);
 			forgotten += 1;
 		}
 		if (forgotten > 0) this.arm();
@@ -222,24 +254,38 @@ export class FrappeCountdownDispatcher {
 
 	/**
 	 * The countdowns whose deadline passed.
+	 *
+	 * A countdown that was refused waits for its next try: it is not due
+	 * before that moment.
 	 */
 	due(): FrappeCountdownEntry[] {
 		const now = this.now();
-		return this.list().filter((entry) => entry.deadlineAt <= now);
+		return this.list().filter(
+			(entry) => entry.deadlineAt <= now && this.readyAt(entry) <= now,
+		);
 	}
 
 	/**
 	 * Fire the countdowns that are due.
 	 *
 	 * Every due countdown is checked on its own: one that is blocked does
-	 * not hold the others.
+	 * not hold the others. Only one expiry runs at a time: a second one
+	 * would find the same countdown twice.
 	 */
 	async fire(): Promise<FrappeCountdownOutcome[]> {
+		if (this.firing) return [];
+		this.firing = true;
 		const outcomes: FrappeCountdownOutcome[] = [];
-		for (const entry of this.due()) {
-			outcomes.push(await this.fireOne(entry));
+		try {
+			for (const entry of this.due()) {
+				outcomes.push(await this.fireOne(entry));
+			}
+		} finally {
+			this.firing = false;
+			// The timer is armed again whatever happened: a countdown that
+			// was not armed would wait for a trigger that never comes.
+			this.arm();
 		}
-		this.arm();
 		return outcomes;
 	}
 
@@ -247,11 +293,29 @@ export class FrappeCountdownDispatcher {
 	 * The expiry of one countdown.
 	 */
 	private async fireOne(entry: FrappeCountdownEntry): Promise<FrappeCountdownOutcome> {
-		const recheck = this.recheck(entry);
-		if (!recheck.ok) {
-			return this.block(entry, recheck.reason);
+		try {
+			const recheck = this.recheck(entry);
+			if (!recheck.ok) {
+				return await this.block(entry, recheck.reason);
+			}
+			return await this.authorize(entry);
+		} catch (error) {
+			// An unexpected failure of the expiry keeps the authorization
+			// and waits: it authorizes nothing and it does not spin.
+			const reason = `the expiry failed (${
+				error instanceof Error ? error.message : String(error)
+			})`;
+			const delay = this.scheduleRetry(entry);
+			this.log(
+				`[frappe] The confirmation of ${entry.identity} expired, but the expiry failed: ${reason}. The next try is in ${delay}ms`,
+			);
+			return {
+				kind: "deferred",
+				actionId: entry.actionId,
+				identity: entry.identity,
+				reason: `${reason}; the next try is in ${delay}ms`,
+			};
 		}
-		return this.authorize(entry);
 	}
 
 	/**
@@ -289,14 +353,16 @@ export class FrappeCountdownDispatcher {
 	private async authorize(
 		entry: FrappeCountdownEntry,
 	): Promise<FrappeCountdownOutcome> {
-		const result = await this.options.dispatch(authorizedMessage(entry), entry);
+		const result = await this.dispatch(authorizedMessage(entry), entry);
 		if (!result.dispatched) {
 			// The session refused the message: the authorization is not
-			// lost, the countdown stays and it may fire again.
-			this.options.log?.(
+			// lost, the countdown stays and it may fire again. The next try
+			// waits: a refusal that is retried at once is a loop.
+			const delay = this.scheduleRetry(entry);
+			this.log(
 				`[frappe] The confirmation of ${entry.identity} expired, but the dispatch was refused: ${
 					result.reason ?? "no reason"
-				}`,
+				}. The next try is in ${delay}ms`,
 			);
 			return {
 				kind: "authorized",
@@ -304,12 +370,13 @@ export class FrappeCountdownDispatcher {
 				identity: entry.identity,
 				reason: `the operation may run, but the dispatch was refused (${
 					result.reason ?? "no reason"
-				})`,
+				}); the next try is in ${delay}ms`,
 			};
 		}
 		this.entries.delete(entry.actionId);
+		this.forgetRetry(entry.actionId);
 		this.options.pending.remove(entry.actionId);
-		this.options.log?.(
+		this.log(
 			`[frappe] The confirmation of ${entry.identity} expired: the operation may run`,
 		);
 		return {
@@ -329,14 +396,15 @@ export class FrappeCountdownDispatcher {
 		reason: string,
 	): Promise<FrappeCountdownOutcome> {
 		this.entries.delete(entry.actionId);
+		this.forgetRetry(entry.actionId);
 		this.options.pending.update(entry.actionId, {
 			state: "blocked",
 			reason,
 		});
-		this.options.log?.(
+		this.log(
 			`[frappe] The confirmation of ${entry.identity} expired, but the operation may not run: ${reason}`,
 		);
-		await this.options.dispatch(refusedMessage(entry, reason), entry);
+		await this.dispatch(refusedMessage(entry, reason), entry);
 		return {
 			kind: "blocked",
 			actionId: entry.actionId,
@@ -346,10 +414,78 @@ export class FrappeCountdownDispatcher {
 	}
 
 	/**
+	 * The dispatch of a message to the agent.
+	 *
+	 * The dispatch is the guarded path of the session. A failure of it is
+	 * a refusal: it never throws into the timer and it never authorizes
+	 * the operation.
+	 */
+	private async dispatch(
+		message: string,
+		entry: FrappeCountdownEntry,
+	): Promise<{ dispatched: boolean; reason?: string }> {
+		try {
+			return await this.options.dispatch(message, entry);
+		} catch (error) {
+			return {
+				dispatched: false,
+				reason: `the dispatch failed (${
+					error instanceof Error ? error.message : String(error)
+				})`,
+			};
+		}
+	}
+
+	/**
+	 * When the next try of a countdown is allowed.
+	 *
+	 * A countdown without a refusal is due at its deadline.
+	 */
+	private readyAt(entry: FrappeCountdownEntry): number {
+		return this.retryAt.get(entry.actionId) ?? 0;
+	}
+
+	/**
+	 * Wait before the next try of a refused countdown.
+	 *
+	 * The delay grows with the number of refusals and is never zero: a
+	 * zero delay turns the refusal into a loop.
+	 */
+	private scheduleRetry(entry: FrappeCountdownEntry): number {
+		const refusals = (this.refusals.get(entry.actionId) ?? 0) + 1;
+		this.refusals.set(entry.actionId, refusals);
+		const base = this.options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+		const longest = this.options.maxRetryDelayMs ?? MAX_RETRY_DELAY_MS;
+		const delay = Math.min(base * 2 ** (refusals - 1), longest);
+		this.retryAt.set(entry.actionId, this.now() + delay);
+		return delay;
+	}
+
+	/** Forget the retry state of a countdown. */
+	private forgetRetry(actionId: string): void {
+		this.retryAt.delete(actionId);
+		this.refusals.delete(actionId);
+	}
+
+	/**
+	 * The log of the module.
+	 *
+	 * A failure of the log is never a failure of the countdown.
+	 */
+	private log(message: string): void {
+		try {
+			this.options.log?.(message);
+		} catch {
+			// The log is a convenience: it must not break the countdown.
+		}
+	}
+
+	/**
 	 * Arm the next expiry.
 	 *
 	 * The timer belongs to this module and to the countdowns it knows: a
-	 * countdown that is forgotten leaves no timer behind.
+	 * countdown that is forgotten leaves no timer behind. A countdown that
+	 * was refused waits for its next try: the timer never fires at once.
 	 */
 	private arm(): void {
 		if (this.handle !== null) {
@@ -361,17 +497,33 @@ export class FrappeCountdownDispatcher {
 		const delay = Math.max(0, next - this.now());
 		this.handle = this.setTimer(() => {
 			this.handle = null;
-			void this.fire();
+			void this.fire().catch(() => {
+				// The expiry of the countdowns is never an unhandled
+				// rejection: the timer keeps the countdowns alive.
+			});
 		}, delay);
 	}
 
-	/** The deadline of the next countdown. */
+	/**
+	 * The deadline of the next countdown.
+	 *
+	 * A countdown that is due but that waits for its next try wakes the
+	 * timer at that moment, not at the deadline that already passed.
+	 */
 	private nextDeadline(): number | undefined {
 		let next: number | undefined;
 		for (const entry of this.entries.values()) {
-			if (next === undefined || entry.deadlineAt < next) next = entry.deadlineAt;
+			const wake = this.nextWake(entry);
+			if (next === undefined || wake < next) next = wake;
 		}
 		return next;
+	}
+
+	/** When the countdown has to be looked at next. */
+	private nextWake(entry: FrappeCountdownEntry): number {
+		if (entry.deadlineAt > this.now()) return entry.deadlineAt;
+		const ready = this.retryAt.get(entry.actionId);
+		return ready === undefined ? entry.deadlineAt : ready;
 	}
 
 	/** Stop the timer of the module. */

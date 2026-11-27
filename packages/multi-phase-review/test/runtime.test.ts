@@ -67,30 +67,32 @@ function context(sessionId = "session-1") {
 	};
 }
 
+/** Run a Git command in a repository of the test. */
+function gitIn(root: string, ...args: string[]): void {
+	execFileSync(
+		"git",
+		[
+			"-c",
+			"user.email=test@example.com",
+			"-c",
+			"user.name=Test",
+			"-c",
+			"commit.gpgsign=false",
+			"-c",
+			"core.hooksPath=/dev/null",
+			...args,
+		],
+		{ cwd: root, stdio: "ignore" },
+	);
+}
+
 /** A Git repository with one committed file. */
 function makeRepo(root: string): void {
-	const git = (...args: string[]): void => {
-		execFileSync(
-			"git",
-			[
-				"-c",
-				"user.email=test@example.com",
-				"-c",
-				"user.name=Test",
-				"-c",
-				"commit.gpgsign=false",
-				"-c",
-				"core.hooksPath=/dev/null",
-				...args,
-			],
-			{ cwd: root, stdio: "ignore" },
-		);
-	};
-	git("init", "-q");
+	gitIn(root, "init", "-q");
 	mkdirSync(join(root, "packages", "app"), { recursive: true });
 	writeFileSync(join(root, "packages", "app", "index.ts"), "export const a = 1;\n");
-	git("add", "-A");
-	git("commit", "-qm", "base");
+	gitIn(root, "add", "-A");
+	gitIn(root, "commit", "-qm", "base");
 }
 
 /** The todo list the runtime reads. */
@@ -260,7 +262,7 @@ describe("the two-phase runtime", () => {
 			const ctx = {
 				sessionManager: { getSessionId: () => "session-1" },
 				ui: {
-					setStatus: (key: string, value: string) => {
+					setStatus: (_key: string, value: string) => {
 						statuses.push(value);
 					},
 				},
@@ -665,8 +667,7 @@ describe("the two-phase runtime", () => {
 		});
 	});
 
-	it("remembers the finished work across a restart", async () => {
-		await withTempDirAsync("runtime", async (dir) => {
+	it("remembers the finished work across a restart", async () => {		await withTempDirAsync("runtime", async (dir) => {
 			const stateDir = makePlainTempDir("runtime-state");
 			try {
 				const store = new TwoPhaseStateStore(stateDir);
@@ -700,5 +701,167 @@ describe("the two-phase runtime", () => {
 				rmSync(stateDir, { recursive: true, force: true });
 			}
 		});
+	});
+
+	it("starts the implementation for the new work of a legacy session", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				// The state of a session that comes from the version before
+				// the identity of the work: the file is the JSON of that
+				// version, with the finished phase and without an identity.
+				writeFileSync(
+					join(stateDir, "session-1.json"),
+					JSON.stringify(
+						{
+							phase: "complete",
+							taskId: "session-1",
+							startRevision: null,
+							scopeFiles: [],
+							chunks: [],
+							signals: [],
+							findings: [],
+							updatedAt: new Date().toISOString(),
+						},
+						null,
+						2,
+					),
+				);
+
+				// The session continues with work that is pending.
+				const todos: TodoReadResult["todos"] = [
+					{ id: 42, subject: "[IMPLEMENT] The new work", status: "pending" },
+				];
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader(todos),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("before_agent_start", { systemPrompt: "" }, context());
+
+				// The work is new, so the implementation starts again instead
+				// of the session pretending that it is done.
+				expect(runtime.getPhase(todos)).toBe("implementation");
+				expect(runtime.getState().taskIdentity).toBe("todos:42");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
+
+	it("keeps the finished workflow of a legacy session when the human only clarifies", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				writeFileSync(
+					join(stateDir, "session-1.json"),
+					JSON.stringify(
+						{
+							phase: "complete",
+							taskId: "session-1",
+							startRevision: null,
+							scopeFiles: [],
+							chunks: [],
+							signals: [],
+							findings: [],
+							updatedAt: new Date().toISOString(),
+						},
+						null,
+						2,
+					),
+				);
+
+				// The human asks about the finished work: the question
+				// creates no todo, so the work of the session is the same.
+				const todos: TodoReadResult["todos"] = [
+					{ id: 42, subject: "[IMPLEMENT] The work that is done", status: "completed" },
+				];
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader(todos),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+				await pi.emit("before_agent_start", { systemPrompt: "" }, context());
+
+				expect(runtime.getPhase(todos)).toBe("complete");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
+
+	it("reviews only the changes of the new work", async () => {
+		for (const committed of [true, false]) {
+			await withTempDirAsync("runtime", async (dir) => {
+				makeRepo(dir);
+				const stateDir = makePlainTempDir("runtime-state");
+				try {
+					const todos: TodoReadResult["todos"] = [
+						{ id: 1, subject: "[IMPLEMENT] The first task", status: "completed" },
+					];
+					const pi = new FakePi();
+					const runtime = await initTwoPhaseReview({
+						pi,
+						readTodos: reader(todos),
+						readValidation: async () => ({
+							available: true,
+							pendingFinalTier: 0,
+							failedFinalTier: 0,
+							incompletePlan: 0,
+						}),
+						workspaceRoot: () => dir,
+						store: new TwoPhaseStateStore(stateDir),
+					});
+					await pi.emit("session_start", {}, context());
+
+					// The first task changes its own file. It either commits
+					// it or leaves it in the workspace.
+					writeFileSync(join(dir, "packages", "app", "first.ts"), "export const first = 1;\n");
+					if (committed) {
+						gitIn(dir, "add", "-A");
+						gitIn(dir, "commit", "-qm", "the first task");
+					}
+					await pi.emit("turn_end", {}, context());
+
+					// The review of the first task covers the file of the first
+					// task.
+					expect(runtime.getState().phase).toBe("review");
+					expect(runtime.getState().scopeFiles).toContain("packages/app/first.ts");
+
+					// The review of the first task is finished.
+					todos.push({
+						id: 2,
+						subject: "[REVIEW] chunk-1: packages/app",
+						status: "completed",
+					});
+					await pi.emit("turn_end", {}, context());
+					expect(runtime.getState().phase).toBe("complete");
+
+					// The second task changes another file.
+					writeFileSync(join(dir, "packages", "app", "second.ts"), "export const second = 2;\n");
+					todos.push({
+						id: 3,
+						subject: "[IMPLEMENT] The second task",
+						status: "completed",
+					});
+					await pi.emit("turn_end", {}, context());
+
+					// The review of the second task covers only the file of
+					// the second task: the changes of the first task are not
+					// reviewed again.
+					expect(runtime.getState().phase).toBe("review");
+					expect(runtime.getState().scopeFiles).toContain("packages/app/second.ts");
+					expect(runtime.getState().scopeFiles).not.toContain("packages/app/first.ts");
+				} finally {
+					rmSync(stateDir, { recursive: true, force: true });
+				}
+			});
+		}
 	});
 });
