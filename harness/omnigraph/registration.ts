@@ -45,6 +45,20 @@ import {
 	writeStubs,
 	type CachedCatalogEntry,
 } from "./cache.ts";
+import {
+	indexFreshness,
+	readIndexManifest,
+} from "../skill-index-sync.ts";
+import {
+	compareShadow,
+	decideRollout,
+	ROLLOUT_FLAG,
+	type RolloutDecision,
+} from "../skill-rollout.ts";
+import {
+	planRelations,
+	type RelationReader,
+} from "../skill-relations.ts";
 import type { OmnigraphConfig } from "./config.ts";
 import {
 	parseResourceManifest,
@@ -56,6 +70,16 @@ import {
 	type OmnigraphPublicationExpectation,
 	type OmnigraphSkillRecord,
 } from "./source.ts";
+import {
+	searchSkills,
+	skillRefOf,
+	verifyCandidate,
+	type CatalogEntry,
+	type Candidate,
+	type RetrievalOutcome,
+	type VectorHit,
+} from "../skill-retrieval.ts";
+import { cacheNamespace } from "./config.ts";
 import { OmnigraphError } from "./transport.ts";
 
 /**
@@ -97,6 +121,24 @@ export interface OmnigraphRegistrationOptions {
 	/** The function that writes a line of the report of the command. */
 	log?: (message: string) => void;
 	/**
+	 * The stage of the rollout of the hybrid retrieval.
+	 *
+	 * The stage is "off" by default: the machine that does not ask for
+	 * the integration keeps the behaviour it had. The stage "shadow"
+	 * compares the index with the lexical search without returning its
+	 * candidates, "pilot" returns the fused candidates, and "enabled"
+	 * lets them enter the budgeted context.
+	 */
+	rolloutStage?: string;
+	/**
+	 * The reader of the relations of the graph.
+	 *
+	 * The reader expands the mandatory prerequisites of the candidates.
+	 * The expansion is bounded and every dependency is verified against
+	 * the catalog of the graph before it is returned.
+	 */
+	relationReader?: RelationReader;
+	/**
 	 * The report of the state of the catalog.
 	 *
 	 * The report is written once the catalog was read, or once the read
@@ -104,6 +146,16 @@ export interface OmnigraphRegistrationOptions {
 	 * catalog of the last verified read of the same authority.
 	 */
 	onCatalog?: (report: OmnigraphCatalogReport) => void;
+	/**
+	 * The search of the vector index.
+	 *
+	 * The index is a rebuildable search index: it may find a skill, but
+	 * it never decides what a skill says. Every hit is verified against
+	 * the catalog of the graph before it is returned. Without a provider
+	 * the search runs on the catalog of the graph alone, and the status
+	 * says so.
+	 */
+	vectorSearch?: (query: string, limit: number) => Promise<VectorHit[]>;
 }
 
 /**
@@ -162,6 +214,14 @@ interface OmnigraphContext {
 	refresh: () => void;
 	/** Empty the cache and forget the state of the source. */
 	reset: () => void;
+	/** The search of the vector index, when one is connected. */
+	vectorSearch?: (query: string, limit: number) => Promise<VectorHit[]>;
+	/** The reason the last search ran with less than the full method. */
+	lastDegraded?: string;
+	/** The stage of the rollout of the hybrid retrieval. */
+	rollout?: RolloutDecision;
+	/** The reader of the relations of the graph. */
+	relationReader?: RelationReader;
 }
 
 /**
@@ -316,6 +376,9 @@ export function registerOmnigraphSkills(
 	};
 	if (options.fetcher) context.fetcher = options.fetcher;
 	if (approvedRevision) context.approvedRevision = approvedRevision;
+	if (options.vectorSearch) context.vectorSearch = options.vectorSearch;
+	context.rollout = rolloutOf(options);
+	applyRelationReader(context, options);
 
 	pi.on("resources_discover", discoveryHandler(context));
 	pi.registerTool(searchTool(context));
@@ -383,7 +446,7 @@ function remoteSkillsCommand(context: OmnigraphContext) {
 			if (command === "status") {
 				const state = await context.catalog();
 				notify(
-					`The graph "${context.config.graph}" holds ${state.count} skill(s); the state of the source is ${describeState(state, context.config)}.`,
+					`The graph "${context.config.graph}" holds ${state.count} skill(s); the state of the source is ${describeState(state, context.config)}. ${describeRetrieval(context)}. ${describeIndex(context, state.count)}${describeDegraded(context)}`,
 				);
 				return;
 			}
@@ -395,15 +458,11 @@ function remoteSkillsCommand(context: OmnigraphContext) {
 					);
 					return;
 				}
-				const matched = searchEntries(
-					readCatalog(context.config.cacheDir),
-					rest.join(" "),
-				);
+				const outcome = await retrieveSkills(context, rest.join(" "), 20);
 				notify(
-					matched.length
-						? matched
-								.slice(0, 20)
-								.map((entry) => `${entry.name} (${entry.id})`)
+					outcome.candidates.length
+						? outcome.candidates
+								.map((candidate) => `${candidate.name} (${candidate.ref.id})`)
 								.join(", ")
 						: "The catalog holds no skill that fits.",
 				);
@@ -446,7 +505,13 @@ function searchTool(context: OmnigraphContext) {
 				Type.Number({ description: "How many skills to return (default 20)" }),
 			),
 		}),
-		async execute(_toolCallId: string, params: { query?: string; limit?: number }) {
+		async execute(
+			_toolCallId: string,
+			params: { query?: string; limit?: number },
+		): Promise<{
+			content: Array<{ type: "text"; text: string }>;
+			details: RemoteSearchDetails;
+		}> {
 			try {
 				const state = await context.catalog();
 				if (state.state === "denied") {
@@ -457,34 +522,76 @@ function searchTool(context: OmnigraphContext) {
 								text: `The graph refused the read (${state.error ?? "the credential was refused"}). No skill of the graph is available, and the catalog of another read is not used in its place.`,
 							},
 						],
-						details: {},
+						details: { mode: "denied", candidates: [], excluded: 0 },
 					};
 				}
-				const matched = searchEntries(
-					readCatalog(context.config.cacheDir),
-					params.query ?? "",
-				);
 				const limit = params.limit && params.limit > 0 ? params.limit : 20;
-				const lines = matched.slice(0, limit).map(
-					(entry) =>
-						`- ${entry.name} (${entry.id}) — ${entry.description || "no description"} [revision ${entry.revision || "unknown"}]`,
+				const outcome = await retrieveSkills(
+					context,
+					params.query ?? "",
+					limit,
 				);
-				const notice =
-					state.state === "unavailable"
-						? `The graph could not be reached (${state.error ?? "unknown reason"}); the catalog of the last verified read is used.\n`
-						: "";
-				const text = matched.length
-					? `${notice}${matched.length} skill(s) found:\n${lines.join("\n")}`
+				const lines = outcome.candidates.map(
+					(candidate) =>
+						`- ${candidate.name} (${candidate.ref.id}) — ${candidate.description || "no description"} [revision ${candidate.ref.revision || "unknown"}]`,
+				);
+				const notices = noticesOf(state, outcome);
+				const notice = notices.length > 0 ? `${notices.join("\n")}\n` : "";
+				const text = outcome.candidates.length
+					? `${notice}${outcome.candidates.length} skill(s) found:\n${lines.join("\n")}`
 					: `${notice}The catalog holds no skill that fits.`;
-				return { content: [{ type: "text" as const, text }], details: {} };
+				return {
+					content: [{ type: "text" as const, text }],
+					details: {
+						mode: outcome.mode,
+						candidates: outcome.candidates.map((candidate) => ({
+							id: candidate.ref.id,
+							revision: candidate.ref.revision,
+							methods: candidate.methods,
+						})),
+						excluded: outcome.excluded.length,
+						reasons: outcome.reasons,
+						...(outcome.relations ? { relations: outcome.relations } : {}),
+					},
+				};
 			} catch (error) {
 				return {
 					content: [{ type: "text" as const, text: messageOf(error) }],
-					details: {},
+					details: { mode: "failed", candidates: [], excluded: 0 },
 				};
 			}
 		},
 	};
+}
+
+/**
+ * The notices of an answer.
+ *
+ * The notices name what the answer did NOT use: the graph that could not
+ * be reached, the index that was not read and the comparison of the
+ * shadow. The operator sees the limits of the answer.
+ */
+function noticesOf(
+	state: OmnigraphCatalogReport,
+	outcome: RetrievalOutcome,
+): string[] {
+	const notices: string[] = [];
+	if (state.state === "unavailable") {
+		notices.push(
+			`The graph could not be reached (${state.error ?? "unknown reason"}); the catalog of the last verified read is used.`,
+		);
+	}
+	if (outcome.reasons.degraded) {
+		notices.push(
+			`The vector index was not used (${outcome.reasons.degraded}); the catalog of the graph answered.`,
+		);
+	}
+	if (outcome.reasons.shadow) {
+		notices.push(
+			`The index was compared with the catalog of the graph (${outcome.reasons.shadow}); its candidates did not enter the answer.`,
+		);
+	}
+	return notices;
 }
 
 /**
@@ -838,18 +945,291 @@ function arrivedSizeRefusal(
 /**
  * The entries of a catalog that fit a text.
  */
-function searchEntries(
-	entries: CachedCatalogEntry[],
+/**
+ * The scope of the source of this client.
+ *
+ * The scope keeps the sources apart: two endpoints, two graphs, two
+ * publications and two readers are four different scopes, and a skill of
+ * one scope is never the skill of another one.
+ */
+function scopeOf(context: OmnigraphContext): string {
+	return cacheNamespace({
+		url: context.config.url,
+		graph: context.config.graph,
+		token: context.config.token,
+		publication: context.approvedRevision,
+	});
+}
+
+/**
+ * The skills of the graph that fit a request.
+ *
+ * The catalog of the graph is the authority: every candidate is verified
+ * against it. The vector index may add candidates, but a hit of the index
+ * never replaces the reference of the catalog.
+ */
+async function retrieveSkills(
+	context: OmnigraphContext,
 	query: string,
-): CachedCatalogEntry[] {
-	const needle = query.trim().toLowerCase();
-	if (!needle) return entries;
-	return entries.filter(
-		(entry) =>
-			entry.name.toLowerCase().includes(needle) ||
-			entry.description.toLowerCase().includes(needle) ||
-			entry.id.toLowerCase().includes(needle),
+	limit: number,
+): Promise<RetrievalOutcome> {
+	const catalog: CatalogEntry[] = readCatalog(context.config.cacheDir).map(
+		(entry) => ({
+			id: entry.id,
+			name: entry.name,
+			description: entry.description,
+			revision: entry.revision,
+			sha256: entry.sha256,
+		}),
 	);
+	let vectorHits: VectorHit[] | undefined;
+	let vectorUnavailable: string | undefined;
+	const rollout = context.rollout ?? decideRollout();
+	if (rollout.useVector && context.vectorSearch) {
+		try {
+			vectorHits = await context.vectorSearch(query, limit);
+		} catch (error) {
+			vectorUnavailable =
+				error instanceof Error
+					? `the vector index could not be read (${error.message.slice(0, 120)})`
+					: "the vector index could not be read";
+		}
+	} else if (rollout.useVector) {
+		vectorUnavailable = "no vector index generation is connected";
+	}
+	context.lastDegraded = vectorUnavailable;
+	const base = {
+		query,
+		namespace: scopeOf(context),
+		graph: context.config.graph,
+		catalog,
+		...(context.approvedRevision
+			? { approvedRevision: context.approvedRevision }
+			: {}),
+		limit,
+	};
+	if (rollout.shadow) {
+		// The shadow evaluation: the index is compared with the lexical
+		// search, and only the lexical candidates are returned.
+		const lexicalOutcome = searchSkills(base);
+		const hybrid = searchSkills({
+			...base,
+			...(vectorHits ? { vectorHits } : {}),
+		});
+		const comparison = compareShadow({
+			lexical: lexicalOutcome.candidates.map((candidate) => candidate.ref.id),
+			index: (vectorHits ?? []).map((hit) => hit.id),
+			fused: hybrid.candidates.map((candidate) => candidate.ref.id),
+		});
+		return {
+			...lexicalOutcome,
+			reasons: {
+				...lexicalOutcome.reasons,
+				shadow: `the index would have added ${comparison.added} candidate(s) to the ${comparison.lexicalOnly} of the lexical search`,
+			},
+		};
+	}
+	const outcome = searchSkills({
+		...base,
+		...(vectorHits ? { vectorHits } : {}),
+		...(vectorUnavailable ? { vectorUnavailable } : {}),
+	});
+	return expandRelations(context, outcome);
+}
+
+/**
+ * The expansion of the relations of the candidates.
+ *
+ * The mandatory prerequisites of the candidates join the answer, and every
+ * one of them is verified against the catalog of the graph first. A
+ * dependency that the graph does not hold, or that the approval does not
+ * allow, is named instead of being returned.
+ */
+async function expandRelations(
+	context: OmnigraphContext,
+	outcome: RetrievalOutcome,
+): Promise<RetrievalOutcome> {
+	const reader = context.relationReader;
+	if (!reader || outcome.candidates.length === 0) return outcome;
+	const plan = await planRelations({
+		roots: outcome.candidates.map((candidate) => ({
+			identity: candidate.ref.id,
+			name: candidate.name,
+			required: false,
+		})),
+		reader,
+		types: ["requires", "conflicts_with"],
+		limits: { depth: 2, nodes: 12, neighbours: 6, tokens: 4000 },
+	});
+	const catalog: CatalogEntry[] = readCatalog(context.config.cacheDir).map(
+		(entry) => ({
+			id: entry.id,
+			name: entry.name,
+			description: entry.description,
+			revision: entry.revision,
+			sha256: entry.sha256,
+		}),
+	);
+	const candidates: Candidate[] = [...outcome.candidates];
+	for (const node of plan.nodes) {
+		if (!node.required) continue;
+		if (candidates.some((candidate) => candidate.ref.id === node.identity)) continue;
+		if (!catalog.some((entry) => entry.id === node.identity)) {
+			plan.missing.push({
+				identity: node.identity,
+				reason: "the graph does not hold the skill",
+			});
+			continue;
+		}
+		const verified = verifyCandidate(
+			node.identity,
+			catalog,
+			context.approvedRevision,
+		);
+		if (!verified.entry) {
+			plan.missing.push({
+				identity: node.identity,
+				reason: verified.reason ?? "not allowed",
+			});
+			continue;
+		}
+		candidates.push({
+			ref: skillRefOf(verified.entry, {
+				namespace: scopeOf(context),
+				graph: context.config.graph,
+			}),
+			name: verified.entry.name,
+			description: verified.entry.description,
+			methods: ["relation"],
+			scores: { fused: 0 },
+			rank: candidates.length + 1,
+		});
+	}
+	return {
+		...outcome,
+		candidates,
+		relations: {
+			nodes: plan.nodes.map((node) => ({
+				identity: node.identity,
+				required: node.required,
+				depth: node.depth,
+			})),
+			cycles: plan.cycles,
+			conflicts: plan.conflicts,
+			missing: plan.missing,
+		},
+	};
+}
+
+/**
+ * The reader of the relations, when one is connected.
+ */
+function applyRelationReader(
+	context: OmnigraphContext,
+	options: OmnigraphRegistrationOptions,
+): void {
+	if (options.relationReader) context.relationReader = options.relationReader;
+}
+
+/**
+ * The stage of the rollout.
+ *
+ * The stage comes from the options of the registration, and the
+ * environment names it when the options do not.
+ */
+function rolloutOf(options: OmnigraphRegistrationOptions): RolloutDecision {
+	return decideRollout({
+		value: options.rolloutStage ?? process.env[ROLLOUT_FLAG],
+	});
+}
+
+/**
+ * The state of the retrieval, as the operator sees it.
+ *
+ * The status names the mode of the retrieval and the reason when it runs
+ * with less than the full method. A health check of a vector store is not
+ * a proof that the index is synchronized, so the status never claims that
+ * it is.
+ */
+function describeRetrieval(context: OmnigraphContext): string {
+	const rollout = context.rollout ?? decideRollout();
+	if (rollout.stage === "off") {
+		return `The retrieval runs on the catalog of the graph alone (${rollout.reason}).`;
+	}
+	if (rollout.stage === "shadow") {
+		return "The retrieval runs on the catalog of the graph alone; the index is compared with it in the shadow.";
+	}
+	if (!context.vectorSearch) {
+		return "The retrieval runs on the catalog of the graph alone (no vector index generation is connected).";
+	}
+	return "The retrieval runs on the catalog of the graph and on the vector index; every candidate is verified against the catalog.";
+}
+
+/**
+ * The active index generation, as the operator sees it.
+ *
+ * The status names the generation, the number of its records and its age.
+ * It never claims that the index is synchronized: the facts it holds are
+ * the count and the age, and the lag is named when the counts differ.
+ */
+function describeIndex(context: OmnigraphContext, sourceCount: number): string {
+	const manifest = readIndexManifest(context.config.cacheDir);
+	if (!manifest) {
+		return "No index generation is active.";
+	}
+	const freshness = indexFreshness({
+		manifest,
+		sourceCount,
+		now: new Date().toISOString(),
+	});
+	const behind = freshness.behind
+		? ` The index is behind the source: ${freshness.reason}.`
+		: "";
+	return `The active index generation "${manifest.runId}" holds ${manifest.indexedCount} record(s) and was activated ${describeAge(freshness.ageMs)} ago.${behind}`;
+}
+
+/**
+ * The reason the last search ran with less than the full method.
+ */
+function describeDegraded(context: OmnigraphContext): string {
+	if (!context.lastDegraded) return "";
+	return ` The last search degraded: ${context.lastDegraded}.`;
+}
+
+/**
+ * An age in words.
+ */
+function describeAge(ms: number): string {
+	if (ms < 60_000) return "a moment";
+	const minutes = Math.floor(ms / 60_000);
+	if (minutes < 60) return `${minutes} minute(s)`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours} hour(s)`;
+	return `${Math.floor(hours / 24)} day(s)`;
+}
+
+/**
+ * The details of a search.
+ *
+ * The details name the mode of the retrieval and the candidates that were
+ * found, so that the caller can see which method answered without reading
+ * the text.
+ */
+interface RemoteSearchDetails {
+	/** The mode of the retrieval. */
+	mode: RetrievalOutcome["mode"] | "denied" | "failed";
+	/** The candidates that were found. */
+	candidates: Array<{
+		id: string;
+		revision: string;
+		methods: string[];
+	}>;
+	/** The number of the candidates that were left out. */
+	excluded: number;
+	/** The reasons of the outcome. */
+	reasons?: RetrievalOutcome["reasons"];
+	/** The expansion of the relations, when one was read. */
+	relations?: RetrievalOutcome["relations"];
 }
 
 /**

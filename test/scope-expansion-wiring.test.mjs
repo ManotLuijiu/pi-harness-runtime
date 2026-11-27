@@ -23,18 +23,24 @@ function around(needle, before = 0, after = 1600) {
 }
 
 test("the task context keeps the exact ids of the backlog", () => {
-	const region = around("async function getTaskContext()", 0, 2600);
+	const issueType = around("interface BacklogIssue {", 0, 400);
+	assert.match(issueType, /id: string;/, "the id of an issue is read");
+	const region = around("async function getTaskContext()", 0, 3200);
 	assert.ok(region, "the task context is read");
-	assert.match(region, /id\?: string;/, "the id of an issue is read");
 	assert.match(
 		region,
-		/issues\.push\(\{ id: task\.id, title: task\.title, status: task\.status \}\)/,
+		/issues\.push\(\{ id: issue\.id, title: issue\.title, status: issue\.status \}\)/,
 		"the exact id is kept with the title",
+	);
+	assert.match(
+		region,
+		/available: false/,
+		"a backlog that could not be read is not an empty backlog",
 	);
 });
 
 test("the completion of a request proposes the backlog", () => {
-	const region = around("async function proposeScopeExpansion(", 0, 2200);
+	const region = around("async function proposeScopeExpansion(", 0, 2600);
 	assert.ok(region, "the proposal of the backlog exists");
 	assert.match(
 		region,
@@ -43,12 +49,17 @@ test("the completion of a request proposes the backlog", () => {
 	);
 	assert.match(
 		region,
-		/context\.issues\s*\.slice\(0, MAX_SCOPE_CANDIDATES\)/,
+		/selectRelevantIssues\(/,
+		"the relevance of the issues is decided before the cap",
+	);
+	assert.match(
+		region,
+		/MAX_SCOPE_CANDIDATES,/,
 		"the candidates are bounded",
 	);
 	assert.match(
 		region,
-		/\{ id: issue\.id, title: issue\.title \}/,
+		/id: entry\.issue\.id,\s*title: entry\.issue\.title,/,
 		"the candidate names the exact id",
 	);
 	assert.match(region, /runtime\.propose\(\{/, "the proposal is created");

@@ -90,3 +90,13 @@ test("the completion is reported once per request", () => {
 test("the bd hint is bookkeeping and not an authorization", () => {
 	assert.match(indexSource, /a pending\s*\n?\s*bd issue is not authorized work of the current request/);
 });
+
+test("a resume of a request that waits for its review is suppressed", () => {
+	// The request is not over, but the next step belongs to the workflow:
+	// a resume must not send the agent into a review that the workflow
+	// materializes itself.
+	const decision = decideResumeScope({ work: "pending", reason: "post-compact" });
+	assert.equal(decision.action, "suppress");
+	assert.match(decision.report, /review phase/);
+	assert.match(decision.report, /post-compact/, "the report names the reason");
+});

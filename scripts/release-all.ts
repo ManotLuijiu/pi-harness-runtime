@@ -24,6 +24,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 
+import { normalizeReleaseNoteHeadings } from "../harness/release-notes.ts";
+
 const ROOT = resolve(import.meta.dirname, "..");
 
 function getWorkspaceDirs(): string[] {
@@ -329,6 +331,29 @@ function gitAmendCommit(): void {
 	}
 }
 
+/**
+ * Give the changelog the heading level the native host reads.
+ *
+ * The preset of standard-version writes a patch release with a `###`
+ * heading, and the host of Pi only starts an entry at a `## ` heading.
+ * Without this step the release notes of the runtime never appear under
+ * the native Extension Updates section of the host.
+ *
+ * Only the level of the heading of a release changes: the content of the
+ * release and its comparison links stay exactly as they were written.
+ */
+function normalizeChangelogHeadings(): void {
+	const changelogPath = join(ROOT, "CHANGELOG.md");
+	if (!existsSync(changelogPath)) return;
+	const markdown = readFileSync(changelogPath, "utf-8");
+	const { markdown: normalized, changed } = normalizeReleaseNoteHeadings(markdown);
+	if (changed === 0) return;
+	writeFileSync(changelogPath, normalized);
+	console.log(
+		`   ${changed} release heading(s) now use the level the host reads.`,
+	);
+}
+
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 	const isDryRun = args.includes("--dry-run");
@@ -374,6 +399,7 @@ async function main(): Promise<void> {
 			console.error("standard-version failed.");
 			process.exit(1);
 		}
+		normalizeChangelogHeadings();
 	}
 
 	// Step 2: Get new version

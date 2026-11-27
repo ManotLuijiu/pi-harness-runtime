@@ -30,6 +30,15 @@ export interface TaskIntakeConfig extends JevJudgeConfig {
      * recorded with the plain tool, and its todo names no issue.
      */
     todoToolName?: (userMessage: string) => string;
+    /**
+     * The number of the request that is running.
+     *
+     * The reminder is sent once per request: a request that is reminded
+     * twice produces a second reminder, and the second one arrives as a
+     * new request of the work. A new request of the human may be reminded
+     * again.
+     */
+    requestGeneration?: () => number | undefined;
 }
 /**
  * Result of task intake evaluation
@@ -61,6 +70,14 @@ export declare class TaskIntakeController {
     private lastResult;
     private recentCaptures;
     private readonly CAPTURE_COOLDOWN_MS;
+    /**
+     * The requests that were already reminded.
+     *
+     * The key is the request generation and the text of the request: the
+     * same work of the same request is reminded once, and a new request
+     * of the human may be reminded again.
+     */
+    private reminded;
     private _stopped;
     constructor(config: TaskIntakeConfig);
     /**

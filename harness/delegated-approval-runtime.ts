@@ -70,8 +70,14 @@ export interface OpenApprovalInput {
 	blocked?: string[];
 	/** Why the operation is not simply running. */
 	reason?: string;
-	/** The deadline of the answer. It is absolute. */
-	deadlineAt: number;
+	/**
+	 * The deadline of the answer. It is absolute.
+	 *
+	 * A request without a deadline is never decided by a deadline: the
+	 * answer of the human is the only way out of it. The delegation of the
+	 * workspace never stands in for that answer.
+	 */
+	deadlineAt?: number;
 }
 
 /** The result of opening a request. */
@@ -170,7 +176,13 @@ export class DelegatedApprovalRuntime {
 		this.stop();
 		const now = this.deps.now();
 		const pending = this.pending();
-		const next = pending
+		// A request without a deadline is never decided by a deadline, so
+		// it does not enter the watch of the timer.
+		const dated = pending.filter(
+			(request): request is ApprovalRequest & { deadlineAt: number } =>
+				typeof request.deadlineAt === "number",
+		);
+		const next = dated
 			.filter((request) => request.deadlineAt > now)
 			.sort((a, b) => a.deadlineAt - b.deadlineAt)[0];
 		if (next) {
@@ -181,7 +193,7 @@ export class DelegatedApprovalRuntime {
 		// the work was paused, or the session was busy - is tried again:
 		// the delegation of the user must not be lost because the session
 		// was not free at that moment.
-		const overdue = pending
+		const overdue = dated
 			.filter((request) => request.deadlineAt <= now)
 			.sort((a, b) => a.deadlineAt - b.deadlineAt)[0];
 		if (overdue) {
@@ -365,6 +377,15 @@ export class DelegatedApprovalRuntime {
 		// of the question that was asked. A countdown that reaches zero
 		// first must not decide anything.
 		const now = this.deps.now();
+		if (typeof request.deadlineAt !== "number") {
+			// The question has no deadline: the answer of the human is the
+			// only way out of it. A deadline never decides it, and the
+			// delegation of the workspace never stands in for the answer.
+			this.deps.log?.(
+				`The approval request ${requestId} has no deadline: only the answer of the human decides it.`,
+			);
+			return null;
+		}
 		if (now < request.deadlineAt) {
 			this.deps.log?.(
 				`The approval request ${requestId} is not due yet: the deadline is at ${request.deadlineAt}. The decision waits.`,

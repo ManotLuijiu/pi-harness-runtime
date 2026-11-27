@@ -24,8 +24,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import type { HarnessStatus } from "../../harness-startup-status.ts";
 import {
+	QdrantSkillIndex,
+	readVectorIndexConfig,
+} from "../skill-vector-index.ts";
+import {
 	type OmnigraphConfig,
 	type OmnigraphEnv,
+	cacheNamespace,
 	readOmnigraphConfig,
 	readOmnigraphSourceMode,
 } from "./config.ts";
@@ -68,6 +73,14 @@ export interface OmnigraphStartupOptions {
 	approvedRevision?: string;
 	/** The function that performs the request. A test injects one. */
 	fetchImpl?: typeof fetch;
+	/**
+	 * The embedding of a query for the vector index.
+	 *
+	 * The production uses the embedder of the package, which needs a
+	 * provider key. A test injects one, so the retrieval of the graph can
+	 * be driven without a provider.
+	 */
+	embed?: (text: string) => Promise<number[]>;
 }
 
 /**
@@ -229,6 +242,16 @@ export function initOmnigraphSkills(
 	if (approvedRevision) {
 		registrationOptions.approvedRevision = approvedRevision;
 	}
+	applyVectorSearch(registrationOptions, {
+		env: withToken,
+		url: config.url,
+		graph: config.graph,
+		token: config.token,
+		publication: approvedRevision,
+		fetchImpl: options.fetchImpl,
+		embed: options.embed,
+		log: options.log,
+	});
 	if (options.fetcher) registrationOptions.fetcher = options.fetcher;
 	else {
 		// The checkout of the operator is the approved way to read the
@@ -242,6 +265,79 @@ export function initOmnigraphSkills(
 	const registration = registerOmnigraphSkills(pi, registrationOptions);
 
 	return { placeRow, ready: registration.ready };
+}
+
+/**
+ * The search of the vector index, when the index is configured.
+ *
+ * The index is optional: a machine without a cluster keeps the catalog of
+ * the graph alone, and the status of the retrieval says so. The reader is
+ * read-only, and the namespace of the scope is the one the retrieval uses,
+ * so the hits of another scope can never enter a candidate.
+ */
+function applyVectorSearch(
+	registration: Parameters<typeof registerOmnigraphSkills>[1],
+	options: {
+		env: OmnigraphEnv;
+		url: string;
+		graph: string;
+		token: string;
+		publication?: string;
+		fetchImpl?: typeof fetch;
+		embed?: (text: string) => Promise<number[]>;
+		log: (message: string) => void;
+	},
+): void {
+	const namespace = cacheNamespace({
+		url: options.url,
+		graph: options.graph,
+		token: options.token,
+		publication: options.publication,
+	});
+	const config = readVectorIndexConfig({
+		env: options.env,
+		namespace,
+		graph: options.graph,
+	});
+	if (!config) return;
+	const reader = new QdrantSkillIndex({
+		config,
+		embed: options.embed ?? createEmbedder(options.log),
+		...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+		log: options.log,
+	});
+	registration.vectorSearch = (query, limit) => reader.search(query, limit);
+}
+
+/**
+ * The embedding of a query for the vector index.
+ *
+ * The embedder of the package is resolved when the first search runs: a
+ * machine without the package or without a key then fails the search with
+ * a message that names the cause, instead of an index that silently finds
+ * nothing.
+ */
+function createEmbedder(
+	log: (message: string) => void,
+): (text: string) => Promise<number[]> {
+	return async (text: string) => {
+		try {
+			const { createEmbedding, getOpenAIApiKey } = await import(
+				"../../packages/qdrant-skills/dist/embedder.js"
+			);
+			if (!getOpenAIApiKey()) {
+				throw new Error("no embedding key is configured for the vector index");
+			}
+			return (await createEmbedding(text)).embedding;
+		} catch (error) {
+			log(
+				`[pi-harness] The vector index could not embed its query: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+			throw error;
+		}
+	};
 }
 
 /**

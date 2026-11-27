@@ -1272,7 +1272,11 @@ test("the unknown closure has a text of its own", () => {
 	assert.match(NEUTRALIZED_STALE_RESUME_TEXT, /replaced by a newer request/i);
 	// The unknown case of the closure uses its own text.
 	const body = callbackBody("if (closure.action === \"unknown\") {");
-	assert.match(body, /NEUTRALIZED_UNKNOWN_WORK_TEXT/);
+	assert.match(
+		body,
+		/consume\(/,
+		"the unknown closure consumes the continuation instead of sending a text",
+	);
 });
 
 test("the path of the store and the path of the live plan meet on the live job", () => {
@@ -1361,12 +1365,21 @@ test("the session gives back the leases it does not know any more", () => {
 });
 
 test("the resume reports the work it did not start", () => {
-	const body = callbackBody('pi.on("context", async (event) => {');
+	const body = callbackBody('pi.on("context", async (event, ctx) => {');
 	// The state of the issue is unknown: the human is told that the
 	// resume did not go out.
 	assert.match(body, /closure\.action === "unknown"/);
 	const unknown = body.slice(body.indexOf('closure.action === "unknown"'));
-	assert.match(unknown, /reportSuppressedResume\(/);
+	assert.match(
+		unknown,
+		/consume\(/,
+		"the unknown closure consumes the continuation instead of sending it",
+	);
+	assert.match(
+		body,
+		/reportSuppressedResume\(report\)/,
+		"the consumed continuation is reported to the human",
+	);
 });
 
 test("the closure of the work follows the todos of the running request", () => {
@@ -1375,11 +1388,12 @@ test("the closure of the work follows the todos of the running request", () => {
 });
 
 test("the resume reads the closure of the work before it runs", () => {
-	const body = callbackBody('pi.on("context", async (event) => {');
+	const body = callbackBody('pi.on("context", async (event, ctx) => {');
 	assert.match(body, /currentHandoffClosure\(\)/);
 	assert.ok(
-		body.indexOf("currentHandoffClosure()") < body.lastIndexOf("neutralizeAutoResume"),
-		"the closure has to be read before the resume is neutralized or kept",
+		body.indexOf("currentHandoffClosure()") <
+			body.indexOf('closure.action === "unknown"'),
+		"the closure has to be read before the continuation is consumed or kept",
 	);
 });
 

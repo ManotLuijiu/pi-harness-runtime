@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [1.1.531](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.531) (2026-11-26)
+## [1.1.531](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.531) (2026-11-26)
 
 
 ### Features
@@ -131,7 +131,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.530](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.530) (2026-11-25)
+## [1.1.530](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.530) (2026-11-25)
 
 
 ### Features
@@ -258,7 +258,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.529](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.529) (2026-11-25)
+## [1.1.529](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.529) (2026-11-25)
 
 
 ### Features
@@ -383,7 +383,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.528](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.528) (2026-11-25)
+## [1.1.528](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.528) (2026-11-25)
 
 
 ### Features
@@ -507,7 +507,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.527](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.527) (2026-11-25)
+## [1.1.527](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.527) (2026-11-25)
 
 
 ### Features
@@ -630,7 +630,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.526](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.526) (2026-11-25)
+## [1.1.526](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.526) (2026-11-25)
 
 
 ### Features
@@ -752,7 +752,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.525](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.525) (2026-11-25)
+## [1.1.525](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.525) (2026-11-25)
 
 
 ### Features
@@ -870,7 +870,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.524](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.524) (2026-11-25)
+## [1.1.524](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.524) (2026-11-25)
 
 
 ### Features
@@ -987,7 +987,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.523](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.523) (2026-11-25)
+## [1.1.523](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.523) (2026-11-25)
 
 
 ### Features
@@ -1104,7 +1104,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.522](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.522) (2026-11-25)
+## [1.1.522](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.522) (2026-11-25)
 
 
 ### Features
@@ -1220,7 +1220,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.521](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.521) (2026-11-25)
+## [1.1.521](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.521) (2026-11-25)
 
 
 ### Features
@@ -1335,7 +1335,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.520](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.520) (2026-11-25)
+## [1.1.520](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.520) (2026-11-25)
 
 
 ### Features
@@ -1448,7 +1448,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.519](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.519) (2026-11-18)
+## [1.1.519](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.519) (2026-11-18)
 
 
 ### Features
@@ -1547,7 +1547,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.518](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.518) (2026-11-18)
+## [1.1.518](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.518) (2026-11-18)
 
 
 ### Features
@@ -1645,7 +1645,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.517](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.517) (2026-11-17)
+## [1.1.517](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.517) (2026-11-17)
 
 
 ### Features
@@ -1741,7 +1741,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.516](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.516) (2026-11-17)
+## [1.1.516](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.516) (2026-11-17)
 
 
 ### Features
@@ -1835,7 +1835,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.515](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.515) (2026-11-17)
+## [1.1.515](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.515) (2026-11-17)
 
 
 ### Features
@@ -1928,7 +1928,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.514](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.514) (2026-11-17)
+## [1.1.514](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.514) (2026-11-17)
 
 
 ### Features
@@ -2020,7 +2020,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.513](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.513) (2026-11-17)
+## [1.1.513](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.513) (2026-11-17)
 
 
 ### Features
@@ -2111,7 +2111,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.512](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.512) (2026-11-16)
+## [1.1.512](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.512) (2026-11-16)
 
 
 ### Features
@@ -2201,7 +2201,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.511](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.511) (2026-11-16)
+## [1.1.511](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.511) (2026-11-16)
 
 
 ### Features
@@ -2290,7 +2290,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.510](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.510) (2026-11-16)
+## [1.1.510](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.510) (2026-11-16)
 
 
 ### Features
@@ -2378,7 +2378,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.509](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.509) (2026-11-11)
+## [1.1.509](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.509) (2026-11-11)
 
 
 ### Features
@@ -2465,7 +2465,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.508](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.508) (2026-11-11)
+## [1.1.508](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.508) (2026-11-11)
 
 
 ### Features
@@ -2549,7 +2549,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.507](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.507) (2026-11-11)
+## [1.1.507](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.507) (2026-11-11)
 
 
 ### Features
@@ -2631,7 +2631,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.506](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.506) (2026-11-11)
+## [1.1.506](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.506) (2026-11-11)
 
 
 ### Features
@@ -2712,7 +2712,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.505](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.505) (2026-11-10)
+## [1.1.505](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.505) (2026-11-10)
 
 
 ### Features
@@ -2792,7 +2792,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.504](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.504) (2026-11-10)
+## [1.1.504](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.504) (2026-11-10)
 
 
 ### Features
@@ -2871,7 +2871,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.503](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.503) (2026-11-10)
+## [1.1.503](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.503) (2026-11-10)
 
 
 ### Features
@@ -2950,7 +2950,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.502](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.502) (2026-11-10)
+## [1.1.502](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.502) (2026-11-10)
 
 
 ### Features
@@ -3028,7 +3028,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.501](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.501) (2026-11-10)
+## [1.1.501](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.501) (2026-11-10)
 
 
 ### Features
@@ -3106,7 +3106,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.500](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.500) (2026-11-10)
+## [1.1.500](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.500) (2026-11-10)
 
 
 ### Features
@@ -3183,7 +3183,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.499](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.499) (2026-11-09)
+## [1.1.499](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.499) (2026-11-09)
 
 
 ### Features
@@ -3259,7 +3259,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.498](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.498) (2026-11-09)
+## [1.1.498](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.498) (2026-11-09)
 
 
 ### Features
@@ -3334,7 +3334,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.497](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.497) (2026-11-09)
+## [1.1.497](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.497) (2026-11-09)
 
 
 ### Features
@@ -3408,7 +3408,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.496](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.496) (2026-11-09)
+## [1.1.496](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.496) (2026-11-09)
 
 
 ### Features
@@ -3481,7 +3481,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.495](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.495) (2026-11-09)
+## [1.1.495](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.495) (2026-11-09)
 
 
 ### Features
@@ -3553,7 +3553,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.494](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.494) (2026-11-09)
+## [1.1.494](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.494) (2026-11-09)
 
 
 ### Features
@@ -3624,7 +3624,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.493](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.493) (2026-11-09)
+## [1.1.493](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.493) (2026-11-09)
 
 
 ### Features
@@ -3694,7 +3694,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.492](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.492) (2026-11-09)
+## [1.1.492](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.492) (2026-11-09)
 
 
 ### Features
@@ -3763,7 +3763,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.491](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.491) (2026-11-09)
+## [1.1.491](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.491) (2026-11-09)
 
 
 ### Features
@@ -3831,7 +3831,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.490](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.490) (2026-11-09)
+## [1.1.490](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.490) (2026-11-09)
 
 
 ### Features
@@ -3898,7 +3898,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.489](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.489) (2026-11-09)
+## [1.1.489](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.489) (2026-11-09)
 
 
 ### Features
@@ -3964,7 +3964,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.488](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.488) (2026-11-09)
+## [1.1.488](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.488) (2026-11-09)
 
 
 ### Features
@@ -4029,7 +4029,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.487](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.487) (2026-11-09)
+## [1.1.487](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.487) (2026-11-09)
 
 
 ### Features
@@ -4093,7 +4093,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.486](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.486) (2026-11-09)
+## [1.1.486](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.486) (2026-11-09)
 
 
 ### Features
@@ -4156,7 +4156,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.485](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.485) (2026-11-09)
+## [1.1.485](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.485) (2026-11-09)
 
 
 ### Features
@@ -4218,7 +4218,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.484](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.484) (2026-11-09)
+## [1.1.484](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.484) (2026-11-09)
 
 
 ### Features
@@ -4279,7 +4279,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.483](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.483) (2026-11-09)
+## [1.1.483](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.483) (2026-11-09)
 
 
 ### Features
@@ -4339,7 +4339,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.482](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.482) (2026-11-08)
+## [1.1.482](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.482) (2026-11-08)
 
 
 ### Features
@@ -4398,7 +4398,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.481](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.481) (2026-11-08)
+## [1.1.481](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.481) (2026-11-08)
 
 
 ### Features
@@ -4456,7 +4456,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.480](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.480) (2026-11-08)
+## [1.1.480](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.480) (2026-11-08)
 
 
 ### Features
@@ -4513,7 +4513,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.479](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.479) (2026-11-08)
+## [1.1.479](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.479) (2026-11-08)
 
 
 ### Features
@@ -4569,7 +4569,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.478](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.478) (2026-11-08)
+## [1.1.478](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.478) (2026-11-08)
 
 
 ### Features
@@ -4624,7 +4624,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.477](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.477) (2026-11-08)
+## [1.1.477](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.477) (2026-11-08)
 
 
 ### Features
@@ -4678,7 +4678,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.476](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.476) (2026-11-08)
+## [1.1.476](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.476) (2026-11-08)
 
 
 ### Features
@@ -4731,7 +4731,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.475](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.475) (2026-11-08)
+## [1.1.475](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.475) (2026-11-08)
 
 
 ### Features
@@ -4784,7 +4784,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.474](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.474) (2026-11-08)
+## [1.1.474](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.474) (2026-11-08)
 
 
 ### Features
@@ -4836,7 +4836,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.473](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.473) (2026-11-08)
+## [1.1.473](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.473) (2026-11-08)
 
 
 ### Features
@@ -4887,7 +4887,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.472](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.472) (2026-11-08)
+## [1.1.472](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.472) (2026-11-08)
 
 
 ### Features
@@ -4937,7 +4937,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.471](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.471) (2026-11-08)
+## [1.1.471](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.471) (2026-11-08)
 
 
 ### Features
@@ -4987,7 +4987,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.470](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.470) (2026-11-07)
+## [1.1.470](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.470) (2026-11-07)
 
 
 ### Features
@@ -5036,7 +5036,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.469](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.469) (2026-11-07)
+## [1.1.469](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.469) (2026-11-07)
 
 
 ### Features
@@ -5084,7 +5084,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **workspace:** keep a client name out of the comment about the search depth ([b572e0a](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b572e0af16ff562203bda2b5c47b41807cff5a95))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.468](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.468) (2026-11-07)
+## [1.1.468](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.468) (2026-11-07)
 
 
 ### Features
@@ -5129,7 +5129,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 * **workspace:** the repository names the mode before the mode stays unknown ([188a32c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/188a32c7a6af1465dd24714278fccc73d06f6477))
 
-### [1.1.467](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.467) (2026-11-07)
+## [1.1.467](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.467) (2026-11-07)
 
 
 ### Features
@@ -5173,7 +5173,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.466](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.466) (2026-11-07)
+## [1.1.466](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.466) (2026-11-07)
 
 
 ### Features
@@ -5216,7 +5216,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.465](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.465) (2026-11-07)
+## [1.1.465](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.465) (2026-11-07)
 
 
 ### Features
@@ -5258,7 +5258,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.464](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.464) (2026-11-07)
+## [1.1.464](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.464) (2026-11-07)
 
 
 ### Features
@@ -5299,7 +5299,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.463](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.463) (2026-11-07)
+## [1.1.463](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.463) (2026-11-07)
 
 
 ### Features
@@ -5339,7 +5339,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.462](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.462) (2026-10-28)
+## [1.1.462](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.462) (2026-10-28)
 
 
 ### Features
@@ -5378,7 +5378,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.461](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.461) (2026-10-28)
+## [1.1.461](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.461) (2026-10-28)
 
 
 ### Features
@@ -5417,7 +5417,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.460](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.460) (2026-10-28)
+## [1.1.460](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.460) (2026-10-28)
 
 
 ### Features
@@ -5455,7 +5455,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.459](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.459) (2026-10-28)
+## [1.1.459](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.459) (2026-10-28)
 
 
 ### Features
@@ -5490,7 +5490,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.458](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.458) (2026-10-27)
+## [1.1.458](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.458) (2026-10-27)
 
 
 ### Features
@@ -5523,7 +5523,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.457](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.457) (2026-10-27)
+## [1.1.457](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.457) (2026-10-27)
 
 
 ### Features
@@ -5555,7 +5555,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.456](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.456) (2026-10-27)
+## [1.1.456](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.456) (2026-10-27)
 
 
 ### Features
@@ -5586,7 +5586,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.455](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.455) (2026-10-27)
+## [1.1.455](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.455) (2026-10-27)
 
 
 ### Features
@@ -5616,7 +5616,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.454](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.454) (2026-10-27)
+## [1.1.454](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.454) (2026-10-27)
 
 
 ### Features
@@ -5645,7 +5645,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** the release pull request names the version of its branch ([a846e83](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a846e83e6de6e529f4bca05e869db0b5eebb37c5))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.453](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.453) (2026-10-27)
+## [1.1.453](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.453) (2026-10-27)
 
 
 ### Features
@@ -5673,7 +5673,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** a manual release keeps the version of its manifest ([122e661](https://github.com/ManotLuijiu/pi-harness-runtime/commit/122e661ea48cb8aff14c71dbd0221a4cf0ba4c8e))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.452](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.452) (2026-10-27)
+## [1.1.452](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.452) (2026-10-27)
 
 
 ### Features
@@ -5697,7 +5697,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** a manual release keeps the version of its manifest ([122e661](https://github.com/ManotLuijiu/pi-harness-runtime/commit/122e661ea48cb8aff14c71dbd0221a4cf0ba4c8e))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.451](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.451) (2026-10-27)
+## [1.1.451](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.451) (2026-10-27)
 
 
 ### Features
@@ -5718,7 +5718,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** a manual release keeps the version of its manifest ([122e661](https://github.com/ManotLuijiu/pi-harness-runtime/commit/122e661ea48cb8aff14c71dbd0221a4cf0ba4c8e))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.450](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.450) (2026-10-27)
+## [1.1.450](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.450) (2026-10-27)
 
 
 ### Features
@@ -5738,7 +5738,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **merge:** the workflow merges the pull request the gates cleared ([d7639ec](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7639ec9b83723510acb4a5c4e23d5d6167c3af6))
 * **release:** the release scans the tree of the commit it publishes ([7d47a0b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7d47a0b5406480a1e1d3a52623a76aabd1e2d0ba))
 
-### [1.1.449](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.449) (2026-10-27)
+## [1.1.449](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.448...v1.1.449) (2026-10-27)
 
 
 ### Features
@@ -5756,78 +5756,65 @@ All notable changes to this project will be documented in this file. See [standa
 * **merge:** the merge of the pull request is the GraphQL mutation ([972bab4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/972bab4b0f7faf1b0047f3bb767ef6db3de4b2fa))
 * **merge:** the workflow merges the pull request the gates cleared ([d7639ec](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7639ec9b83723510acb4a5c4e23d5d6167c3af6))
 
-### [1.1.448](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.447...v1.1.448) (2026-10-26)
+## [1.1.448](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.447...v1.1.448) (2026-10-26)
 
 
 ### Features
 
 * **release:** publish from a tag on main and gate the merge on the checks ([d744098](https://github.com/ManotLuijiu/pi-harness-runtime/commit/d7440985974e5bc6613c4e6ee05fb79a00996a0c))
 
-### [1.1.190](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.403...v1.1.190) (2026-10-24)
+## [1.1.190](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.403...v1.1.190) (2026-10-24)
 
 
 ### Bug Fixes
 
 * **jev:** apply the caution threshold to a cautious approval ([9c6836e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/9c6836e569e70140175a37f62e978d2a08ba27d7))
 
-### [1.1.189](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.402...v1.1.189) (2026-10-24)
+## [1.1.189](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.402...v1.1.189) (2026-10-24)
 
 
 ### Bug Fixes
 
 * **jev:** keep routine approval questions auto-approvable ([31fb075](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31fb075db4363791f6c9b6094d90ce2acbeff9c1))
 
-### [1.1.188](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.401...v1.1.188) (2026-10-24)
+## [1.1.188](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.401...v1.1.188) (2026-10-24)
 
 
 ### Bug Fixes
 
 * **packaging:** restore the copy-plugins script of the install step ([bf838f1](https://github.com/ManotLuijiu/pi-harness-runtime/commit/bf838f12efcf43d90b9b1b64608b2f46831bc896))
 
-### [1.1.187](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.400...v1.1.187) (2026-10-24)
+## [1.1.187](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.400...v1.1.187) (2026-10-24)
 
 
 ### Bug Fixes
 
 * **jev:** give the autonomous decision the facts it rests on ([7a2707c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7a2707ceccdd21b8deabb881989f4226177f7238))
 
-### [1.1.186](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.399...v1.1.186) (2026-10-24)
+## [1.1.186](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.399...v1.1.186) (2026-10-24)
 
 
 ### Features
 
 * **notification:** multi-channel pending questions with a typed Jev decision ([cef012e](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cef012e8ef88053979ec3a68e3285eeefc59c673))
 
-### [1.1.140](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.184...v1.1.140) (2026-10-10)
+## [1.1.140](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.184...v1.1.140) (2026-10-10)
 
 
 ### Bug Fixes
 
 * **honcho:** implement proper MCP registration and truthful status ([844182d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/844182df4822185204e6a43e94702afcf9fb1f5f)), closes [#1-10](https://github.com/ManotLuijiu/pi-harness-runtime/issues/1-10) [#12-14](https://github.com/ManotLuijiu/pi-harness-runtime/issues/12-14)
 
-### [1.1.139](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.150...v1.1.139) (2026-10-05)
+## [1.1.139](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.150...v1.1.139) (2026-10-05)
 
 
 ### Features
 
 * **agent-policy:** Add mandatory policy delivery and mutation gating ([19d2399](https://github.com/ManotLuijiu/pi-harness-runtime/commit/19d23997d6de8e62bf97a67daf51b5cba42c9615))
 
-### [1.1.138](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.147...v1.1.138) (2026-10-04)
+## [1.1.138](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.147...v1.1.138) (2026-10-04)
 
-### [1.1.75](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.75) (2026-09-29)
-
-
-### Features
-
-* Add comprehensive 529 error logging for debugging ([18c602d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/18c602dbe6ac11fea00af2f5b632f0564a14a8a3))
-* Add Qdrant skills integration for team sharing ([7ffcaab](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ffcaab9af30b39b28cc6bf23a85d5b586c2130f))
-* Implement Hermes-style self-improvement system + fix critical bugs ([2c477af](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2c477afc810ceaa4d57ded859b88e61d37999807))
-* Implement Hermes-style skill system ([b871ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b871ad5107b50757ee9c18aa5d7c144c1b70f9de))
-* Implement ping-pong event bus for two-agent coordination ([ed259c8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ed259c8f0f912446782c9c31f55165ad397f89d3))
-* Qdrant integration working - E2E tests pass ([1a12f7c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1a12f7c5ce0508f689b246f88f4c3d8e79c80f86))
-* **qdrant:** Official @qdrant/js-client-rest integration ([efaa47b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/efaa47b7c86601b69fe4ae56feae66815f6387ea))
-
-### [1.1.74](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.74) (2026-09-29)
+## [1.1.75](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.75) (2026-09-29)
 
 
 ### Features
@@ -5840,34 +5827,47 @@ All notable changes to this project will be documented in this file. See [standa
 * Qdrant integration working - E2E tests pass ([1a12f7c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1a12f7c5ce0508f689b246f88f4c3d8e79c80f86))
 * **qdrant:** Official @qdrant/js-client-rest integration ([efaa47b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/efaa47b7c86601b69fe4ae56feae66815f6387ea))
 
-### [1.1.72](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.72) (2026-09-29)
+## [1.1.74](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.74) (2026-09-29)
+
+
+### Features
+
+* Add comprehensive 529 error logging for debugging ([18c602d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/18c602dbe6ac11fea00af2f5b632f0564a14a8a3))
+* Add Qdrant skills integration for team sharing ([7ffcaab](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7ffcaab9af30b39b28cc6bf23a85d5b586c2130f))
+* Implement Hermes-style self-improvement system + fix critical bugs ([2c477af](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2c477afc810ceaa4d57ded859b88e61d37999807))
+* Implement Hermes-style skill system ([b871ad5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b871ad5107b50757ee9c18aa5d7c144c1b70f9de))
+* Implement ping-pong event bus for two-agent coordination ([ed259c8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ed259c8f0f912446782c9c31f55165ad397f89d3))
+* Qdrant integration working - E2E tests pass ([1a12f7c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/1a12f7c5ce0508f689b246f88f4c3d8e79c80f86))
+* **qdrant:** Official @qdrant/js-client-rest integration ([efaa47b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/efaa47b7c86601b69fe4ae56feae66815f6387ea))
+
+## [1.1.72](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.95...v1.1.72) (2026-09-29)
 
 
 ### Features
 
 * Implement Hermes-style self-improvement system + fix critical bugs ([2c477af](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2c477afc810ceaa4d57ded859b88e61d37999807))
 
-### [1.1.71-1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-1) (2026-09-19)
+## [1.1.71-1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-1) (2026-09-19)
 
 
 ### Features
 
 * add jev-judge package for structured decision making ([810a6d8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/810a6d81ae5803d28a471a3cd059197e953c9707))
 
-### [1.1.71-0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-0) (2026-09-19)
+## [1.1.71-0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.71-0) (2026-09-19)
 
-### [1.1.70](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.70) (2026-09-19)
+## [1.1.70](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.69...v1.1.70) (2026-09-19)
 
-### [1.1.69](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.68...v1.1.69) (2026-09-14)
+## [1.1.69](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.68...v1.1.69) (2026-09-14)
 
-### [1.1.68](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.76...v1.1.68) (2026-09-14)
+## [1.1.68](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.76...v1.1.68) (2026-09-14)
 
 
 ### Bug Fixes
 
 * **interceptor:** guard foreground daemon-over-SSH hangs with timeout ([57770b5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/57770b5f477d9885836cc1b0dddee612a5c55d18))
 
-### [1.1.19](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.61...v1.1.19) (2026-09-10)
+## [1.1.19](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.61...v1.1.19) (2026-09-10)
 
 ### Features
 
@@ -5877,7 +5877,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * improve langchain daemon and surge test ([42245b4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/42245b4364c3516c70df82fedbfe63e1b0cadd8e))
 
-### [1.1.18](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.18) (2026-08-24)
+## [1.1.18](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.18) (2026-08-24)
 
 ### Features
 
@@ -5888,7 +5888,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
 
-### [1.1.17](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.17) (2026-08-24)
+## [1.1.17](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.17) (2026-08-24)
 
 ### Features
 
@@ -5899,7 +5899,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
 
-### [1.1.16](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.16) (2026-08-24)
+## [1.1.16](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.16) (2026-08-24)
 
 ### Features
 
@@ -5910,7 +5910,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
 
-### [1.1.15](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.15) (2026-08-24)
+## [1.1.15](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.15) (2026-08-24)
 
 ### Features
 
@@ -5920,25 +5920,25 @@ All notable changes to this project will be documented in this file. See [standa
 
 * **glm:** improve footer status display with specific 5h quota and reset time ([ab991c3](https://github.com/ManotLuijiu/pi-harness-runtime/commit/ab991c329bdb4097e77503d3d7f574edc6cdc1c4))
 
-### [1.1.14](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.14) (2026-08-24)
+## [1.1.14](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.13...v1.1.14) (2026-08-24)
 
 ### Features
 
 * **glm-quota:** add robust GLM quota countdown with auto-resume ([cb78a2b](https://github.com/ManotLuijiu/pi-harness-runtime/commit/cb78a2bdf5ecf79fc028030d43e3ce40767253cb))
 
-### [1.1.13](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.12...v1.1.13) (2026-08-21)
+## [1.1.13](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.12...v1.1.13) (2026-08-21)
 
 ### Bug Fixes
 
 * **runtime:** auto-resume after provider overload ([7bd98bb](https://github.com/ManotLuijiu/pi-harness-runtime/commit/7bd98bb885536667a5eb35cfe6de45a06dc77269))
 
-### [1.1.12](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.11...v1.1.12) (2026-08-20)
+## [1.1.12](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v1.1.11...v1.1.12) (2026-08-20)
 
 ### Bug Fixes
 
 * **runtime:** refresh minimax quota from provider mirror ([a8976b4](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a8976b4ff61e28b964bf76405142672798714647))
 
-### [1.1.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.11) (2026-08-20)
+## [1.1.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.11) (2026-08-20)
 
 ### Features
 
@@ -5967,7 +5967,7 @@ All notable changes to this project will be documented in this file. See [standa
 * use npm-publish action instead of direct npm publish ([4c7218c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4c7218c99436703dd0a210c3866f35dc305911f5))
 * use OIDC Trusted Publishing instead of token auth ([01626b5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/01626b579f77d67d965c3a276bd5e9a3bcf1f67b))
 
-### [1.1.10](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.10) (2026-08-20)
+## [1.1.10](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.42...v1.1.10) (2026-08-20)
 
 ### Features
 
@@ -5995,7 +5995,7 @@ All notable changes to this project will be documented in this file. See [standa
 * use npm-publish action instead of direct npm publish ([4c7218c](https://github.com/ManotLuijiu/pi-harness-runtime/commit/4c7218c99436703dd0a210c3866f35dc305911f5))
 * use OIDC Trusted Publishing instead of token auth ([01626b5](https://github.com/ManotLuijiu/pi-harness-runtime/commit/01626b579f77d67d965c3a276bd5e9a3bcf1f67b))
 
-### [0.10.30](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.29...v0.10.30) (2026-08-11)
+## [0.10.30](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.29...v0.10.30) (2026-08-11)
 
 ### Bug Fixes
 
@@ -6013,7 +6013,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **release:** use npm/publish action ([43c6a20](https://github.com/ManotLuijiu/pi-harness-runtime/commit/43c6a20752e4c7fdb548a8f3e1134188857ce1ca))
 * **release:** use pnpm for publish to avoid npm exit handler bug ([a038950](https://github.com/ManotLuijiu/pi-harness-runtime/commit/a03895032a57cee039e2ed4b720e46e3d3c13961))
 
-### [0.10.27](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.27) (2026-08-10)
+## [0.10.27](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.27) (2026-08-10)
 
 ### Features
 
@@ -6033,7 +6033,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 * update bd install URL to correct repo ([5800f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5800f304913912a84c34d3f42a29b01bb2d87b24))
 
-### [0.10.26](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.26) (2026-08-10)
+## [0.10.26](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.26) (2026-08-10)
 
 ### Features
 
@@ -6052,7 +6052,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 * update bd install URL to correct repo ([5800f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5800f304913912a84c34d3f42a29b01bb2d87b24))
 
-### [0.10.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.25) (2026-08-10)
+## [0.10.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.25) (2026-08-10)
 
 ### Features
 
@@ -6070,7 +6070,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 * update bd install URL to correct repo ([5800f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5800f304913912a84c34d3f42a29b01bb2d87b24))
 
-### [0.10.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.24) (2026-08-09)
+## [0.10.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.24) (2026-08-09)
 
 ### Features
 
@@ -6087,7 +6087,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 * update bd install URL to correct repo ([5800f30](https://github.com/ManotLuijiu/pi-harness-runtime/commit/5800f304913912a84c34d3f42a29b01bb2d87b24))
 
-### [0.10.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.23) (2026-08-09)
+## [0.10.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.23) (2026-08-09)
 
 ### Features
 
@@ -6103,7 +6103,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** disable auto-injection completely - was causing noisy output ([699d6de](https://github.com/ManotLuijiu/pi-harness-runtime/commit/699d6de5e7f3b062799a0f791b386d1ecd452b00))
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 
-### [0.10.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.22) (2026-08-09)
+## [0.10.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.22) (2026-08-09)
 
 ### Bug Fixes
 
@@ -6115,7 +6115,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **todo-bd-sync:** disable auto-injection completely - was causing noisy output ([699d6de](https://github.com/ManotLuijiu/pi-harness-runtime/commit/699d6de5e7f3b062799a0f791b386d1ecd452b00))
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 
-### [0.10.21](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.21) (2026-08-08)
+## [0.10.21](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.21) (2026-08-08)
 
 ### Bug Fixes
 
@@ -6126,7 +6126,7 @@ All notable changes to this project will be documented in this file. See [standa
 * suppress noisy stack traces in harness agents ([34bbe98](https://github.com/ManotLuijiu/pi-harness-runtime/commit/34bbe98f59e740fcfcd8622f1dcc09c379f6f3df))
 * **todo-bd-sync:** silence all console output - no startup warnings ([2d29bcf](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2d29bcf51b25fe1b1253aa965e370852f3cae289))
 
-### [0.10.20](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.20) (2026-08-08)
+## [0.10.20](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.14...v0.10.20) (2026-08-08)
 
 ### Bug Fixes
 
@@ -6136,7 +6136,7 @@ All notable changes to this project will be documented in this file. See [standa
 * skip publish-time scripts in release workflow ([b385148](https://github.com/ManotLuijiu/pi-harness-runtime/commit/b38514835dc3f6fd717ca8c71dbb6d131de4887f))
 * suppress noisy stack traces in harness agents ([34bbe98](https://github.com/ManotLuijiu/pi-harness-runtime/commit/34bbe98f59e740fcfcd8622f1dcc09c379f6f3df))
 
-### [0.10.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.9...v0.10.11) (2026-08-03)
+## [0.10.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.10.9...v0.10.11) (2026-08-03)
 
 ### Features
 
@@ -6181,7 +6181,7 @@ All notable changes to this project will be documented in this file. See [standa
 * replace Unicode dashes and arrows with ASCII equivalents ([e9027e6](https://github.com/ManotLuijiu/pi-harness-runtime/commit/e9027e689c06fdc1ca2ac4a6365ed6a6a0a384fd))
 * trigger cookie sync on startup so pre-existing cookies aren't ignored ([2914299](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2914299b8caa02acbb06620c7cb8e4870acfa40e))
 
-### [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
+## [0.9.25](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.25) (2026-07-27)
 
 ### Bug Fixes
 
@@ -6191,7 +6191,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **e2e:** add OpenAIUsageResponse type to fix rate_limit TS error ([2ed0891](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2ed08911410ec07815d828028db1a6c9eaf2df2c))
 * **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
 
-### [0.9.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.24) (2026-07-27)
+## [0.9.24](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.24) (2026-07-27)
 
 ### Bug Fixes
 
@@ -6199,11 +6199,11 @@ All notable changes to this project will be documented in this file. See [standa
 * **e2e:** add OpenAIUsageResponse type to fix rate_limit TS error ([2ed0891](https://github.com/ManotLuijiu/pi-harness-runtime/commit/2ed08911410ec07815d828028db1a6c9eaf2df2c))
 * **release:** add --workspaces=false to npm publish so only pi-harness-runtime is published ([31e715d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/31e715d97e7fce5b82b503a95b86037d757db906))
 
-### [0.9.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.23) (2026-07-27)
+## [0.9.23](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.23) (2026-07-27)
 
-### [0.9.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.22) (2026-07-27)
+## [0.9.22](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.21...v0.9.22) (2026-07-27)
 
-### [0.9.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.11) (2026-07-23)
+## [0.9.11](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.8...v0.9.11) (2026-07-23)
 
 ### Bug Fixes
 
@@ -6211,7 +6211,7 @@ All notable changes to this project will be documented in this file. See [standa
 * **tests:** update footer-status expectations for provider label prefix
 * **tests:** mirror round-trip expects per-provider shape + source field
 
-### [0.9.8](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.8) (2026-07-23)
+## [0.9.8](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.8) (2026-07-23)
 
 ### Features
 
@@ -6222,38 +6222,38 @@ All notable changes to this project will be documented in this file. See [standa
 * harden auto-resume after compaction ([13378e8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/13378e852c984ead0e66f0adeffc073ff58af50c))
 * resume after output-limit error stops ([8c75a24](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8c75a2432082c4f9ba6296ffe2d04b636863bf2f))
 
-### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
+## [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
 
 ### Bug Fixes
 
 * auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
 
-### [0.9.7](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.7) (2026-07-16)
+## [0.9.7](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.7) (2026-07-16)
 
 ### Bug Fixes
 
 * harden auto-resume after compaction ([13378e8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/13378e852c984ead0e66f0adeffc073ff58af50c))
 * resume after output-limit error stops ([8c75a24](https://github.com/ManotLuijiu/pi-harness-runtime/commit/8c75a2432082c4f9ba6296ffe2d04b636863bf2f))
 
-### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
+## [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
 
 ### Bug Fixes
 
 * auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
 
-### [0.9.6](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.6) (2026-07-16)
+## [0.9.6](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.5...v0.9.6) (2026-07-16)
 
 ### Bug Fixes
 
 * harden auto-resume after compaction ([13378e8](https://github.com/ManotLuijiu/pi-harness-runtime/commit/13378e852c984ead0e66f0adeffc073ff58af50c))
 
-### [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
+## [0.9.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.3) (2026-07-14)
 
 ### Bug Fixes
 
 * auto-resume pi dev with literal resume ([#51](https://github.com/ManotLuijiu/pi-harness-runtime/issues/51)) ([fd98762](https://github.com/ManotLuijiu/pi-harness-runtime/commit/fd987629f6062a4a7ff7a28d9dfb607962f5a4a9))
 
-### [0.9.5](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.4...v0.9.5) (2026-07-15)
+## [0.9.5](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.9.4...v0.9.5) (2026-07-15)
 
 ### Features
 
@@ -6270,7 +6270,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 * auto-resume after compaction and output limits ([0cff2bc](https://github.com/ManotLuijiu/pi-harness-runtime/commit/0cff2bcf9035a699496e2726b74a1576863cf82e))
 
-### [0.9.4](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.4) (2026-07-14)
+## [0.9.4](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.5.0-beta.1...v0.9.4) (2026-07-14)
 
 ### Features
 
@@ -6283,9 +6283,9 @@ All notable changes to this project will be documented in this file. See [standa
 
 * collapse duplicate version keys in workspace package.json files ([f3a7289](https://github.com/ManotLuijiu/pi-harness-runtime/commit/f3a728923a96308296e45d7ce3db8fe3ad36780a))
 
-### [0.4.2-beta.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.1-beta.1...v0.4.2-beta.1) (2026-07-12)
+## [0.4.2-beta.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.1-beta.1...v0.4.2-beta.1) (2026-07-12)
 
-### [0.9.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.1) (2026-07-13)
+## [0.9.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.7.1...v0.9.1) (2026-07-13)
 
 ### Features
 
@@ -6306,13 +6306,13 @@ All notable changes to this project will be documented in this file. See [standa
 
 * **release:** remove redundant Bump version step — was double-bumping version (0.7.1->0.8.0) when tag pushed ([413ad6d](https://github.com/ManotLuijiu/pi-harness-runtime/commit/413ad6d49356ec62b94e9a4e09d3475ef39bebd6))
 
-### [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
+## [0.7.1](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.6.3...v0.7.1) (2026-07-13)
 
 ### Bug Fixes
 
 * **release:** set make_latest=true so new releases auto-mark as Latest ([26a7bb9](https://github.com/ManotLuijiu/pi-harness-runtime/commit/26a7bb98f3e603a9d68cbf39ca1558bc579d1a4a))
 
-### [0.6.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.0...v0.6.3) (2026-07-13)
+## [0.6.3](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.4.0...v0.6.3) (2026-07-13)
 
 ## [0.4.0](https://github.com/ManotLuijiu/pi-harness-runtime/compare/v0.3.1...v0.4.0) (2026-07-05)
 

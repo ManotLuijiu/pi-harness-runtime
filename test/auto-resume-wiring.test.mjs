@@ -62,10 +62,10 @@ test("the resume names the request it belongs to", () => {
 test("the guard of a late resume is a public boundary of Pi", () => {
 	assert.match(
 		indexSource,
-		/pi\.on\("context", async \(event\) => \{/,
+		/pi\.on\("context", async \(event, ctx\) => \{/,
 		"the guard runs before the provider is called",
 	);
-	const region = around('pi.on("context", async (event) => {', 0, 6000);
+	const region = around('pi.on("context", async (event, ctx) => {', 0, 7000);
 	assert.match(
 		region,
 		/findAutoResumeIndex\(messages\)/,
@@ -78,22 +78,23 @@ test("the guard of a late resume is a public boundary of Pi", () => {
 	);
 	assert.match(
 		region,
-		/return \{\s*messages: neutralizeAutoResume\(messages, index\)/,
-		"the guard replaces the resume",
+		/consumeObsoleteContinuation\(\{/,
+		"the guard consumes the obsolete continuation instead of replacing it with a prompt",
 	);
 });
 
-test("the guard does not abort the run", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 6000);
-	assert.equal(
-		region.includes("abort("),
-		false,
-		"the run of the session goes on",
+test("the guard aborts the run only when it carried the continuation alone", () => {
+	const region = around('pi.on("context", async (event, ctx) => {', 0, 7000);
+	assert.match(
+		region,
+		/if \(consumption\.abort\) \{/,
+		"the abort follows the decision of the consumption",
 	);
+	assert.match(region, /ctx\.abort\(\);/, "the run is stopped");
 });
 
 test("a resume of a cut turn is not guarded", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 6000);
+	const region = around('pi.on("context", async (event, ctx) => {', 0, 7000);
 	assert.match(
 		region,
 		/details\?\.scope !== "request"/,
@@ -101,8 +102,8 @@ test("a resume of a cut turn is not guarded", () => {
 	);
 });
 
-test("a resume of a replaced request is neutralized", () => {
-	const region = around('pi.on("context", async (event) => {', 0, 6000);
+test("a resume of a replaced request is consumed", () => {
+	const region = around('pi.on("context", async (event, ctx) => {', 0, 7000);
 	assert.match(
 		region,
 		/details\.requestGeneration !== generation/,
@@ -110,8 +111,8 @@ test("a resume of a replaced request is neutralized", () => {
 	);
 	assert.match(
 		region,
-		/NEUTRALIZED_STALE_RESUME_TEXT/,
-		"a stale resume is stopped with its own text",
+		/return consume\(report\);/,
+		"a stale resume is consumed instead of continued",
 	);
 });
 

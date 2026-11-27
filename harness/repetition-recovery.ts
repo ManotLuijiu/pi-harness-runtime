@@ -26,7 +26,7 @@
 /**
  * The state of the work of the request.
  */
-export type RepetitionWorkState = "unfinished" | "complete" | "unknown";
+export type RepetitionWorkState = "unfinished" | "complete" | "unknown" | "pending";
 
 /**
  * What the gate allows.
@@ -129,6 +129,15 @@ export function decideRepetitionRecovery(
 		return {
 			action: "skip",
 			reason: "the work of the request is complete",
+		};
+	}
+	if (input.work === "pending") {
+		// The request waits for the review phase of its workflow: the
+		// harness must not recover it into a step that is not the work of
+		// the agent.
+		return {
+			action: "skip",
+			reason: "the request waits for the review phase of its workflow",
 		};
 	}
 	return {

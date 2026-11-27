@@ -482,7 +482,29 @@ export class TodoContinuationController {
      * Called by external handlers (e.g., agent_settled)
      * Checks blockers and pause BEFORE selecting a task
      */
-    async decide() {
+    /**
+     * The items that may be continued.
+     *
+     * An item whose blocker is not finished is not eligible, and an item
+     * that is not a candidate is not the work of the request that asks.
+     */
+    eligibleItems(items, allItems, candidates) {
+        return items.filter((item) => {
+            if (candidates && !candidates.has(item.id))
+                return false;
+            if (!item.blockedBy?.length)
+                return true;
+            const blockerIds = new Set(item.blockedBy);
+            return !allItems.some((i) => blockerIds.has(i.id) && i.status !== "completed" && i.id !== item.id);
+        });
+    }
+    /**
+     * Decide what happens next.
+     *
+     * The decision names the eligible item of the work: the options narrow
+     * the candidates to the work of one request.
+     */
+    async decide(options) {
         // A temporary pause (user input) is auto-cleared by the next decision:
         // the decision itself is the "next decision" the comment refers to.
         // A decision that runs WHILE a dispatch is in flight must not clear
@@ -528,13 +550,16 @@ export class TodoContinuationController {
             debugLog("TodoContinuation", "Failed to read todos:", msg);
             return { action: "stop", reason: `todo read failed: ${msg}` };
         }
-        // 4. Filter in-progress for items without unfinished blockers
-        const unblockedInProgress = inProgress.filter((item) => {
-            if (!item.blockedBy?.length)
-                return true;
-            const blockerIds = new Set(item.blockedBy);
-            return !allItems.some((i) => blockerIds.has(i.id) && i.status !== "completed" && i.id !== item.id);
-        });
+        // 4. Filter the items that may be continued
+        //
+        // The candidates narrow the decision to the work of one request: a
+        // request-scoped continuation asks for an eligible item of its own
+        // request, and the items of the other requests are not its work.
+        const candidates = options?.candidateIds
+            ? new Set(options.candidateIds)
+            : null;
+        const unblockedInProgress = this.eligibleItems(inProgress, allItems, candidates);
+        const eligibleReady = this.eligibleItems(ready, allItems, candidates);
         // 5. Continue unblocked in-progress work first
         if (unblockedInProgress.length > 0) {
             const item = unblockedInProgress[0];
@@ -565,8 +590,8 @@ export class TodoContinuationController {
             return { action: "continue", nextItemId: item.id };
         }
         // 5. Continue ready pending work (not blocked)
-        if (ready.length > 0) {
-            const item = ready[0];
+        if (eligibleReady.length > 0) {
+            const item = eligibleReady[0];
             // The attempt budget is per item; switching items does not reset it
             this.state.lastItemContinued = item.id;
             this.state.steerAttemptsForCurrentItem = this.attemptsFor(item.id);

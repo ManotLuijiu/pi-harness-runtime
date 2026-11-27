@@ -113,8 +113,14 @@ export interface ApprovalRequest {
 	blocked: string[];
 	/** Why the operation is not simply running. */
 	reason?: string;
-	/** The deadline of the answer. It is absolute. */
-	deadlineAt: number;
+	/**
+	 * The deadline of the answer. It is absolute.
+	 *
+	 * A request without a deadline is never decided by a deadline: only
+	 * the answer of the human ends it. The operations that the human has
+	 * to answer for, a destructive one for example, use this.
+	 */
+	deadlineAt?: number;
 	/** The state of the request. */
 	state: "pending" | "answered" | "claimed" | "expired";
 	/** The answer, when there is one. */

@@ -9,6 +9,22 @@
 
 **Autonomous AI coding harness for pi: local token tracking + provider mirror + task orchestration.**
 
+![Target shared knowledge architecture: OmniGraph supplies authoritative shared knowledge, Qdrant provides a rebuildable semantic index, OKF supports import and export, and local files remain optional.](docs/images/pi_harness_knowledge_architecture.png)
+
+*Target architecture; integration is planned. The complete graph-to-index sync,
+relationship-aware retrieval and OKF import/export flow are not yet implemented.
+Local authoring, private overrides and offline caches have distinct policies;
+`~/.pi/okf/` is the current optional knowledge input, not the remote-skill cache.*
+
+![Target knowledge architecture with Honcho providing conversational memory alongside OmniGraph, Qdrant, OKF and optional local skills.](docs/images/pi_harness_knowledge_architecture_with_honcho.png)
+
+*When used together with Honcho, relevant conversational memory adds personal
+context to shared knowledge and skill retrieval. Recalled memory does not grant
+approval, and personal conversations are not automatically published as shared
+knowledge. This diagram extends the target architecture; the unified retrieval,
+context selection and import/export flows still require integration. The
+remote-skill cache is separate from the optional `~/.pi/okf/` knowledge folder.*
+
 ## Two Flavors
 
 ### 1. `/usage` — Token Tracking (stable ✅)
@@ -196,6 +212,11 @@ next to it does not silently take the place of the service. Set
 
 ### Use it
 
+With 100+ shared skills, search helps you find the relevant ones without
+loading every skill's full instructions into the agent's context. The
+catalog exposes names and descriptions for discovery; the agent loads the
+instructions and supporting files of a selected skill when needed.
+
 The startup summary names the graph next to the other services:
 
 ```text
@@ -207,6 +228,7 @@ Honcho       ready
 ```bash
 /remote-skills            # the state of the source
 /remote-skills search pdf # the skills that fit a text
+/remote-skills search deployment
 /remote-skills refresh    # read the catalog again
 /remote-skills clear-cache
 ```

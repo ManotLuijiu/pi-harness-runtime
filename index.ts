@@ -78,6 +78,10 @@ import {
 } from "./harness/delegated-approval-types.ts";
 import type { NotificationResult } from "./packages/notification/src/types.ts";
 import { registerExplorationCheckpointTool } from "./harness/exploration-checkpoint-tool.ts";
+import { registerFrappeLifecycleTool } from "./harness/frappe-lifecycle-tool.ts";
+import { FrappeCountdownDispatcher } from "./harness/frappe-countdown.ts";
+import { readFrappePolicyConfig } from "./harness/frappe-policy-config.ts";
+import { findBench } from "./harness/frappe-bench.ts";
 import { registerTaskMemoryReminders } from "./harness/task-memory-reminder.ts";
 import { stepsOfRequest } from "./harness/request-capture.ts";
 import { contextFillPercent } from "./harness/context-usage.ts";
@@ -182,10 +186,29 @@ import {
 	autoResumeDetails,
 	findAutoResumeIndex,
 	isAutoResumeMessage,
-	neutralizeAutoResume,
+	NEUTRALIZED_RESUME_TEXT,
 	NEUTRALIZED_STALE_RESUME_TEXT,
 	NEUTRALIZED_UNKNOWN_WORK_TEXT,
 } from "./harness/auto-resume-marker.ts";
+import { consumeObsoleteContinuation } from "./harness/obsolete-continuation.ts";
+import {
+	RequestLifecycleController,
+	buildContinuationInstruction,
+	type ContinuationDecision,
+	type LifecycleTodo,
+	type RequestWorkSnapshot,
+} from "./harness/request-lifecycle.ts";
+import {
+	BdDiscovery,
+	selectRelevantIssues,
+	type BdIssue,
+	type BdScanResult,
+} from "./harness/bd-discovery.ts";
+import {
+	RequestIssueTracker,
+	reconcileRequestIssues,
+	type RequestIssueTodo,
+} from "./harness/bd-request-issues.ts";
 import {
 	buildLocalRefusalMessage,
 	LOCAL_REFUSAL_ANSWER,
@@ -339,6 +362,77 @@ import { centralInfo, initCentralLogging, redactText } from "./packages/logging/
 
 
 /**
+ * Read the backlog of the issue tracker.
+ *
+ * The read is complete: the limit of the CLI is raised, so a backlog that
+ * does not fit into the default page is still read. A read that fails is
+ * reported as unavailable, never as an empty backlog.
+ */
+async function readBacklog(): Promise<BdScanResult> {
+	try {
+		const { execSync } = await import("node:child_process");
+		// The statuses are explicit: a closed issue is not work, and a
+		// deferred or a blocked issue is not work either.
+		const output = execSync(
+			"bd list --json --limit 0 --status open,in_progress,blocked,deferred 2>/dev/null",
+			{ encoding: "utf8", timeout: 5000 },
+		);
+		const parsed = JSON.parse(output) as Array<Record<string, unknown>>;
+		const issues: BdIssue[] = [];
+		for (const task of parsed ?? []) {
+			const id = typeof task.id === "string" ? task.id : "";
+			const title = typeof task.title === "string" ? task.title : "";
+			if (!id || !title) continue;
+			issues.push({
+				id,
+				title,
+				status: typeof task.status === "string" ? task.status : undefined,
+				priority:
+					typeof task.priority === "number" ? task.priority : undefined,
+				issueType:
+					typeof task.issue_type === "string" ? task.issue_type : undefined,
+				assignee:
+					typeof task.assignee === "string" ? task.assignee : undefined,
+				description:
+					typeof task.description === "string" ? task.description : undefined,
+				notes: typeof task.notes === "string" ? task.notes : undefined,
+			});
+		}
+		return { available: true, issues, scannedAt: Date.now() };
+	} catch (error) {
+		return {
+			available: false,
+			issues: [],
+			reason: oneLineError(error),
+			scannedAt: Date.now(),
+		};
+	}
+}
+
+/**
+ * The bounded discovery of the backlog.
+ *
+ * The read happens at meaningful boundaries only, one read is in flight at
+ * a time, and the read of a request is reused inside the cooldown. A scan
+ * never starts a turn of the agent.
+ */
+const bdDiscovery = new BdDiscovery({
+	read: readBacklog,
+	generation: () => requestScopeTracker.generation,
+	ttlMs: 30_000,
+});
+
+/**
+ * The issues of the backlog that the requests authorize.
+ *
+ * An issue is work of a request only when the request authorizes it: the
+ * approval of a scope proposal authorizes its issues, and the request that
+ * starts there owns them. The issues of a request are forgotten when the
+ * request is over.
+ */
+const requestIssues = new RequestIssueTracker();
+
+/**
  * Get tasks from bd (beads) for Jev decision context.
  * Returns { completed, remaining } arrays of task descriptions.
  */
@@ -359,48 +453,55 @@ async function getTaskContext(): Promise<{
 	remaining: string[];
 	total: number;
 	issues: BacklogIssue[];
+	/** Was the backlog readable at all? */
+	available: boolean;
+	/** Why the backlog is not readable, when it is not. */
+	reason?: string;
 }> {
-	try {
-		const { execSync } = await import("node:child_process");
-		// Get open (pending + in_progress) tasks
-		const output = execSync("bd list --json 2>/dev/null", {
-			encoding: "utf8",
-			timeout: 5000,
-		});
-		const tasks = JSON.parse(output) as Array<{
-			id?: string;
-			title?: string;
-			status?: string;
-		}>;
+	const scan = await bdDiscovery.scan();
+	if (!scan.available) {
+		// The backlog could not be read. That is not an empty backlog: the
+		// difference is what tells the user "nothing is relevant" from
+		// "nothing was read".
+		logToFile(
+			"[bd-discovery]",
+			`The backlog was not read: ${scan.reason ?? "unknown reason"}`,
+		);
+		return {
+			completed: [],
+			remaining: [],
+			total: 0,
+			issues: [],
+			available: false,
+			reason: scan.reason,
+		};
+	}
 
-		const completed: string[] = [];
-		const remaining: string[] = [];
-		const issues: BacklogIssue[] = [];
+	const completed: string[] = [];
+	const remaining: string[] = [];
+	const issues: BacklogIssue[] = [];
 
-		for (const task of tasks ?? []) {
-			if (!task.title) continue;
-			if (task.status === "closed" || task.status === "done") {
-				completed.push(task.title);
-			} else {
-				remaining.push(task.title);
-				// An issue without an id cannot be proposed: a proposal
-				// names exact ids.
-				if (typeof task.id === "string" && task.id) {
-					issues.push({ id: task.id, title: task.title, status: task.status });
-				}
+	for (const issue of scan.issues) {
+		if (!issue.title) continue;
+		if (issue.status === "closed" || issue.status === "done") {
+			completed.push(issue.title);
+		} else {
+			remaining.push(issue.title);
+			// An issue without an id cannot be proposed: a proposal
+			// names exact ids.
+			if (typeof issue.id === "string" && issue.id) {
+				issues.push({ id: issue.id, title: issue.title, status: issue.status });
 			}
 		}
-
-		return {
-			completed,
-			remaining,
-			total: completed.length + remaining.length,
-			issues,
-		};
-	} catch {
-		// bd not available or error - return empty context
-		return { completed: [], remaining: [], total: 0, issues: [] };
 	}
+
+	return {
+		completed,
+		remaining,
+		total: completed.length + remaining.length,
+		issues,
+		available: true,
+	};
 }
 
 // --- Harness Startup Widget Messages (used by init functions) -----------------
@@ -1211,7 +1312,7 @@ async function currentHandoffClosure(): Promise<BdClosureDecision> {
 /**
  * The phase of the request that is running, as the guard names it.
  *
- * The phase is the phase of the two-phase review when it is known, and
+ * The phase is the phase of the three-phase workflow when it is known, and
  * "other" when it is not: an unknown phase is never guessed.
  */
 function explorationPhase(): "implementation" | "review" | "review_fixes" | "test" | "other" {
@@ -1570,7 +1671,7 @@ const sharedState = {
 	 */
 	cancelWait: null as null | (() => void),
 	todoContinuationController: null as unknown,
-	// The ledger of the validation runs. The two-phase workflow reads it to
+	// The ledger of the validation runs. The three-phase workflow reads it to
 	// know whether the final tier of a test item passed.
 	validationLedger: null as unknown,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1584,7 +1685,7 @@ const sharedState = {
 	delegationHarness: null as any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	workspaceEnvMessage: null as string | null,
-	// The runtime of the two-phase workflow. The guard of the exploration
+	// The runtime of the three-phase workflow. The guard of the exploration
 	// reads its phase, so the exploration budget follows the phase of the
 	// work: a review reads differently than an implementation.
 	twoPhaseRuntime: null as unknown,
@@ -1750,6 +1851,170 @@ async function currentRequestWorkState(): Promise<ResumeWorkState> {
 }
 
 /**
+ * The work of the request that is running, read from the task list.
+ *
+ * The list is the only source. A list that could not be read says
+ * nothing: an unreadable list is not an empty list, and an empty list is
+ * not a finished request.
+ *
+ * The list is filtered through the scope of the request, so a todo of an
+ * earlier request does not keep the request of the human awake. The open
+ * todos of the other requests are reported as deferred work: they are
+ * candidates, not work of this request.
+ */
+async function readRequestWorkSnapshot(): Promise<RequestWorkSnapshot> {
+	try {
+		const read = await requestScopeTracker.read();
+		if (read.items === null) {
+			return {
+				available: false,
+				items: null,
+				reason: "the task list of the session could not be read",
+			};
+		}
+		const items = read.items as unknown as LifecycleTodo[];
+		const own = itemsOfRequest(
+			read.items as unknown as RequestTodoLike[],
+			read.scope,
+		) as unknown as LifecycleTodo[];
+		const ledger = sharedState.validationLedger as
+			| { isFinalTierPending?: (item: unknown) => boolean }
+			| null
+			| undefined;
+		// The ledger is the source of the truth about the final tier. A
+		// ledger that is absent is an unknown state, and an unknown state
+		// is never a passed validation.
+		const validationAvailability: "available" | "unknown" =
+			typeof ledger?.isFinalTierPending === "function" ? "available" : "unknown";
+		// The issues of the backlog that the request authorizes are work of
+		// the request: an authorized issue that no todo carries is still
+		// outstanding work.
+		const generation = requestScopeTracker.generation;
+		const authorized = requestIssues.authorizedFor(generation);
+		// The backlog is read through the bounded discovery: the read of a
+		// request is reused inside the cooldown and one read is in flight.
+		const scan = await bdDiscovery.scan();
+		const reconciliation = reconcileRequestIssues({
+			authorizedIds: authorized,
+			items: own as unknown as RequestIssueTodo[],
+			scan,
+		});
+		return {
+			available: true,
+			items,
+			ownItems: own,
+			validationPending: (item) =>
+				Boolean(ledger?.isFinalTierPending?.(item)),
+			validationAvailability,
+			reviewPending: reviewPendingOf(),
+			authorizedIssues: authorized,
+			authorizedOutstanding: reconciliation.outstanding,
+			authorizedAvailability: reconciliation.available
+				? "available"
+				: "unknown",
+		};
+	} catch (error) {
+		return {
+			available: false,
+			items: null,
+			reason: oneLineError(error),
+		};
+	}
+}
+
+/**
+ * Is the review work of the request still to come?
+ *
+ * The workflow of the session owns the review: while its phase is the
+ * implementation or the queued review, the review todos are not
+ * materialized yet, and a request whose implementation todos are done is
+ * not finished.
+ */
+function reviewPendingOf(): boolean {
+	try {
+		const runtime = sharedState.twoPhaseRuntime as
+			| { getPhase?: () => string }
+			| null
+			| undefined;
+		if (!runtime?.getPhase) return false;
+		const phase = runtime.getPhase();
+		return phase === "implementation" || phase === "review_pending";
+	} catch {
+		// The phase is not known: the request is not held back by a phase
+		// that nobody can read.
+		return false;
+	}
+}
+
+/**
+ * The source of the advisory that continues the work of the request.
+ *
+ * The advisory of the request is a hidden harness message: it continues the
+ * request that is running and it is never a request of the human.
+ */
+const ADVISORY_SOURCE_REQUEST_WORK = "request-work";
+
+/**
+ * The continuation of the request was delivered.
+ *
+ * The run that carries the continuation of the request happened: the queue
+ * entry of the continuation is consumed, and the work of the request may be
+ * continued again. The generation of the message decides which request the
+ * acknowledgement belongs to.
+ */
+function acknowledgeRequestContinuation(message: {
+	details?: { requestGeneration?: unknown } | null;
+}): void {
+	const raw = message.details?.requestGeneration;
+	const generation = typeof raw === "number" ? raw : Number(raw);
+	if (!Number.isFinite(generation)) return;
+	requestLifecycle?.acknowledgeDelivery(generation);
+}
+
+/**
+ * The lifecycle of the request that is running.
+ *
+ * Every producer of a continuation asks this controller, so the request
+ * ends once and it never spins. The controller is created when the
+ * extension starts, because the dispatch of a continuation needs the
+ * executor of the resume.
+ */
+let requestLifecycle: RequestLifecycleController | null = null;
+
+/**
+ * The continuation of the work of the request.
+ *
+ * The decision is taken on the state of the work, never on the wording of
+ * the assistant: the todo widget of the interface is not the text of the
+ * answer, and a text that mentions no todo says nothing about the work
+ * that is open.
+ *
+ * The continuation is a message of the harness. It carries the marker, so
+ * the guard of a late resume recognizes it, and it names the request it
+ * belongs to.
+ */
+async function continueRequestWork(): Promise<void> {
+	if (!requestLifecycle) return;
+	try {
+		const decision = await requestLifecycle.settle();
+		if (decision.action !== "continue") {
+			logToFile(
+				"[request-work]",
+				`No continuation of the request: ${decision.reason}`,
+			);
+			return;
+		}
+		logToFile("[request-work]", `The request continues: ${decision.reason}`);
+	} catch (error) {
+		logToFile(
+			"[request-work]",
+			"the state of the work could not be read:",
+			oneLineError(error),
+		);
+	}
+}
+
+/**
  * The status of the task list of the session.
  *
  * The row names the work that is open and says that a completion is
@@ -1860,6 +2125,62 @@ const requestScopeTracker = new RequestScopeTracker({
 });
 
 /**
+ * The configuration of the policy of the Frappe operations.
+ *
+ * The rule of the project and the permission that stands come from the
+ * owner of the workspace. Without them the policy asks the human for
+ * every operation that changes a site.
+ */
+const frappePolicyConfig = readFrappePolicyConfig(process.env);
+
+/**
+ * The dispatch of a message of the Frappe countdown.
+ *
+ * The dispatch is the guarded path of the session: it refuses when the
+ * session is busy or paused, and a countdown never forces a turn.
+ */
+async function dispatchFrappeCountdown(message: string): Promise<{
+	dispatched: boolean;
+	reason?: string;
+}> {
+	const controller = sharedState.todoContinuationController as {
+		dispatchAdvisory?: (
+			message: string,
+			options?: { meta?: { reason?: string; requestGeneration?: string } },
+		) => Promise<{ dispatched: boolean; reason?: string }>;
+	} | null;
+	if (!controller?.dispatchAdvisory) {
+		return { dispatched: false, reason: "the guarded path is not available" };
+	}
+	return controller.dispatchAdvisory(message, {
+		meta: {
+			reason: "the confirmation of a Frappe operation expired",
+			requestGeneration: String(requestScopeTracker.generation),
+		},
+	});
+}
+
+/**
+ * The owner of the countdowns of the Frappe operations.
+ *
+ * The countdown is the confirmation of the human that expires. The expiry
+ * is not an answer: the operation runs only when the permission that
+ * stands still covers it, and the check before the dispatch pins the
+ * proposal that was assessed.
+ */
+const frappeCountdown = new FrappeCountdownDispatcher({
+	pending: pendingActions,
+	state: () => ({
+		requestGeneration: requestScopeTracker.generation,
+		...(frappePolicyConfig.standingGrant
+			? { authorization: frappePolicyConfig.standingGrant }
+			: {}),
+	}),
+	dispatch: (message) => dispatchFrappeCountdown(message),
+	log: (message) => logToFile("[frappe]", message),
+});
+
+/**
  * The guard of an output that repeats itself.
  *
  * The guard belongs to the session: a new session starts with a clean
@@ -1953,6 +2274,8 @@ async function repetitionBudgetSpent(): Promise<boolean> {
  */
 function beginHumanRequest(): void {
 	requestScopeTracker.begin();
+	// The lifecycle of the request starts with it.
+	requestLifecycle?.beginRequest(requestScopeTracker.generation);
 	// A request of the human began: the work of a handoff that arrives
 	// now belongs to this request, until the agent answers it.
 	humanRequestBegan = true;
@@ -2047,9 +2370,29 @@ async function proposeScopeExpansion(): Promise<void> {
 	if (sharedState.scopeProposedFor === generation) return;
 	const context = await getTaskContext().catch(() => null);
 	if (!context || context.issues.length === 0) return;
-	const candidates: ScopeCandidate[] = context.issues
-		.slice(0, MAX_SCOPE_CANDIDATES)
-		.map((issue) => ({ id: issue.id, title: issue.title }));
+	// The relevance is decided before the cap: a small batch of candidates
+	// must not hide the relevant issue behind the unrelated ones.
+	const scan = await bdDiscovery.scan();
+	const selection = selectRelevantIssues(
+		scan,
+		{
+			requestText: currentRequestText,
+			actor: process.env.BEADS_ACTOR ?? "",
+		},
+		MAX_SCOPE_CANDIDATES,
+	);
+	if (!selection.available) {
+		logToFile(
+			"[bd-discovery]",
+			`The backlog was not read, so no scope is proposed: ${selection.reason ?? "unknown reason"}`,
+		);
+		return;
+	}
+	const candidates: ScopeCandidate[] = selection.relevant.map((entry) => ({
+		id: entry.issue.id,
+		title: entry.issue.title,
+	}));
+	if (candidates.length === 0) return;
 	const proposal = await runtime.propose({
 		requestId: `request-${generation}`,
 		workspace: _piSessionCwd || process.cwd(),
@@ -2363,20 +2706,20 @@ let _extensionApi: ExtensionAPI | null = null;
 /** How long an unanswered proposal stays quiet before it is offered again. */
 const TOOLING_PROPOSAL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
-// --- two-phase-review: implementation first, review as a second phase -----
+// --- multi-phase-review: implementation, review, then validation -----
 
-/** The package of the two-phase workflow. */
-type TwoPhaseModule = typeof import("./packages/two-phase-review/dist/index.js");
+/** The package of the three-phase workflow. */
+type TwoPhaseModule = typeof import("./packages/multi-phase-review/dist/index.js");
 
 /** The todo shape the workflow needs. */
-type TwoPhaseTodoLike = import("./packages/two-phase-review/dist/index.js").TodoLike;
+type TwoPhaseTodoLike = import("./packages/multi-phase-review/dist/index.js").TodoLike;
 
 /**
  * Load the two-phase review package.
  */
 async function loadTwoPhaseModule(): Promise<TwoPhaseModule | null> {
 	try {
-		return await import("./packages/two-phase-review/dist/index.js");
+		return await import("./packages/multi-phase-review/dist/index.js");
 	} catch (error) {
 		logToFile("[TwoPhase]", `package unavailable: ${oneLineError(error)}`);
 		return null;
@@ -2421,7 +2764,7 @@ type DelegationDecisionLike = {
 };
 
 /**
- * Register the two-phase workflow in the session.
+ * Register the three-phase workflow in the session.
  *
  * The wiring itself lives in the package (it is tested there). The session
  * only provides the todo list of the session and the workspace.
@@ -5235,6 +5578,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					// The approval starts new work: it begins a new scope, so
 					// the todos of the finished request stay its history.
 					beginHumanRequest();
+					// The approval authorizes these issues of the backlog:
+					// they are the work of the request that starts here.
+					requestIssues.authorize(requestScopeTracker.generation, ids);
 					const lines = ids.map((id) => `- ${id}`).join("\n");
 					const message = [
 						"The human approved the following issues of the backlog.",
@@ -5339,7 +5685,7 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						);
 					},
 				});
-				// The two-phase workflow reads the same ledger: the phase gate
+				// The three-phase workflow reads the same ledger: the phase gate
 				// and the completion report must never disagree about a tier.
 				sharedState.validationLedger = validationLedger;
 				// SAFETY: ctx is ExtensionContext with sessionManager, isIdle, hasPendingMessages
@@ -5361,7 +5707,9 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 						const customType =
 							source === ADVISORY_SOURCE_BD_HANDOFF
 								? "harness:bd-handoff"
-								: "harness:exploration-guard";
+								: source === ADVISORY_SOURCE_REQUEST_WORK
+									? "harness:request-work"
+									: "harness:exploration-guard";
 						pi.sendMessage(
 							{
 								customType,
@@ -5638,6 +5986,10 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 							openHandoffsOfRunningRequest(bdHandoffContext, message),
 							BD_HANDOFF_TODO_TOOL,
 						),
+					// The reminder is sent once per request: a request that
+					// is reminded twice produces a second reminder, and that
+					// one arrives as a new request of the work.
+					requestGeneration: () => requestScopeTracker.generation,
 					dispatch: async (content: string) => {
 						// The message is the harness speaking, not a request
 						// of the human: it must not be read as one.
@@ -5675,12 +6027,19 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 
 		// Wire user messages to task intake
 		pi.on("message_start", (event) => {
-			const msgEvent = event as { message?: { role?: string; content?: string | Array<{ type?: string; text?: string }>; customType?: string } };
+			const msgEvent = event as { message?: { role?: string; content?: string | Array<{ type?: string; text?: string }>; customType?: string; details?: { requestGeneration?: unknown } | null } };
 			const msg = msgEvent.message;
 			if (!msg) return;
 
 			// Skip harness-generated messages (internal use)
 			if (msg.customType?.startsWith("harness:")) {
+				// The continuation of the request was delivered: the run that
+				// carries it happened, so the queue entry of the
+				// continuation is consumed and the work of the request may
+				// be continued again.
+				if (msg.customType === "harness:request-work") {
+					acknowledgeRequestContinuation(msg);
+				}
 				return;
 			}
 
@@ -9124,7 +9483,7 @@ export default async function (pi: ExtensionAPI) {
 	// The proposal is a decision of its own: it never pauses the work.
 	void initToolingPreference(pi);
 
-	// --- two-phase-review: implementation first, review as a second phase ----
+	// --- multi-phase-review: implementation, review, then validation ----
 	// A review signal during the implementation is queued, never executed.
 	// The handlers are registered before the extension is ready, so a session
 	// that starts right away is already covered.
@@ -9262,6 +9621,50 @@ export default async function (pi: ExtensionAPI) {
 		logToFile(
 			"[exploration-guard]",
 			"the tool of the checkpoint could not be registered:",
+			oneLineError(error),
+		);
+	}
+
+	// --- frappe-lifecycle: the check of a Frappe operation before it runs ---
+	// The tool reads the ownership of a DocType from the bench and says
+	// what may happen: the operation may run, it waits for a confirmation,
+	// the human has to approve it, or it is blocked.
+	//
+	// The tool is registered only when a bench was found. A tool that
+	// could not read a bench would only weigh on every session.
+	try {
+		const bench = findBench(_piSessionCwd || process.cwd());
+		if (bench) {
+			registerFrappeLifecycleTool(pi, {
+				benchPath: bench,
+				// The runtime of the approval and the registry of the
+				// pending actions are read when the tool runs: both live
+				// longer than the registration.
+				approval: () => sharedState.delegatedApproval ?? undefined,
+				pending: () => pendingActions,
+				// The owner of the countdowns keeps the assessment that
+				// the expiry is checked against.
+				countdown: () => frappeCountdown,
+				// The rule of the project and the permission that stands
+				// come from the configuration of the session.
+				...(frappePolicyConfig.projectRule
+					? { projectRule: frappePolicyConfig.projectRule }
+					: {}),
+				...(frappePolicyConfig.standingGrant
+					? { standingGrant: frappePolicyConfig.standingGrant }
+					: {}),
+				// The operation belongs to the request that runs now: a
+				// proposal of an older request is assessed again.
+				generation: () => requestScopeTracker.generation,
+				workspace: () => delegationWorkspace(),
+				sessionId: () => _piSessionCwd || "harness",
+			});
+			logToFile("[frappe]", `The tool of the lifecycle reads the bench ${bench}.`);
+		}
+	} catch (error) {
+		logToFile(
+			"[frappe]",
+			"the tool of the lifecycle could not be registered:",
 			oneLineError(error),
 		);
 	}
@@ -10469,7 +10872,7 @@ issue is not authorized work of the current request).
 	 * The run is not aborted: other work of the session must go on. Only
 	 * the resume itself is neutralized.
 	 */
-	pi.on("context", async (event) => {
+	pi.on("context", async (event, ctx) => {
 		// The noise of a repetition is kept out of the context of the next
 		// call of the model. The transcript of the session keeps it: the
 		// handler replaces the messages it returns, it does not change the
@@ -10487,6 +10890,45 @@ issue is not authorized work of the current request).
 		if (index === -1 || details?.scope !== "request") {
 			return { messages };
 		}
+		/**
+		 * Consume an obsolete continuation.
+		 *
+		 * The continuation is removed from the messages, so it never
+		 * reaches the provider. When the run carried nothing else, the run
+		 * is aborted before the provider is called: the completion of a
+		 * request costs no turn, and the agent is not asked to
+		 * acknowledge a control message.
+		 *
+		 * A request of the human after the continuation keeps the run
+		 * alive: the cleanup of an old request never cancels a new one.
+		 */
+		const consume = (report: string): { messages: typeof messages } => {
+			const consumption = consumeObsoleteContinuation({
+				messages,
+				index,
+				isHarnessText: (text) =>
+					sentHarnessMessages.has(text) ||
+					text.startsWith(NEUTRALIZED_RESUME_TEXT) ||
+					text.startsWith(NEUTRALIZED_STALE_RESUME_TEXT) ||
+					text.startsWith(NEUTRALIZED_UNKNOWN_WORK_TEXT),
+			});
+			logToFile(
+				"[resume-scope]",
+				`Resume consumed: ${report} (${details?.nonce || "no nonce"})`,
+			);
+			reportSuppressedResume(report);
+			if (consumption.abort) {
+				try {
+					// The run carried the obsolete continuation only. The
+					// abort stops it before the provider is called.
+					ctx.abort();
+				} catch {
+					// A host that does not support the abort still keeps the
+					// continuation out of the context.
+				}
+			}
+			return { messages: consumption.messages as typeof messages };
+		};
 		// The resume belongs to a request. When the human replaced that
 		// request, the resume is stale: it must not continue the old work
 		// inside the new request.
@@ -10497,17 +10939,16 @@ issue is not authorized work of the current request).
 		) {
 			const report = `The automatic resume of the request ${details.requestGeneration} was replaced by a newer request.`;
 			logToFile("[resume-scope]", report);
-			reportSuppressedResume(report);
-			return {
-				messages: neutralizeAutoResume(
-					messages,
-					index,
-					NEUTRALIZED_STALE_RESUME_TEXT,
-				) as typeof event.messages,
-			};
+			return consume(report);
 		}
+		const workState = requestLifecycle
+			? // The work of the request is read from the todos of the
+				// request: a todo of an earlier request does not keep the
+				// request of the human awake.
+				(await requestLifecycle.readView()).work
+			: await currentRequestWorkState();
 		const decision = decideResumeScope({
-			work: await currentRequestWorkState(),
+			work: workState,
 			reason: details?.reason ?? "auto-resume",
 		});
 		if (decision.action !== "suppress") {
@@ -10517,50 +10958,27 @@ issue is not authorized work of the current request).
 			// resume, and both wait for a read that works.
 			const closure = await currentHandoffClosure();
 			if (closure.action === "suppress") {
-				logToFile(
-					"[resume-scope]",
-					`Resume neutralized: ${closure.reason} (${details?.nonce || "no nonce"})`,
-				);
-				reportSuppressedResume(
+				return consume(
 					`The work of the request is finished elsewhere; the automatic resume (${details?.reason ?? "auto-resume"}) is not sent.`,
 				);
-				return {
-					messages: neutralizeAutoResume(messages, index) as typeof event.messages,
-				};
 			}
 			if (closure.action === "unknown") {
 				// The state of the issue is unknown: the work is neither
 				// finished nor unfinished. The resume waits for a read that
 				// works instead of starting the work twice.
-				//
-				// The agent is told the truth as well: the work of the
-				// handoff is not done, and its todos are not closed as
-				// finished.
-				logToFile(
-					"[resume-scope]",
-					`Resume not started: ${closure.reason} (${details?.nonce || "no nonce"})`,
-				);
-				reportSuppressedResume(
+				return consume(
 					`The state of the issue of the work is unknown, so the automatic resume (${details?.reason ?? "auto-resume"}) is not sent; the work waits for a read that works.`,
 				);
-				return {
-					messages: neutralizeAutoResume(
-						messages,
-						index,
-						NEUTRALIZED_UNKNOWN_WORK_TEXT,
-					) as typeof event.messages,
-				};
 			}
 			return { messages };
 		}
-		logToFile(
-			"[resume-scope]",
-			`Resume neutralized: ${decision.reason} (${details?.nonce || "no nonce"})`,
+		// The request is over: the transition is the single end of it, and
+		// the continuations it owns are given back.
+		requestLifecycle?.markTerminal(decision.reason);
+		return consume(
+			decision.report ??
+				`The work of the request is complete; the automatic resume (${details?.reason ?? "auto-resume"}) is not sent.`,
 		);
-		reportSuppressedResume(decision.report);
-		return {
-			messages: neutralizeAutoResume(messages, index) as typeof event.messages,
-		};
 	});
 
 	pi.on("message_end", async (event, ctx) => {
@@ -10772,23 +11190,17 @@ issue is not authorized work of the current request).
 				typeof m.provider === "string" ? m.provider : undefined,
 			);
 
-			// --- Auto-Continue: Check todos and keep going -------------------------------
-			// If the agent stopped naturally AND the response mentions pending todos,
-			// auto-steering forces it to continue without waiting for user input.
-			const text = readMessageText(event.message);
-			if (
-				text &&
-				/Todos?\s*\(\d+\/\d+\)|\([○◐●]\s+\w+.*pending|Tasks?\s*\(\d+.*pending\)/i.test(text)
-			) {
-				try {
-					pi.sendUserMessage(
-						"You have pending tasks. Run `todo list` to see them, then continue with the next pending one without asking.",
-						{ deliverAs: "steer" },
-					);
-				} catch {
-					// best-effort
-				}
-			}
+			// --- Auto-Continue: the work of the request decides --------------------
+			// The state of the work decides, never the wording of the answer:
+			// the todo widget of the interface is not the text of the
+			// assistant, and a regex over that text misses the work that is
+			// really open - and starts work that is not open at all.
+			//
+			// The continuation is sent once for the work that is open. It is
+			// a message of the harness: it carries the marker and names the
+			// request it belongs to, so a request that ends meanwhile
+			// consumes it instead of continuing it.
+			await continueRequestWork();
 		}
 
 		if (!m.usage) return;
@@ -12635,6 +13047,137 @@ issue is not authorized work of the current request).
 			);
 		}
 	}
+
+	/**
+	 * The guarded continuation of the request.
+	 *
+	 * The continuation goes through the controller of the todos: the
+	 * controller knows whether the session is paused, whether a question of
+	 * the human waits, whether the session is busy, whether the item is
+	 * eligible and how many attempts it had. A continuation that bypasses
+	 * those gates sends the agent into work that the human held back.
+	 *
+	 * The candidates are the open items of the request, so the continuation
+	 * names an eligible item of this request and never an item of another
+	 * one.
+	 */
+	async function dispatchRequestContinuation(
+		instruction: string,
+		decision: ContinuationDecision,
+	): Promise<boolean> {
+		const controller = sharedState.todoContinuationController as {
+			decide?: (options?: {
+				candidateIds?: readonly number[];
+			}) => Promise<{
+				action: string;
+				nextItemId?: number;
+				reason?: string;
+			}>;
+			dispatchAdvisory?: (
+				message: string,
+				options?: {
+					itemId?: number;
+					meta?: { reason?: string; requestGeneration?: string };
+				},
+			) => Promise<{ dispatched: boolean; reason?: string }>;
+		} | null;
+		if (!controller?.decide || !controller.dispatchAdvisory) {
+			logToFile(
+				"[request-work]",
+				"the guarded path is not available; the continuation is not sent",
+			);
+			return false;
+		}
+		const candidates = decision.candidates ?? [];
+		const candidateIds = candidates
+			.map((item) => Number(item.id))
+			.filter((id) => Number.isFinite(id));
+		const eligible = await controller.decide({ candidateIds });
+		if (eligible.action !== "continue" || eligible.nextItemId === undefined) {
+			logToFile(
+				"[request-work]",
+				`The guarded path did not continue: ${eligible.reason ?? eligible.action}`,
+			);
+			return false;
+		}
+		// The message names the eligible item and not every pending item of
+		// the request.
+		const item = candidates.find(
+			(candidate) => Number(candidate.id) === eligible.nextItemId,
+		);
+		const message = item
+			? buildContinuationInstruction({
+					work: "unfinished",
+					open: [item],
+					deferred: [],
+					available: true,
+					reason: "",
+				})
+			: instruction;
+		const result = await controller.dispatchAdvisory(message, {
+			itemId: eligible.nextItemId,
+			meta: {
+				reason: "the request of the user continues",
+				requestGeneration: String(requestScopeTracker.generation),
+			},
+		});
+		if (!result.dispatched) {
+			logToFile(
+				"[request-work]",
+				`The continuation was not dispatched: ${result.reason ?? "unknown reason"}`,
+			);
+		}
+		return result.dispatched === true;
+	}
+
+	/**
+	 * The lifecycle of the request that is running.
+	 *
+	 * The controller is the single place that knows whether the request of
+	 * the human is finished. Every producer of a continuation asks it, so
+	 * the request ends once and it never spins.
+	 */
+	requestLifecycle = new RequestLifecycleController({
+		readSnapshot: readRequestWorkSnapshot,
+		generation: () => requestScopeTracker.generation,
+		dispatch: (instruction, decision) =>
+			// The continuation goes through the guarded path of the todos:
+			// the guards of the session decide whether a continuation may
+			// go out at all.
+			dispatchRequestContinuation(instruction, decision),
+		cancel: (generation) => {
+			// The request is over: the continuations it owns are given back.
+			// A request of the human that replaces it starts a new
+			// generation, and the cleanup of the old one never touches it.
+			if (requestScopeTracker.generation === generation) {
+				const controller = sharedState.todoContinuationController as {
+					clearQueue?: () => void;
+					releaseContinuationGuard?: (reason?: string) => void;
+				} | null;
+				// The queue of the controller and its guard belong to the
+				// request that just ended: a queued entry of it would
+				// silence the next request.
+				controller?.clearQueue?.();
+				controller?.releaseContinuationGuard?.(
+					`the request ${generation} is finished`,
+				);
+				// The entry of the repetition guard carries the generation
+				// of its request.
+				pendingActions.remove(repetitionGuardActionId(generation));
+				// The issues the request authorized are its history: the next
+				// request does not inherit them.
+				requestIssues.forget(generation);
+				// The countdowns of the request are its own: a confirmation
+				// that expires after the request ended authorizes nothing.
+				frappeCountdown.forget(generation);
+			}
+			logToFile(
+				"[request-work]",
+				`The request ${generation} is finished; its continuations are cancelled`,
+			);
+			suppressedResumeReported = false;
+		},
+	});
 
 	/**
 	 * The resume of the delegated timeout.

@@ -21,6 +21,14 @@ export class TaskIntakeController {
     // Track recent capture request hashes to prevent self-triggering
     recentCaptures = new Set();
     CAPTURE_COOLDOWN_MS = 30000; // Don't re-trigger for same content within 30s
+    /**
+     * The requests that were already reminded.
+     *
+     * The key is the request generation and the text of the request: the
+     * same work of the same request is reminded once, and a new request
+     * of the human may be reminded again.
+     */
+    reminded = new Set();
     // Track stopped state to invalidate pending evaluations on stop
     _stopped = false;
     constructor(config) {
@@ -296,6 +304,27 @@ export class TaskIntakeController {
         if (this._stopped) {
             return;
         }
+        // The reminder of a request is sent once. The key is the request
+        // and the text of the request: the same work of the same request
+        // must not produce a second reminder, and that reminder would
+        // arrive as a new request of the work.
+        const generation = this.config.requestGeneration?.();
+        const key = generation === undefined
+            ? ""
+            : `${generation}:${this.hashMessage(userMessage)}`;
+        if (key && this.reminded.has(key)) {
+            return;
+        }
+        if (key) {
+            this.reminded.add(key);
+            // The set is bounded: the old keys are dropped, because a
+            // request that is long past cannot be reminded now.
+            if (this.reminded.size > 50) {
+                const oldest = this.reminded.values().next();
+                if (!oldest.done)
+                    this.reminded.delete(oldest.value);
+            }
+        }
         // Record that a capture was requested. The record is the state of
         // the attempt, not the state of the work: the work is captured
         // when an item of the task list stands for it, and that is
@@ -320,7 +349,17 @@ export class TaskIntakeController {
             "Update progress, blockers and the exact next action, and mark an item completed only when",
             "its required validation has passed. Do not start unrelated backlog work.",
         ].join(" ");
-        await this.config.dispatch(message);
+        try {
+            await this.config.dispatch(message);
+        }
+        catch (error) {
+            // The reminder was not sent. The key is released, so the next
+            // attempt of the same request can send it again: a failed
+            // dispatch must not cost the request its reminder.
+            if (key)
+                this.reminded.delete(key);
+            throw error;
+        }
     }
     /**
      * Reset state

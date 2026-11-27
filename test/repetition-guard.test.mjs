@@ -622,3 +622,20 @@ test("the recovery is decided by the facts of the session", () => {
 	assert.equal(unknown.action, "recover");
 	assert.doesNotMatch(unknown.reason, /unfinished/);
 });
+
+test("a request that waits for its review is not recovered", () => {
+	const base = {
+		detected: true,
+		recoveryTried: false,
+		requestMatches: true,
+		work: "unfinished",
+		paused: false,
+		questionOpen: false,
+		budgetSpent: false,
+	};
+	// The request waits for the review phase of its workflow: the harness
+	// must not recover it into a step that is not the work of the agent.
+	const decision = decideRepetitionRecovery({ ...base, work: "pending" });
+	assert.equal(decision.action, "skip");
+	assert.match(decision.reason, /review phase/);
+});

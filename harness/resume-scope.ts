@@ -16,7 +16,7 @@
  */
 
 /** The state of the work of the request that is running. */
-export type ResumeWorkState = "unfinished" | "complete" | "unknown";
+export type ResumeWorkState = "unfinished" | "complete" | "unknown" | "pending";
 
 /** What the guard does with an automatic resume. */
 export type ResumeScopeAction = "continue" | "suppress";
@@ -63,6 +63,10 @@ export const RESUME_SCOPE_RULE = [
  * - The state is unknown: the resume goes on. The uncertainty is preserved
  *   - the guard does not declare a completion it cannot prove, and it does
  *   not substitute unrelated work either.
+ * - The work waits for the review phase of the workflow: the resume is
+ *   suppressed. The request is not over, but the next step belongs to the
+ *   workflow and not to the agent, so a resume must not send the agent
+ *   into a review that the workflow materializes itself.
  */
 export function decideResumeScope(input: ResumeScopeInput): ResumeScopeDecision {
 	if (input.work === "complete") {
@@ -70,6 +74,13 @@ export function decideResumeScope(input: ResumeScopeInput): ResumeScopeDecision 
 			action: "suppress",
 			reason: "the work of the request is complete",
 			report: `The work of the request is complete; the automatic resume (${input.reason}) is not sent.`,
+		};
+	}
+	if (input.work === "pending") {
+		return {
+			action: "suppress",
+			reason: "the request waits for the review phase of its workflow",
+			report: `The request waits for the review phase of its workflow; the automatic resume (${input.reason}) is not sent.`,
 		};
 	}
 	if (input.work === "unknown") {

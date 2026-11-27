@@ -744,7 +744,7 @@
       "name": "@pi-harness/tui",
       "version": "1.1.530",
     },
-    "packages/two-phase-review": {
+    "packages/multi-phase-review": {
       "name": "@pi-harness/two-phase-review",
       "version": "1.1.530",
     },
@@ -1099,7 +1099,7 @@
 
     "@pi-harness/tui": ["@pi-harness/tui@workspace:packages/tui"],
 
-    "@pi-harness/two-phase-review": ["@pi-harness/two-phase-review@workspace:packages/two-phase-review"],
+    "@pi-harness/two-phase-review": ["@pi-harness/two-phase-review@workspace:packages/multi-phase-review"],
 
     "@pi-harness/types": ["@pi-harness/types@workspace:packages/types"],
 

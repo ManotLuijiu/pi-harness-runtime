@@ -397,7 +397,22 @@ export declare class TodoContinuationController {
      * Called by external handlers (e.g., agent_settled)
      * Checks blockers and pause BEFORE selecting a task
      */
-    decide(): Promise<ContinuationResult>;
+    /**
+     * The items that may be continued.
+     *
+     * An item whose blocker is not finished is not eligible, and an item
+     * that is not a candidate is not the work of the request that asks.
+     */
+    private eligibleItems;
+    /**
+     * Decide what happens next.
+     *
+     * The decision names the eligible item of the work: the options narrow
+     * the candidates to the work of one request.
+     */
+    decide(options?: {
+        candidateIds?: readonly number[];
+    }): Promise<ContinuationResult>;
     /**
      * Continue a specific todo item
      *

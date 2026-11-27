@@ -102,7 +102,7 @@ scripts/**/*.js.map
 
 # Test fixtures that live in the workspace instead of the shared /tmp
 .test-two-phase-root-*
-packages/two-phase-review/.test-*
+packages/multi-phase-review/.test-*
 
 # generated code-graph output (a tool snapshot, not source)
 /graphify-out/
