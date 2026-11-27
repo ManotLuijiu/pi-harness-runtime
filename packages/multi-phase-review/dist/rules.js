@@ -171,12 +171,20 @@ export function buildChunkTodoSubject(chunk) {
 /** The description of the todo that covers one review chunk. */
 export function buildChunkTodoDescription(chunk) {
     const files = chunk.files.map((file) => `- ${file}`).join("\n");
-    return [
+    const lines = [
         `Review the files of ${chunk.id} (${chunk.label}):`,
         files,
-        "",
-        `Review only this chunk. Record confirmed findings as ${REVIEW_FIX_PREFIX} todos grouped by root cause and severity.`,
-    ].join("\n");
+    ];
+    const evidence = chunk.evidence ?? {};
+    if (Object.keys(evidence).length > 0) {
+        lines.push("", "Show the change of the task with:", ...Object.entries(evidence).map(([file, command]) => `- ${file}: ${command}`));
+    }
+    const deleted = chunk.deletedFiles ?? [];
+    if (deleted.length > 0) {
+        lines.push("", `Deleted by the task: ${deleted.join(", ")}. The content that is gone is in the snapshot above.`);
+    }
+    lines.push("", `Review only this chunk. Record confirmed findings as ${REVIEW_FIX_PREFIX} todos grouped by root cause and severity.`);
+    return lines.join("\n");
 }
 /** Does the todo item belong to the review chunk? */
 export function isChunkTodo(todo, chunk) {

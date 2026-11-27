@@ -547,3 +547,123 @@ test("a request that waits for its review sends no continuation and does not end
 	assert.equal(sent.length, 0);
 	assert.equal(controller.terminal, false);
 });
+
+test("a chunk that changes files is progress although the todo list does not change", async () => {
+	// A chunk that edits files does not always change the todo list. The
+	// list alone cannot tell that work from a loop, so the harness tells
+	// the controller what it observed.
+	const sent = [];
+	let changes = 0;
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: (instruction) => {
+			sent.push(instruction);
+		},
+		progress: () => `c${changes}`,
+		maxContinuations: 2,
+	});
+	// The agent edits a file after every run: the work of the list does
+	// not change, but the request moves.
+	for (let round = 0; round < 5; round += 1) {
+		const decision = await controller.settle();
+		assert.equal(decision.action, "continue");
+		controller.acknowledgeDelivery();
+		changes += 1;
+	}
+	assert.equal(sent.length, 5);
+	assert.equal(controller.stalled, false);
+	assert.equal(controller.terminal, false);
+});
+
+test("the budget of the retries is spent even when the files keep changing", async () => {
+	// The progress of the request restarts the budget of the retries, but
+	// the restart is bounded: a request may not run for ever.
+	const sent = [];
+	let changes = 0;
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: (instruction) => {
+			sent.push(instruction);
+		},
+		progress: () => `c${changes}`,
+		maxContinuations: 2,
+		maxProgressRestarts: 2,
+	});
+	let decision = await controller.settle();
+	while (decision.action === "continue") {
+		controller.acknowledgeDelivery();
+		changes += 1;
+		decision = await controller.settle();
+	}
+	// The request pauses with a reason that names the budget, and the work
+	// stays open.
+	assert.equal(decision.action, "idle");
+	assert.match(decision.reason, /budget of the retries/);
+	assert.equal(decision.work, "unfinished");
+	assert.equal(controller.stalled, true);
+	assert.equal(controller.terminal, false);
+	// The pause is bounded: the request never continued for ever.
+	assert.ok(sent.length <= 8, `the request continued ${sent.length} times`);
+});
+
+test("the pause of a request names the budget of the retries", async () => {
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: () => {},
+		maxContinuations: 1,
+	});
+	await controller.settle();
+	controller.acknowledgeDelivery();
+	const paused = await controller.settle();
+	assert.equal(paused.action, "idle");
+	// The reason does not claim a progress that was not observed: it names
+	// the budget of the retries.
+	assert.match(paused.reason, /budget of the retries/);
+	assert.match(controller.stalledReason ?? "", /budget of the retries/);
+});
+
+test("a new request forgets the progress of the old one", async () => {
+	// The evidence of the progress belongs to the request that collected
+	// it: the changes of the old request say nothing about the new one.
+	let changes = 0;
+	let forgotten = 0;
+	const controller = new RequestLifecycleController({
+		readSnapshot: async () => ({
+			available: true,
+			items: [todo(1, "in_progress", "do the work")],
+			ownItems: [todo(1, "in_progress", "do the work")],
+		}),
+		dispatch: () => {},
+		progress: () => `c${changes}`,
+		resetProgress: () => {
+			forgotten += 1;
+			changes = 0;
+		},
+	});
+	// The request collects a progress.
+	changes += 1;
+	const first = await controller.settle();
+	assert.equal(first.action, "continue");
+	// A new request of the human begins: the evidence of the old one is
+	// forgotten with it.
+	controller.beginRequest(2);
+	assert.equal(forgotten, 1);
+	assert.equal(changes, 0);
+	// The new request starts with a clean budget, so it is not a
+	// continuation of the old one.
+	const second = await controller.settle();
+	assert.equal(second.action, "continue");
+	assert.equal(controller.terminal, false);
+});

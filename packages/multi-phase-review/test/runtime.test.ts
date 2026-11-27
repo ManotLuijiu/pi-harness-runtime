@@ -864,4 +864,67 @@ describe("the two-phase runtime", () => {
 			});
 		}
 	});
+
+	it("reviews a file that the task restored to the committed content", async () => {
+		await withTempDirAsync("runtime", async (dir) => {
+			makeRepo(dir);
+			const stateDir = makePlainTempDir("runtime-state");
+			try {
+				const todos: TodoReadResult["todos"] = [
+					{ id: 1, subject: "[IMPLEMENT] The first task", status: "completed" },
+				];
+				const pi = new FakePi();
+				const runtime = await initTwoPhaseReview({
+					pi,
+					readTodos: reader(todos),
+					readValidation: async () => ({
+						available: true,
+						pendingFinalTier: 0,
+						failedFinalTier: 0,
+						incompletePlan: 0,
+					}),
+					workspaceRoot: () => dir,
+					store: new TwoPhaseStateStore(stateDir),
+				});
+				await pi.emit("session_start", {}, context());
+
+				// The first task changes the file and leaves it in the
+				// workspace, so the file is dirty when the next task starts.
+				writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 2;\n");
+				await pi.emit("turn_end", {}, context());
+				expect(runtime.getState().phase).toBe("review");
+
+				// The review of the first task is finished.
+				todos.push({
+					id: 2,
+					subject: "[REVIEW] chunk-1: packages/app",
+					status: "completed",
+				});
+				await pi.emit("turn_end", {}, context());
+				expect(runtime.getState().phase).toBe("complete");
+
+				// The second task restores the file to the committed content:
+				// the diff against the revision shows nothing and the file is
+				// not untracked any more, but the task changed the file.
+				writeFileSync(join(dir, "packages", "app", "index.ts"), "export const a = 1;\n");
+				todos.push({
+					id: 3,
+					subject: "[IMPLEMENT] The second task",
+					status: "completed",
+				});
+				await pi.emit("turn_end", {}, context());
+
+				// The review of the second task still covers the file.
+				expect(runtime.getState().phase).toBe("review");
+				expect(runtime.getState().scopeFiles).toContain("packages/app/index.ts");
+
+				// The reviewer sees the change of the task against the
+				// snapshot it started from.
+				const chunk = runtime.getState().chunks[0];
+				expect(chunk.evidence?.["packages/app/index.ts"]).toContain("git diff");
+			} finally {
+				rmSync(stateDir, { recursive: true, force: true });
+			}
+		});
+	});
 });

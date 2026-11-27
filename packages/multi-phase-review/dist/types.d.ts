@@ -26,6 +26,16 @@ export interface ReviewChunk {
     label: string;
     files: string[];
     status: "pending" | "done";
+    /**
+     * The command that shows the change of a file of the chunk.
+     *
+     * The reviewer needs the patch of the task, not the patch of the
+     * session: a file that was already changed before the task started is
+     * shown against the snapshot it started from.
+     */
+    evidence?: Record<string, string>;
+    /** The files of the chunk that the task deleted. */
+    deletedFiles?: string[];
 }
 /** A confirmed finding of the review. */
 export interface ReviewFinding {

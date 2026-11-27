@@ -83,6 +83,24 @@ function stateWithBaseline(current, root) {
     return { ...current, startRevision: baseline.revision };
 }
 /**
+ * The lines that tell the reviewer how to see the change of the task.
+ *
+ * A file that was already changed before the task started is shown against
+ * the snapshot it started from, so a change that the diff against HEAD does
+ * not show is still reviewable.
+ */
+function evidenceLines(evidence) {
+    if (!evidence)
+        return [];
+    const files = Object.entries(evidence);
+    if (files.length === 0)
+        return [];
+    return [
+        "Show the change of the task with:",
+        ...files.map(([file, command]) => `- ${file}: ${command}`),
+    ];
+}
+/**
  * The state of a finished workflow with the baseline of the work that comes
  * after it.
  *
@@ -472,7 +490,10 @@ export async function initTwoPhaseReview(options) {
                 return undefined;
             }
             let next = transitionToReviewPending(state, scope.files);
-            next = startReview(next, chunkScope(scope.files));
+            next = startReview(next, chunkScope(scope.files, {
+                evidence: scope.evidence,
+                deletedFiles: scope.deletedFiles,
+            }));
             if (!persist(next)) {
                 // Without a persisted state the review must not start.
                 updateStatus(ctx, read.todos);
@@ -488,6 +509,11 @@ export async function initTwoPhaseReview(options) {
                 ...state.chunks.map((chunk) => `- ${buildChunkTodoSubject(chunk)}`),
                 `Keep exactly one queued review item: ${buildReviewTodoSubject(state)}`,
             ];
+            // The reviewer needs the patch of the task: a file that was
+            // already changed before the task started is shown against the
+            // snapshot it started from, so a change that the diff against
+            // HEAD does not show is still reviewable.
+            lines.push(...evidenceLines(scope.evidence));
             const message = lines.join("\n");
             try {
                 sentMessages.add(message);

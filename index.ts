@@ -198,6 +198,11 @@ import {
 	type LifecycleTodo,
 	type RequestWorkSnapshot,
 } from "./harness/request-lifecycle.ts";
+import { RequestProgress, changesFiles } from "./harness/request-progress.ts";
+import {
+	REQUEST_RECOVERY_COMMAND_NAME,
+	RequestStallHost,
+} from "./harness/request-stall.ts";
 import {
 	BdDiscovery,
 	selectRelevantIssues,
@@ -1982,6 +1987,71 @@ function acknowledgeRequestContinuation(message: {
 let requestLifecycle: RequestLifecycleController | null = null;
 
 /**
+ * The progress of the request that is running.
+ *
+ * The counter counts the calls that changed a file. It is the bounded
+ * evidence that a chunk which edits files is working, even when the todo
+ * list of the request does not change.
+ */
+const requestProgress = new RequestProgress();
+
+/**
+ * The calls of the session that are running, by their id.
+ *
+ * The map remembers whether a call changes a file. The call is remembered
+ * when it begins and forgotten when it ends, so the map stays as small as
+ * the number of calls that run at the same time.
+ */
+const progressCalls = new Map<string, boolean>();
+
+/**
+ * The row of the footer that names the pause of the request.
+ */
+const REQUEST_STALL_STATUS_KEY = "harness-request-stall";
+
+/**
+ * The setter of the row of the pause.
+ *
+ * The row belongs to the session, so it is bound when the session starts
+ * and it is gone when the session ends.
+ */
+let setRequestStallStatus: ((text: string) => void) | null = null;
+
+/**
+ * The notice of the pause of a request.
+ *
+ * The notice needs the interface of the session, which only exists while
+ * the session runs.
+ */
+let notifyRequestStall: ((message: string, level: "info" | "warning" | "error") => void) | null =
+	null;
+
+/**
+ * The host of the pause of a request.
+ *
+ * The host owns what the human sees: the reason in the row of the footer
+ * and a notice once. The recovery lifts the pause of the request that is
+ * running - it never resets it - and the continuation goes through the
+ * guarded path of the todos, so the pause of the session, a question of
+ * the human and an exhausted quota still stop it.
+ */
+const requestStallHost = new RequestStallHost({
+	read: () => ({
+		stalled: requestLifecycle?.stalled ?? false,
+		reason: requestLifecycle?.stalledReason,
+		terminal: requestLifecycle?.terminal ?? false,
+	}),
+	setStatus: (text) => {
+		setRequestStallStatus?.(text);
+	},
+	notify: (message, level) => {
+		notifyRequestStall?.(message, level);
+	},
+	resume: () => requestLifecycle?.resumeStalled() ?? false,
+	continue: () => continueRequestWork(),
+});
+
+/**
  * The continuation of the work of the request.
  *
  * The decision is taken on the state of the work, never on the wording of
@@ -1992,25 +2062,32 @@ let requestLifecycle: RequestLifecycleController | null = null;
  * The continuation is a message of the harness. It carries the marker, so
  * the guard of a late resume recognizes it, and it names the request it
  * belongs to.
+ *
+ * The answer tells whether the request continued: the recovery of a paused
+ * request has to know it, and the row of the footer has to show a pause
+ * as soon as there is one.
  */
-async function continueRequestWork(): Promise<void> {
-	if (!requestLifecycle) return;
+async function continueRequestWork(): Promise<boolean> {
+	if (!requestLifecycle) return false;
 	try {
 		const decision = await requestLifecycle.settle();
+		requestStallHost.sync();
 		if (decision.action !== "continue") {
 			logToFile(
 				"[request-work]",
 				`No continuation of the request: ${decision.reason}`,
 			);
-			return;
+			return false;
 		}
 		logToFile("[request-work]", `The request continues: ${decision.reason}`);
+		return true;
 	} catch (error) {
 		logToFile(
 			"[request-work]",
 			"the state of the work could not be read:",
 			oneLineError(error),
 		);
+		return false;
 	}
 }
 
@@ -3529,6 +3606,15 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					toolName: String(toolEvent.toolName ?? ""),
 					input: toolEvent.input,
 				});
+				// The call is remembered by its id: only the result says
+				// whether the call changed a file.
+				const toolCallId = String(toolEvent.toolCallId ?? "");
+				if (toolCallId) {
+					progressCalls.set(
+						toolCallId,
+						changesFiles(String(toolEvent.toolName ?? ""), toolEvent.input),
+					);
+				}
 			} catch (error) {
 				logToFile(
 					"[exploration-guard]",
@@ -3547,6 +3633,14 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					isError?: boolean;
 					durationMs?: number;
 				};
+				// A call that changed a file is the progress of the request.
+				// A call that failed changed nothing, so it is not progress.
+				const toolCallId = String(toolEvent.toolCallId ?? "");
+				const changed = progressCalls.get(toolCallId);
+				progressCalls.delete(toolCallId);
+				if (changed && toolEvent.isError !== true) {
+					requestProgress.noteChange();
+				}
 				// The guard of the exploration observes the read and the search.
 				// It speaks at a safe boundary and it never authorises anything.
 				try {
@@ -4164,12 +4258,25 @@ async function initAutoContinue(pi: ExtensionAPI): Promise<void> {
 					ctx.ui,
 					HARNESS_ACTIONS_STATUS_KEY,
 				);
+				// The pause of a request gets its own row too: a request that
+				// did not progress has to be visible, with the reason and
+				// the way out.
+				setRequestStallStatus = ctx.ui.setStatus.bind(
+					ctx.ui,
+					REQUEST_STALL_STATUS_KEY,
+				);
+				// The notice of the pause needs the interface of the
+				// session, which only exists while it runs.
+				notifyRequestStall = ctx.ui.notify.bind(ctx.ui);
 				pendingActionTicker.start();
 				// A session without a TUI collected the state already: it is
 				// shown as soon as the UI is there.
 				if (_currentAutoContinueState) {
 					_setAutoContinueStatus(_currentAutoContinueState);
 				}
+				// The row of the pause follows the state of the request that
+				// is running.
+				requestStallHost.sync();
 			}
 
 		});
@@ -12498,6 +12605,23 @@ issue is not authorized work of the current request).
 		},
 	});
 
+	// --- /harness-resume-request — Continue a paused request -----------
+	pi.registerCommand(REQUEST_RECOVERY_COMMAND_NAME, {
+		description: "Continue a request that was paused because it did not progress",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			// The pause is lifted, the request is not reset: its identity
+			// and the issues it authorized stay. The continuation goes
+			// through the guarded path of the todos, so the pause of the
+			// session, a question of the human and an exhausted quota still
+			// stop it.
+			const result = await requestStallHost.recover();
+			ctx.ui.notify(result.message, result.ok ? "info" : "warning");
+			if (!result.ok) return;
+			// The row of the footer follows the state of the request.
+			requestStallHost.sync();
+		},
+	});
+
 	// --- /harness cancel — Cancel the harness job ----------------------
 	pi.registerCommand("harness-cancel", {
 		description: "Cancel the current harness job",
@@ -13140,6 +13264,17 @@ issue is not authorized work of the current request).
 	requestLifecycle = new RequestLifecycleController({
 		readSnapshot: readRequestWorkSnapshot,
 		generation: () => requestScopeTracker.generation,
+		// The progress of the request: the calls that changed a file. A
+		// chunk that edits files is working, even when the todo list does
+		// not change, so it is not labeled as a request that did not
+		// progress.
+		progress: () => requestProgress.token(),
+		// The progress of the previous request says nothing about the new
+		// one, so the evidence is forgotten with it.
+		resetProgress: () => {
+			requestProgress.reset();
+			progressCalls.clear();
+		},
 		dispatch: (instruction, decision) =>
 			// The continuation goes through the guarded path of the todos:
 			// the guards of the session decide whether a continuation may

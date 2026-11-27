@@ -71,7 +71,7 @@ export function normalizeState(value, taskId) {
         // scope of the review would cover the work that came before it.
         baselineFiles: isStringRecord(raw.baselineFiles) ? raw.baselineFiles : undefined,
         scopeFiles: Array.isArray(raw.scopeFiles) ? raw.scopeFiles.filter((f) => typeof f === "string") : [],
-        chunks: normalizedList(raw.chunks, isChunk),
+        chunks: normalizedList(raw.chunks, isChunk).map(normalizeChunk),
         signals: normalizedList(raw.signals, isSignal),
         findings: normalizedList(raw.findings, isFinding),
         reviewTodoSubject: typeof raw.reviewTodoSubject === "string" ? raw.reviewTodoSubject : undefined,
@@ -101,6 +101,36 @@ function isChunk(value) {
         Array.isArray(chunk.files) &&
         chunk.files.every((file) => typeof file === "string") &&
         (chunk.status === "pending" || chunk.status === "done"));
+}
+/**
+ * The chunk of a persisted state, with its optional fields in a usable shape.
+ *
+ * The evidence of a chunk names the command that shows the change of a file
+ * of the task. A persisted value that is not a map of commands is dropped,
+ * so the reviewer never sees a broken command.
+ */
+function normalizeChunk(chunk) {
+    const next = { ...chunk };
+    const evidence = chunk.evidence;
+    if (evidence && typeof evidence === "object" && !Array.isArray(evidence)) {
+        const usable = {};
+        for (const [file, command] of Object.entries(evidence)) {
+            if (typeof command === "string")
+                usable[file] = command;
+        }
+        next.evidence = Object.keys(usable).length > 0 ? usable : undefined;
+    }
+    else {
+        delete next.evidence;
+    }
+    if (Array.isArray(chunk.deletedFiles)) {
+        const deleted = chunk.deletedFiles.filter((file) => typeof file === "string");
+        next.deletedFiles = deleted.length > 0 ? deleted : undefined;
+    }
+    else {
+        delete next.deletedFiles;
+    }
+    return next;
 }
 /** Is the signal of a persisted state usable? */
 function isSignal(value) {

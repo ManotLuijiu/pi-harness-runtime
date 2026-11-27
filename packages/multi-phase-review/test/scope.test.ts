@@ -7,9 +7,10 @@
 
 import { describe, it, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	captureBaseline,
 	chunkScope,
 	collectScope,
 	countModules,
@@ -139,6 +140,106 @@ describe("collectScope", () => {
 			expect(scope.detected).toBe(false);
 			expect(scope.files).toEqual([]);
 			expect(scope.reason).toMatch(/does not exist/);
+		});
+	});
+});
+
+describe("collectScope against the snapshot of the task", () => {
+	/** A repository with one committed file. */
+	function withFeature(body: (root: string) => void): void {
+		withRepository((root) => {
+			mkdirSync(join(root, "packages", "app"), { recursive: true });
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 1;\n");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "base");
+			body(root);
+		});
+	}
+
+	it("keeps a file that the task restored to the committed content", () => {
+		withFeature((root) => {
+			// The work before the task leaves the file changed.
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 2;\n");
+			const baseline = captureBaseline(root);
+			expect(baseline.dirty["packages/app/feature.ts"]).toBeTruthy();
+
+			// The task restores the file to the committed content: the diff
+			// against the revision shows nothing, but the task changed the
+			// file.
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 1;\n");
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			expect(scope.files).toContain("packages/app/feature.ts");
+			expect(scope.metrics.changedLines).toBeGreaterThan(0);
+		});
+	});
+
+	it("keeps a file that the task deleted", () => {
+		withFeature((root) => {
+			// The work before the task leaves a new file behind.
+			writeFileSync(join(root, "packages", "app", "new.ts"), "export const y = 1;\n");
+			const baseline = captureBaseline(root);
+			expect(baseline.dirty["packages/app/new.ts"]).toBeTruthy();
+
+			// The task deletes the file: it is gone, so it is not untracked
+			// any more, but the task changed it.
+			rmSync(join(root, "packages", "app", "new.ts"));
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			expect(scope.files).toContain("packages/app/new.ts");
+			expect(scope.deletedFiles).toContain("packages/app/new.ts");
+			expect(scope.metrics.changedLines).toBeGreaterThan(0);
+		});
+	});
+
+	it("keeps a file that the task changed further", () => {
+		withFeature((root) => {
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 2;\n");
+			const baseline = captureBaseline(root);
+
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 3;\n");
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			expect(scope.files).toContain("packages/app/feature.ts");
+		});
+	});
+
+	it("drops a file that the task did not change", () => {
+		withFeature((root) => {
+			// The work before the task leaves the file changed, and the task
+			// does not touch it: it is not the work of this task.
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 2;\n");
+			const baseline = captureBaseline(root);
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			expect(scope.files).not.toContain("packages/app/feature.ts");
+		});
+	});
+
+	it("drops the committed work of the previous task", () => {
+		withFeature((root) => {
+			// The previous task committed its work, so the baseline of this
+			// task starts after it.
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 2;\n");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "the previous task");
+			const baseline = captureBaseline(root);
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			expect(scope.files).not.toContain("packages/app/feature.ts");
+		});
+	});
+
+	it("shows the change of the task against the snapshot", () => {
+		withFeature((root) => {
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 2;\n");
+			const baseline = captureBaseline(root);
+			writeFileSync(join(root, "packages", "app", "feature.ts"), "export const x = 1;\n");
+
+			const scope = collectScope(root, baseline.revision, baseline.dirty);
+			const evidence = scope.evidence?.["packages/app/feature.ts"] ?? "";
+			expect(evidence).toContain("git diff");
+			expect(evidence).toContain(baseline.dirty["packages/app/feature.ts"] ?? "");
 		});
 	});
 });

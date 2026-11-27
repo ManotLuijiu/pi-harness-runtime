@@ -362,6 +362,23 @@ export const DEFAULT_MAX_RECOVERIES = 1;
 export const DEFAULT_MAX_CONTINUATIONS = 3;
 
 /**
+ * How many times the progress of a request may restart the budget of the
+ * continuations for the same work.
+ *
+ * The restart is bounded: a request that keeps changing files continues a
+ * bounded number of times and then pauses with a visible reason. The bound
+ * is generous, because a chunk that edits files is working and must not be
+ * interrupted for it.
+ */
+export const DEFAULT_MAX_PROGRESS_RESTARTS = 10;
+
+/**
+ * The separator between the open work and the progress of a request in the
+ * key of a continuation.
+ */
+const PROGRESS_SEPARATOR = "#progress:";
+
+/**
  * The instruction that continues the work of the request.
  *
  * It names the open work, so the agent continues the work of the request
@@ -473,6 +490,32 @@ export interface RequestLifecycleOptions {
 	 * progress.
 	 */
 	maxContinuations?: number;
+	/**
+	 * A token of the progress of the request.
+	 *
+	 * The work of a request is the list of its todos, but a chunk that
+	 * edits files does not always change that list. The token is the
+	 * bounded evidence of that progress: a change of the token means that
+	 * the request moved, so the budget of the continuations starts again
+	 * and the request is not labeled as one that did not progress.
+	 */
+	progress?: () => string;
+	/**
+	 * Forgets the progress of the previous request.
+	 *
+	 * The evidence of the progress belongs to the request that collected
+	 * it: the changes of the old request say nothing about the new one.
+	 * The hook is called when a request of the human begins.
+	 */
+	resetProgress?: () => void;
+	/**
+	 * How many times the progress of the request may restart the budget of
+	 * the continuations for the same work.
+	 *
+	 * The restart is bounded: a request that keeps changing files may not
+	 * continue for ever.
+	 */
+	maxProgressRestarts?: number;
 	/** How many bounded recoveries a request may have. */
 	maxRecoveries?: number;
 }
@@ -495,6 +538,13 @@ interface RequestLifecycleState {
 	recoveries: number;
 	/** The work the request continued for. */
 	continuedFor: string;
+	/** The open work the request continued for. */
+	continuedWork: string;
+	/**
+	 * How many times the progress of the request restarted the budget of
+	 * the continuations for the same work.
+	 */
+	progressRestarts: number;
 	/** How many times the request continued for the same work. */
 	continuations: number;
 	/** Is the continuation of the request still queued? */
@@ -520,6 +570,8 @@ export class RequestLifecycleController {
 			stalled: false,
 			recoveries: 0,
 			continuedFor: "",
+			continuedWork: "",
+			progressRestarts: 0,
 			continuations: 0,
 			outstanding: false,
 		};
@@ -569,12 +621,17 @@ export class RequestLifecycleController {
 	 * state of another request.
 	 */
 	beginRequest(generation?: number): void {
+		// The progress of the previous request says nothing about the new
+		// one, so the evidence is forgotten with it.
+		this.options.resetProgress?.();
 		this.state = {
 			generation: generation ?? this.generation,
 			terminal: false,
 			stalled: false,
 			recoveries: 0,
 			continuedFor: "",
+			continuedWork: "",
+			progressRestarts: 0,
 			continuations: 0,
 			outstanding: false,
 		};
@@ -791,18 +848,44 @@ export class RequestLifecycleController {
 	 *   request when it is spent. The work is unfinished, so the request
 	 *   does not end: the scope of the request, the issues it authorized
 	 *   and the countdowns it armed stay.
+	 *
+	 * The progress of the request is part of the key: a chunk that edits
+	 * files without changing the todo list is progress, and the budget of
+	 * the retries starts again. The restart is bounded, so the request may
+	 * not continue for ever.
 	 */
 	private continuationGuard(
 		state: RequestLifecycleState,
 		key: string,
 		decision: ContinuationDecision,
 	): ContinuationDecision | null {
-		if (!key || key !== state.continuedFor) {
+		const work = this.workOf(key);
+		if (!work || work !== state.continuedWork) {
 			// The work changed: the request made progress, so the pause is
 			// lifted and the counter of the continuations starts again.
 			state.continuations = 0;
+			state.progressRestarts = 0;
 			state.stalled = false;
 			state.stalledReason = undefined;
+			state.continuedWork = work;
+			return null;
+		}
+		if (key !== state.continuedFor) {
+			// The work is the same but the request moved: a chunk that edits
+			// files without changing the todo list is progress, so the
+			// budget of the retries starts again - as long as the bounded
+			// number of the restarts is not spent.
+			state.progressRestarts += 1;
+			if (state.progressRestarts > this.maxProgressRestarts) {
+				const reason = `the request continued for the same open work ${state.continuations} times; the files changed but the budget of the retries is spent`;
+				this.markStalled(reason);
+				return {
+					action: "idle",
+					reason: `${reason}; the request is paused and its work stays open (${decision.reason})`,
+					work: decision.work,
+				};
+			}
+			state.continuations = 0;
 			return null;
 		}
 		if (state.outstanding) {
@@ -824,13 +907,41 @@ export class RequestLifecycleController {
 		}
 		state.continuations += 1;
 		if (state.continuations < this.maxContinuations) return null;
-		const reason = `the request continued for the same work ${state.continuations} times without progress`;
+		const reason = this.budgetReason(state.continuations);
 		this.markStalled(reason);
 		return {
 			action: "idle",
 			reason: `${reason}; the request is paused and its work stays open (${decision.reason})`,
 			work: decision.work,
 		};
+	}
+
+	/**
+	 * The reason of the pause of a request whose budget is spent.
+	 *
+	 * The reason names what was observed: the work did not change, and the
+	 * files did not change either when the harness could see them. It also
+	 * names the budget, because the budget is what the human has to lift.
+	 */
+	private budgetReason(continuations: number): string {
+		const files = this.options.progress
+			? " without a change of the work and without a change of the files"
+			: " without progress";
+		return `the request continued for the same open work ${continuations} times${files}; the budget of the retries is spent`;
+	}
+
+	/**
+	 * The number of times the progress of the request may restart the
+	 * budget of the continuations.
+	 */
+	private get maxProgressRestarts(): number {
+		return this.options.maxProgressRestarts ?? DEFAULT_MAX_PROGRESS_RESTARTS;
+	}
+
+	/** The open work of a continuation key. */
+	private workOf(key: string): string {
+		const at = key.indexOf(PROGRESS_SEPARATOR);
+		return at === -1 ? key : key.slice(0, at);
 	}
 
 	/**
@@ -863,9 +974,11 @@ export class RequestLifecycleController {
 	/** The key of the open work, for the deduplication of the continuation. */
 	private workKey(view: RequestWorkView): string {
 		if (view.work !== "unfinished") return "";
-		return view.open
+		const work = view.open
 			.map((item) => `${itemKey(item)}:${(item.status ?? "").trim()}`)
 			.sort()
 			.join("|");
+		const progress = this.options.progress?.() ?? "";
+		return progress ? `${work}${PROGRESS_SEPARATOR}${progress}` : work;
 	}
 }
